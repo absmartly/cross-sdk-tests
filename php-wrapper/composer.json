@@ -1,0 +1,23 @@
+{
+  "name": "absmartly/php-wrapper",
+  "require": {
+    "php": "^8.0",
+    "react/http": "^1.9",
+    "react/socket": "^1.14",
+    "absmartly/php-sdk": "@dev"
+  },
+  "autoload": {
+    "psr-4": {
+      "ABSmartly\\Wrapper\\": "src/"
+    }
+  },
+  "repositories": [
+    {
+      "type": "path",
+      "url": "/php-sdk",
+      "options": {
+        "symlink": false
+      }
+    }
+  ]
+}

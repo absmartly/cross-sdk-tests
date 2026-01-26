@@ -1,0 +1,47 @@
+# Build artifacts
+.build
+**/.build
+
+# Git
+.git
+**/.git
+.gitignore
+**/.gitignore
+
+# IDE
+.vscode
+.idea
+*.xcodeproj
+*.xcworkspace
+*.swiftpm
+**/.swiftpm
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+*.md
+**/README.md
+**/LICENSE
+**/CHANGELOG.md
+
+# Examples and tests
+**/Example
+**/Tests
+**/test
+**/tests
+
+# CI/CD
+.github
+**/.github
+.gitlab-ci.yml
+**/.gitlab-ci.yml
+
+# Other
+*.log
+**/*.log
+Templates
+**/Templates

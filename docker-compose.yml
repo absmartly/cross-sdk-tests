@@ -1,0 +1,151 @@
+services:
+  javascript-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/javascript-wrapper/Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      - SDK_NAME=javascript
+
+  python-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/python-wrapper/Dockerfile
+    ports:
+      - "3002:3000"
+    environment:
+      - SDK_NAME=python
+
+  ruby-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/ruby-wrapper/Dockerfile
+    ports:
+      - "3003:3000"
+    environment:
+      - SDK_NAME=ruby
+
+  java-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-wrapper/Dockerfile
+    ports:
+      - "3004:3000"
+    environment:
+      - SDK_NAME=java
+
+  php-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/php-wrapper/Dockerfile
+    ports:
+      - "3005:3000"
+    environment:
+      - SDK_NAME=php
+
+  go-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/go-wrapper/Dockerfile
+    ports:
+      - "3006:3000"
+    environment:
+      - SDK_NAME=go
+
+  liquid-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/liquid-wrapper/Dockerfile
+    ports:
+      - "3007:3000"
+    environment:
+      - SDK_NAME=liquid
+
+  dart-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-wrapper/Dockerfile
+    ports:
+      - "3011:3000"
+    environment:
+      - SDK_NAME=dart
+
+  flutter-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-wrapper/Dockerfile
+    ports:
+      - "3008:3000"
+    environment:
+      - SDK_NAME=flutter
+
+  swift-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-wrapper/Dockerfile
+    ports:
+      - "3010:3000"
+    environment:
+      - SDK_NAME=swift
+
+  dotnet-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dotnet-wrapper/Dockerfile
+    ports:
+      - "3009:3000"
+    environment:
+      - SDK_NAME=dotnet
+
+  react-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/react-wrapper/Dockerfile
+    ports:
+      - "3012:3000"
+    environment:
+      - SDK_NAME=react
+
+  vue2-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/vue2-wrapper/Dockerfile
+    ports:
+      - "3013:3000"
+    environment:
+      - SDK_NAME=vue2
+
+  vue3-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/vue3-wrapper/Dockerfile
+    ports:
+      - "3014:3000"
+    environment:
+      - SDK_NAME=vue3
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+    depends_on:
+      - javascript-sdk
+      - python-sdk
+      - ruby-sdk
+      - java-sdk
+      - php-sdk
+      - go-sdk
+      - liquid-sdk
+      - dart-sdk
+      - flutter-sdk
+      - swift-sdk
+      - dotnet-sdk
+      - react-sdk
+      - vue2-sdk
+      - vue3-sdk
+    volumes:
+      - ./test_scenarios_complete.json:/test_scenarios_complete.json:ro
+      - ./test-results:/results
+    environment:
+      - PYTHONUNBUFFERED=1

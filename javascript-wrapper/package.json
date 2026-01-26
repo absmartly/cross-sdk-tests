@@ -1,0 +1,13 @@
+{
+  "name": "absmartly-javascript-wrapper",
+  "version": "1.0.0",
+  "description": "Wrapper service for ABsmartly JavaScript SDK testing",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "@absmartly/javascript-sdk": "file:../../javascript-sdk"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

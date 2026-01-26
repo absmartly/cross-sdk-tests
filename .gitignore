@@ -1,0 +1,40 @@
+# OS files
+.DS_Store
+
+# Claude session files
+.claude/tasks/
+.claude/plans/
+
+# IDE files
+.idea/
+.vscode/
+
+# Build artifacts
+node_modules/
+*.pyc
+__pycache__/
+*.pyo
+bin/
+obj/
+.build/
+.dart_tool/
+vendor/
+
+# Environment files
+.env
+.env.local
+
+# Results and logs
+/results/
+/test-results/
+*.log
+
+# Python virtual environments
+venv/
+.venv/
+
+# Temporary files
+*.tmp
+*.swp
+*.backup
+*.backup2
