@@ -6,11 +6,18 @@ import time
 import os
 from typing import Dict, List, Any
 
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    RESET = '\033[0m'
+
 class TestOrchestrator:
-    def __init__(self, sdks: Dict[str, str]):
+    def __init__(self, sdks: Dict[str, str], verbose: bool = False):
         self.sdks = sdks
         self.results = []
         self.capabilities = {}
+        self.verbose = verbose
 
     def wait_for_services(self):
         """Wait for all SDK services to be healthy, return working and failed SDKs"""
@@ -26,7 +33,7 @@ class TestOrchestrator:
                 try:
                     response = requests.get(f"{base_url}/health", timeout=1)
                     if response.status_code == 200:
-                        print(f"  ✓ {sdk_name} ready")
+                        print(f"  {Colors.GREEN}✓{Colors.RESET} {sdk_name} ready")
                         working_sdks[sdk_name] = base_url
                         service_ready = True
 
@@ -44,7 +51,7 @@ class TestOrchestrator:
                         break
                 except:
                     if i == max_retries - 1:
-                        print(f"  ✗ {sdk_name} failed to start")
+                        print(f"  {Colors.RED}✗{Colors.RESET} {sdk_name} failed to start")
                         failed_sdks.append(sdk_name)
                     else:
                         time.sleep(1)
@@ -60,11 +67,12 @@ class TestOrchestrator:
         return working_sdks, failed_sdks
 
     def run_scenario(self, scenario: Dict) -> Dict:
-        print(f"\n{'='*60}")
-        print(f"=== {scenario['name']}")
-        print(f"{'='*60}")
-        if scenario.get('description'):
-            print(f"{scenario['description']}\n")
+        if self.verbose:
+            print(f"\n{'='*60}")
+            print(f"=== {scenario['name']}")
+            print(f"{'='*60}")
+            if scenario.get('description'):
+                print(f"{scenario['description']}\n")
 
         scenario_results = {
             'name': scenario['name'],
@@ -73,7 +81,6 @@ class TestOrchestrator:
         }
 
         for sdk_name, base_url in self.sdks.items():
-            print(f"  {sdk_name:20}", end=' ')
             try:
                 result = self.run_and_validate_sdk(
                     sdk_name,
@@ -83,15 +90,34 @@ class TestOrchestrator:
                 scenario_results['sdks'][sdk_name] = result
 
                 if result.get('skipped'):
-                    print(f"⊘ SKIP ({result.get('reason', 'Not supported')})")
+                    status = "SKIP"
+                    reason = result.get('reason', 'Not supported')
+                    if self.verbose:
+                        print(f"  {sdk_name:20} {Colors.YELLOW}⊘ SKIP{Colors.RESET} ({reason})")
+                    else:
+                        print(f"{Colors.YELLOW}SKIP{Colors.RESET}  {scenario['name']}: {reason}")
                 elif result['passed']:
-                    print("✓ PASS")
+                    status = "PASS"
+                    if self.verbose:
+                        print(f"  {sdk_name:20} {Colors.GREEN}✓ PASS{Colors.RESET}")
+                    else:
+                        print(f"{Colors.GREEN}PASS{Colors.RESET}  {scenario['name']}")
                 else:
-                    print(f"✗ FAIL ({len(result['failures'])} failures)")
-                    for failure in result['failures'][:3]:
-                        print(f"      {failure}")
+                    status = "FAIL"
+                    failure_count = len(result['failures'])
+                    if self.verbose:
+                        print(f"  {sdk_name:20} {Colors.RED}✗ FAIL{Colors.RESET} ({failure_count} failures)")
+                        for failure in result['failures'][:3]:
+                            print(f"      {failure}")
+                    else:
+                        first_failure = result['failures'][0] if result['failures'] else {}
+                        error_msg = first_failure.get('error', first_failure.get('actual', ''))
+                        print(f"{Colors.RED}FAIL{Colors.RESET}  {scenario['name']}: {error_msg}")
             except Exception as e:
-                print(f"✗ ERROR: {e}")
+                if self.verbose:
+                    print(f"  {sdk_name:20} {Colors.RED}✗ ERROR{Colors.RESET}: {e}")
+                else:
+                    print(f"{Colors.RED}FAIL{Colors.RESET}  {scenario['name']}: {e}")
                 scenario_results['sdks'][sdk_name] = {
                     'passed': False,
                     'error': str(e)
@@ -221,7 +247,7 @@ class TestOrchestrator:
                     data = response.json()
 
                 # Actions that use GET method
-                elif action in ['pending', 'isFinalized']:
+                elif action in ['pending', 'isFinalized', 'isReady', 'isFailed', 'experiments']:
                     response = requests.get(
                         f"{base_url}/context/{context_id}/{action}",
                         timeout=5
@@ -515,11 +541,14 @@ class TestOrchestrator:
 
         for sdk_name, stats in sdk_stats.items():
             if stats.get('service_failed'):
-                status = "⚠ DOWN"
+                status = f"{Colors.YELLOW}⚠ DOWN{Colors.RESET}"
                 print(f"  {sdk_name:20} {status:8} "
                       f"(service failed to start)")
             else:
-                status = "✓ PASS" if stats['failed'] == 0 and stats['errors'] == 0 else "✗ FAIL"
+                if stats['failed'] == 0 and stats['errors'] == 0:
+                    status = f"{Colors.GREEN}✓ PASS{Colors.RESET}"
+                else:
+                    status = f"{Colors.RED}✗ FAIL{Colors.RESET}"
                 skipped_info = f", {stats['skipped']} skipped" if stats['skipped'] > 0 else ""
                 print(f"  {sdk_name:20} {status:8} "
                       f"({stats['passed']}/{stats['tested']} tested{skipped_info}, "
@@ -553,7 +582,9 @@ class TestOrchestrator:
         return 0 if all_passed else 1
 
 def main():
-    sdks = {
+    import argparse
+
+    all_sdks = {
         'javascript': 'http://javascript-sdk:3000',
         'python': 'http://python-sdk:3000',
         'ruby': 'http://ruby-sdk:3000',
@@ -568,7 +599,25 @@ def main():
         'react': 'http://react-sdk:3000',
         'vue2': 'http://vue2-sdk:3000',
         'vue3': 'http://vue3-sdk:3000',
+        'rust': 'http://rust-sdk:3000',
     }
+
+    parser = argparse.ArgumentParser(description='Run cross-SDK tests')
+    parser.add_argument('--sdk', type=str, help='Comma-separated list of SDKs to test (e.g., rust,go,javascript)')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Show verbose output with full test details')
+    args = parser.parse_args()
+
+    if args.sdk:
+        sdk_names = [s.strip() for s in args.sdk.split(',')]
+        sdks = {name: all_sdks[name] for name in sdk_names if name in all_sdks}
+        invalid = [name for name in sdk_names if name not in all_sdks]
+        if invalid:
+            print(f"Warning: Unknown SDK(s): {', '.join(invalid)}")
+        if not sdks:
+            print(f"No valid SDKs specified. Available: {', '.join(all_sdks.keys())}")
+            sys.exit(1)
+    else:
+        sdks = all_sdks
 
     scenarios_path = os.getenv('TEST_SCENARIOS_PATH', '/test_scenarios_complete.json')
     if not os.path.exists(scenarios_path):
@@ -583,7 +632,7 @@ def main():
     print(f"Loaded {len(all_scenarios)} total scenarios")
     print(f"Running {len(scenarios)} testable scenarios (excluding unit tests)\n")
 
-    orchestrator = TestOrchestrator(sdks)
+    orchestrator = TestOrchestrator(sdks, verbose=args.verbose)
 
     working_sdks, failed_sdks = orchestrator.wait_for_services()
 

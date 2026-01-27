@@ -125,6 +125,15 @@ services:
     environment:
       - SDK_NAME=vue3
 
+  rust-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/rust-wrapper/Dockerfile
+    ports:
+      - "3015:3000"
+    environment:
+      - SDK_NAME=rust
+
   orchestrator:
     build:
       context: .
@@ -144,6 +153,7 @@ services:
       - react-sdk
       - vue2-sdk
       - vue3-sdk
+      - rust-sdk
     volumes:
       - ./test_scenarios_complete.json:/test_scenarios_complete.json:ro
       - ./test-results:/results
