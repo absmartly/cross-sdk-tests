@@ -5,7 +5,33 @@ if (typeof self === 'undefined') {
   global.self = global;
 }
 
+const { createSSRApp, h } = require('vue');
+const { renderToString } = require('@vue/server-renderer');
 const absmartly = require('@absmartly/javascript-sdk');
+const vue3sdk = require('@absmartly/vue3-sdk');
+
+// SSR-compatible Treatment: Vue3 SSR only fires beforeCreate+created, NOT beforeMount.
+// The Treatment component initializes state in beforeMount, so we move that logic to created.
+const TreatmentOriginal = vue3sdk.Treatment.options || vue3sdk.Treatment;
+const TreatmentSSR = Object.assign({}, TreatmentOriginal, {
+  created() {
+    const context = this[this.__absmartlyGlobal];
+    this.failed = context.isFailed();
+    if (context.isReady()) {
+      if (this.attributes instanceof Object) {
+        context.attributes(this.attributes);
+      }
+      this.treatment = context.treatment(this.name);
+      this.ready = true;
+    }
+    if (this.ready) {
+      this.treatmentNames = [String.fromCharCode(65 + this.treatment), this.treatment.toString(), 'default'];
+    } else {
+      this.treatmentNames = ['loading', 'default'];
+    }
+  },
+  beforeMount: undefined
+});
 
 const app = express();
 app.use(express.json());
@@ -53,7 +79,7 @@ app.get('/capabilities', (req, res) => {
     isWrapper: true,
     wrapsSDK: 'javascript',
     passThroughOperations: [
-      'track', 'attribute', 'variableValue', 'peekVariableValue',
+      'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
       'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
       'getAttribute', 'variableKeys', 'customFieldKeys',
@@ -62,12 +88,9 @@ app.get('/capabilities', (req, res) => {
   });
 });
 
-app.put('/context_payload', (req, res) => {
-  const payloadId = `payload-${Date.now()}-${Math.random()}`;
-  payloadStore[payloadId] = req.body.data;
-
-  const url = `http://vue3-sdk:3000/context_payload/${payloadId}`;
-  res.json({ payloadUrl: url, payloadId: payloadId });
+app.put('/context_payload/:payloadId', (req, res) => {
+  payloadStore[req.params.payloadId] = req.body.data || { experiments: [] };
+  res.json({ success: true });
 });
 
 app.get('/context_payload/:payloadId', (req, res) => {
@@ -79,8 +102,16 @@ app.get('/context_payload/:payloadId', (req, res) => {
   }, throttle);
 });
 
-app.post('/context', (req, res) => {
-  const { data, endpoint, units, options } = req.body;
+app.get('/context_payload/:payloadId/context', (req, res) => {
+  const data = payloadStore[req.params.payloadId] || { experiments: [] };
+  res.json(data);
+});
+
+app.post('/context', async (req, res) => {
+  let { data, endpoint, units, options } = req.body;
+  if (endpoint) {
+    endpoint = endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+  }
   const contextId = `ctx-${Date.now()}-${Math.random()}`;
 
   const eventCollector = new EventCollector();
@@ -98,6 +129,8 @@ app.post('/context', (req, res) => {
   });
 
   let context;
+  const payloadThrottle = options?.payloadThrottle || 0;
+
   if (data) {
     context = sdk.createContextWith(
       { units },
@@ -109,6 +142,9 @@ app.post('/context', (req, res) => {
       { units },
       { publishDelay: -1, refreshPeriod: 0, ...options }
     );
+    if (payloadThrottle === 0) {
+      await context.ready();
+    }
   }
 
   contexts.set(contextId, { context, eventCollector, sdk });
@@ -134,7 +170,25 @@ app.post('/context/:contextId/treatment', async (req, res) => {
 
   try {
     await context.ready();
-    const variant = context.treatment(experimentName);
+
+    const vueApp = createSSRApp({
+      render() {
+        const slots = {};
+        for (let i = 0; i <= 10; i++) {
+          const idx = i;
+          slots[idx.toString()] = () => h('span', { 'data-variant': idx }, String(idx));
+        }
+        slots['default'] = () => h('span', { 'data-variant': 0 }, '0');
+        return h(TreatmentSSR, { name: experimentName }, slots);
+      }
+    });
+    vueApp.config.globalProperties.__absmartlyGlobal = '$absmartly';
+    vueApp.config.globalProperties.$absmartly = context;
+
+    const html = await renderToString(vueApp);
+    const match = html.match(/data-variant="(\d+)"/);
+    const variant = match ? parseInt(match[1], 10) : 0;
+
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
   } catch (error) {
@@ -327,6 +381,32 @@ app.get('/context/:contextId/isFinalized', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   res.json({ result: data.context.isFinalized(), events: [] });
+});
+
+app.get('/context/:contextId/isReady', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isReady(), events: [] });
+});
+
+app.get('/context/:contextId/isFailed', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isFailed(), events: [] });
+});
+
+app.get('/context/:contextId/experiments', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  try {
+    const experiments = data.context.experiments();
+    res.json({ result: experiments, events: [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {
