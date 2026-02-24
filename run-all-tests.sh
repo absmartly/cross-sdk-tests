@@ -144,21 +144,21 @@ if [ "$CROSS_ONLY" = false ]; then
   done
 
   ELAPSED=0
-  RUNNING=${#TARGET_SDKS[@]}
-  while [ $ELAPSED -lt $UNIT_TEST_TIMEOUT ] && [ $RUNNING -gt 0 ]; do
-    RUNNING=0
+  TOTAL=${#TARGET_SDKS[@]}
+  DONE=0
+  while [ $ELAPSED -lt $UNIT_TEST_TIMEOUT ] && [ $DONE -lt $TOTAL ]; do
     for sdk in "${TARGET_SDKS[@]}"; do
       [ -f "$UNIT_TMPDIR/${sdk}.exit" ] && continue
       pid=$(cat "$UNIT_TMPDIR/${sdk}.pid")
       if ! kill -0 "$pid" 2>/dev/null; then
         wait "$pid" 2>/dev/null && SDK_RC=0 || SDK_RC=$?
         echo "$SDK_RC" > "$UNIT_TMPDIR/${sdk}.exit"
-        echo "  $sdk: done (${ELAPSED}s)"
-      else
-        RUNNING=$((RUNNING + 1))
+        DONE=$((DONE + 1))
+        REMAINING=$((TOTAL - DONE))
+        echo "  $sdk: done (${ELAPSED}s) [$REMAINING remaining]"
       fi
     done
-    if [ $RUNNING -gt 0 ]; then
+    if [ $DONE -lt $TOTAL ]; then
       sleep 1
       ELAPSED=$((ELAPSED + 1))
     fi

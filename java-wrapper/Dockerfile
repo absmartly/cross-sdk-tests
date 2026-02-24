@@ -14,7 +14,8 @@ RUN cd /build/java-wrapper && gradle bootJar -x test
 
 FROM builder AS tester
 WORKDIR /build/java-sdk
-CMD ["./gradlew", ":core-api:test"]
+RUN ./gradlew :core-api:compileTestJava -x test
+CMD ["./gradlew", ":core-api:test", "--rerun-tasks"]
 
 FROM amazoncorretto:17
 

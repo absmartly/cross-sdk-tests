@@ -20,6 +20,7 @@ RUN sbt assembly
 
 FROM builder AS tester
 WORKDIR /app/scala-sdk
+RUN sbt "Test / compile"
 CMD ["sbt", "test"]
 
 FROM eclipse-temurin:17-jre
