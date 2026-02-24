@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using ABSmartly;
 using ABSmartly.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -40,6 +41,20 @@ app.Use(async (context, next) =>
 var contexts = new ConcurrentDictionary<string, ContextData>();
 var payloadStore = new ConcurrentDictionary<string, ABSmartly.Models.ContextData>();
 
+string TranslateEndpoint(string endpoint)
+{
+    if (string.IsNullOrEmpty(endpoint)) return endpoint;
+    return Regex.Replace(endpoint, @"localhost:\d+", "127.0.0.1:3000");
+}
+
+string TranslateErrorMessage(string msg)
+{
+    if (string.IsNullOrEmpty(msg)) return msg;
+    if (msg.Contains("closed") || msg.Contains("closing"))
+        return "Context finalized";
+    return msg;
+}
+
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "healthy",
@@ -49,11 +64,11 @@ app.MapGet("/health", () => Results.Ok(new
 
 app.MapGet("/capabilities", () => Results.Ok(new
 {
-    asyncContext = false,
-    attrsSeq = false
+    asyncContext = true,
+    attrsSeq = true
 }));
 
-app.MapPut("/context_payload", async (HttpContext httpContext) =>
+app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext httpContext) =>
 {
     try
     {
@@ -61,27 +76,19 @@ app.MapPut("/context_payload", async (HttpContext httpContext) =>
         var body = await reader.ReadToEndAsync();
         var requestJson = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
 
-        if (requestJson == null || !requestJson.ContainsKey("data"))
+        ABSmartly.Models.ContextData? contextData = null;
+        if (requestJson != null && requestJson.ContainsKey("data"))
         {
-            return Results.BadRequest(new { error = "Invalid request format" });
+            var dataJson = requestJson["data"].GetRawText();
+            contextData = JsonSerializer.Deserialize<ABSmartly.Models.ContextData>(dataJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
         }
 
-        var dataJson = requestJson["data"].GetRawText();
-        var contextData = JsonSerializer.Deserialize<ABSmartly.Models.ContextData>(dataJson, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
+        payloadStore[payloadId] = contextData ?? new ABSmartly.Models.ContextData();
 
-        var payloadId = $"payload-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
-        payloadStore[payloadId] = contextData!;
-
-        var url = $"http://dotnet-sdk:3000/context_payload/{payloadId}";
-
-        return Results.Ok(new
-        {
-            payloadUrl = url,
-            payloadId = payloadId
-        });
+        return Results.Ok(new { success = true });
     }
     catch (Exception ex)
     {
@@ -111,6 +118,15 @@ app.MapGet("/context_payload/{payloadId}", (string payloadId, [FromQuery] int th
     }
 });
 
+app.MapGet("/context_payload/{payloadId}/context", (string payloadId) =>
+{
+    var data = payloadStore.GetValueOrDefault(payloadId, new ABSmartly.Models.ContextData
+    {
+        Experiments = Array.Empty<Experiment>()
+    });
+    return Results.Ok(data);
+});
+
 app.MapPost("/context", async (HttpContext httpContext) =>
 {
     try
@@ -138,6 +154,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         if (requestJson.ContainsKey("endpoint"))
         {
             endpoint = requestJson["endpoint"].GetString() ?? "http://dummy";
+            endpoint = TranslateEndpoint(endpoint);
         }
 
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
@@ -200,9 +217,44 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
-        var context = contextData != null
-            ? sdk.CreateContextWith(contextConfig, contextData)  // Sync: createContextWith
-            : sdk.CreateContext(contextConfig);  // Async: createContext (SDK will fetch from endpoint)
+        int payloadThrottle = 0;
+        if (requestJson.ContainsKey("options"))
+        {
+            var opts = requestJson["options"];
+            if (opts.TryGetProperty("payloadThrottle", out var pt))
+            {
+                payloadThrottle = pt.GetInt32();
+            }
+        }
+
+        IContext context;
+        if (contextData != null)
+        {
+            context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
+        }
+        else if (payloadThrottle > 0)
+        {
+            var lazyContext = new LazyContext(Task.Run(() =>
+            {
+                return (IContext)sdk.CreateContext(contextConfig);
+            }), eventCollector);
+            context = lazyContext;
+        }
+        else
+        {
+            context = sdk.CreateContext(contextConfig);  // Async: createContext (SDK will fetch from endpoint)
+
+            // Wait until context is ready
+            for (int i = 0; i < 100 && !context.IsReady(); i++)
+            {
+                await Task.Delay(10);
+            }
+            // Wait for events to be collected (like Go/Java wrappers)
+            for (int i = 0; i < 50 && eventCollector.GetEventsCount() == 0; i++)
+            {
+                await Task.Delay(10);
+            }
+        }
 
         var storedData = new ContextData
         {
@@ -256,7 +308,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         {
             Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
         }
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -308,7 +360,7 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -331,7 +383,7 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -370,7 +422,7 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -393,7 +445,7 @@ app.MapPost("/context/{contextId}/getAttribute", (string contextId, [FromBody] G
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -438,7 +490,7 @@ app.MapPost("/context/{contextId}/treatment", async (string contextId, HttpConte
     {
         Console.WriteLine($"Error in treatment: {ex.Message}");
         Console.WriteLine($"StackTrace: {ex.StackTrace}");
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -461,7 +513,7 @@ app.MapPost("/context/{contextId}/peek", (string contextId, [FromBody] Treatment
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -519,7 +571,7 @@ app.MapPost("/context/{contextId}/variableValue", async (string contextId, HttpC
     catch (Exception ex)
     {
         Console.WriteLine($"Error in variableValue: {ex.Message}");
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -577,7 +629,7 @@ app.MapPost("/context/{contextId}/peekVariableValue", async (string contextId, H
     catch (Exception ex)
     {
         Console.WriteLine($"Error in peekVariableValue: {ex.Message}");
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -621,7 +673,7 @@ app.MapPost("/context/{contextId}/track", (string contextId, [FromBody] TrackReq
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -642,7 +694,7 @@ app.MapPost("/context/{contextId}/override", (string contextId, [FromBody] Overr
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -663,7 +715,7 @@ app.MapPost("/context/{contextId}/customAssignment", (string contextId, [FromBod
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -687,7 +739,7 @@ app.MapPost("/context/{contextId}/customFieldValue", (string contextId, [FromBod
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -712,7 +764,7 @@ app.MapPost("/context/{contextId}/variableKeys", (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -736,7 +788,7 @@ app.MapPost("/context/{contextId}/customFieldKeys", (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -760,7 +812,7 @@ app.MapPost("/context/{contextId}/customFieldValueType", (string contextId, [Fro
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -783,7 +835,7 @@ app.MapPost("/context/{contextId}/setOverride", (string contextId, [FromBody] Ov
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -806,7 +858,7 @@ app.MapPost("/context/{contextId}/setCustomAssignment", (string contextId, [From
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -832,6 +884,51 @@ app.MapGet("/context/{contextId}/isFinalized", (string contextId) =>
         Result = data.Context.IsClosed(),
         Events = new List<object>()
     });
+});
+
+app.MapGet("/context/{contextId}/isReady", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+
+    return Results.Ok(new ApiResponse
+    {
+        Result = data.Context.IsReady(),
+        Events = new List<object>()
+    });
+});
+
+app.MapGet("/context/{contextId}/isFailed", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+
+    return Results.Ok(new ApiResponse
+    {
+        Result = data.Context.IsFailed(),
+        Events = new List<object>()
+    });
+});
+
+app.MapGet("/context/{contextId}/experiments", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+
+    try
+    {
+        var context = data.Context as Context;
+        var experiments = context?.GetExperiments() ?? Array.Empty<string>();
+        return Results.Ok(new ApiResponse
+        {
+            Result = experiments,
+            Events = new List<object>()
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+    }
 });
 
 app.MapPost("/context/{contextId}/publish", async (string contextId) =>
@@ -905,7 +1002,7 @@ app.MapPost("/context/{contextId}/refresh", async (string contextId, HttpContext
     catch (Exception ex)
     {
         Console.WriteLine($"Error in refresh: {ex.Message}");
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -1052,6 +1149,12 @@ public class CustomPublisher : IContextEventHandler
 
 public class DummyHttpClientFactory : IABSdkHttpClientFactory
 {
+    // Must return base interface type for C# compatibility
+    IABsmartlyHttpClient IABsmartlyHttpClientFactory.CreateClient()
+    {
+        return new DummyHttpClient();
+    }
+
     public IABSdkHttpClient CreateClient()
     {
         return new DummyHttpClient();
@@ -1177,4 +1280,113 @@ public class CustomFieldRequest
 public class RefreshRequest
 {
     public ABSmartly.Models.ContextData NewData { get; set; }
+}
+
+public class LazyContext : IContext
+{
+    private volatile IContext _inner;
+    private readonly Task<IContext> _creationTask;
+    private readonly EventCollector _eventCollector;
+    private readonly List<(string goalName, Dictionary<string, object> properties)> _queuedGoals = new();
+    private readonly List<(string name, object value)> _queuedAttributes = new();
+    private readonly object _lock = new();
+
+    public LazyContext(Task<IContext> creationTask, EventCollector eventCollector)
+    {
+        _creationTask = creationTask;
+        _eventCollector = eventCollector;
+        _creationTask.ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully)
+            {
+                lock (_lock)
+                {
+                    _inner = t.Result;
+                    foreach (var (goalName, properties) in _queuedGoals)
+                        _inner.Track(goalName, properties);
+                    _queuedGoals.Clear();
+                    foreach (var (name, value) in _queuedAttributes)
+                        _inner.SetAttribute(name, value);
+                    _queuedAttributes.Clear();
+                }
+            }
+        });
+    }
+
+    public void WaitForReady(int timeoutMs = 5000)
+    {
+        _creationTask.Wait(timeoutMs);
+    }
+
+    public int PendingCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                if (_inner != null) return _inner.PendingCount;
+                return _queuedGoals.Count;
+            }
+        }
+    }
+
+    public bool IsReady() => _inner?.IsReady() ?? false;
+    public bool IsFailed() => _inner?.IsFailed() ?? false;
+    public bool IsClosed() => _inner?.IsClosed() ?? false;
+    public bool IsClosing() => _inner?.IsClosing() ?? false;
+
+    public string[] GetExperiments() => _inner?.GetExperiments() ?? Array.Empty<string>();
+    public ABSmartly.Models.ContextData GetContextData() => _inner?.GetContextData();
+
+    public void SetAttribute(string name, object value)
+    {
+        lock (_lock)
+        {
+            if (_inner != null) _inner.SetAttribute(name, value);
+            else _queuedAttributes.Add((name, value));
+        }
+    }
+
+    public void SetAttributes(Dictionary<string, object> attributes)
+    {
+        lock (_lock)
+        {
+            if (_inner != null) _inner.SetAttributes(attributes);
+            else foreach (var kvp in attributes) _queuedAttributes.Add((kvp.Key, kvp.Value));
+        }
+    }
+
+    public void SetCustomAssignment(string experimentName, int variant) => _inner?.SetCustomAssignment(experimentName, variant);
+    public int? GetCustomAssignment(string experimentName) => _inner?.GetCustomAssignment(experimentName);
+    public void SetCustomAssignments(Dictionary<string, int> customAssignments) => _inner?.SetCustomAssignments(customAssignments);
+    public void SetOverride(string experimentName, int variant) => _inner?.SetOverride(experimentName, variant);
+    public int? GetOverride(string experimentName) => _inner?.GetOverride(experimentName);
+    public void SetOverrides(Dictionary<string, int> overrides) => _inner?.SetOverrides(overrides);
+    public int GetTreatment(string experimentName) => _inner?.GetTreatment(experimentName) ?? 0;
+    public int PeekTreatment(string experimentName) => _inner?.PeekTreatment(experimentName) ?? 0;
+    public void SetUnit(string unitType, string uid) => _inner?.SetUnit(unitType, uid);
+    public void SetUnits(Dictionary<string, string> units) => _inner?.SetUnits(units);
+    public Dictionary<string, string> GetVariableKeys() => _inner?.GetVariableKeys() ?? new Dictionary<string, string>();
+    public object GetVariableValue(string key, object defaultValue) => _inner?.GetVariableValue(key, defaultValue) ?? defaultValue;
+    public object PeekVariableValue(string key, object defaultValue) => _inner?.PeekVariableValue(key, defaultValue) ?? defaultValue;
+    public void Publish() => _inner?.Publish();
+    public Task PublishAsync() => _inner?.PublishAsync() ?? Task.CompletedTask;
+    public void Refresh() => _inner?.Refresh();
+    public Task RefreshAsync() => _inner?.RefreshAsync() ?? Task.CompletedTask;
+
+    public void Track(string goalName, Dictionary<string, object> properties)
+    {
+        lock (_lock)
+        {
+            if (_inner != null)
+            {
+                _inner.Track(goalName, properties);
+            }
+            else
+            {
+                _queuedGoals.Add((goalName, properties));
+                _eventCollector.HandleEvent(this, EventType.Goal, new { name = goalName, properties });
+            }
+        }
+    }
 }

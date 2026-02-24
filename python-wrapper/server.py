@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import sys
 import os
 import json
+import re
 import time
 import uuid
 from concurrent.futures import Future
@@ -14,6 +15,8 @@ from sdk.context_config import ContextConfig
 from sdk.context_event_logger import ContextEventLogger, EventType
 from sdk.context_event_handler import ContextEventHandler
 from sdk.json.context_data import ContextData
+from sdk.default_http_client import DefaultHTTPClient
+from sdk.default_http_client_config import DefaultHTTPClientConfig
 import jsons
 
 app = Flask(__name__)
@@ -56,6 +59,11 @@ class CustomEventHandler(ContextEventHandler):
 contexts = {}
 payload_store = {}
 
+def translate_endpoint(endpoint):
+    if endpoint is None:
+        return None
+    return re.sub(r'localhost:\d+', '127.0.0.1:3000', endpoint)
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
@@ -67,18 +75,15 @@ def health():
 @app.route('/capabilities', methods=['GET'])
 def capabilities():
     return jsonify({
-        'asyncContext': False,  # Async context not fully supported yet
-        'attrsSeq': False       # Attribute sequence tracking not implemented
+        'asyncContext': True,
+        'attrsSeq': False
     })
 
-@app.route('/context_payload', methods=['PUT'])
-def store_context_payload():
+@app.route('/context_payload/<payload_id>', methods=['PUT'])
+def store_context_payload(payload_id):
     req_data = request.json
-    payload_id = f"payload-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-    payload_store[payload_id] = req_data['data']
-
-    url = f"http://python-sdk:3000/context_payload/{payload_id}"
-    return jsonify({'payloadUrl': url, 'payloadId': payload_id})
+    payload_store[payload_id] = req_data.get('data', {'experiments': []})
+    return jsonify({'success': True})
 
 @app.route('/context_payload/<payload_id>', methods=['GET'])
 def get_context_payload(payload_id):
@@ -90,6 +95,11 @@ def get_context_payload(payload_id):
 
     return jsonify(data)
 
+@app.route('/context_payload/<payload_id>/context', methods=['GET'])
+def mock_api_context(payload_id):
+    data = payload_store.get(payload_id, {'experiments': []})
+    return jsonify(data)
+
 @app.route('/context', methods=['POST'])
 def create_context():
     req_data = request.json
@@ -99,12 +109,16 @@ def create_context():
     custom_event_handler = CustomEventHandler(event_collector)
 
     client_config = ClientConfig()
-    client_config.endpoint = req_data.get('endpoint', 'http://dummy')  # Use provided endpoint or dummy
+    endpoint = req_data.get('endpoint')
+    translated_endpoint = translate_endpoint(endpoint) if endpoint else 'http://dummy'
+    client_config.endpoint = translated_endpoint
     client_config.api_key = 'dummy'
     client_config.application = 'test'
     client_config.environment = 'test'
 
-    client = Client(client_config, None)
+    http_client_config = DefaultHTTPClientConfig()
+    http_client = DefaultHTTPClient(http_client_config)
+    client = Client(client_config, http_client)
 
     sdk_config = ABSmartlyConfig()
     sdk_config.client = client
@@ -126,6 +140,15 @@ def create_context():
     else:
         # Async: createContext (SDK will fetch from endpoint)
         context = sdk.create_context(context_config)
+        options = req_data.get('options', {})
+        payload_throttle = options.get('payloadThrottle', 0)
+        if payload_throttle == 0:
+            context.wait_until_ready()
+            # Wait for events to be collected (like Go/Java wrappers)
+            for _ in range(50):
+                if event_collector.events:
+                    break
+                time.sleep(0.01)
 
     contexts[context_id] = {
         'context': context,
@@ -476,6 +499,36 @@ def is_finalized(context_id):
 
     ctx_data = contexts[context_id]
     return jsonify({'result': ctx_data['context'].is_closed(), 'events': []})
+
+@app.route('/context/<context_id>/isReady', methods=['GET'])
+def is_ready(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    return jsonify({'result': ctx_data['context'].is_ready(), 'events': []})
+
+@app.route('/context/<context_id>/isFailed', methods=['GET'])
+def is_failed(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    return jsonify({'result': ctx_data['context'].is_failed(), 'events': []})
+
+@app.route('/context/<context_id>/experiments', methods=['GET'])
+def experiments(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+
+    try:
+        result = context.get_experiments()
+        return jsonify({'result': result, 'events': []})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/context/<context_id>/publish', methods=['POST'])
 def publish(context_id):

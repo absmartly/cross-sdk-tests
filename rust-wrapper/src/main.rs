@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{Context, ContextData, SDK};
+use absmartly_sdk::{ABsmartly, Context, ContextData};
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -89,7 +89,8 @@ struct ApiResponse {
 
 #[derive(Deserialize)]
 struct CreateContextRequest {
-    data: ContextData,
+    data: Option<ContextData>,
+    endpoint: Option<String>,
     units: HashMap<String, Value>,
     #[serde(default)]
     options: Option<HashMap<String, Value>>,
@@ -174,14 +175,6 @@ struct StorePayloadRequest {
     data: ContextData,
 }
 
-#[derive(Serialize)]
-struct StorePayloadResponse {
-    #[serde(rename = "payloadUrl")]
-    payload_url: String,
-    #[serde(rename = "payloadId")]
-    payload_id: String,
-}
-
 async fn health_handler() -> impl IntoResponse {
     Json(json!({
         "status": "healthy",
@@ -192,28 +185,24 @@ async fn health_handler() -> impl IntoResponse {
 
 async fn capabilities_handler() -> impl IntoResponse {
     Json(json!({
-        "asyncContext": false,
+        "asyncContext": true,
         "attrsSeq": false
     }))
 }
 
 async fn store_payload_handler(
     State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
     Json(req): Json<StorePayloadRequest>,
 ) -> impl IntoResponse {
-    let payload_id = format!("payload-{}", Uuid::new_v4());
-    let url = format!("http://rust-sdk:3000/context_payload/{}", payload_id);
-
     let mut payloads = state.payloads.write().unwrap();
-    payloads.insert(payload_id.clone(), req.data);
+    payloads.insert(payload_id, req.data);
 
-    Json(StorePayloadResponse {
-        payload_url: url,
-        payload_id,
-    })
+    Json(json!({ "success": true }))
 }
 
-async fn get_payload_handler(
+// Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
+async fn mock_api_context_handler(
     State(state): State<Arc<AppState>>,
     Path(payload_id): Path<String>,
 ) -> impl IntoResponse {
@@ -249,24 +238,120 @@ async fn create_context_handler(
     let context_id = format!("ctx-{}", Uuid::new_v4());
     let event_collector = Arc::new(EventCollector::new());
 
-    let sdk = SDK::default();
     let units: HashMap<String, String> = req
         .units
         .iter()
         .map(|(k, v)| (k.clone(), value_to_string(v)))
         .collect();
 
-    let mut context = sdk.create_context_with(units, req.data.clone(), None);
+    let has_payload_throttle = req.options.as_ref()
+        .and_then(|opts| opts.get("payloadThrottle"))
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+
+    let (mut context, ready, failed) = if let Some(data) = req.data {
+        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        let ctx = sdk.create_context_with(units, data.clone(), None);
+        event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+        (ctx, true, false)
+    } else if let Some(endpoint) = req.endpoint {
+        if has_payload_throttle {
+            let mut ctx = Context::new_loading();
+            for (unit_type, uid) in &units {
+                let _ = ctx.set_unit(unit_type, uid);
+            }
+
+            let ec = event_collector.clone();
+            ctx.set_event_logger(Box::new(move |_ctx, event_name, data| {
+                ec.push(event_name, data);
+            }));
+
+            let context_data = Arc::new(ContextData_ {
+                context: Mutex::new(ctx),
+                event_collector: event_collector.clone(),
+            });
+
+            {
+                let mut contexts = state.contexts.write().unwrap();
+                contexts.insert(context_id.clone(), context_data.clone());
+            }
+
+            let endpoint_clone = endpoint.clone();
+            let context_data_clone = context_data.clone();
+            let event_collector_clone = event_collector.clone();
+
+            tokio::spawn(async move {
+                let sdk = ABsmartly::new(&endpoint_clone, "test-key", "test-app", "test-env").expect("Failed to create SDK");
+
+                let result: Result<Context, _> = sdk.create_context(HashMap::<String, String>::new(), None).await;
+                match result {
+                    Ok(ready_ctx) => {
+                        let data: ContextData = ready_ctx.data().clone();
+                        {
+                            let mut context = context_data_clone.context.lock().unwrap();
+                            context.become_ready(data.clone());
+                        }
+                        event_collector_clone.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                    }
+                    Err(e) => {
+                        {
+                            let mut context = context_data_clone.context.lock().unwrap();
+                            context.become_failed();
+                        }
+                        event_collector_clone.push("error", Some(json!({"message": format!("Failed to fetch context: {}", e)})));
+                    }
+                }
+            });
+
+            let events = event_collector.get_events_since(0);
+
+            return Json(ApiResponse {
+                result: serde_json::to_value(CreateContextResponse {
+                    context_id,
+                    ready: false,
+                    failed: false,
+                    finalized: false,
+                })
+                .unwrap(),
+                events,
+                error: None,
+            });
+        } else {
+            let payload_data = if let Some(payload_id) = endpoint
+                .split("/context_payload/")
+                .nth(1)
+                .map(|s| s.to_string())
+            {
+                let payloads = state.payloads.read().unwrap();
+                payloads.get(&payload_id).cloned()
+            } else {
+                None
+            };
+
+            if let Some(data) = payload_data {
+                let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+                let ctx = sdk.create_context_with(units, data.clone(), None);
+                event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                (ctx, true, false)
+            } else {
+                let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+                let ctx = sdk.create_context_with(HashMap::<String, String>::new(), ContextData::default(), None);
+                event_collector.push("error", Some(json!({"message": format!("Payload not found for endpoint: {}", endpoint)})));
+                (ctx, true, true)
+            }
+        }
+    } else {
+        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        let ctx = sdk.create_context_with(units, ContextData::default(), None);
+        event_collector.push("ready", Some(serde_json::to_value(&ContextData::default()).unwrap_or_default()));
+        (ctx, true, false)
+    };
 
     let ec = event_collector.clone();
-    context.set_event_logger(Box::new(move |_ctx, event_name, data| {
+    context.set_event_logger(Box::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
         ec.push(event_name, data);
     }));
 
-    event_collector.push("ready", Some(serde_json::to_value(&req.data).unwrap_or_default()));
-
-    let ready = context.is_ready();
-    let failed = context.is_failed();
     let finalized = context.is_finalized();
 
     let context_data = Arc::new(ContextData_ {
@@ -353,12 +438,7 @@ async fn get_unit_handler(
                     Value::String(uid.clone())
                 }
             }
-            None => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"error": "unit not found"})),
-                ));
-            }
+            None => Value::Null,
         }
     };
 
@@ -513,17 +593,14 @@ async fn track_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    let properties: Option<HashMap<String, Value>> = match req.properties {
-        Some(Value::Object(map)) => Some(map.into_iter().collect()),
-        Some(Value::Null) => None,
-        None => None,
-        Some(_) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": format!("Goal '{}' properties must be of type object.", req.goal_name)})),
-            ));
-        }
-    };
+    let properties = req.properties.unwrap_or(Value::Null);
+
+    if !properties.is_null() && !properties.is_object() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": format!("Goal '{}' properties must be of type object.", req.goal_name)})),
+        ));
+    }
 
     {
         let mut context = ctx_data.context.lock().unwrap();
@@ -550,7 +627,9 @@ async fn override_handler(
 
     {
         let mut context = ctx_data.context.lock().unwrap();
-        context.set_override(&req.experiment_name, req.variant);
+        if let Err(e) = context.set_override(&req.experiment_name, req.variant) {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
+        }
     }
 
     Ok(Json(ApiResponse {
@@ -850,8 +929,8 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
-        .route("/context_payload", put(store_payload_handler))
-        .route("/context_payload/{payloadId}", get(get_payload_handler))
+        .route("/context_payload/{payloadId}", put(store_payload_handler))
+        .route("/context_payload/{payloadId}/context", get(mock_api_context_handler))
         .route("/context", post(create_context_handler))
         .route("/context/{contextId}/setUnit", post(set_unit_handler))
         .route("/context/{contextId}/getUnit", post(get_unit_handler))

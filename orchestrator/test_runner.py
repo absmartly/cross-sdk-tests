@@ -210,22 +210,22 @@ class TestOrchestrator:
                             timeout=5
                         )
                     else:
-                        # Async: Store payload first, let SDK fetch it
-                        throttle = params.get('options', {}).get('payloadThrottle', 0)
+                        # Async: Store payload first, then SDK fetches from endpoint/context
+                        import uuid
+                        payload_id = f"payload-{uuid.uuid4()}"
                         payload_response = requests.put(
-                            f"{base_url}/context_payload",
+                            f"{base_url}/context_payload/{payload_id}",
                             json={'data': scenario['contextData']},
                             timeout=5
                         )
                         payload_response.raise_for_status()
-                        payload_info = payload_response.json()
-                        payload_url = f"{payload_info['payloadUrl']}?throttle={throttle}"
 
-                        # Create async context - wrapper returns immediately (ready: false)
+                        # Create async context - SDK will call GET {endpoint}/context
+                        endpoint = f"{base_url}/context_payload/{payload_id}"
                         response = requests.post(
                             f"{base_url}/context",
                             json={
-                                'endpoint': payload_url,
+                                'endpoint': endpoint,
                                 'units': params['units'],
                                 'options': params.get('options', {})
                             },
@@ -245,6 +245,28 @@ class TestOrchestrator:
                     )
                     response.raise_for_status()
                     data = response.json()
+
+                # Special case: waitForReady polls until context is ready
+                elif action == 'waitForReady':
+                    max_wait = params.get('timeout', 5000) / 1000  # Convert ms to seconds
+                    poll_interval = 0.1
+                    elapsed = 0
+                    ready = False
+
+                    while elapsed < max_wait and not ready:
+                        response = requests.get(
+                            f"{base_url}/context/{context_id}/isReady",
+                            timeout=5
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+                        ready = data.get('result', False)
+                        if not ready:
+                            time.sleep(poll_interval)
+                            elapsed += poll_interval
+
+                    # Return final ready state
+                    data = {'result': ready, 'events': []}
 
                 # Actions that use GET method
                 elif action in ['pending', 'isFinalized', 'isReady', 'isFailed', 'experiments']:
@@ -581,26 +603,21 @@ class TestOrchestrator:
         )
         return 0 if all_passed else 1
 
+def discover_sdks() -> Dict[str, str]:
+    sdk_services_env = os.getenv('SDK_SERVICES', '')
+    if not sdk_services_env:
+        print("Error: SDK_SERVICES environment variable is not set.")
+        print("Set it to a comma-separated list of SDK names (e.g., javascript,python,ruby)")
+        sys.exit(1)
+
+    sdk_names = [s.strip() for s in sdk_services_env.split(',') if s.strip()]
+    return {name: f'http://{name}-sdk:3000' for name in sdk_names}
+
+
 def main():
     import argparse
 
-    all_sdks = {
-        'javascript': 'http://javascript-sdk:3000',
-        'python': 'http://python-sdk:3000',
-        'ruby': 'http://ruby-sdk:3000',
-        'java': 'http://java-sdk:3000',
-        'php': 'http://php-sdk:3000',
-        'go': 'http://go-sdk:3000',
-        'liquid': 'http://liquid-sdk:3000',
-        'dart': 'http://dart-sdk:3000',
-        'flutter': 'http://flutter-sdk:3000',
-        'swift': 'http://swift-sdk:3000',
-        'dotnet': 'http://dotnet-sdk:3000',
-        'react': 'http://react-sdk:3000',
-        'vue2': 'http://vue2-sdk:3000',
-        'vue3': 'http://vue3-sdk:3000',
-        'rust': 'http://rust-sdk:3000',
-    }
+    all_sdks = discover_sdks()
 
     parser = argparse.ArgumentParser(description='Run cross-SDK tests')
     parser.add_argument('--sdk', type=str, help='Comma-separated list of SDKs to test (e.g., rust,go,javascript)')

@@ -25,7 +25,7 @@ defmodule ElixirWrapper.Router do
 
   get "/capabilities" do
     send_json(conn, 200, %{
-      asyncContext: false,
+      asyncContext: true,
       attrsSeq: false
     })
   end
@@ -321,13 +321,71 @@ defmodule ElixirWrapper.Router do
   end
 
   defp create_context_async(conn, endpoint, units, options) do
-    payload_id = endpoint |> String.split("/context_payload/") |> List.last()
-    case ContextStore.get_payload(payload_id) do
-      {:ok, data} ->
-        create_context_sync(conn, data, units, options)
-      {:error, _} ->
-        send_error(conn, 404, "Payload not found for endpoint: #{endpoint}")
+    collector = EventCollector.new()
+
+    event_handler = fn event_type, event_data ->
+      EventCollector.push(collector, event_type, event_data)
     end
+
+    payload_throttle = options["payloadThrottle"] || 0
+    translated_endpoint = translate_endpoint(endpoint)
+
+    sdk_config = %ABSmartly.Types.SDKConfig{
+      endpoint: translated_endpoint,
+      api_key: "test-key",
+      application: "test-app",
+      environment: "test"
+    }
+
+    context_options =
+      options
+      |> Map.put("units", units)
+      |> Map.put("publishDelay", -1)
+      |> Map.put("refreshPeriod", 0)
+      |> Map.put(:event_handler, event_handler)
+
+    context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
+
+    case ABSmartly.Context.start_link_async(sdk_config, context_config) do
+      {:ok, ctx} ->
+        Task.start(fn ->
+          if payload_throttle > 0, do: Process.sleep(payload_throttle)
+          case HTTPoison.get(translated_endpoint <> "/context") do
+            {:ok, %{status_code: 200, body: body}} ->
+              case Jason.decode(body) do
+                {:ok, data} -> ABSmartly.Context.set_data(ctx, data)
+                _ -> :error
+              end
+            _ -> :error
+          end
+        end)
+
+        if payload_throttle == 0 do
+          ABSmartly.Context.wait_until_ready(ctx, 10000)
+        end
+
+        context_id = UUID.uuid4()
+        ContextStore.store_context(context_id, ctx, collector)
+
+        Process.sleep(10)
+        events = EventCollector.get_all(collector)
+
+        result = %{
+          contextId: context_id,
+          ready: ABSmartly.Context.is_ready?(ctx),
+          failed: ABSmartly.Context.is_failed?(ctx),
+          finalized: ABSmartly.Context.is_finalized?(ctx)
+        }
+
+        send_json(conn, 200, %{result: result, events: events})
+
+      {:error, reason} ->
+        send_error(conn, 500, "Failed to create async context: #{inspect(reason)}")
+    end
+  end
+
+  defp translate_endpoint(endpoint) do
+    String.replace(endpoint, ~r/localhost:\d+/, "127.0.0.1:3000")
   end
 
   defp with_context_action(conn, func) do

@@ -60,12 +60,9 @@ app.get('/capabilities', (req, res) => {
   });
 });
 
-app.put('/context_payload', (req, res) => {
-  const payloadId = `payload-${Date.now()}-${Math.random()}`;
-  payloadStore[payloadId] = req.body.data;
-
-  const url = `http://react-sdk:3000/context_payload/${payloadId}`;
-  res.json({ payloadUrl: url, payloadId: payloadId });
+app.put('/context_payload/:payloadId', (req, res) => {
+  payloadStore[req.params.payloadId] = req.body.data || { experiments: [] };
+  res.json({ success: true });
 });
 
 app.get('/context_payload/:payloadId', (req, res) => {
@@ -77,9 +74,18 @@ app.get('/context_payload/:payloadId', (req, res) => {
   }, throttle);
 });
 
-app.post('/context', (req, res) => {
-  const { data, endpoint, units, options } = req.body;
+app.get('/context_payload/:payloadId/context', (req, res) => {
+  const data = payloadStore[req.params.payloadId] || { experiments: [] };
+  res.json(data);
+});
+
+app.post('/context', async (req, res) => {
+  let { data, endpoint, units, options } = req.body;
   const contextId = `ctx-${Date.now()}-${Math.random()}`;
+
+  if (endpoint) {
+    endpoint = endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+  }
 
   const eventCollector = new EventCollector();
   const customPublisher = new CustomPublisher(eventCollector);
@@ -96,6 +102,8 @@ app.post('/context', (req, res) => {
   });
 
   let context;
+  const payloadThrottle = options?.payloadThrottle || 0;
+
   if (data) {
     context = sdk.createContextWith(
       { units },
@@ -107,6 +115,9 @@ app.post('/context', (req, res) => {
       { units },
       { publishDelay: -1, refreshPeriod: 0, ...options }
     );
+    if (payloadThrottle === 0) {
+      await context.ready();
+    }
   }
 
   contexts.set(contextId, { context, eventCollector, sdk });
@@ -363,6 +374,32 @@ app.get('/context/:contextId/isFinalized', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   res.json({ result: data.context.isFinalized(), events: [] });
+});
+
+app.get('/context/:contextId/isReady', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isReady(), events: [] });
+});
+
+app.get('/context/:contextId/isFailed', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isFailed(), events: [] });
+});
+
+app.get('/context/:contextId/experiments', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  try {
+    const experiments = data.context.experiments();
+    res.json({ result: experiments, events: [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,13 @@ import (
 	"github.com/absmartly/go-sdk/sdk/jsonmodels"
 	"github.com/gorilla/mux"
 )
+
+func translateEndpoint(endpoint string) string {
+	endpoint = strings.Replace(endpoint, "http://localhost:3006", "http://localhost:3000", 1)
+	endpoint = strings.Replace(endpoint, "http://127.0.0.1:3006", "http://localhost:3000", 1)
+	endpoint = strings.Replace(endpoint, "http://go-sdk:3006", "http://localhost:3000", 1)
+	return endpoint
+}
 
 type EventCollector struct {
 	events []Event
@@ -172,31 +181,27 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{
-		"asyncContext": false,
+		"asyncContext": true,
 		"attrsSeq":     false,
 	})
 }
 
 func storePayloadHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	payloadID := vars["payloadId"]
+
 	var req StorePayloadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	payloadID := fmt.Sprintf("payload-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
-
 	payloadMu.Lock()
 	payloadStore[payloadID] = req.Data
 	payloadMu.Unlock()
 
-	url := fmt.Sprintf("http://go-sdk:3000/context_payload/%s", payloadID)
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(StorePayloadResponse{
-		PayloadURL: url,
-		PayloadID:  payloadID,
-	})
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
 func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -219,6 +224,22 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if throttle > 0 {
 		time.Sleep(time.Duration(throttle) * time.Millisecond)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	payloadID := vars["payloadId"]
+
+	payloadMu.RLock()
+	data, exists := payloadStore[payloadID]
+	payloadMu.RUnlock()
+
+	if !exists {
+		data = jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -290,8 +311,41 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		RefreshInterval_: refreshInterval,
 	}
 
-	// Go SDK only supports synchronous context creation
-	context := absmartly.CreateContextWith(contextConfig, req.Data)
+	var context *sdk.Context
+	if req.Endpoint != "" {
+		endpoint := translateEndpoint(req.Endpoint)
+		clientConfig := sdk.ClientConfig{
+			Endpoint_:    endpoint,
+			ApiKey_:      "test-api-key",
+			Application_: "test-app",
+			Environment_: "test-env",
+		}
+		client := sdk.CreateDefaultClient(clientConfig)
+		absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:               client,
+			ContextEventHandler_:  customPublisher,
+			ContextEventLogger_:   eventCollector,
+			VariableParser_:       customVariableParser,
+			AudienceDeserializer_: nil,
+		})
+		context = absmartlyWithClient.CreateContext(contextConfig)
+
+		payloadThrottle := 0
+		if req.Options != nil {
+			if pt, ok := req.Options["payloadThrottle"].(float64); ok {
+				payloadThrottle = int(pt)
+			}
+		}
+
+		if payloadThrottle == 0 {
+			context.WaitUntilReady()
+			for i := 0; i < 50 && len(eventCollector.events) == 0; i++ {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+	} else {
+		context = absmartly.CreateContextWith(contextConfig, req.Data)
+	}
 
 	contextData := &ContextData{
 		context:        context,
@@ -370,6 +424,11 @@ func setUnitHandler(w http.ResponseWriter, r *http.Request) {
 	existingUnit, exists := ctxData.context.Units_[req.UnitType]
 	ctxData.context.ContextLock_.RUnlock()
 
+	if ctxData.context.IsClosed() {
+		http.Error(w, "Context finalized", http.StatusBadRequest)
+		return
+	}
+
 	if exists && existingUnit != uidStr {
 		http.Error(w, fmt.Sprintf("Unit '%s' UID already set.", req.UnitType), http.StatusBadRequest)
 		return
@@ -377,7 +436,11 @@ func setUnitHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = ctxData.context.SetUnit(req.UnitType, uidStr)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
+			errMsg = "Context finalized"
+		}
+		http.Error(w, errMsg, http.StatusBadRequest)
 		return
 	}
 
@@ -417,13 +480,18 @@ func getUnitHandler(w http.ResponseWriter, r *http.Request) {
 	ctxData.context.ContextLock_.RUnlock()
 
 	if !exists {
-		http.Error(w, "unit not found", http.StatusBadRequest)
+		newEvents := ctxData.eventCollector.events[eventsBefore:]
+		response := Response{
+			Result: nil,
+			Events: newEvents,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 		return
 	}
 
 	var result interface{} = unit
-	var num float64
-	if _, err := fmt.Sscanf(unit, "%f", &num); err == nil {
+	if num, err := strconv.ParseFloat(unit, 64); err == nil {
 		if num == float64(int64(num)) {
 			result = int64(num)
 		} else {
@@ -465,7 +533,11 @@ func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = ctxData.context.SetAttribute(req.Name, req.Value)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
+			errMsg = "Context finalized"
+		}
+		http.Error(w, errMsg, http.StatusBadRequest)
 		return
 	}
 
@@ -763,7 +835,11 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = ctxData.context.Track(goalName, properties)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
+			errMsg = "Context finalized"
+		}
+		http.Error(w, errMsg, http.StatusBadRequest)
 		return
 	}
 
@@ -1107,6 +1183,69 @@ func isFinalizedHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func isReadyHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	response := Response{
+		Result: ctxData.context.IsReady(),
+		Events: []Event{},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func isFailedHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	response := Response{
+		Result: ctxData.context.IsFailed(),
+		Events: []Event{},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func experimentsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	experiments, err := ctxData.context.GetExperiments()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response := Response{
+		Result: experiments,
+		Events: []Event{},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func publishHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	contextID := vars["contextId"]
@@ -1222,8 +1361,9 @@ func main() {
 
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/capabilities", capabilitiesHandler).Methods("GET")
-	router.HandleFunc("/context_payload", storePayloadHandler).Methods("PUT")
+	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
+	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")
 	router.HandleFunc("/context", createContextHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/setUnit", setUnitHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/getUnit", getUnitHandler).Methods("POST")
@@ -1244,6 +1384,9 @@ func main() {
 	router.HandleFunc("/context/{contextId}/setCustomAssignment", setCustomAssignmentHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/pending", pendingHandler).Methods("GET")
 	router.HandleFunc("/context/{contextId}/isFinalized", isFinalizedHandler).Methods("GET")
+	router.HandleFunc("/context/{contextId}/isReady", isReadyHandler).Methods("GET")
+	router.HandleFunc("/context/{contextId}/isFailed", isFailedHandler).Methods("GET")
+	router.HandleFunc("/context/{contextId}/experiments", experimentsHandler).Methods("GET")
 	router.HandleFunc("/context/{contextId}/publish", publishHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/refresh", refreshHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/finalize", finalizeHandler).Methods("POST")

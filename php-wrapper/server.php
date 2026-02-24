@@ -8,11 +8,12 @@ use ABSmartly\SDK\SDK;
 use ABSmartly\SDK\Config;
 use ABSmartly\SDK\Client\Client;
 use ABSmartly\SDK\Client\ClientConfig;
-use ABSmartly\SDK\Http\HTTPClient;
+use ABSmartly\SDK\Http\ReactHttpClient;
 use ABSmartly\SDK\Context\Context;
 use ABSmartly\SDK\Context\ContextConfig;
 use ABSmartly\SDK\Context\ContextData;
 use ABSmartly\SDK\Context\ContextDataProvider;
+use ABSmartly\SDK\Context\AsyncContextDataProvider;
 use ABSmartly\SDK\Context\ContextEventHandler;
 use ABSmartly\SDK\Context\ContextEventLogger;
 use ABSmartly\SDK\Context\ContextEventLoggerEvent;
@@ -124,6 +125,11 @@ function parseJsonBody(ServerRequestInterface $request)
     return json_decode($body, true) ?? [];
 }
 
+function translateEndpoint(string $endpoint): string
+{
+    return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
+}
+
 $server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore) {
     $method = $request->getMethod();
     $path = $request->getUri()->getPath();
@@ -138,22 +144,23 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
     if ($method === 'GET' && $path === '/capabilities') {
         return jsonResponse(200, [
-            'asyncContext' => false,
+            'asyncContext' => true,
             'attrsSeq' => false
         ]);
     }
 
-    if ($method === 'PUT' && $path === '/context_payload') {
+    if ($method === 'PUT' && preg_match('#^/context_payload/([^/]+)$#', $path, $matches)) {
+        $payloadId = $matches[1];
         $body = parseJsonBody($request);
-        $payloadId = 'payload-' . time() . '-' . mt_rand();
         $payloadStore[$payloadId] = $body['data'] ?? ['experiments' => []];
 
-        $url = "http://php-sdk:3000/context_payload/" . $payloadId;
+        return jsonResponse(200, ['success' => true]);
+    }
 
-        return jsonResponse(200, [
-            'payloadUrl' => $url,
-            'payloadId' => $payloadId
-        ]);
+    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
+        $payloadId = $matches[1];
+        $data = $payloadStore[$payloadId] ?? ['experiments' => []];
+        return jsonResponse(200, $data);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/(.+)$#', $path, $matches)) {
@@ -177,17 +184,27 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventHandler = new CustomContextEventHandler($eventCollector);
 
         $endpoint = $body['endpoint'] ?? 'http://dummy';
+        $endpoint = translateEndpoint($endpoint);
+
         $clientConfig = new ClientConfig(
             $endpoint,
             'dummy',
             'test',
             'test'
         );
-        $client = new Client($clientConfig, new HTTPClient());
+
+        $reactHttpClient = new ReactHttpClient();
+        $reactHttpClient->timeout = 10000;
+        $client = new Client($clientConfig, $reactHttpClient);
 
         $sdkConfig = new Config($client);
         $sdkConfig->setContextEventHandler($eventHandler);
-        $sdkConfig->setContextDataProvider(new DummyContextDataProvider());
+
+        if (isset($body['data'])) {
+            $sdkConfig->setContextDataProvider(new DummyContextDataProvider());
+        } else {
+            $sdkConfig->setContextDataProvider(new AsyncContextDataProvider($client));
+        }
 
         $sdk = new SDK($sdkConfig);
 
@@ -211,7 +228,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextConfig->setEventLogger($eventCollector);
 
         if (isset($body['data'])) {
-            // Sync: createContextWithData
             $contextData = new ContextData();
             if (isset($body['data']['experiments'])) {
                 $contextData->experiments = array_map(function($exp) {
@@ -230,26 +246,75 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 $contextData->experiments = [];
             }
             $context = $sdk->createContextWithData($contextConfig, $contextData);
+
+            $contexts[$contextId] = [
+                'context' => $context,
+                'eventCollector' => $eventCollector,
+                'sdk' => $sdk
+            ];
+
+            return jsonResponse(200, [
+                'result' => [
+                    'contextId' => $contextId,
+                    'ready' => $context->isReady(),
+                    'failed' => $context->isFailed(),
+                    'finalized' => $context->isClosed()
+                ],
+                'events' => $eventCollector->getEvents()
+            ]);
         } else {
-            // Async: createContext (SDK will fetch from endpoint)
-            $context = $sdk->createContext($contextConfig);
+            $payloadThrottle = $body['options']['payloadThrottle'] ?? 0;
+
+            if ($payloadThrottle > 0) {
+                $result = $sdk->createContextPending($contextConfig);
+                $context = $result['context'];
+                $promise = $result['promise'];
+
+                $contexts[$contextId] = [
+                    'context' => $context,
+                    'eventCollector' => $eventCollector,
+                    'sdk' => $sdk,
+                    'pendingPromise' => $promise
+                ];
+
+                return jsonResponse(200, [
+                    'result' => [
+                        'contextId' => $contextId,
+                        'ready' => $context->isReady(),
+                        'failed' => $context->isFailed(),
+                        'finalized' => $context->isClosed()
+                    ],
+                    'events' => $eventCollector->getEvents()
+                ]);
+            }
+
+            return $sdk->createContextAsync($contextConfig)->then(
+                function($context) use ($contextId, $eventCollector, $sdk, &$contexts) {
+                    for ($i = 0; $i < 50 && empty($eventCollector->getEvents()); $i++) {
+                        usleep(10000);
+                    }
+
+                    $contexts[$contextId] = [
+                        'context' => $context,
+                        'eventCollector' => $eventCollector,
+                        'sdk' => $sdk
+                    ];
+
+                    return jsonResponse(200, [
+                        'result' => [
+                            'contextId' => $contextId,
+                            'ready' => $context->isReady(),
+                            'failed' => $context->isFailed(),
+                            'finalized' => $context->isClosed()
+                        ],
+                        'events' => $eventCollector->getEvents()
+                    ]);
+                },
+                function($error) {
+                    return jsonResponse(500, ['error' => $error->getMessage()]);
+                }
+            );
         }
-
-        $contexts[$contextId] = [
-            'context' => $context,
-            'eventCollector' => $eventCollector,
-            'sdk' => $sdk
-        ];
-
-        return jsonResponse(200, [
-            'result' => [
-                'contextId' => $contextId,
-                'ready' => $context->isReady(),
-                'failed' => $context->isFailed(),
-                'finalized' => $context->isClosed()
-            ],
-            'events' => $eventCollector->getEvents()
-        ]);
     }
 
     if (preg_match('#^/context/([^/]+)/setUnit$#', $path, $matches)) {
@@ -550,7 +615,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         try {
             $keys = $context->getVariableKeys();
-            // Extract just the keys from the dict
             $keyArray = is_array($keys) ? array_keys($keys) : $keys;
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
@@ -716,6 +780,47 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $context = $data['context'];
 
         return jsonResponse(200, ['result' => $context->isClosed(), 'events' => []]);
+    }
+
+    if (preg_match('#^/context/([^/]+)/isReady$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) {
+            return jsonResponse(404, ['error' => 'Context not found']);
+        }
+
+        $context = $data['context'];
+
+        return jsonResponse(200, ['result' => $context->isReady(), 'events' => []]);
+    }
+
+    if (preg_match('#^/context/([^/]+)/isFailed$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) {
+            return jsonResponse(404, ['error' => 'Context not found']);
+        }
+
+        $context = $data['context'];
+
+        return jsonResponse(200, ['result' => $context->isFailed(), 'events' => []]);
+    }
+
+    if (preg_match('#^/context/([^/]+)/experiments$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) {
+            return jsonResponse(404, ['error' => 'Context not found']);
+        }
+
+        $context = $data['context'];
+
+        try {
+            $experiments = $context->getExperiments();
+            return jsonResponse(200, ['result' => $experiments, 'events' => []]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
     }
 
     if (preg_match('#^/context/([^/]+)/publish$#', $path, $matches)) {

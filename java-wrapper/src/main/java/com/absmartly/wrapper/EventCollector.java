@@ -5,12 +5,13 @@ import com.absmartly.sdk.ContextEventLogger;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class EventCollector implements ContextEventLogger {
-    private final List<Map<String, Object>> events = new ArrayList<>();
+    private final List<Map<String, Object>> events = Collections.synchronizedList(new ArrayList<>());
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -56,13 +57,17 @@ public class EventCollector implements ContextEventLogger {
     }
 
     public List<Map<String, Object>> getEvents() {
-        return events;
+        synchronized (events) {
+            return new ArrayList<>(events);
+        }
     }
 
     public List<Map<String, Object>> getNewEvents(int since) {
-        if (since >= events.size()) {
-            return new ArrayList<>();
+        synchronized (events) {
+            if (since >= events.size()) {
+                return new ArrayList<>();
+            }
+            return new ArrayList<>(events.subList(since, events.size()));
         }
-        return new ArrayList<>(events.subList(since, events.size()));
     }
 }

@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine AS sdk-builder
 
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./
@@ -10,6 +10,11 @@ COPY react-sdk/package*.json react-sdk/yarn.lock* ./
 COPY react-sdk/ ./
 RUN yarn install && yarn build
 
+FROM sdk-builder AS tester
+WORKDIR /react-sdk
+CMD ["yarn", "test"]
+
+FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/react-wrapper/package*.json ./
 RUN npm install

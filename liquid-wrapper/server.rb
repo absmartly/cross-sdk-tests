@@ -17,6 +17,15 @@ Liquid::Template.register_filter(JsonFilter)
 set :port, 3000
 set :bind, '0.0.0.0'
 
+def translate_error(message)
+  message.gsub('ABSmartly Context is closed', 'Context finalized')
+end
+
+def translate_endpoint(endpoint)
+  return endpoint if endpoint.nil?
+  endpoint.gsub(/localhost:\d+/, '127.0.0.1:3000')
+end
+
 class EventCollector
   attr_reader :events
 
@@ -50,7 +59,7 @@ class EventCollector
       obj.map { |item| convert_to_serializable(item) }
     when Hash
       obj.transform_values { |v| convert_to_serializable(v) }
-    when Exposure, GoalAchievement, PublishEvent, Unit, Attribute
+    when Exposure, GoalAchievement, PublishEvent, Unit, Attribute, ContextData, Experiment
       convert_object_to_hash(obj)
     else
       if obj.class.name.start_with?('OpenStruct')
@@ -167,20 +176,14 @@ get '/capabilities' do
   }.to_json
 end
 
-put '/context_payload' do
+put '/context_payload/:payload_id' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
-  payload_id = "payload-#{Time.now.to_i}-#{rand(100000)}"
-  $payload_store[payload_id] = req_data[:data]
-
-  url = "http://liquid-sdk:3000/context_payload/#{payload_id}"
+  $payload_store[params['payload_id']] = req_data[:data] || { experiments: [] }
 
   content_type :json
-  {
-    payloadUrl: url,
-    payloadId: payload_id
-  }.to_json
+  { success: true }.to_json
 end
 
 get '/context_payload/:payload_id' do
@@ -189,6 +192,12 @@ get '/context_payload/:payload_id' do
 
   sleep(throttle / 1000.0) if throttle > 0
 
+  content_type :json
+  data.to_json
+end
+
+get '/context_payload/:payload_id/context' do
+  data = $payload_store[params['payload_id']] || { experiments: [] }
   content_type :json
   data.to_json
 end
@@ -203,12 +212,14 @@ post '/context' do
   custom_event_handler = CustomEventHandler.new(event_collector)
 
   client_config = ClientConfig.new
-  client_config.endpoint = req_data[:endpoint] || 'http://dummy'  # Use provided endpoint or dummy
+  endpoint = req_data[:endpoint]
+  translated_endpoint = endpoint ? translate_endpoint(endpoint) : 'http://dummy'
+  client_config.endpoint = translated_endpoint
   client_config.api_key = 'dummy'
   client_config.application = 'test'
   client_config.environment = 'test'
 
-  client = Client.new(client_config, nil)
+  client = Client.create(client_config)
 
   sdk_config = ABSmartlyConfig.new
   sdk_config.client = client
@@ -227,8 +238,11 @@ post '/context' do
     data_wrapper = DataWrapper.new(req_data[:data])
     context = sdk.create_context_with(context_config, data_wrapper)
   else
-    # Async: createContext (SDK will fetch from endpoint)
     context = sdk.create_context(context_config)
+    50.times do
+      break unless event_collector.events.empty?
+      sleep 0.01
+    end
   end
 
   $contexts[context_id] = {
@@ -276,7 +290,7 @@ post '/context/:context_id/treatment' do
     content_type :json
     { result: variant, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -304,7 +318,7 @@ post '/context/:context_id/peek' do
     content_type :json
     { result: variant, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -361,7 +375,7 @@ post '/context/:context_id/track' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -384,7 +398,7 @@ post '/context/:context_id/attribute' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -403,7 +417,7 @@ post '/context/:context_id/override' do
     content_type :json
     { result: nil, events: [] }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -422,7 +436,7 @@ post '/context/:context_id/customAssignment' do
     content_type :json
     { result: nil, events: [] }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -444,6 +458,35 @@ get '/context/:context_id/isFinalized' do
   { result: ctx_data[:context].closed?, events: [] }.to_json
 end
 
+get '/context/:context_id/isReady' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  content_type :json
+  { result: ctx_data[:context].ready?, events: [] }.to_json
+end
+
+get '/context/:context_id/isFailed' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  failed = context.respond_to?(:failed?) ? (context.failed? || false) : false
+  content_type :json
+  { result: failed, events: [] }.to_json
+end
+
+get '/context/:context_id/experiments' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  content_type :json
+  { result: ctx_data[:context].experiments, events: [] }.to_json
+end
+
 post '/context/:context_id/publish' do
   context_id = params['context_id']
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
@@ -460,7 +503,7 @@ post '/context/:context_id/publish' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: e.message }.to_json
+    halt 500, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -480,7 +523,7 @@ post '/context/:context_id/finalize' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: e.message }.to_json
+    halt 500, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -502,7 +545,7 @@ post '/context/:context_id/setUnit' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -539,7 +582,7 @@ post '/context/:context_id/getUnit' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -564,7 +607,7 @@ post '/context/:context_id/getAttribute' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -596,7 +639,7 @@ post '/context/:context_id/variableValue' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -628,7 +671,7 @@ post '/context/:context_id/peekVariableValue' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -660,7 +703,7 @@ post '/context/:context_id/customFieldValue' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -680,7 +723,7 @@ post '/context/:context_id/variableKeys' do
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -702,7 +745,7 @@ post '/context/:context_id/customFieldKeys' do
     content_type :json
     { result: keys, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -724,7 +767,7 @@ post '/context/:context_id/customFieldValueType' do
     content_type :json
     { result: value_type, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -746,7 +789,7 @@ post '/context/:context_id/setOverride' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -768,7 +811,7 @@ post '/context/:context_id/setCustomAssignment' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: e.message }.to_json
+    halt 400, { error: translate_error(e.message) }.to_json
   end
 end
 
@@ -798,7 +841,7 @@ post '/context/:context_id/refresh' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: e.message }.to_json
+    halt 500, { error: translate_error(e.message) }.to_json
   end
 end
 

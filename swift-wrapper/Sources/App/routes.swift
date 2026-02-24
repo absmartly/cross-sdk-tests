@@ -10,6 +10,20 @@ typealias HTTPResponse = Vapor.Response
 typealias VaporApplication = Vapor.Application
 typealias ABSmartlyApplication = ABSmartly.Application
 
+extension Promise {
+    func asyncValue() async throws -> T {
+        return try await withCheckedThrowingContinuation { continuation in
+            firstly {
+                self
+            }.done(on: DispatchQueue.global()) { value in
+                continuation.resume(returning: value)
+            }.catch(on: DispatchQueue.global()) { error in
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
 class EventCollector: ContextEventLogger {
     var events: [[String: Any]] = []
     private let maxEvents = 100 // Prevent unbounded growth
@@ -262,6 +276,7 @@ class ContextManager {
 }
 
 let contextManager = ContextManager()
+var payloadStore: [String: ContextDataDTO] = [:]
 
 func routes(_ app: VaporApplication) throws {
     app.get("health") { req -> HTTPResponse in
@@ -273,9 +288,43 @@ func routes(_ app: VaporApplication) throws {
         return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(health)))
     }
 
-    app.post("context") { req -> HTTPResponse in
-        struct CreateContextRequest: Content {
+    app.get("capabilities") { req -> HTTPResponse in
+        let capabilities: [String: Bool] = [
+            "asyncContext": true,
+            "attrsSeq": false
+        ]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(capabilities)))
+    }
+
+    app.put("context_payload", ":payloadId") { req -> HTTPResponse in
+        struct StorePayloadRequest: Content {
             let data: ContextDataDTO
+        }
+
+        guard let payloadId = req.parameters.get("payloadId") else {
+            throw Abort(.badRequest)
+        }
+
+        let request = try req.content.decode(StorePayloadRequest.self)
+        payloadStore[payloadId] = request.data
+
+        let result: [String: Any] = ["success": true]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+    }
+
+    app.get("context_payload", ":payloadId", "context") { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else {
+            throw Abort(.badRequest)
+        }
+
+        let data = payloadStore[payloadId] ?? ContextDataDTO(experiments: [])
+        return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(data)))
+    }
+
+    app.post("context") { req async throws -> HTTPResponse in
+        struct CreateContextRequest: Content {
+            let data: ContextDataDTO?
+            let endpoint: String?
             let units: [String: AnyCodable]
             let options: ContextOptionsDTO?
         }
@@ -285,40 +334,97 @@ func routes(_ app: VaporApplication) throws {
 
         let eventCollector = EventCollector()
         let customPublisher = CustomPublisher()
-        let dummyProvider = DummyContextDataProvider()
 
-        let config = ABSmartlyConfig(
-            contextDataProvider: dummyProvider,
-            contextEventHandler: customPublisher,
-            contextEventLogger: eventCollector,
-            variableParser: nil,
-            scheduler: nil,
-            client: nil
-        )
-
+        let context: Context
         let sdk: ABSmartlySDK
-        do {
-            sdk = try ABSmartlySDK(config: config)
-        } catch {
-            print("Error creating SDK: \(error)")
-            throw error
+
+        if let data = request.data {
+            let dummyProvider = DummyContextDataProvider()
+            let config = ABSmartlyConfig(
+                contextDataProvider: dummyProvider,
+                contextEventHandler: customPublisher,
+                contextEventLogger: eventCollector,
+                variableParser: nil,
+                scheduler: nil,
+                client: nil
+            )
+
+            do {
+                sdk = try ABSmartlySDK(config: config)
+            } catch {
+                print("Error creating SDK: \(error)")
+                throw error
+            }
+
+            let contextData = convertDTOToContextData(data)
+
+            var configBuilder = ContextConfig()
+            configBuilder.publishDelay = request.options?.publishDelay ?? -1
+            configBuilder.refreshInterval = request.options?.refreshPeriod ?? 0
+
+            var unitsDict: [String: String] = [:]
+            for (key, value) in request.units {
+                unitsDict[key] = "\(value.value)"
+            }
+            configBuilder.setUnits(units: unitsDict)
+            configBuilder.eventLogger = eventCollector
+
+            context = sdk.createContextWithData(config: configBuilder, contextData: contextData)
+        } else if var endpoint = request.endpoint {
+            if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {
+                endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
+            }
+
+            let clientConfig = ClientConfig(
+                apiKey: "test-api-key",
+                application: "test-app",
+                endpoint: endpoint,
+                environment: "test-env"
+            )
+
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: clientConfig)
+            } catch {
+                print("Error creating client: \(error)")
+                throw error
+            }
+
+            let config = ABSmartlyConfig(
+                contextDataProvider: nil,
+                contextEventHandler: customPublisher,
+                contextEventLogger: eventCollector,
+                variableParser: nil,
+                scheduler: nil,
+                client: client
+            )
+
+            do {
+                sdk = try ABSmartlySDK(config: config)
+            } catch {
+                print("Error creating SDK: \(error)")
+                throw error
+            }
+
+            var configBuilder = ContextConfig()
+            configBuilder.publishDelay = request.options?.publishDelay ?? -1
+            configBuilder.refreshInterval = request.options?.refreshPeriod ?? 0
+
+            var unitsDict: [String: String] = [:]
+            for (key, value) in request.units {
+                unitsDict[key] = "\(value.value)"
+            }
+            configBuilder.setUnits(units: unitsDict)
+            configBuilder.eventLogger = eventCollector
+
+            context = sdk.createContext(config: configBuilder)
+            let payloadThrottle = request.options?.payloadThrottle ?? 0
+            if payloadThrottle == 0 {
+                _ = try await context.waitUntilReady().asyncValue()
+            }
+        } else {
+            throw Abort(.badRequest, reason: "Either data or endpoint must be provided")
         }
-
-        let contextData = convertDTOToContextData(request.data)
-
-        var configBuilder = ContextConfig()
-        configBuilder.publishDelay = request.options?.publishDelay ?? -1
-        configBuilder.refreshInterval = request.options?.refreshPeriod ?? 0
-
-        var unitsDict: [String: String] = [:]
-        for (key, value) in request.units {
-            unitsDict[key] = "\(value.value)"
-        }
-        configBuilder.setUnits(units: unitsDict)
-
-        configBuilder.eventLogger = eventCollector
-
-        let context = sdk.createContextWithData(config: configBuilder, contextData: contextData)
 
         contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: sdk)
 
@@ -349,7 +455,12 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(SetUnitRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        storage.context.setUnit(unitType: request.unitType, uid: "\(request.uid.value)")
+        do {
+            try storage.context.setUnit(unitType: request.unitType, uid: "\(request.uid.value)")
+        } catch {
+            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -410,7 +521,12 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(AttributeRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
+        do {
+            try storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
+        } catch {
+            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -464,7 +580,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(TreatmentRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant = storage.context.getTreatment(request.experimentName)
+        let variant: Int
+        do {
+            variant = try storage.context.getTreatment(request.experimentName)
+        } catch {
+            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -488,7 +610,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(PeekRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant = storage.context.peekTreatment(request.experimentName)
+        let variant: Int
+        do {
+            variant = try storage.context.peekTreatment(request.experimentName)
+        } catch {
+            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -514,7 +642,7 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = storage.context.getVariableValue(request.key, defaultValue: defaultJSON)
+        let value = try storage.context.getVariableValue(request.key, defaultValue: defaultJSON)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -546,7 +674,7 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = storage.context.peekVariableValue(request.key, defaultValue: defaultJSON)
+        let value = try storage.context.peekVariableValue(request.key, defaultValue: defaultJSON)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -593,7 +721,12 @@ func routes(_ app: VaporApplication) throws {
             }
         }
 
-        storage.context.track(request.goalName, properties: props)
+        do {
+            try storage.context.track(request.goalName, properties: props)
+        } catch {
+            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -617,7 +750,7 @@ func routes(_ app: VaporApplication) throws {
 
         let request = try req.content.decode(OverrideRequest.self)
 
-        storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
+        try storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
 
         let result: [String: Any] = [
             "result": NSNull(),
@@ -640,7 +773,7 @@ func routes(_ app: VaporApplication) throws {
 
         let request = try req.content.decode(CustomAssignmentRequest.self)
 
-        storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant)
+        try storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant)
 
         let result: [String: Any] = [
             "result": NSNull(),
@@ -683,7 +816,7 @@ func routes(_ app: VaporApplication) throws {
 
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = storage.context.getVariableKeys()
+        let keys = try storage.context.getVariableKeys()
         let keyList = Array(keys.keys)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
@@ -770,6 +903,54 @@ func routes(_ app: VaporApplication) throws {
 
         let result: [String: Any] = [
             "result": finalized,
+            "events": []
+        ]
+
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+    }
+
+    app.get("context", ":contextId", "isReady") { req -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+
+        let ready = storage.context.isReady()
+
+        let result: [String: Any] = [
+            "result": ready,
+            "events": []
+        ]
+
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+    }
+
+    app.get("context", ":contextId", "isFailed") { req -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+
+        let failed = storage.context.isFailed()
+
+        let result: [String: Any] = [
+            "result": failed,
+            "events": []
+        ]
+
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+    }
+
+    app.get("context", ":contextId", "experiments") { req -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+
+        let experiments = try storage.context.getExperiments()
+
+        let result: [String: Any] = [
+            "result": experiments,
             "events": []
         ]
 
@@ -1123,4 +1304,5 @@ struct CustomFieldValueDTO: Codable {
 struct ContextOptionsDTO: Codable {
     let publishDelay: TimeInterval?
     let refreshPeriod: TimeInterval?
+    let payloadThrottle: Int?
 }

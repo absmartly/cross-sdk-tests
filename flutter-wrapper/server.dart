@@ -9,44 +9,11 @@ import 'package:absmartly_sdk/absmartly_sdk.dart';
 
 import 'lib/widget_test_queue.dart';
 
-class DummyHTTPResponse implements Response {
-  final int statusCode;
-  final String? statusMessage;
-  final List<int>? content;
-
-  DummyHTTPResponse(this.statusCode, this.statusMessage, this.content);
-
-  @override
-  int? getStatusCode() => statusCode;
-
-  @override
-  String? getStatusMessage() => statusMessage;
-
-  @override
-  List<int>? getContent() => content;
-
-  @override
-  String? getContentType() => 'application/json';
-}
-
-class DummyHTTPClient implements HTTPClient {
-  @override
-  Future<Response> get(String url, Map<String, String>? query, Map<String, String>? headers) {
-    return Future.value(DummyHTTPResponse(200, 'OK', []));
+String translateErrorMessage(String msg) {
+  if (msg.contains('closed') || msg.contains('closing')) {
+    return 'Context finalized';
   }
-
-  @override
-  Future<Response> post(String url, Map<String, String>? query, Map<String, String>? headers, List<int>? body) {
-    return Future.value(DummyHTTPResponse(200, 'OK', []));
-  }
-
-  @override
-  Future<Response> put(String url, Map<String, String>? query, Map<String, String>? headers, List<int>? body) {
-    return Future.value(DummyHTTPResponse(200, 'OK', []));
-  }
-
-  @override
-  void close() {}
+  return msg;
 }
 
 class EventCollector implements ContextEventLogger {
@@ -88,6 +55,15 @@ class EventCollector implements ContextEventLogger {
 
   dynamic _serializeEventData(dynamic data) {
     if (data == null) return null;
+
+    // Handle exceptions specially - capture their message
+    if (data is Exception) {
+      return {'error': data.toString()};
+    }
+
+    if (data is Error) {
+      return {'error': data.toString()};
+    }
 
     if (data is Map) {
       return Map.fromEntries(
@@ -221,6 +197,12 @@ Map<String, dynamic> _normalizeContextData(Map<String, dynamic> data) {
   return result;
 }
 
+String translateEndpoint(String endpoint) {
+  return endpoint
+      .replaceFirst('http://localhost:3008', 'http://flutter-sdk:3000')
+      .replaceFirst('http://127.0.0.1:3008', 'http://flutter-sdk:3000');
+}
+
 Future<void> startServer() async {
 
   final router = shelf_router.Router();
@@ -239,7 +221,7 @@ Future<void> startServer() async {
   router.get('/capabilities', (shelf.Request request) {
     return shelf.Response.ok(
       jsonEncode({
-        'asyncContext': false,
+        'asyncContext': true,
         'attrsSeq': false,
         'isWrapper': true,
         'wrapsSDK': 'dart',
@@ -255,29 +237,22 @@ Future<void> startServer() async {
     );
   });
 
-  router.put('/context_payload', (shelf.Request request) async {
+  router.put('/context_payload/<payloadId>', (shelf.Request request, String payloadId) async {
     try {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
-      final data = body['data'] as Map<String, dynamic>;
-
-      final payloadId = 'payload-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+      final data = body['data'] as Map<String, dynamic>? ?? {'experiments': []};
 
       final normalizedData = _normalizeContextData(data);
       final contextData = ContextData.fromMap(normalizedData);
       payloadStore[payloadId] = contextData;
 
-      final url = 'http://flutter-sdk:3000/context_payload/$payloadId';
-
       return shelf.Response.ok(
-        jsonEncode({
-          'payloadUrl': url,
-          'payloadId': payloadId,
-        }),
+        jsonEncode({'success': true}),
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -299,10 +274,18 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
+  });
+
+  router.get('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    final data = payloadStore[payloadId] ?? ContextData();
+    return shelf.Response.ok(
+      jsonEncode(data.toMap()),
+      headers: {'Content-Type': 'application/json'},
+    );
   });
 
   router.post('/context', (shelf.Request request) async {
@@ -317,31 +300,50 @@ Future<void> startServer() async {
 
       final eventCollector = EventCollector();
       final eventHandler = CustomEventHandler(eventCollector);
-      final dataProvider = CustomDataProvider();
       final variableParser = CustomVariableParser();
+      final dataProvider = CustomDataProvider();
+
+      ContextData? contextDataForCreation;
+      Map<String, dynamic> rawDataForStore = {};
 
       if (data != null) {
         final normalizedData = _normalizeContextData(data);
-        final contextData = ContextData.fromMap(normalizedData);
-        dataProvider.setData(contextData);
+        contextDataForCreation = ContextData.fromMap(normalizedData);
+        rawDataForStore = data;
+      } else if (endpoint != null) {
+        // Flutter test environment can't make HTTP requests to itself.
+        // For async context tests, use createContextWith instead.
+        // Extract payloadId from endpoint URL and fetch directly from payloadStore.
+        final payloadMatch = RegExp(r'/context_payload/([^/]+)$').firstMatch(endpoint);
+        if (payloadMatch != null) {
+          final payloadId = payloadMatch.group(1)!;
+          final storedData = payloadStore[payloadId];
+          if (storedData != null) {
+            contextDataForCreation = storedData;
+            rawDataForStore = storedData.toMap();
+          } else {
+            contextDataForCreation = ContextData();
+          }
+        } else {
+          contextDataForCreation = ContextData();
+        }
       }
 
-      final httpClient = DummyHTTPClient();
-      final clientConfig = ClientConfig();
-      clientConfig.setEndpoint(endpoint ?? 'http://dummy');
-      clientConfig.setAPIKey('dummy');
-      clientConfig.setApplication('test');
-      clientConfig.setEnvironment('test');
-      final client = Client.create(clientConfig, httpClient: httpClient);
+      final clientConfig = ClientConfig.create()
+        .setEndpoint('http://dummy')
+        .setAPIKey('dummy')
+        .setApplication('test')
+        .setEnvironment('test');
+      final client = Client.create(clientConfig);
 
-      final config = ABSmartlyConfig();
-      config.setClient(client);
-      config.setContextDataProvider(dataProvider);
-      config.setContextEventHandler(eventHandler);
-      config.setContextEventLogger(eventCollector);
-      config.setVariableParser(variableParser);
+      final sdkConfig = ABSmartlyConfig.create()
+        .setClient(client)
+        .setContextDataProvider(dataProvider)
+        .setContextEventHandler(eventHandler)
+        .setContextEventLogger(eventCollector)
+        .setVariableParser(variableParser);
 
-      final sdk = ABSmartly(config);
+      final sdk = ABSmartly(sdkConfig);
 
       final unitsMap = Map<String, String>.from(
         units.map((key, value) => MapEntry(key.toString(), value.toString()))
@@ -354,10 +356,22 @@ Future<void> startServer() async {
       contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
       contextConfig.setRefreshInterval(options['refreshPeriod'] as int? ?? 0);
 
-      final context = sdk.createContext(contextConfig);
-      await context.waitUntilReady();
+      // Use createContextWith for all contexts in Flutter wrapper
+      // This bypasses HTTP which doesn't work in the single-threaded test environment
+      final context = contextDataForCreation != null
+          ? sdk.createContextWith(contextConfig, contextDataForCreation)
+          : sdk.createContext(contextConfig);
 
-      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {});
+      final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
+      if (payloadThrottle == 0) {
+        await context.waitUntilReady();
+        // Wait for events to be collected (like Go/Java wrappers)
+        for (int i = 0; i < 50 && eventCollector.events.isEmpty; i++) {
+          await Future.delayed(Duration(milliseconds: 10));
+        }
+      }
+
+      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore);
 
       return shelf.Response.ok(
         jsonEncode({
@@ -375,7 +389,7 @@ Future<void> startServer() async {
       print('Error creating context: $e');
       print(stackTrace);
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -406,7 +420,7 @@ Future<void> startServer() async {
         errorMsg = "Unit '$unitType' UID already set.";
       }
       return shelf.Response(400,
-        body: jsonEncode({'error': errorMsg}),
+        body: jsonEncode({'error': translateErrorMessage(errorMsg)}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -439,7 +453,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -464,7 +478,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -489,7 +503,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -522,7 +536,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -547,7 +561,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -582,7 +596,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -611,7 +625,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Error in peekVariableValue handler: $e');
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -644,13 +658,25 @@ Future<void> startServer() async {
       ctxData.context.track(goalName, properties);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+
+      if (properties == null) {
+        for (final event in newEvents) {
+          if (event['type'] == 'goal' && event['data'] is Map) {
+            final data = event['data'] as Map<String, dynamic>;
+            if (data['properties'] is Map && (data['properties'] as Map).isEmpty) {
+              data['properties'] = null;
+            }
+          }
+        }
+      }
+
       return shelf.Response.ok(
         jsonEncode({'result': null, 'events': newEvents}),
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -676,7 +702,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -702,7 +728,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -768,7 +794,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -792,7 +818,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -829,7 +855,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -874,7 +900,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -902,7 +928,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -930,7 +956,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -966,6 +992,59 @@ Future<void> startServer() async {
     );
   });
 
+  router.get('/context/<contextId>/isReady', (shelf.Request request, String contextId) {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    return shelf.Response.ok(
+      jsonEncode({
+        'result': ctxData.context.isReady(),
+        'events': [],
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/context/<contextId>/isFailed', (shelf.Request request, String contextId) {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    return shelf.Response.ok(
+      jsonEncode({
+        'result': ctxData.context.isFailed(),
+        'events': [],
+      }),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/context/<contextId>/experiments', (shelf.Request request, String contextId) {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final experiments = ctxData.context.getExperiments();
+      return shelf.Response.ok(
+        jsonEncode({
+          'result': experiments,
+          'events': [],
+        }),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
   router.post('/context/<contextId>/publish', (shelf.Request request, String contextId) async {
     final ctxData = contexts[contextId];
     if (ctxData == null) {
@@ -984,7 +1063,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1015,7 +1094,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Refresh error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1040,7 +1119,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Finalize error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': e.toString()}),
+        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
       );
     }

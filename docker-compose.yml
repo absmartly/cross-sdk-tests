@@ -134,6 +134,51 @@ services:
     environment:
       - SDK_NAME=rust
 
+  elixir-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/elixir-wrapper/Dockerfile
+    ports:
+      - "3016:3000"
+    environment:
+      - SDK_NAME=elixir
+
+  scala-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/scala-wrapper/Dockerfile
+    ports:
+      - "3017:3000"
+    environment:
+      - SDK_NAME=scala
+
+  kotlin-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/kotlin-wrapper/Dockerfile
+    ports:
+      - "3018:3000"
+    environment:
+      - SDK_NAME=kotlin
+
+  angular-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/angular-wrapper/Dockerfile
+    ports:
+      - "3019:3000"
+    environment:
+      - SDK_NAME=angular
+
+  cpp-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/cpp-wrapper/Dockerfile
+    ports:
+      - "3020:3000"
+    environment:
+      - SDK_NAME=cpp
+
   orchestrator:
     build:
       context: .
@@ -154,6 +199,11 @@ services:
       - vue2-sdk
       - vue3-sdk
       - rust-sdk
+      - elixir-sdk
+      - scala-sdk
+      - kotlin-sdk
+      - angular-sdk
+      - cpp-sdk
     volumes:
       - ./test_scenarios_complete.json:/test_scenarios_complete.json:ro
       - ./test-results:/results

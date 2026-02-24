@@ -1,6 +1,8 @@
 package com.absmartly.wrapper;
 
 import com.absmartly.sdk.*;
+import com.absmartly.sdk.deprecated.ABSmartly;
+import com.absmartly.sdk.deprecated.ABSmartlyConfig;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,27 @@ public class WrapperController {
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    private String translateEndpoint(String endpoint) {
+        if (endpoint == null) return null;
+        try {
+            java.net.URI uri = new java.net.URI(endpoint);
+            String host = uri.getHost();
+            if ("localhost".equals(host) || "127.0.0.1".equals(host)) {
+                return new java.net.URI(uri.getScheme(), uri.getUserInfo(), "localhost", 3000,
+                    uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+            }
+        } catch (Exception e) {
+        }
+        return endpoint;
+    }
+
+    private String normalizeError(String message) {
+        if (message != null && message.contains("Context is closed")) {
+            return "Context finalized";
+        }
+        return message;
+    }
+
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> response = new HashMap<>();
@@ -27,32 +50,28 @@ public class WrapperController {
     @GetMapping("/capabilities")
     public Map<String, Object> capabilities() {
         Map<String, Object> response = new HashMap<>();
-        response.put("asyncContext", false);
+        response.put("asyncContext", true);
         response.put("attrsSeq", false);
         return response;
     }
 
-    @PutMapping("/context_payload")
-    public ResponseEntity<?> storePayload(@RequestBody Map<String, Object> request) {
+    @PutMapping("/context_payload/{payloadId}")
+    public ResponseEntity<?> storePayload(@PathVariable String payloadId, @RequestBody Map<String, Object> request) {
         try {
             com.absmartly.sdk.json.ContextData contextData = objectMapper.convertValue(
                 request.get("data"),
                 com.absmartly.sdk.json.ContextData.class
             );
 
-            String payloadId = "payload-" + System.currentTimeMillis() + "-" + Math.random();
             payloadStore.put(payloadId, contextData);
 
-            String url = "http://java-sdk:3000/context_payload/" + payloadId;
-
             Map<String, Object> response = new HashMap<>();
-            response.put("payloadUrl", url);
-            response.put("payloadId", payloadId);
+            response.put("success", true);
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
@@ -78,6 +97,15 @@ public class WrapperController {
         return ResponseEntity.ok(data);
     }
 
+    @GetMapping("/context_payload/{payloadId}/context")
+    public ResponseEntity<?> mockApiContext(@PathVariable String payloadId) {
+        com.absmartly.sdk.json.ContextData data = payloadStore.getOrDefault(
+            payloadId,
+            new com.absmartly.sdk.json.ContextData()
+        );
+        return ResponseEntity.ok(data);
+    }
+
     @PostMapping("/context")
     public ResponseEntity<?> createContext(@RequestBody Map<String, Object> request) {
         try {
@@ -100,15 +128,6 @@ public class WrapperController {
             EventCollector eventCollector = new EventCollector();
             CustomContextEventHandler eventHandler = new CustomContextEventHandler(eventCollector);
 
-            DummyContextDataProvider dataProvider = new DummyContextDataProvider();
-
-            ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                .setContextDataProvider(dataProvider)
-                .setContextEventHandler(eventHandler)
-                .setContextEventLogger(eventCollector);
-
-            ABSmartly sdk = ABSmartly.create(sdkConfig);
-
             ContextConfig contextConfig = ContextConfig.create();
 
             if (units != null) {
@@ -124,16 +143,59 @@ public class WrapperController {
             contextConfig.setRefreshInterval(refreshPeriod);
 
             Context context;
+            ABSmartly sdk;
             if (contextData != null) {
-                // Sync: createContextWith
+                // Sync: createContextWith - use dummy data provider
+                DummyContextDataProvider dataProvider = new DummyContextDataProvider();
+                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setContextDataProvider(dataProvider)
+                    .setContextEventHandler(eventHandler)
+                    .setContextEventLogger(eventCollector);
+                sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContextWith(contextConfig, contextData);
+            } else if (endpoint != null) {
+                // createContext with endpoint - create a real client to fetch data
+                String translatedEndpoint = translateEndpoint(endpoint);
+                ClientConfig clientConfig = ClientConfig.create()
+                    .setEndpoint(translatedEndpoint)
+                    .setAPIKey("test-api-key")
+                    .setApplication("test-app")
+                    .setEnvironment("test-env");
+                Client client = Client.create(clientConfig);
+                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setClient(client)
+                    .setContextEventHandler(eventHandler)
+                    .setContextEventLogger(eventCollector);
+                sdk = ABSmartly.create(sdkConfig);
+
+                Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
+                context = sdk.createContext(contextConfig);
+
+                if (payloadThrottle == 0) {
+                    context.waitUntilReady();
+                    // Wait for events to be collected (like Go wrapper)
+                    for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
             } else {
-                // Async: createContext (SDK will fetch from endpoint)
+                // No data and no endpoint - use dummy data provider
+                DummyContextDataProvider dataProvider = new DummyContextDataProvider();
+                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setContextDataProvider(dataProvider)
+                    .setContextEventHandler(eventHandler)
+                    .setContextEventLogger(eventCollector);
+                sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
             }
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            contexts.put(contextId, new ContextWrapper(context, eventCollector, dataProvider));
+            contexts.put(contextId, new ContextWrapper(context, eventCollector, null));
 
             Map<String, Object> result = new HashMap<>();
             result.put("contextId", contextId);
@@ -149,7 +211,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
@@ -182,7 +244,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -230,7 +292,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -263,7 +325,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -294,7 +356,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -333,7 +395,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             error.put("trace", e.getClass().getName());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
@@ -365,7 +427,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -405,7 +467,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             error.put("trace", e.getClass().getName());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
@@ -446,7 +508,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             error.put("trace", e.getClass().getName());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
@@ -491,7 +553,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -520,7 +582,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -549,7 +611,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -582,7 +644,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -610,7 +672,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -641,7 +703,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -674,7 +736,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -707,7 +769,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -740,7 +802,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -782,6 +844,59 @@ public class WrapperController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/context/{contextId}/isReady")
+    public ResponseEntity<?> isReady(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("result", data.getContext().isReady());
+        response.put("events", Collections.emptyList());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/context/{contextId}/isFailed")
+    public ResponseEntity<?> isFailed(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("result", data.getContext().isFailed());
+        response.put("events", Collections.emptyList());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/context/{contextId}/experiments")
+    public ResponseEntity<?> getExperiments(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+
+        try {
+            List<String> experiments = Arrays.asList(data.getContext().getExperiments());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", experiments);
+            response.put("events", Collections.emptyList());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", normalizeError(e.getMessage()));
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        }
+    }
+
     @PostMapping("/context/{contextId}/publish")
     public ResponseEntity<?> publish(@PathVariable String contextId) {
         ContextWrapper data = contexts.get(contextId);
@@ -805,7 +920,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
@@ -829,9 +944,6 @@ public class WrapperController {
                 com.absmartly.sdk.json.ContextData.class
             );
 
-            data.getDataProvider().setNextData(newData);
-
-            // Clear assignment cache before refresh (like JavaScript SDK does)
             try {
                 java.lang.reflect.Field cacheField = com.absmartly.sdk.Context.class.getDeclaredField("assignmentCache_");
                 cacheField.setAccessible(true);
@@ -839,10 +951,21 @@ public class WrapperController {
                 Map<String, Object> cache = (Map<String, Object>) cacheField.get(data.getContext());
                 cache.clear();
             } catch (Exception ex) {
-                // Ignore reflection errors
             }
 
-            data.getContext().refresh();
+            try {
+                java.lang.reflect.Method setDataMethod = com.absmartly.sdk.Context.class.getDeclaredMethod("setData", com.absmartly.sdk.json.ContextData.class);
+                setDataMethod.setAccessible(true);
+                setDataMethod.invoke(data.getContext(), newData);
+            } catch (Exception ex) {
+                throw new RuntimeException("Failed to set context data: " + ex.getMessage(), ex);
+            }
+
+            data.getEventCollector().handleEvent(
+                data.getContext(),
+                com.absmartly.sdk.ContextEventLogger.EventType.Refresh,
+                newData
+            );
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -854,7 +977,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
@@ -882,7 +1005,7 @@ public class WrapperController {
         } catch (Exception e) {
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
-            error.put("error", e.getMessage());
+            error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }

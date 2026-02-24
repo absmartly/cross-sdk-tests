@@ -8,6 +8,10 @@ COPY cross-sdk-tests/kotlin-wrapper /build/kotlin-wrapper
 WORKDIR /build/kotlin-wrapper
 RUN gradle shadowJar --no-daemon
 
+FROM build AS tester
+WORKDIR /build/kotlin-sdk
+CMD ["gradle", "test", "--no-daemon"]
+
 FROM eclipse-temurin:17-jre
 
 WORKDIR /app

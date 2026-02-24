@@ -1,6 +1,14 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
 
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const app = express();
 app.use(express.json());
 
@@ -53,69 +61,77 @@ app.get('/capabilities', (req, res) => {
 });
 
 // Store context payload for async retrieval
-app.put('/context_payload', (req, res) => {
-  const payloadId = `payload-${Date.now()}-${Math.random()}`;
-  payloadStore[payloadId] = req.body.data;
-
-  const url = `http://javascript-sdk:3000/context_payload/${payloadId}`;
-  res.json({ payloadUrl: url, payloadId: payloadId });
+app.put('/context_payload/:payloadId', (req, res) => {
+  payloadStore[req.params.payloadId] = req.body.data || { experiments: [] };
+  res.json({ success: true });
 });
 
-// Retrieve context payload with optional throttle
-app.get('/context_payload/:payloadId', (req, res) => {
-  const throttle = parseInt(req.query.throttle || '0');
+// Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
+app.get('/context_payload/:payloadId/context', (req, res) => {
   const data = payloadStore[req.params.payloadId] || { experiments: [] };
-
-  setTimeout(() => {
-    res.json(data);
-  }, throttle);
+  res.json(data);
 });
 
-app.post('/context', (req, res) => {
-  const { data, endpoint, units, options } = req.body;
-  const contextId = `ctx-${Date.now()}-${Math.random()}`;
+app.post('/context', async (req, res) => {
+  try {
+    let { data, endpoint, units, options } = req.body;
 
-  const eventCollector = new EventCollector();
-  const customPublisher = new CustomPublisher(eventCollector);
+    units = units || {};
 
-  const sdk = new absmartly.SDK({
-    endpoint: endpoint || 'http://dummy',  // Use provided endpoint or dummy
-    apiKey: 'dummy',
-    application: 'test',
-    environment: 'test',
-    eventLogger: (ctx, eventName, eventData) => {
-      eventCollector.handleEvent(ctx, eventName, eventData);
-    },
-    publisher: customPublisher
-  });
+    if (endpoint) {
+      endpoint = endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+    }
 
-  let context;
-  if (data) {
-    // Sync: createContextWith
-    context = sdk.createContextWith(
-      { units },
-      data,
-      { publishDelay: -1, refreshPeriod: 0, ...options }
-    );
-  } else {
-    // Async: createContext (SDK will fetch from endpoint)
-    context = sdk.createContext(
-      { units },
-      { publishDelay: -1, refreshPeriod: 0, ...options }
-    );
+    const contextId = `ctx-${Date.now()}-${Math.random()}`;
+
+    const eventCollector = new EventCollector();
+    const customPublisher = new CustomPublisher(eventCollector);
+
+    const sdk = new absmartly.SDK({
+      endpoint: endpoint || 'http://dummy',
+      apiKey: 'dummy',
+      application: 'test',
+      environment: 'test',
+      eventLogger: (ctx, eventName, eventData) => {
+        eventCollector.handleEvent(ctx, eventName, eventData);
+      },
+      publisher: customPublisher
+    });
+
+    let context;
+    const payloadThrottle = options?.payloadThrottle || 0;
+
+    if (data) {
+      context = sdk.createContextWith(
+        { units },
+        data,
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
+    } else {
+      context = sdk.createContext(
+        { units },
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
+      if (payloadThrottle === 0) {
+        await context.ready();
+      }
+    }
+
+    contexts.set(contextId, { context, eventCollector });
+
+    res.json({
+      result: {
+        contextId,
+        ready: context.isReady(),
+        failed: context.isFailed(),
+        finalized: context.isFinalized()
+      },
+      events: eventCollector.events
+    });
+  } catch (error) {
+    console.error('Context creation error:', error);
+    res.status(500).json({ error: error.message, type: error.constructor.name });
   }
-
-  contexts.set(contextId, { context, eventCollector });
-
-  res.json({
-    result: {
-      contextId,
-      ready: context.isReady(),
-      failed: context.isFailed(),
-      finalized: context.isFinalized()
-    },
-    events: eventCollector.events
-  });
 });
 
 app.post('/context/:contextId/setUnit', (req, res) => {
@@ -290,6 +306,38 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
   }
 });
 
+app.post('/context/:contextId/setOverride', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  const { context, eventCollector } = data;
+  const eventsBefore = eventCollector.events.length;
+
+  try {
+    context.override(req.body.experimentName, req.body.variant);
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    res.json({ result: null, events: newEvents });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/context/:contextId/setCustomAssignment', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  const { context, eventCollector } = data;
+  const eventsBefore = eventCollector.events.length;
+
+  try {
+    context.customAssignment(req.body.experimentName, req.body.variant);
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    res.json({ result: null, events: newEvents });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.post('/context/:contextId/customFieldValue', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
@@ -366,6 +414,32 @@ app.get('/context/:contextId/isFinalized', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   res.json({ result: data.context.isFinalized(), events: [] });
+});
+
+app.get('/context/:contextId/isReady', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isReady(), events: [] });
+});
+
+app.get('/context/:contextId/isFailed', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  res.json({ result: data.context.isFailed(), events: [] });
+});
+
+app.get('/context/:contextId/experiments', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  try {
+    const experiments = data.context.experiments();
+    res.json({ result: experiments, events: [] });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

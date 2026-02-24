@@ -1,9 +1,8 @@
 # OS files
 .DS_Store
 
-# Claude session files
-.claude/tasks/
-.claude/plans/
+# Claude
+.claude/
 
 # IDE files
 .idea/
@@ -19,6 +18,15 @@ obj/
 .build/
 .dart_tool/
 vendor/
+_build/
+.gradle/
+build/
+
+# Elixir deps
+elixir-wrapper/deps/
+
+# Symlinks to local SDKs
+elixir-sdk
 
 # Environment files
 .env

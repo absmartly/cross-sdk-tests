@@ -1,6 +1,6 @@
-FROM rust:1.82-alpine as builder
+FROM rust:latest AS builder
 
-RUN apk add --no-cache musl-dev
+RUN apt-get update && apt-get install -y --no-install-recommends musl-tools pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -13,9 +13,13 @@ RUN sed -i 's|path = "../../rust-sdk"|path = "/rust-sdk"|g' Cargo.toml
 
 RUN cargo build --release
 
-FROM alpine:3.19
+FROM builder AS tester
+WORKDIR /rust-sdk
+CMD ["cargo", "test"]
 
-RUN apk add --no-cache ca-certificates
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

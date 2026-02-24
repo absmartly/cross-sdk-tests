@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:18-alpine AS sdk-builder
 
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./
@@ -10,6 +10,11 @@ COPY vue2-sdk/package*.json ./
 COPY vue2-sdk/ ./
 RUN npm install && NODE_OPTIONS=--openssl-legacy-provider npm run build
 
+FROM sdk-builder AS tester
+WORKDIR /vue2-sdk
+CMD ["npm", "test"]
+
+FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/vue2-wrapper/package*.json ./
 RUN npm install

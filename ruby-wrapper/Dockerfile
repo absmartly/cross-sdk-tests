@@ -1,20 +1,22 @@
-FROM ruby:3.1-slim
+FROM ruby:3.1-slim AS sdk-builder
 
 RUN apt-get update && apt-get install -y build-essential git && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Ruby SDK dependencies
 WORKDIR /ruby-sdk
 COPY ruby-sdk/ ./
 RUN bundle install
 
-# Install wrapper dependencies
+FROM sdk-builder AS tester
+WORKDIR /ruby-sdk
+CMD ["bundle", "exec", "rspec"]
+
+FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/ruby-wrapper/Gemfile* ./
 RUN bundle install
 
 COPY cross-sdk-tests/ruby-wrapper/server.rb ./
 
-# Add Ruby SDK lib to load path
 ENV RUBYLIB=/ruby-sdk/lib:$RUBYLIB
 
 EXPOSE 3000

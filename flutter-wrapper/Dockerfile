@@ -1,9 +1,15 @@
-FROM ghcr.io/cirruslabs/flutter:3.22.0
+FROM ghcr.io/cirruslabs/flutter:3.22.0 AS sdk-builder
 
+COPY flutter-sdk/packages /flutter-sdk/packages
+
+FROM sdk-builder AS tester
+WORKDIR /flutter-sdk/packages/flutter_sdk
+RUN flutter pub get
+CMD ["flutter", "test"]
+
+FROM sdk-builder AS server
 WORKDIR /app
 
-# Copy both dart_sdk and flutter_sdk packages (flutter_sdk depends on dart_sdk)
-COPY flutter-sdk/packages /flutter-sdk/packages
 COPY cross-sdk-tests/flutter-wrapper /app
 
 RUN flutter pub get

@@ -1,8 +1,15 @@
-FROM golang:1.20-alpine
-
-WORKDIR /app
+FROM golang:1.20-alpine AS sdk-builder
 
 COPY go-sdk /go-sdk
+
+FROM sdk-builder AS tester
+WORKDIR /go-sdk
+RUN go test ./... -count=0 2>/dev/null; true
+CMD ["go", "test", "./..."]
+
+FROM sdk-builder AS server
+WORKDIR /app
+
 COPY cross-sdk-tests/go-wrapper/go.mod ./
 COPY cross-sdk-tests/go-wrapper/server.go ./
 
