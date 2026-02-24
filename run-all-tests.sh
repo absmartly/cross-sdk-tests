@@ -3,8 +3,8 @@ set -e
 
 cd "$(dirname "$0")"
 
-SDK_FILTER=""
 SDK_NAMES=""
+EXCLUDE_NAMES=""
 UNIT_ONLY=false
 CROSS_ONLY=false
 SKIP_BUILD=false
@@ -13,8 +13,11 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --sdk)
-      SDK_FILTER="$2"
       SDK_NAMES="$2"
+      shift 2
+      ;;
+    --exclude)
+      EXCLUDE_NAMES="$2"
       shift 2
       ;;
     --unit-only)
@@ -38,6 +41,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --sdk <name>      Test specific SDK(s), comma-separated (e.g., --sdk react,vue2)"
+      echo "  --exclude <name>  Exclude SDK(s), comma-separated (e.g., --exclude swift,python)"
       echo "  --unit-only       Only run unit tests"
       echo "  --cross-only      Only run cross-SDK tests (same as run-tests.sh)"
       echo "  --skip-build      Skip building images"
@@ -45,11 +49,13 @@ while [[ $# -gt 0 ]]; do
       echo "  -h, --help        Show this help message"
       echo ""
       echo "Examples:"
-      echo "  ./run-all-tests.sh                         # Build and run all tests"
-      echo "  ./run-all-tests.sh --sdk javascript        # Test JavaScript SDK only"
-      echo "  ./run-all-tests.sh --unit-only             # Only run unit tests"
-      echo "  ./run-all-tests.sh --cross-only            # Only run cross-SDK tests"
-      echo "  ./run-all-tests.sh --sdk go,rust --verbose # Test Go and Rust with verbose output"
+      echo "  ./run-all-tests.sh                              # Build and run all tests"
+      echo "  ./run-all-tests.sh --sdk javascript             # Test JavaScript SDK only"
+      echo "  ./run-all-tests.sh --exclude swift              # Test all except Swift"
+      echo "  ./run-all-tests.sh --exclude swift,python       # Exclude multiple SDKs"
+      echo "  ./run-all-tests.sh --unit-only                  # Only run unit tests"
+      echo "  ./run-all-tests.sh --cross-only                 # Only run cross-SDK tests"
+      echo "  ./run-all-tests.sh --sdk go,rust --verbose      # Test Go and Rust with verbose output"
       exit 0
       ;;
     *)
@@ -66,6 +72,24 @@ if [ -n "$SDK_NAMES" ]; then
   IFS=',' read -ra TARGET_SDKS <<< "$SDK_NAMES"
 else
   read -ra TARGET_SDKS <<< "$ALL_SDKS"
+fi
+
+if [ -n "$EXCLUDE_NAMES" ]; then
+  IFS=',' read -ra EXCLUDED <<< "$EXCLUDE_NAMES"
+  FILTERED=()
+  for sdk in "${TARGET_SDKS[@]}"; do
+    skip=false
+    for ex in "${EXCLUDED[@]}"; do
+      if [ "$sdk" = "$ex" ]; then
+        skip=true
+        break
+      fi
+    done
+    if [ "$skip" = false ]; then
+      FILTERED+=("$sdk")
+    fi
+  done
+  TARGET_SDKS=("${FILTERED[@]}")
 fi
 
 get_unit_service_names() {
@@ -99,60 +123,66 @@ if [ "$SKIP_BUILD" = false ]; then
   fi
 fi
 
-wait_with_timeout() {
-  local pid=$1
-  local timeout=$2
-  local elapsed=0
-  while [ $elapsed -lt $timeout ]; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      return 0
-    fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
-  return 1
-}
-
 UNIT_EXIT_CODE=0
 CROSS_EXIT_CODE=0
 UNIT_RESULTS_FILE="test-results/unit-results.json"
 mkdir -p test-results
 
-# Unit tests phase
+# Unit tests phase (parallel)
 if [ "$CROSS_ONLY" = false ]; then
   echo ""
   echo "============================================"
-  echo "  Running Unit Tests"
+  echo "  Running Unit Tests (${#TARGET_SDKS[@]} SDKs in parallel)"
   echo "============================================"
 
+  UNIT_TMPDIR=$(mktemp -d)
+
+  for sdk in "${TARGET_SDKS[@]}"; do
+    docker compose -f docker-compose.unit-tests.yml run -T --rm "${sdk}-unit" \
+      > "$UNIT_TMPDIR/${sdk}.output" 2>&1 &
+    echo $! > "$UNIT_TMPDIR/${sdk}.pid"
+  done
+
+  ELAPSED=0
+  RUNNING=${#TARGET_SDKS[@]}
+  while [ $ELAPSED -lt $UNIT_TEST_TIMEOUT ] && [ $RUNNING -gt 0 ]; do
+    RUNNING=0
+    for sdk in "${TARGET_SDKS[@]}"; do
+      [ -f "$UNIT_TMPDIR/${sdk}.exit" ] && continue
+      pid=$(cat "$UNIT_TMPDIR/${sdk}.pid")
+      if ! kill -0 "$pid" 2>/dev/null; then
+        wait "$pid" 2>/dev/null && SDK_RC=0 || SDK_RC=$?
+        echo "$SDK_RC" > "$UNIT_TMPDIR/${sdk}.exit"
+        echo "  $sdk: done (${ELAPSED}s)"
+      else
+        RUNNING=$((RUNNING + 1))
+      fi
+    done
+    if [ $RUNNING -gt 0 ]; then
+      sleep 1
+      ELAPSED=$((ELAPSED + 1))
+    fi
+  done
+
+  for sdk in "${TARGET_SDKS[@]}"; do
+    [ -f "$UNIT_TMPDIR/${sdk}.exit" ] && continue
+    pid=$(cat "$UNIT_TMPDIR/${sdk}.pid")
+    echo "  $sdk: killing (timeout after ${UNIT_TEST_TIMEOUT}s)..."
+    kill "$pid" 2>/dev/null || true
+    docker compose -f docker-compose.unit-tests.yml kill "${sdk}-unit" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    echo "124" > "$UNIT_TMPDIR/${sdk}.exit"
+  done
+
+  echo ""
   echo "{" > "$UNIT_RESULTS_FILE"
   first=true
 
   for sdk in "${TARGET_SDKS[@]}"; do
-    SERVICE="${sdk}-unit"
-    echo -n "  $sdk: "
+    SDK_EXIT=$(cat "$UNIT_TMPDIR/${sdk}.exit" 2>/dev/null || echo "1")
+    OUTPUT=$(cat "$UNIT_TMPDIR/${sdk}.output" 2>/dev/null || echo "")
 
-    OUTPUT_FILE=$(mktemp)
-
-    docker compose -f docker-compose.unit-tests.yml run -T --rm "$SERVICE" > "$OUTPUT_FILE" 2>&1 &
-    RUN_PID=$!
-
-    SDK_EXIT=0
-    TIMED_OUT=false
-    if ! wait_with_timeout $RUN_PID $UNIT_TEST_TIMEOUT; then
-      TIMED_OUT=true
-      kill $RUN_PID 2>/dev/null || true
-      wait $RUN_PID 2>/dev/null || true
-      SDK_EXIT=124
-    else
-      SDK_EXIT=0
-      wait $RUN_PID 2>/dev/null || SDK_EXIT=$?
-    fi
-
-    OUTPUT=$(cat "$OUTPUT_FILE")
-    rm -f "$OUTPUT_FILE"
-
-    if [ "$TIMED_OUT" = true ]; then
+    if [ "$SDK_EXIT" -eq 124 ]; then
       TESTS_PASSED=$(echo "$OUTPUT" | python3 -c "
 import sys,re
 out=sys.stdin.read()
@@ -162,16 +192,16 @@ else:
     print('no')
 " 2>/dev/null || echo "no")
       if [ "$TESTS_PASSED" = "yes" ]; then
-        echo "PASS (container hung after tests completed)"
+        echo "  $sdk: PASS (container hung after tests completed)"
         SDK_EXIT=0
       else
-        echo "TIMEOUT (>${UNIT_TEST_TIMEOUT}s)"
+        echo "  $sdk: TIMEOUT (>${UNIT_TEST_TIMEOUT}s)"
         UNIT_EXIT_CODE=1
       fi
     elif [ "$SDK_EXIT" -eq 0 ]; then
-      echo "PASS"
+      echo "  $sdk: PASS"
     else
-      echo "FAIL (exit code: $SDK_EXIT)"
+      echo "  $sdk: FAIL (exit code: $SDK_EXIT)"
       UNIT_EXIT_CODE=1
     fi
 
@@ -192,6 +222,7 @@ else:
 
   echo "" >> "$UNIT_RESULTS_FILE"
   echo "}" >> "$UNIT_RESULTS_FILE"
+  rm -rf "$UNIT_TMPDIR"
 fi
 
 # Cross-SDK tests phase
@@ -202,14 +233,11 @@ if [ "$UNIT_ONLY" = false ]; then
   echo "============================================"
 
   CROSS_ARGS=""
-  if [ -n "$SDK_NAMES" ]; then
-    CROSS_ARGS="--sdk $SDK_NAMES"
+  SDK_CSV=$(IFS=,; echo "${TARGET_SDKS[*]}")
+  if [ -n "$SDK_CSV" ]; then
+    CROSS_ARGS="--sdk $SDK_CSV"
   fi
-  if [ "$SKIP_BUILD" = true ]; then
-    CROSS_ARGS="$CROSS_ARGS --skip-build"
-  else
-    CROSS_ARGS="$CROSS_ARGS --skip-build"
-  fi
+  CROSS_ARGS="$CROSS_ARGS --skip-build"
   if [ "$VERBOSE" = true ]; then
     CROSS_ARGS="$CROSS_ARGS --verbose"
   fi
