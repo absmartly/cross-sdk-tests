@@ -27,8 +27,8 @@ UNIT_TEST_PARSERS = {
     "java": {
         "framework": "gradle/junit",
         "patterns": [
+            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0)),
             (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
-            (r"BUILD SUCCESSFUL", lambda m: (None, 0)),
         ],
     },
     "php": {
@@ -49,18 +49,18 @@ UNIT_TEST_PARSERS = {
     },
     "dart": {
         "framework": "dart test",
+        "line_search": True,
         "patterns": [
-            (r"\+(\d+)(?:\s+-(\d+))?.*?All tests passed", lambda m: (int(m.group(1)), 0)),
-            (r"\+(\d+)\s+-(\d+)", lambda m: (int(m.group(1)), int(m.group(2)))),
-            (r"(\d+)\s+tests?\s+passed", lambda m: (int(m.group(1)), 0)),
+            (r"\+(\d+):\s+All tests passed", lambda m: (int(m.group(1)), 0)),
+            (r"\+(\d+)\s+-(\d+):\s+Some tests failed", lambda m: (int(m.group(1)), int(m.group(2)))),
         ],
     },
     "flutter": {
         "framework": "flutter test",
+        "line_search": True,
         "patterns": [
-            (r"\+(\d+)(?:\s+-(\d+))?.*?All tests passed", lambda m: (int(m.group(1)), 0)),
-            (r"(\d+)\s+tests?\s+passed", lambda m: (int(m.group(1)), 0)),
-            (r"\+(\d+)\s+-(\d+)", lambda m: (int(m.group(1)), int(m.group(2)))),
+            (r"\+(\d+):\s+All tests passed", lambda m: (int(m.group(1)), 0)),
+            (r"\+(\d+)\s+-(\d+):\s+Some tests failed", lambda m: (int(m.group(1)), int(m.group(2)))),
         ],
     },
     "swift": {
@@ -93,16 +93,15 @@ UNIT_TEST_PARSERS = {
     "scala": {
         "framework": "sbt test",
         "patterns": [
-            (r"All tests passed", lambda m: (None, 0)),
-            (r"(\d+)\s+tests?.*?(\d+)\s+failed", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"Total number of tests run:\s+(\d+)", lambda m: (int(m.group(1)), 0)),
             (r"Tests:\s+succeeded\s+(\d+),\s+failed\s+(\d+)", lambda m: (int(m.group(1)), int(m.group(2)))),
         ],
     },
     "kotlin": {
         "framework": "gradle/junit",
         "patterns": [
+            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0)),
             (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
-            (r"BUILD SUCCESSFUL", lambda m: (None, 0)),
         ],
     },
     "cpp": {
@@ -166,10 +165,16 @@ def discover_all_sdks():
         return sorted(UNIT_TEST_PARSERS.keys())
 
 
+def strip_ansi(text):
+    return re.sub(r"\033\[[0-9;]*m", "", text)
+
+
 def parse_unit_test_output(sdk, output):
     parser = UNIT_TEST_PARSERS.get(sdk)
     if not parser:
         return None, None
+
+    output = strip_ansi(output)
 
     if parser.get("aggregate"):
         passed = 0
@@ -184,6 +189,16 @@ def parse_unit_test_output(sdk, output):
                     break
         if passed > 0 or failed > 0:
             return passed, failed
+        return None, None
+
+    if parser.get("line_search"):
+        lines = re.split(r"[\r\n]+", output)
+        for line in reversed(lines):
+            for pattern, extractor in parser["patterns"]:
+                m = re.search(pattern, line)
+                if m:
+                    p, f = extractor(m)
+                    return p, f
         return None, None
 
     for pattern, extractor in parser["patterns"]:

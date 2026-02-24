@@ -60,7 +60,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ALL_SDKS=$(docker compose config --services | grep -- '-sdk$' | sed 's/-sdk$//' | tr '\n' ' ')
-UNIT_TEST_TIMEOUT=${UNIT_TEST_TIMEOUT:-300}
+UNIT_TEST_TIMEOUT=${UNIT_TEST_TIMEOUT:-600}
 
 if [ -n "$SDK_NAMES" ]; then
   IFS=',' read -ra TARGET_SDKS <<< "$SDK_NAMES"

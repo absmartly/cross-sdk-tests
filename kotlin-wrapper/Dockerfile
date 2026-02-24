@@ -10,7 +10,7 @@ RUN gradle shadowJar --no-daemon
 
 FROM build AS tester
 WORKDIR /build/kotlin-sdk
-CMD ["gradle", "test", "--no-daemon"]
+CMD ["./gradlew", "test"]
 
 FROM eclipse-temurin:17-jre
 
