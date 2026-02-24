@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -e .
 FROM sdk-builder AS tester
 RUN pip install --no-cache-dir pytest
 WORKDIR /python3-sdk
-CMD ["python", "-m", "pytest", "test/", "-v", "-p", "no:cacheprovider"]
+CMD ["python", "-c", "import sys, pytest; code = pytest.main([\"test/\", \"-v\", \"-p\", \"no:cacheprovider\"]); sys.stdout.flush(); sys.stderr.flush(); import os; os._exit(code)"]
 
 FROM sdk-builder AS server
 WORKDIR /app

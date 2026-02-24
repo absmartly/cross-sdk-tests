@@ -21,7 +21,8 @@ FROM build AS tester
 WORKDIR /app/elixir-sdk
 RUN mix local.hex --force && \
     mix local.rebar --force && \
-    mix deps.get
+    mix deps.get && \
+    mix compile
 CMD ["mix", "test"]
 
 FROM elixir:1.15-alpine

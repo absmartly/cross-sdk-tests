@@ -7,7 +7,7 @@ RUN npm install && npm run build
 
 FROM sdk-builder AS tester
 WORKDIR /javascript-sdk
-CMD ["npm", "test"]
+CMD ["npx", "jest", "--coverage", "--forceExit", "--maxWorkers=2"]
 
 FROM sdk-builder AS server
 WORKDIR /app

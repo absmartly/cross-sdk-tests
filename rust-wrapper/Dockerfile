@@ -15,6 +15,7 @@ RUN cargo build --release
 
 FROM builder AS tester
 WORKDIR /rust-sdk
+RUN cargo test --no-run
 CMD ["cargo", "test"]
 
 FROM debian:bookworm-slim

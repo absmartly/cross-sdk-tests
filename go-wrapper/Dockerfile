@@ -5,7 +5,7 @@ COPY go-sdk /go-sdk
 FROM sdk-builder AS tester
 WORKDIR /go-sdk
 RUN go test ./... -count=0 2>/dev/null; true
-CMD ["go", "test", "./..."]
+CMD ["go", "test", "-v", "./..."]
 
 FROM sdk-builder AS server
 WORKDIR /app

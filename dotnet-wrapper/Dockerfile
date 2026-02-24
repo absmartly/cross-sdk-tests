@@ -13,8 +13,9 @@ RUN dotnet publish ./cross-sdk-tests/dotnet-wrapper/dotnet-wrapper.csproj -c Rel
 FROM build AS tester
 COPY dotnet-sdk/ABSmartly.DotNet.sln ./dotnet-sdk/
 COPY dotnet-sdk/tests/ ./dotnet-sdk/tests/
-RUN dotnet restore ./dotnet-sdk/tests/ABSmartly.Sdk.Tests/ABSmartly.Sdk.Tests.csproj
-CMD ["dotnet", "test", "./dotnet-sdk/tests/ABSmartly.Sdk.Tests/"]
+RUN dotnet restore ./dotnet-sdk/tests/ABSmartly.Sdk.Tests/ABSmartly.Sdk.Tests.csproj && \
+    dotnet build ./dotnet-sdk/tests/ABSmartly.Sdk.Tests/ --no-restore
+CMD ["dotnet", "test", "./dotnet-sdk/tests/ABSmartly.Sdk.Tests/", "--no-build"]
 
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app

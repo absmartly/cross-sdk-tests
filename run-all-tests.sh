@@ -110,23 +110,25 @@ get_cross_service_names() {
 
 # Build phase
 if [ "$SKIP_BUILD" = false ]; then
+  BUILD_SERVICES=""
   if [ "$CROSS_ONLY" = false ]; then
-    UNIT_SERVICES=$(get_unit_service_names)
-    echo "Building unit test images for:$UNIT_SERVICES"
-    docker compose -f docker-compose.unit-tests.yml build $UNIT_SERVICES
+    BUILD_SERVICES="$BUILD_SERVICES $(get_unit_service_names)"
   fi
-
   if [ "$UNIT_ONLY" = false ]; then
-    CROSS_SERVICES=$(get_cross_service_names)
-    echo "Building cross-SDK test images for:$CROSS_SERVICES"
-    docker compose build $CROSS_SERVICES
+    BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names)"
   fi
+  echo "Building images for:$BUILD_SERVICES"
+  docker compose build $BUILD_SERVICES
 fi
 
 UNIT_EXIT_CODE=0
 CROSS_EXIT_CODE=0
 UNIT_RESULTS_FILE="test-results/unit-results.json"
 mkdir -p test-results
+
+docker compose down --remove-orphans --volumes 2>/dev/null || true
+docker compose rm -f 2>/dev/null || true
+docker network prune -f 2>/dev/null || true
 
 # Unit tests phase (parallel)
 if [ "$CROSS_ONLY" = false ]; then
@@ -138,7 +140,7 @@ if [ "$CROSS_ONLY" = false ]; then
   UNIT_TMPDIR=$(mktemp -d)
 
   for sdk in "${TARGET_SDKS[@]}"; do
-    docker compose -f docker-compose.unit-tests.yml run -T --rm "${sdk}-unit" \
+    docker compose run -T --rm "${sdk}-unit" \
       > "$UNIT_TMPDIR/${sdk}.output" 2>&1 &
     echo $! > "$UNIT_TMPDIR/${sdk}.pid"
   done
@@ -169,7 +171,7 @@ if [ "$CROSS_ONLY" = false ]; then
     pid=$(cat "$UNIT_TMPDIR/${sdk}.pid")
     echo "  $sdk: killing (timeout after ${UNIT_TEST_TIMEOUT}s)..."
     kill "$pid" 2>/dev/null || true
-    docker compose -f docker-compose.unit-tests.yml kill "${sdk}-unit" 2>/dev/null || true
+    docker compose kill "${sdk}-unit" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
     echo "124" > "$UNIT_TMPDIR/${sdk}.exit"
   done

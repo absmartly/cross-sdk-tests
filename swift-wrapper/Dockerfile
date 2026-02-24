@@ -13,7 +13,10 @@ WORKDIR /swift-sdk
 RUN swift package resolve && \
     sed -i '/^func < (lhs: NSNumber, rhs: NSNumber)/,/^}$/d' /swift-sdk/.build/checkouts/SwiftyJSON/Source/SwiftyJSON/SwiftyJSON.swift && \
     sed -i 's/lhs\.rawNumber < rhs\.rawNumber/lhs.rawNumber.compare(rhs.rawNumber) == .orderedAscending/g' /swift-sdk/.build/checkouts/SwiftyJSON/Source/SwiftyJSON/SwiftyJSON.swift
-CMD ["swift", "test"]
+RUN swift build --build-tests
+COPY cross-sdk-tests/swift-wrapper/run-tests.sh /run-tests.sh
+RUN chmod +x /run-tests.sh
+CMD ["/run-tests.sh"]
 
 FROM sdk-builder AS server
 WORKDIR /app

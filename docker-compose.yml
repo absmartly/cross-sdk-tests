@@ -1,4 +1,146 @@
 services:
+  # ── Unit test services (target: tester stage) ──
+  javascript-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/javascript-wrapper/Dockerfile
+      target: tester
+
+  python-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/python-wrapper/Dockerfile
+      target: tester
+
+  ruby-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/ruby-wrapper/Dockerfile
+      target: tester
+
+  java-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-wrapper/Dockerfile
+      target: tester
+
+  php-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/php-wrapper/Dockerfile
+      target: tester
+
+  go-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/go-wrapper/Dockerfile
+      target: tester
+
+  dart-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-wrapper/Dockerfile
+      target: tester
+
+  flutter-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-wrapper/Dockerfile
+      target: tester
+
+  swift-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-wrapper/Dockerfile
+      target: tester
+
+  rust-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/rust-wrapper/Dockerfile
+      target: tester
+
+  dotnet-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dotnet-wrapper/Dockerfile
+      target: tester
+
+  elixir-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/elixir-wrapper/Dockerfile
+      target: tester
+
+  scala-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/scala-wrapper/Dockerfile
+      target: tester
+
+  kotlin-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/kotlin-wrapper/Dockerfile
+      target: tester
+
+  cpp-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/cpp-wrapper/Dockerfile
+      target: tester
+
+  liquid-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/liquid-wrapper/Dockerfile
+      target: tester
+
+  react-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/react-wrapper/Dockerfile
+      target: tester
+
+  vue2-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/vue2-wrapper/Dockerfile
+      target: tester
+
+  vue3-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/vue3-wrapper/Dockerfile
+      target: tester
+
+  angular-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/angular-wrapper/Dockerfile
+      target: tester
+
+  # ── Cross-SDK test services (final server stage) ──
   javascript-sdk:
     build:
       context: ..

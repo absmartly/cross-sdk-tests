@@ -70,10 +70,10 @@ if [ "$SKIP_BUILD" = false ]; then
   if [ -n "$SDK_NAMES" ]; then
     SERVICES=$(get_service_names "$SDK_NAMES")
     echo "Building containers for:$SERVICES"
-    docker-compose build $SERVICES
+    docker compose build $SERVICES
   else
     echo "Building all containers..."
-    docker-compose build
+    docker compose build
   fi
 fi
 
@@ -82,13 +82,17 @@ if [ "$BUILD_ONLY" = true ]; then
   exit 0
 fi
 
+docker compose down --remove-orphans --volumes 2>/dev/null || true
+docker compose rm -f 2>/dev/null || true
+docker network prune -f 2>/dev/null || true
+
 if [ -n "$SDK_NAMES" ]; then
   SERVICES=$(get_service_names "$SDK_NAMES")
   echo "Starting services:$SERVICES"
-  docker-compose up -d $SERVICES
+  docker compose up -d --force-recreate --remove-orphans $SERVICES
 else
   echo "Starting all services..."
-  docker-compose up -d
+  docker compose up -d --force-recreate --remove-orphans
 fi
 
 echo "Waiting for services to be ready..."
@@ -100,7 +104,7 @@ if [ -n "$SDK_NAMES" ]; then
   # For filtered runs, run locally to avoid orchestrator starting all dependencies
   pip3 install -q requests 2>/dev/null || true
 
-  # Derive SDK URLs from published ports in docker-compose.yml
+  # Derive SDK URLs from published ports in docker compose.yml
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
   for sdk in "${SDKS[@]}"; do
@@ -138,10 +142,10 @@ sys.exit(exit_code)
 " || TEST_EXIT_CODE=$?
 else
   SDK_SERVICES=$(docker compose config --services | grep -- '-sdk$' | sed 's/-sdk$//' | paste -sd, -)
-  docker-compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator python3 test_runner.py $VERBOSE_FLAG || TEST_EXIT_CODE=$?
+  docker compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator python3 test_runner.py $VERBOSE_FLAG || TEST_EXIT_CODE=$?
 fi
 
-docker-compose down --remove-orphans 2>/dev/null || true
+docker compose down --remove-orphans 2>/dev/null || true
 
 echo "Done. (exit code: $TEST_EXIT_CODE)"
 exit $TEST_EXIT_CODE
