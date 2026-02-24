@@ -8,146 +8,207 @@ UNIT_TEST_PARSERS = {
     "javascript": {
         "framework": "jest",
         "patterns": [
-            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total", lambda m: (int(m.group(1)), int(m.group(2)) - int(m.group(1)))),
-            (r"(\d+)\s+passing", lambda m: (int(m.group(1)), 0)),
+            (r"Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"(\d+)\s+passing", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "python": {
         "framework": "pytest",
-        "patterns": [
-            (r"(\d+)\s+passed(?:,\s+(\d+)\s+failed)?", lambda m: (int(m.group(1)), int(m.group(2) or 0))),
-        ],
+        "custom_parser": "pytest",
     },
     "ruby": {
         "framework": "rspec",
         "patterns": [
-            (r"(\d+)\s+examples?,\s+(\d+)\s+failures?", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"(\d+)\s+examples?,\s+(\d+)\s+failures?(?:,\s+(\d+)\s+pending)?",
+             lambda m: (int(m.group(1)) - int(m.group(2)) - int(m.group(3) or 0), int(m.group(2)), int(m.group(1)))),
         ],
     },
     "java": {
         "framework": "gradle/junit",
         "patterns": [
-            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0)),
-            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?",
+             lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)),
+                        int(m.group(1)) + int(m.group(3) or 0))),
+            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "php": {
         "framework": "phpunit",
         "patterns": [
-            (r"OK\s+\((\d+)\s+tests?", lambda m: (int(m.group(1)), 0)),
-            (r"Tests:\s+(\d+).*?Failures:\s+(\d+)", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
-            (r"There\s+(?:were|was)\s+(\d+)\s+errors?:", lambda m: (0, int(m.group(1)))),
+            (r"OK\s+\((\d+)\s+tests?,\s+(\d+)\s+assertions?\)", lambda m: (int(m.group(1)), 0, None)),
+            (r"OK\s+\((\d+)\s+tests?", lambda m: (int(m.group(1)), 0, None)),
+            (r"Tests:\s+(\d+).*?Failures:\s+(\d+)", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)), None)),
         ],
     },
     "go": {
         "framework": "go test",
         "patterns": [
-            (r"^ok\s+", lambda m: (1, 0)),
-            (r"^FAIL\s+", lambda m: (0, 1)),
+            (r"^--- PASS:", lambda m: (1, 0, None)),
+            (r"^--- FAIL:", lambda m: (0, 1, None)),
+            (r"^--- SKIP:", lambda m: (0, 0, None)),
         ],
         "aggregate": True,
+        "skip_pattern": r"^--- SKIP:",
     },
     "dart": {
         "framework": "dart test",
         "line_search": True,
         "patterns": [
-            (r"\+(\d+):\s+All tests passed", lambda m: (int(m.group(1)), 0)),
-            (r"\+(\d+)\s+-(\d+):\s+Some tests failed", lambda m: (int(m.group(1)), int(m.group(2)))),
+            (r"\+(\d+)(?:\s+~(\d+))?\s+-(\d+):\s+Some tests failed",
+             lambda m: (int(m.group(1)), int(m.group(3)),
+                        int(m.group(1)) + int(m.group(3)) + int(m.group(2) or 0))),
+            (r"\+(\d+)(?:\s+~(\d+))?:\s+All tests passed",
+             lambda m: (int(m.group(1)), 0, int(m.group(1)) + int(m.group(2) or 0))),
         ],
     },
     "flutter": {
         "framework": "flutter test",
         "line_search": True,
         "patterns": [
-            (r"\+(\d+):\s+All tests passed", lambda m: (int(m.group(1)), 0)),
-            (r"\+(\d+)\s+-(\d+):\s+Some tests failed", lambda m: (int(m.group(1)), int(m.group(2)))),
+            (r"\+(\d+)(?:\s+~(\d+))?\s+-(\d+):\s+Some tests failed",
+             lambda m: (int(m.group(1)), int(m.group(3)),
+                        int(m.group(1)) + int(m.group(3)) + int(m.group(2) or 0))),
+            (r"\+(\d+)(?:\s+~(\d+))?:\s+All tests passed",
+             lambda m: (int(m.group(1)), 0, int(m.group(1)) + int(m.group(2) or 0))),
         ],
     },
     "swift": {
         "framework": "swift test",
         "patterns": [
-            (r"Executed\s+(\d+)\s+tests?\s+with\s+(\d+)\s+failures?", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
-            (r"Test Suite.*?Executed\s+(\d+)\s+tests?.*?(\d+)\s+failures?", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"Test Case '.*?' passed", lambda m: (1, 0, None)),
+            (r"Test Case '.*?' failed", lambda m: (0, 1, None)),
         ],
+        "aggregate": True,
     },
     "rust": {
         "framework": "cargo test",
         "patterns": [
-            (r"test result: \w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed", lambda m: (int(m.group(1)), int(m.group(2)))),
+            (r"test result: \w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed;\s+(\d+)\s+ignored",
+             lambda m: (int(m.group(1)), int(m.group(2)),
+                        int(m.group(1)) + int(m.group(2)) + int(m.group(3)))),
+            (r"test result: \w+\.\s+(\d+)\s+passed;\s+(\d+)\s+failed",
+             lambda m: (int(m.group(1)), int(m.group(2)), None)),
         ],
+        "aggregate": True,
     },
     "dotnet": {
         "framework": "dotnet test",
         "patterns": [
-            (r"Passed!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+)", lambda m: (int(m.group(2)), int(m.group(1)))),
-            (r"Failed!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+)", lambda m: (int(m.group(2)), int(m.group(1)))),
-            (r"Total tests:\s+(\d+)\s+Passed:\s+(\d+)\s+Failed:\s+(\d+)", lambda m: (int(m.group(2)), int(m.group(3)))),
+            (r"Failed:\s+(\d+),\s+Passed:\s+(\d+),\s+Skipped:\s+(\d+),\s+Total:\s+(\d+)",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(4)))),
+            (r"Total tests:\s+(\d+)\s+Passed:\s+(\d+)\s+Failed:\s+(\d+)",
+             lambda m: (int(m.group(2)), int(m.group(3)), int(m.group(1)))),
         ],
     },
     "elixir": {
         "framework": "mix test",
         "patterns": [
-            (r"(\d+)\s+tests?,\s+(\d+)\s+failures?", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"(\d+)\s+tests?,\s+(\d+)\s+failures?(?:,\s+(\d+)\s+(?:excluded|skipped))?",
+             lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)),
+                        int(m.group(1)) + int(m.group(3) or 0))),
         ],
     },
     "scala": {
         "framework": "sbt test",
         "patterns": [
-            (r"Total number of tests run:\s+(\d+)", lambda m: (int(m.group(1)), 0)),
-            (r"Tests:\s+succeeded\s+(\d+),\s+failed\s+(\d+)", lambda m: (int(m.group(1)), int(m.group(2)))),
+            (r"Tests:\s+succeeded\s+(\d+),\s+failed\s+(\d+),\s+canceled\s+(\d+),\s+ignored\s+(\d+),\s+pending\s+(\d+)",
+             lambda m: (int(m.group(1)), int(m.group(2)),
+                        sum(int(m.group(i)) for i in range(1, 6)))),
+            (r"Total number of tests run:\s+(\d+)", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "kotlin": {
         "framework": "gradle/junit",
         "patterns": [
-            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0)),
-            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?",
+             lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)),
+                        int(m.group(1)) + int(m.group(3) or 0))),
+            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "cpp": {
         "framework": "catch2/ctest",
         "patterns": [
-            (r"(\d+)\s+tests?\s+from.*?(\d+)\s+test.*?passed", lambda m: (int(m.group(2)), int(m.group(1)) - int(m.group(2)))),
-            (r"(\d+)\s+test.*?passed.*?(\d+)\s+test.*?failed", lambda m: (int(m.group(1)), int(m.group(2)))),
-            (r"100% tests passed,\s+0\s+tests failed out of\s+(\d+)", lambda m: (int(m.group(1)), 0)),
-            (r"(\d+)% tests passed,\s+(\d+)\s+tests failed out of\s+(\d+)", lambda m: (int(m.group(3)) - int(m.group(2)), int(m.group(2)))),
+            (r"100% tests passed,\s+0\s+tests failed out of\s+(\d+)",
+             lambda m: (int(m.group(1)), 0, None)),
+            (r"(\d+)% tests passed,\s+(\d+)\s+tests failed out of\s+(\d+)",
+             lambda m: (int(m.group(3)) - int(m.group(2)), int(m.group(2)), int(m.group(3)))),
         ],
     },
     "liquid": {
         "framework": "rspec",
         "patterns": [
-            (r"(\d+)\s+examples?,\s+(\d+)\s+failures?", lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)))),
+            (r"(\d+)\s+examples?,\s+(\d+)\s+failures?(?:,\s+(\d+)\s+pending)?",
+             lambda m: (int(m.group(1)) - int(m.group(2)) - int(m.group(3) or 0), int(m.group(2)), int(m.group(1)))),
         ],
     },
     "react": {
         "framework": "jest/vitest",
         "patterns": [
-            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total", lambda m: (int(m.group(1)), int(m.group(2)) - int(m.group(1)))),
-            (r"(\d+)\s+passed", lambda m: (int(m.group(1)), 0)),
+            (r"Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"Tests\s+(\d+)\s+passed\s+\|?\s*(\d+)\s+skipped\s+\((\d+)\)",
+             lambda m: (int(m.group(1)), 0, int(m.group(3)))),
+            (r"Tests\s+(\d+)\s+passed\s+\((\d+)\)",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"Tests\s+(\d+)\s+passed", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "vue2": {
         "framework": "jest/vitest",
         "patterns": [
-            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total", lambda m: (int(m.group(1)), int(m.group(2)) - int(m.group(1)))),
-            (r"(\d+)\s+passed", lambda m: (int(m.group(1)), 0)),
+            (r"Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"Tests\s+(\d+)\s+passed", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "vue3": {
         "framework": "jest/vitest",
         "patterns": [
-            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total", lambda m: (int(m.group(1)), int(m.group(2)) - int(m.group(1)))),
-            (r"(\d+)\s+passed", lambda m: (int(m.group(1)), 0)),
+            (r"Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"Tests\s+(\d+)\s+passed", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
     "angular": {
         "framework": "jest/vitest",
         "patterns": [
-            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total", lambda m: (int(m.group(1)), int(m.group(2)) - int(m.group(1)))),
-            (r"(\d+)\s+passed", lambda m: (int(m.group(1)), 0)),
+            (r"Tests:\s+(\d+)\s+failed,\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            (r"Tests:\s+(\d+)\s+passed.*?(\d+)\s+total",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+            (r"Tests\s+(\d+)\s+passed", lambda m: (int(m.group(1)), 0, None)),
         ],
     },
 }
+
+
+def parse_pytest_summary(output):
+    output = strip_ansi(output)
+    matches = re.findall(r"=+\s+([\d\w,. ]+)\s+=+\s*$", output, re.MULTILINE)
+    if matches:
+        summary = matches[-1]
+    else:
+        m = re.search(r"(\d+\s+passed.*)", output)
+        if not m:
+            return None, None, None
+        summary = m.group(1)
+    passed = int(g.group(1)) if (g := re.search(r"(\d+)\s+passed", summary)) else 0
+    failed = int(g.group(1)) if (g := re.search(r"(\d+)\s+failed", summary)) else 0
+    skipped = int(g.group(1)) if (g := re.search(r"(\d+)\s+skipped", summary)) else 0
+    errors = int(g.group(1)) if (g := re.search(r"(\d+)\s+error", summary)) else 0
+    total = passed + failed + skipped + errors
+    return passed, failed + errors, total
+
 
 def discover_all_sdks():
     import subprocess
@@ -169,27 +230,54 @@ def strip_ansi(text):
     return re.sub(r"\033\[[0-9;]*m", "", text)
 
 
+def normalize_result(result):
+    if len(result) == 3:
+        p, f, t = result
+        if t is None:
+            t = p + f
+        return p, f, t
+    p, f = result
+    return p, f, p + f
+
+
 def parse_unit_test_output(sdk, output):
     parser = UNIT_TEST_PARSERS.get(sdk)
     if not parser:
-        return None, None
+        return None, None, None
 
     output = strip_ansi(output)
+
+    if parser.get("custom_parser") == "pytest":
+        return parse_pytest_summary(output)
 
     if parser.get("aggregate"):
         passed = 0
         failed = 0
+        total_from_patterns = 0
+        has_explicit_total = False
+        skip_pattern = parser.get("skip_pattern")
+        skipped = 0
         for line in output.split("\n"):
+            if skip_pattern and re.search(skip_pattern, line):
+                skipped += 1
+                continue
             for pattern, extractor in parser["patterns"]:
                 m = re.search(pattern, line)
                 if m:
-                    p, f = extractor(m)
+                    result = normalize_result(extractor(m))
+                    p, f, t = result
                     passed += p
                     failed += f
+                    if t != p + f:
+                        has_explicit_total = True
+                        total_from_patterns += t
+                    else:
+                        total_from_patterns += p + f
                     break
-        if passed > 0 or failed > 0:
-            return passed, failed
-        return None, None
+        if passed > 0 or failed > 0 or skipped > 0:
+            total = total_from_patterns + skipped if not has_explicit_total else total_from_patterns
+            return passed, failed, total
+        return None, None, None
 
     if parser.get("line_search"):
         lines = re.split(r"[\r\n]+", output)
@@ -197,17 +285,15 @@ def parse_unit_test_output(sdk, output):
             for pattern, extractor in parser["patterns"]:
                 m = re.search(pattern, line)
                 if m:
-                    p, f = extractor(m)
-                    return p, f
-        return None, None
+                    return normalize_result(extractor(m))
+        return None, None, None
 
     for pattern, extractor in parser["patterns"]:
         m = re.search(pattern, output, re.DOTALL)
         if m:
-            p, f = extractor(m)
-            return p, f
+            return normalize_result(extractor(m))
 
-    return None, None
+    return None, None, None
 
 
 def load_cross_sdk_report(report_path):
@@ -248,6 +334,7 @@ def load_cross_sdk_report(report_path):
 
 GREEN = "\033[32m"
 RED = "\033[31m"
+YELLOW = "\033[33m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -255,15 +342,21 @@ RESET = "\033[0m"
 def format_result(passed, failed, total):
     if passed is None:
         return "N/A"
+    skipped = total - passed - failed
     status = "PASS" if failed == 0 else "FAIL"
-    return f"{passed}/{total} {status}"
+    base = f"{passed}/{total} {status}"
+    if skipped > 0:
+        return f"{base} ({skipped}s)"
+    return base
 
 
 def colorize_result(text):
     if "PASS" in text:
-        return text.replace("PASS", f"{GREEN}PASS{RESET}")
+        text = text.replace("PASS", f"{GREEN}PASS{RESET}")
     if "FAIL" in text:
-        return text.replace("FAIL", f"{RED}FAIL{RESET}")
+        text = text.replace("FAIL", f"{RED}FAIL{RESET}")
+    if "s)" in text:
+        text = re.sub(r"\((\d+s)\)", f"({YELLOW}\\1{RESET})", text)
     return text
 
 
@@ -278,7 +371,7 @@ def pad_colored(text, width):
 
 def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has_cross):
     COL_SDK = 17
-    COL_DATA = 18
+    COL_DATA = 22
 
     columns = []
     if has_unit:
@@ -286,7 +379,7 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
     if has_cross:
         columns.append("Cross-SDK Tests")
 
-    top = f"┌{'─' * COL_SDK}{''.join('┬' + '─' * COL_DATA for _ in columns)}┐"
+    top = f"\u250c{'─' * COL_SDK}{''.join('┬' + '─' * COL_DATA for _ in columns)}┐"
     mid = f"├{'─' * COL_SDK}{''.join('┼' + '─' * COL_DATA for _ in columns)}┤"
     bot = f"└{'─' * COL_SDK}{''.join('┴' + '─' * COL_DATA for _ in columns)}┘"
 
@@ -374,14 +467,15 @@ def main():
         for sdk, data in raw_results.items():
             output = data.get("output", "")
             exit_code = data.get("exit_code", -1)
-            passed, failed = parse_unit_test_output(sdk, output)
+            passed, failed, total = parse_unit_test_output(sdk, output)
             if passed is None and exit_code == 0:
                 passed = 0
                 failed = 0
+                total = 0
             unit_results[sdk] = {
                 "passed": passed,
                 "failed": failed,
-                "total": (passed or 0) + (failed or 0),
+                "total": total if total is not None else (passed or 0) + (failed or 0),
                 "exit_code": exit_code,
             }
 
