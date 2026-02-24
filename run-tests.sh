@@ -95,35 +95,23 @@ echo "Waiting for services to be ready..."
 sleep 5
 
 echo "Running tests..."
+TEST_EXIT_CODE=0
 if [ -n "$SDK_NAMES" ]; then
   # For filtered runs, run locally to avoid orchestrator starting all dependencies
   pip3 install -q requests 2>/dev/null || true
 
-  # Convert SDK names to localhost URLs
+  # Derive SDK URLs from published ports in docker-compose.yml
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
-  PORT=3001
   for sdk in "${SDKS[@]}"; do
-    case $sdk in
-      javascript) PORT=3001 ;;
-      python) PORT=3002 ;;
-      ruby) PORT=3003 ;;
-      java) PORT=3004 ;;
-      php) PORT=3005 ;;
-      go) PORT=3006 ;;
-      liquid) PORT=3007 ;;
-      flutter) PORT=3008 ;;
-      dotnet) PORT=3009 ;;
-      swift) PORT=3010 ;;
-      dart) PORT=3011 ;;
-      react) PORT=3012 ;;
-      vue2) PORT=3013 ;;
-      vue3) PORT=3014 ;;
-      rust) PORT=3015 ;;
-    esac
+    PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | cut -d: -f2)
+    if [ -z "$PORT" ]; then
+      echo "Error: could not resolve port for ${sdk}-sdk" >&2
+      exit 1
+    fi
     SDK_URLS="$SDK_URLS$sdk:http://localhost:$PORT,"
   done
-  SDK_URLS="${SDK_URLS%,}"  # Remove trailing comma
+  SDK_URLS="${SDK_URLS%,}"
 
   python3 -c "
 import json, sys
@@ -145,10 +133,15 @@ print(f'Running {len(scenarios)} scenarios')
 for scenario in scenarios:
     orchestrator.run_scenario(scenario)
 
-orchestrator.generate_report('test-results/report.json', failed)
-"
+exit_code = orchestrator.generate_report('test-results/report.json', failed)
+sys.exit(exit_code)
+" || TEST_EXIT_CODE=$?
 else
-  docker-compose run --rm orchestrator python3 test_runner.py $VERBOSE_FLAG
+  SDK_SERVICES=$(docker compose config --services | grep -- '-sdk$' | sed 's/-sdk$//' | paste -sd, -)
+  docker-compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator python3 test_runner.py $VERBOSE_FLAG || TEST_EXIT_CODE=$?
 fi
 
-echo "Done."
+docker-compose down --remove-orphans 2>/dev/null || true
+
+echo "Done. (exit code: $TEST_EXIT_CODE)"
+exit $TEST_EXIT_CODE

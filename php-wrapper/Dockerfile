@@ -1,4 +1,4 @@
-FROM php:8.2-cli
+FROM php:8.4-cli AS sdk-builder
 
 RUN apt-get update && apt-get install -y \
     git \
@@ -9,9 +9,15 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-WORKDIR /app
-
 COPY php-sdk /php-sdk
+
+FROM sdk-builder AS tester
+WORKDIR /php-sdk
+RUN composer install
+CMD ["composer", "test"]
+
+FROM sdk-builder AS server
+WORKDIR /app
 
 COPY cross-sdk-tests/php-wrapper /app
 

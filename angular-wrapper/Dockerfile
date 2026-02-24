@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:18-alpine AS sdk-builder
 
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./
@@ -9,12 +9,18 @@ WORKDIR /angular-sdk
 COPY angular-sdk/package*.json ./
 COPY angular-sdk/ ./
 RUN npm install && npm run build
+
+FROM sdk-builder AS tester
+WORKDIR /angular-sdk
+CMD ["npm", "test"]
+
+FROM sdk-builder AS server
+WORKDIR /angular-sdk
 RUN node -e "const p=require('./package.json'); p.type='module'; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2))"
 RUN node -e "\
 const fs=require('fs'),path=require('path');\
 function fix(dir){for(const f of fs.readdirSync(dir)){const fp=path.join(dir,f);if(fs.statSync(fp).isDirectory())fix(fp);else if(fp.endsWith('.js')){let c=fs.readFileSync(fp,'utf8');c=c.replace(/from '(\.[^']+)'/g,(m,p)=>p.endsWith('.js')?m:\"from '\"+p+\".js'\");fs.writeFileSync(fp,c)}}}\
 fix('/angular-sdk/lib/esm');"
-
 WORKDIR /app
 COPY cross-sdk-tests/angular-wrapper/package*.json ./
 RUN npm install
