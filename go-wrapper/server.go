@@ -260,12 +260,12 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	customVariableParser := &CustomVariableParser{}
 
 	config := sdk.ABSmartlyConfig{
-		Client_:               nil,
-		ContextEventHandler_:  customPublisher,
-		ContextEventLogger_:   eventCollector,
-		ContextDataProvider_:  nil,
-		VariableParser_:       customVariableParser,
-		AudienceDeserializer_: nil,
+		Client:               nil,
+		ContextEventHandler:  customPublisher,
+		ContextEventLogger:   eventCollector,
+		ContextDataProvider:  nil,
+		VariableParser:       customVariableParser,
+		AudienceDeserializer: nil,
 	}
 
 	absmartly := sdk.Create(config)
@@ -302,31 +302,31 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextConfig := sdk.ContextConfig{
-		Units_:           units,
-		Attributes_:      make(map[string]interface{}),
-		Overrides_:       make(map[string]int),
-		Cassigmnents_:    make(map[string]int),
-		EventLogger_:     eventCollector,
-		PublishDelay_:    publishDelay,
-		RefreshInterval_: refreshInterval,
+		Units:            units,
+		Attributes:       make(map[string]interface{}),
+		Overrides:        make(map[string]int),
+		CustomAssignments: make(map[string]int),
+		EventLogger:      eventCollector,
+		PublishDelay:     publishDelay,
+		RefreshInterval:  refreshInterval,
 	}
 
 	var context *sdk.Context
 	if req.Endpoint != "" {
 		endpoint := translateEndpoint(req.Endpoint)
 		clientConfig := sdk.ClientConfig{
-			Endpoint_:    endpoint,
-			ApiKey_:      "test-api-key",
-			Application_: "test-app",
-			Environment_: "test-env",
+			Endpoint:    endpoint,
+			APIKey:      "test-api-key",
+			Application: "test-app",
+			Environment: "test-env",
 		}
 		client := sdk.CreateDefaultClient(clientConfig)
 		absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:               client,
-			ContextEventHandler_:  customPublisher,
-			ContextEventLogger_:   eventCollector,
-			VariableParser_:       customVariableParser,
-			AudienceDeserializer_: nil,
+			Client:               client,
+			ContextEventHandler:  customPublisher,
+			ContextEventLogger:   eventCollector,
+			VariableParser:       customVariableParser,
+			AudienceDeserializer: nil,
 		})
 		context = absmartlyWithClient.CreateContext(contextConfig)
 
