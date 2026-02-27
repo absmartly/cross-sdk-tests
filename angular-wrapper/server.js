@@ -14,7 +14,8 @@ async function initAngularSDK() {
     angularServiceAvailable = true;
     console.log('Angular SDK service loaded - routing operations through ABSmartlyService');
   } catch (error) {
-    console.warn('Angular SDK service unavailable, using pass-through mode:', error.message);
+    console.error('Angular SDK service unavailable:', error.message);
+    throw error;
   }
 }
 
@@ -55,15 +56,6 @@ const SERVICE_PASSTHROUGH = [
   'customFieldKeys', 'refresh'
 ];
 
-const ALL_PASSTHROUGH = [
-  'treatment', 'peek', 'track', 'attribute', 'variableValue',
-  'peekVariableValue', 'customFieldValue', 'override', 'customAssignment',
-  'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
-  'getAttribute', 'variableKeys', 'customFieldKeys',
-  'customFieldValueType', 'setOverride', 'setCustomAssignment', 'refresh',
-  'setAttributes', 'getAttributes', 'setUnits', 'getUnits'
-];
-
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -78,7 +70,8 @@ app.get('/capabilities', (req, res) => {
     attrsSeq: true,
     isWrapper: true,
     wrapsSDK: 'javascript',
-    passThroughOperations: angularServiceAvailable ? SERVICE_PASSTHROUGH : ALL_PASSTHROUGH
+    angularServiceAvailable,
+    passThroughOperations: SERVICE_PASSTHROUGH
   });
 });
 
@@ -93,7 +86,9 @@ app.get('/context_payload/:payloadId/context', (req, res) => {
 });
 
 function createService(context) {
-  if (!ABSmartlyService) return null;
+  if (!ABSmartlyService) {
+    throw new Error('Angular SDK service is not initialized');
+  }
   try {
     const dummyConfig = {
       endpoint: 'http://dummy', apiKey: 'dummy',
@@ -101,8 +96,7 @@ function createService(context) {
     };
     return new ABSmartlyService(dummyConfig, context);
   } catch (error) {
-    console.warn('Failed to create ABSmartlyService instance:', error.message);
-    return null;
+    throw new Error(`Failed to create ABSmartlyService instance: ${error.message}`);
   }
 }
 
@@ -664,4 +658,7 @@ initAngularSDK().then(() => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Angular SDK wrapper listening on port ${PORT}`);
   });
+}).catch((error) => {
+  console.error('Failed to initialize Angular SDK wrapper:', error.message);
+  process.exit(1);
 });

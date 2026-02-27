@@ -159,7 +159,7 @@ end
 get '/capabilities' do
   content_type :json
   {
-    asyncContext: false,
+    asyncContext: true,
     attrsSeq: true
   }.to_json
 end

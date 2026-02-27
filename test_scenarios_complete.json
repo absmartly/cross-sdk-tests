@@ -7792,31 +7792,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "69 - HTTP Client - No Retry on 400 Bad Request",
@@ -7824,31 +7802,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "70 - HTTP Client - Retry on 500 Server Error",
@@ -7856,31 +7812,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "71 - HTTP Client - Timeout After Max Duration",
@@ -7888,31 +7822,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "72 - HTTP Client - Manual Abort Signal",
@@ -7920,31 +7832,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "73 - HTTP Client - URL Query Encoding",
@@ -7952,31 +7842,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "74 - HTTP Client - Empty Query Parameters",
@@ -7984,31 +7852,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "75 - Hashing - MD5 Empty String",
@@ -8016,7 +7862,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "76 - Hashing - MD5 Special Characters",
@@ -8024,7 +7872,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "77 - Hashing - MD5 Long Text",
@@ -8032,7 +7882,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "78 - Hashing - Murmur3 Zero Seed",
@@ -8040,7 +7892,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "79 - Hashing - Murmur3 Custom Seed",
@@ -8048,7 +7902,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "80 - Hashing - Murmur3 UTF-8",
@@ -8056,7 +7912,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "81 - Algorithm - Binary Insert Center",
@@ -8064,7 +7922,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "82 - Algorithm - Binary Insert Duplicate",
@@ -8072,7 +7932,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "83 - Algorithm - Binary Insert Beginning",
@@ -8080,7 +7942,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "84 - Algorithm - Binary Insert End",
@@ -8088,7 +7952,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "85 - Variant Assignment - Choose Variant Edge 0.0",
@@ -8096,7 +7962,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "86 - Variant Assignment - Choose Variant Edge 1.0",
@@ -8104,7 +7972,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "87 - Variant Assignment - Choose Variant Boundary",
@@ -8112,7 +7982,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "88 - Variant Assignment - Three Way Split Boundaries",
@@ -8120,7 +7992,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "89 - Variant Assignment - Zero Split First",
@@ -8128,7 +8002,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "90 - Variant Assignment - Zero Split Last",
@@ -8136,7 +8012,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "91 - Type Conversion - Boolean Convert Truthy",
@@ -8144,7 +8022,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "92 - Type Conversion - Number Convert Valid",
@@ -8152,7 +8032,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "93 - Type Conversion - Number Convert Invalid",
@@ -8160,7 +8042,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "94 - Type Conversion - String Convert Primitives",
@@ -8168,7 +8052,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "95 - Type Conversion - String Convert Invalid",
@@ -8176,7 +8062,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "96 - Evaluator - Extract Var Nested Paths",
@@ -8184,7 +8072,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "97 - Evaluator - Extract Var Invalid Paths",
@@ -8192,7 +8082,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "98 - Evaluator - Compare Null Handling",
@@ -8200,7 +8092,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "99 - Deep Equality - Primitives",
@@ -8208,7 +8102,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "100 - Deep Equality - NaN",
@@ -8216,7 +8112,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "101 - Deep Equality - Arrays Simple",
@@ -8224,7 +8122,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "102 - Deep Equality - Arrays Nested",
@@ -8232,7 +8132,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "103 - Deep Equality - Objects Simple",
@@ -8240,7 +8142,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "104 - Deep Equality - Objects Nested",
@@ -8248,7 +8152,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "105 - String Encoding - UTF-8 Single Byte",
@@ -8256,7 +8162,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "106 - String Encoding - UTF-8 Multi Byte",
@@ -8264,7 +8172,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "107 - Base64 - Empty String",
@@ -8272,7 +8182,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "108 - Base64 - Short Strings",
@@ -8280,7 +8192,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "109 - Base64 - Special Characters",
@@ -8288,7 +8202,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "110 - Base64 - Long Text",
@@ -8296,7 +8212,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "111 - Array Equality - Shallow Equals",
@@ -8304,7 +8222,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "112 - Hash Unit - String Values",
@@ -8312,7 +8232,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "113 - Hash Unit - Numeric Values",
@@ -8320,7 +8242,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "114 - SDK Config - Default Values",
@@ -8328,7 +8252,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "115 - SDK Config - Custom Values",
@@ -8336,7 +8262,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "116 - SDK Config - Unit Type Coercion",
@@ -8467,7 +8395,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "119 - Config Merge - Duplicate Key Error",
@@ -8475,7 +8405,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "120 - Audience Matcher - Empty Audience",
@@ -8483,7 +8415,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "121 - Audience Matcher - Invalid Filter Type",
@@ -8491,7 +8425,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "122 - Audience Matcher - Boolean Result",
@@ -8499,7 +8435,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "123 - JSON Expr - Array As AND",
@@ -8507,7 +8445,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "124 - JSON Expr - Unknown Operator Null",
@@ -8515,7 +8455,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "125 - Publish - Empty Arrays Omitted",
@@ -8523,39 +8465,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      },
-      {
-        "action": "publish",
-        "params": {},
-        "expect": {
-          "result": null,
-          "events": []
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "126 - Publish - Auto Timestamp",
@@ -8563,39 +8475,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [
-      {
-        "action": "createContext",
-        "params": {
-          "units": {
-            "session_id": "test123"
-          },
-          "options": {
-            "publishDelay": -1
-          }
-        },
-        "expect": {
-          "result": {
-            "ready": true,
-            "failed": false,
-            "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
-            }
-          ]
-        }
-      },
-      {
-        "action": "publish",
-        "params": {},
-        "expect": {
-          "result": null,
-          "events": []
-        }
-      }
-    ]
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
   },
   {
     "name": "127 - Type Check - isObject",
@@ -8603,7 +8485,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "128 - Type Check - isNumeric",
@@ -8611,7 +8495,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "129 - Type Check - isPromise",
@@ -8619,7 +8505,9 @@
     "contextData": {
       "experiments": []
     },
-    "steps": []
+    "steps": [],
+    "unitOnly": true,
+    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
   },
   {
     "name": "130 - Context - Pending Count",
@@ -13130,6 +13018,319 @@
               }
             }
           ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "184 - Async Readiness - Starts Not Ready Then Ready",
+    "description": "Async context with throttled payload should start not-ready and transition to ready",
+    "requires": [
+      "asyncContext"
+    ],
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "async-ready-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false,
+            "payloadThrottle": 120
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": false,
+            "failed": false,
+            "finalized": false
+          },
+          "events": []
+        }
+      },
+      {
+        "action": "isReady",
+        "params": {},
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "waitForReady",
+        "params": {
+          "timeout": 3000
+        },
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "isReady",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "185 - Experiments - Refresh Replaces Names",
+    "description": "experiments() should reflect refreshed context data",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_before_refresh",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 1,
+          "seedLo": 2,
+          "split": [
+            1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "exp-refresh-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "experiments",
+        "params": {},
+        "expect": {
+          "result": [
+            "exp_before_refresh"
+          ],
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 2,
+                "name": "exp_after_refresh",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3,
+                "seedLo": 4,
+                "split": [
+                  1
+                ],
+                "trafficSeedHi": 3,
+                "trafficSeedLo": 4,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh"
+            }
+          ]
+        }
+      },
+      {
+        "action": "experiments",
+        "params": {},
+        "expect": {
+          "result": [
+            "exp_after_refresh"
+          ],
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "186 - Lifecycle - Finalize Idempotent State",
+    "description": "finalize() should mark context finalized and keep pending at zero",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "finalize-state-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "187 - Unit/Attr - Missing Returns Null",
+    "description": "Unknown unit/attribute lookups should return null",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "null-lookup-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "getUnit",
+        "params": {
+          "unitType": "user_id"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getAttribute",
+        "params": {
+          "name": "country"
+        },
+        "expect": {
+          "result": null,
+          "events": []
         }
       }
     ]

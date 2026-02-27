@@ -160,7 +160,7 @@ end
 get '/capabilities' do
   content_type :json
   {
-    asyncContext: false,
+    asyncContext: true,
     attrsSeq: false,
     isWrapper: true,
     wrapsSDK: 'ruby',

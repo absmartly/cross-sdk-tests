@@ -331,12 +331,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $reflection = new ReflectionClass($context);
-            $unitsProperty = $reflection->getProperty('units');
-            $unitsProperty->setAccessible(true);
-            $units = $unitsProperty->getValue($context);
-            $units[$body['unitType']] = (string)$body['uid'];
-            $unitsProperty->setValue($context, $units);
+            $context->setUnit($body['unitType'], (string)$body['uid']);
 
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 

@@ -185,21 +185,8 @@ if [ "$CROSS_ONLY" = false ]; then
     OUTPUT=$(cat "$UNIT_TMPDIR/${sdk}.output" 2>/dev/null || echo "")
 
     if [ "$SDK_EXIT" -eq 124 ]; then
-      TESTS_PASSED=$(echo "$OUTPUT" | python3 -c "
-import sys,re
-out=sys.stdin.read()
-if re.search(r'\d+ passed', out) and not re.search(r'\d+ failed', out) and not re.search(r'\d+ error', out):
-    print('yes')
-else:
-    print('no')
-" 2>/dev/null || echo "no")
-      if [ "$TESTS_PASSED" = "yes" ]; then
-        echo "  $sdk: PASS (container hung after tests completed)"
-        SDK_EXIT=0
-      else
-        echo "  $sdk: TIMEOUT (>${UNIT_TEST_TIMEOUT}s)"
-        UNIT_EXIT_CODE=1
-      fi
+      echo "  $sdk: TIMEOUT (>${UNIT_TEST_TIMEOUT}s)"
+      UNIT_EXIT_CODE=1
     elif [ "$SDK_EXIT" -eq 0 ]; then
       echo "  $sdk: PASS"
     else

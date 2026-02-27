@@ -144,7 +144,7 @@ int main() {
 
     svr.Get("/capabilities",
             [](const httplib::Request&, httplib::Response& res) {
-                json resp = {{"asyncContext", false}, {"attrsSeq", false}};
+                json resp = {{"asyncContext", true}, {"attrsSeq", false}};
                 res.set_content(resp.dump(), "application/json");
             });
 
