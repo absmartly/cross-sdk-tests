@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:absmartly_dart/absmartly_dart.dart';
+import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 String translateErrorMessage(String msg) {
   if (msg.contains('closed') || msg.contains('closing')) {
@@ -251,11 +252,58 @@ void main() async {
   router.get('/capabilities', (shelf.Request request) {
     return shelf.Response.ok(
       jsonEncode({
-        'asyncContext': true,
+        'diagnostics': true,
         'attrsSeq': false,
       }),
       headers: {'Content-Type': 'application/json'},
     );
+  });
+
+  router.post('/diagnostic', (shelf.Request request) async {
+    try {
+      final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      final op = body['operation'] as String?;
+      final value = body['value'];
+      final text = value == null ? '' : value.toString();
+
+      dynamic result;
+      switch (op) {
+        case 'hashUnit':
+          result = String.fromCharCodes(Hashing.hashUnit(text));
+          break;
+        case 'base64UrlNoPadding':
+          result = base64Url.encode(utf8.encode(text)).replaceAll('=', '');
+          break;
+        case 'utf8Bytes':
+          result = utf8.encode(text);
+          break;
+        case 'isObject':
+          result = value is Map;
+          break;
+        case 'isNumeric':
+          result = value is num;
+          break;
+        case 'isPromise':
+          result = false;
+          break;
+        default:
+          return shelf.Response(
+            400,
+            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op'}),
+            headers: {'Content-Type': 'application/json'},
+          );
+      }
+
+      return shelf.Response.ok(
+        jsonEncode({'result': result, 'events': []}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
   });
 
   router.put('/context_payload/<payloadId>', (shelf.Request request, String payloadId) async {
@@ -463,6 +511,12 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -488,6 +542,12 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -699,6 +759,12 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -925,6 +991,12 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},

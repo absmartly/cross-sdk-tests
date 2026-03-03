@@ -9,17 +9,38 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{ABsmartly, Context, ContextData};
+use absmartly_sdk::{utils, ABsmartly, Context, ContextData};
 
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+fn translate_endpoint(endpoint: &str) -> String {
+    let mut translated = endpoint.to_string();
+    for prefix in ["localhost:", "127.0.0.1:"] {
+        if let Some(start) = translated.find(prefix) {
+            let port_start = start + prefix.len();
+            let port_end = translated[port_start..]
+                .find('/')
+                .map(|i| port_start + i)
+                .unwrap_or(translated.len());
+            if translated[port_start..port_end]
+                .chars()
+                .all(|c| c.is_ascii_digit())
+            {
+                translated.replace_range(start..port_end, "127.0.0.1:3000");
+                break;
+            }
+        }
+    }
+    translated
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -175,6 +196,12 @@ struct StorePayloadRequest {
     data: ContextData,
 }
 
+#[derive(Deserialize)]
+struct DiagnosticRequest {
+    operation: String,
+    value: Option<Value>,
+}
+
 async fn health_handler() -> impl IntoResponse {
     Json(json!({
         "status": "healthy",
@@ -184,9 +211,49 @@ async fn health_handler() -> impl IntoResponse {
 }
 
 async fn capabilities_handler() -> impl IntoResponse {
-    Json(json!({
-        "asyncContext": true,
+    Json(json!({"diagnostics": true,
         "attrsSeq": false
+    }))
+}
+
+async fn diagnostic_handler(
+    Json(req): Json<DiagnosticRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let value = req.value.unwrap_or(Value::Null);
+    let result = match req.operation.as_str() {
+        "hashUnit" => {
+            let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
+            Value::String(utils::hash_unit(&input))
+        }
+        "base64UrlNoPadding" => {
+            let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
+            Value::String(utils::base64_url_no_padding(input.as_bytes()))
+        }
+        "utf8Bytes" => {
+            let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
+            Value::Array(
+                input
+                    .as_bytes()
+                    .iter()
+                    .map(|b| Value::Number(serde_json::Number::from(*b)))
+                    .collect(),
+            )
+        }
+        "isObject" => Value::Bool(matches!(value, Value::Object(_))),
+        "isNumeric" => Value::Bool(matches!(value, Value::Number(_))),
+        "isPromise" => Value::Bool(false),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("Unsupported diagnostic operation: {}", req.operation) })),
+            ))
+        }
+    };
+
+    Ok(Json(ApiResponse {
+        result,
+        events: vec![],
+        error: None,
     }))
 }
 
@@ -244,10 +311,10 @@ async fn create_context_handler(
         .map(|(k, v)| (k.clone(), value_to_string(v)))
         .collect();
 
-    let has_payload_throttle = req.options.as_ref()
+    let payload_throttle_ms = req.options.as_ref()
         .and_then(|opts| opts.get("payloadThrottle"))
-        .map(|v| !v.is_null())
-        .unwrap_or(false);
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     let (mut context, ready, failed) = if let Some(data) = req.data {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
@@ -255,7 +322,7 @@ async fn create_context_handler(
         event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
         (ctx, true, false)
     } else if let Some(endpoint) = req.endpoint {
-        if has_payload_throttle {
+        if payload_throttle_ms > 0 {
             let mut ctx = Context::new_loading();
             for (unit_type, uid) in &units {
                 let _ = ctx.set_unit(unit_type, uid);
@@ -276,14 +343,39 @@ async fn create_context_handler(
                 contexts.insert(context_id.clone(), context_data.clone());
             }
 
-            let endpoint_clone = endpoint.clone();
+            let endpoint_clone = translate_endpoint(&endpoint);
             let context_data_clone = context_data.clone();
             let event_collector_clone = event_collector.clone();
+            let state_clone = state.clone();
+            let throttle_delay = payload_throttle_ms;
 
             tokio::spawn(async move {
-                let sdk = ABsmartly::new(&endpoint_clone, "test-key", "test-app", "test-env").expect("Failed to create SDK");
+                tokio::time::sleep(Duration::from_millis(throttle_delay)).await;
 
-                let result: Result<Context, _> = sdk.create_context(HashMap::<String, String>::new(), None).await;
+                if let Some(payload_id) = endpoint_clone
+                    .split("/context_payload/")
+                    .nth(1)
+                    .map(|s| s.trim_matches('/').to_string())
+                {
+                    let payload_data = {
+                        let payloads = state_clone.payloads.read().unwrap();
+                        payloads.get(&payload_id).cloned()
+                    };
+
+                    if let Some(data) = payload_data {
+                        {
+                            let mut context = context_data_clone.context.lock().unwrap();
+                            context.become_ready(data.clone());
+                        }
+                        event_collector_clone.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                        return;
+                    }
+                }
+
+                let sdk = ABsmartly::new(&endpoint_clone, "test-key", "test-app", "test-env")
+                    .expect("Failed to create SDK");
+                let result: Result<Context, _> =
+                    sdk.create_context(HashMap::<String, String>::new(), None).await;
                 match result {
                     Ok(ready_ctx) => {
                         let data: ContextData = ready_ctx.data().clone();
@@ -291,14 +383,18 @@ async fn create_context_handler(
                             let mut context = context_data_clone.context.lock().unwrap();
                             context.become_ready(data.clone());
                         }
-                        event_collector_clone.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                        event_collector_clone
+                            .push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
                     }
                     Err(e) => {
                         {
                             let mut context = context_data_clone.context.lock().unwrap();
                             context.become_failed();
                         }
-                        event_collector_clone.push("error", Some(json!({"message": format!("Failed to fetch context: {}", e)})));
+                        event_collector_clone.push(
+                            "error",
+                            Some(json!({"message": format!("Failed to fetch context: {}", e)})),
+                        );
                     }
                 }
             });
@@ -317,7 +413,8 @@ async fn create_context_handler(
                 error: None,
             });
         } else {
-            let payload_data = if let Some(payload_id) = endpoint
+            let translated_endpoint = translate_endpoint(&endpoint);
+            let payload_data = if let Some(payload_id) = translated_endpoint
                 .split("/context_payload/")
                 .nth(1)
                 .map(|s| s.to_string())
@@ -336,7 +433,10 @@ async fn create_context_handler(
             } else {
                 let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
                 let ctx = sdk.create_context_with(HashMap::<String, String>::new(), ContextData::default(), None);
-                event_collector.push("error", Some(json!({"message": format!("Payload not found for endpoint: {}", endpoint)})));
+                event_collector.push(
+                    "error",
+                    Some(json!({"message": format!("Payload not found for endpoint: {}", translated_endpoint)})),
+                );
                 (ctx, true, true)
             }
         }
@@ -628,6 +728,14 @@ async fn override_handler(
     {
         let mut context = ctx_data.context.lock().unwrap();
         if let Err(e) = context.set_override(&req.experiment_name, req.variant) {
+            let msg = e.to_string().to_lowercase();
+            if msg.contains("closed") || msg.contains("closing") || msg.contains("finalized") {
+                return Ok(Json(ApiResponse {
+                    result: Value::Null,
+                    events: vec![],
+                    error: None,
+                }));
+            }
             return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
         }
     }
@@ -929,6 +1037,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
+        .route("/diagnostic", post(diagnostic_handler))
         .route("/context_payload/{payloadId}", put(store_payload_handler))
         .route("/context_payload/{payloadId}/context", get(mock_api_context_handler))
         .route("/context", post(create_context_handler))

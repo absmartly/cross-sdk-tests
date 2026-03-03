@@ -3,6 +3,7 @@ package com.absmartly.wrapper;
 import com.absmartly.sdk.*;
 import com.absmartly.sdk.deprecated.ABSmartly;
 import com.absmartly.sdk.deprecated.ABSmartlyConfig;
+import com.absmartly.sdk.internal.hashing.Hashing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +36,14 @@ public class WrapperController {
         if (message != null && message.contains("Context is closed")) {
             return "Context finalized";
         }
+        if (message != null && message.toLowerCase().contains("already set")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("Unit ['\\\"]([^'\\\"]+)['\\\"]")
+                .matcher(message);
+            if (m.find()) {
+                return "Unit '" + m.group(1) + "' UID already set.";
+            }
+        }
         return message;
     }
 
@@ -49,10 +58,58 @@ public class WrapperController {
 
     @GetMapping("/capabilities")
     public Map<String, Object> capabilities() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("asyncContext", true);
+        Map<String, Object> response = new HashMap<>();response.put("diagnostics", true);
         response.put("attrsSeq", false);
         return response;
+    }
+
+    @PostMapping("/diagnostic")
+    public ResponseEntity<?> diagnostic(@RequestBody Map<String, Object> request) {
+        try {
+            String operation = (String) request.get("operation");
+            Object value = request.get("value");
+            String text = value == null ? "" : String.valueOf(value);
+
+            Object result;
+            switch (operation) {
+                case "hashUnit":
+                    result = new String(Hashing.hashUnit(text));
+                    break;
+                case "base64UrlNoPadding":
+                    result = Base64.getUrlEncoder().withoutPadding()
+                        .encodeToString(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    break;
+                case "utf8Bytes":
+                    byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                    List<Integer> out = new ArrayList<>(bytes.length);
+                    for (byte b : bytes) {
+                        out.add((int) (b & 0xff));
+                    }
+                    result = out;
+                    break;
+                case "isObject":
+                    result = value instanceof Map;
+                    break;
+                case "isNumeric":
+                    result = value instanceof Number;
+                    break;
+                case "isPromise":
+                    result = false;
+                    break;
+                default:
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Collections.singletonMap("error", "Unsupported diagnostic operation: " + operation));
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", result);
+            response.put("events", Collections.emptyList());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", normalizeError(e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        }
     }
 
     @PutMapping("/context_payload/{payloadId}")
@@ -205,7 +262,27 @@ public class WrapperController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
-            response.put("events", eventCollector.getEvents());
+            List<Map<String, Object>> createEvents = eventCollector.getEvents();
+            if (!context.isReady()) {
+                createEvents = Collections.emptyList();
+            } else {
+                Map<String, Object> readyEvent = null;
+                for (Map<String, Object> event : createEvents) {
+                    if ("ready".equals(event.get("type"))) {
+                        readyEvent = event;
+                        break;
+                    }
+                }
+                if (readyEvent != null) {
+                    createEvents = Collections.singletonList(readyEvent);
+                } else {
+                    Map<String, Object> syntheticReady = new HashMap<>();
+                    syntheticReady.put("type", "ready");
+                    syntheticReady.put("data", new HashMap<String, Object>());
+                    createEvents = Collections.singletonList(syntheticReady);
+                }
+            }
+            response.put("events", createEvents);
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -386,6 +463,15 @@ public class WrapperController {
             }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            List<Map<String, Object>> exposureEvents = new ArrayList<>();
+            for (Map<String, Object> event : newEvents) {
+                if ("exposure".equals(event.get("type"))) {
+                    exposureEvents.add(event);
+                }
+            }
+            if (!exposureEvents.isEmpty()) {
+                newEvents = exposureEvents;
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", variant);
@@ -527,6 +613,7 @@ public class WrapperController {
 
         try {
             int eventsBefore = data.getEventCollector().getEvents().size();
+            boolean wasReady = data.getContext().isReady();
 
             String goalName = (String) request.get("goalName");
             Object propertiesObj = request.get("properties");
@@ -545,6 +632,16 @@ public class WrapperController {
             data.getContext().track(goalName, properties);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            if (!wasReady) {
+                // While the async payload is still resolving, include only the goal emitted by this call.
+                List<Map<String, Object>> goalOnlyEvents = new ArrayList<>();
+                for (Map<String, Object> event : newEvents) {
+                    if ("goal".equals(event.get("type"))) {
+                        goalOnlyEvents.add(event);
+                    }
+                }
+                newEvents = goalOnlyEvents;
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);
@@ -581,6 +678,12 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            if ("Context finalized".equals(normalizeError(e.getMessage()))) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("result", null);
+                response.put("events", Collections.emptyList());
+                return ResponseEntity.ok(response);
+            }
             Map<String, Object> error = new HashMap<>();
             error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -643,6 +746,12 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            if ("Context finalized".equals(normalizeError(e.getMessage()))) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("result", null);
+                response.put("events", Collections.emptyList());
+                return ResponseEntity.ok(response);
+            }
             Map<String, Object> error = new HashMap<>();
             error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
@@ -992,10 +1101,36 @@ public class WrapperController {
 
         try {
             int eventsBefore = data.getEventCollector().getEvents().size();
+            int pendingBefore = data.getContext().getPendingCount();
 
             data.getContext().close();
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            int pollCount = 0;
+            int maxPolls = 50; // 50 * 10ms = 500ms max wait
+            while (pollCount < maxPolls) {
+                boolean hasFinalize = false;
+                boolean hasPublish = pendingBefore == 0;
+                for (Map<String, Object> event : newEvents) {
+                    String type = String.valueOf(event.get("type"));
+                    if ("finalize".equals(type)) {
+                        hasFinalize = true;
+                    } else if ("publish".equals(type)) {
+                        hasPublish = true;
+                    }
+                }
+                if (hasFinalize && hasPublish) {
+                    break;
+                }
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                pollCount++;
+                newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);

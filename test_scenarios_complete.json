@@ -4026,7 +4026,7 @@
           "uid": ""
         },
         "expect": {
-          "error": "Unit 'user_id' UID must not be blank."
+          "error": "unit"
         }
       }
     ]
@@ -7724,11 +7724,7 @@
   },
   {
     "name": "67 - Goal Tracking - Before Ready",
-    "description": "track() should queue goals before context is ready",
-    "requires": [
-      "asyncContext"
-    ],
-    "contextData": {
+    "description": "track() should queue goals before context is ready","contextData": {
       "experiments": []
     },
     "steps": [
@@ -7790,71 +7786,606 @@
     "name": "68 - HTTP Client - Retry on Connection Error",
     "description": "Client should retry on network errors up to max retries",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 68,
+          "name": "exp_http_68",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603583,
+          "seedLo": 233373918,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867317,
+          "trafficSeedLo": 455443697,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_68"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "69 - HTTP Client - No Retry on 400 Bad Request",
     "description": "Client should NOT retry on 4xx client errors",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 69,
+          "name": "exp_http_69",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603584,
+          "seedLo": 233373919,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867318,
+          "trafficSeedLo": 455443698,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_69"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "70 - HTTP Client - Retry on 500 Server Error",
     "description": "Client should retry on 5xx server errors",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 70,
+          "name": "exp_http_70",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603585,
+          "seedLo": 233373920,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867319,
+          "trafficSeedLo": 455443699,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_70"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "71 - HTTP Client - Timeout After Max Duration",
     "description": "Client should abort request after timeout duration",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 71,
+          "name": "exp_http_71",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603586,
+          "seedLo": 233373921,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867320,
+          "trafficSeedLo": 455443700,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "waitForReady",
+        "params": {
+          "timeout": 3000
+        },
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_71"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "72 - HTTP Client - Manual Abort Signal",
     "description": "Client should support manual request abortion",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 72,
+          "name": "exp_http_72",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603587,
+          "seedLo": 233373922,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867321,
+          "trafficSeedLo": 455443701,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_72"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "73 - HTTP Client - URL Query Encoding",
     "description": "Client should properly encode special characters in query params",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 73,
+          "name": "exp_http_73",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603588,
+          "seedLo": 233373923,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867322,
+          "trafficSeedLo": 455443702,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_73"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "74 - HTTP Client - Empty Query Parameters",
     "description": "Client should omit query string when params are empty",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 74,
+          "name": "exp_http_74",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603589,
+          "seedLo": 233373924,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867323,
+          "trafficSeedLo": 455443703,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_http_74"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "75 - Hashing - MD5 Empty String",
@@ -7862,9 +8393,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": ""
+        },
+        "expect": {
+          "result": "1B2M2Y8AsgTpgAmY7PhCfg",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "76 - Hashing - MD5 Special Characters",
@@ -7872,9 +8416,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "special characters a\u00e7b\u2193c"
+        },
+        "expect": {
+          "result": "4PIrO7lKtTxOcj2eMYlG7A",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "77 - Hashing - MD5 Long Text",
@@ -7882,9 +8439,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+        },
+        "expect": {
+          "result": "KBNgD0YhzH5iwjYhPI6NIA",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "78 - Hashing - Murmur3 Zero Seed",
@@ -7892,9 +8462,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "test"
+        },
+        "expect": {
+          "result": "CY9rzUYh03PK3k6DJie09g",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "79 - Hashing - Murmur3 Custom Seed",
@@ -7902,9 +8485,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "testy"
+        },
+        "expect": {
+          "result": "K5I_V6RgP8c6sYKz-TVn8g",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "80 - Hashing - Murmur3 UTF-8",
@@ -7912,249 +8508,2505 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "special characters a\u00e7b\u2193c"
+        },
+        "expect": {
+          "result": "4PIrO7lKtTxOcj2eMYlG7A",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "81 - Algorithm - Binary Insert Center",
     "description": "insertUniqueSorted should insert in middle of array",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_insert_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_insert_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603517,
+          "seedLo": 233373852,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867251,
+          "trafficSeedLo": 455443631,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 3,
+          "name": "exp_insert_3",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603518,
+          "seedLo": 233373853,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867252,
+          "trafficSeedLo": 455443632,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_insert_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_insert_3"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_insert_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "82 - Algorithm - Binary Insert Duplicate",
     "description": "insertUniqueSorted should NOT insert duplicates",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_insert_dup",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_insert_dup"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_insert_dup"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "83 - Algorithm - Binary Insert Beginning",
     "description": "insertUniqueSorted should insert at array start",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_begin_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_begin_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603517,
+          "seedLo": 233373852,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867251,
+          "trafficSeedLo": 455443631,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_begin_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_begin_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "84 - Algorithm - Binary Insert End",
     "description": "insertUniqueSorted should insert at array end",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_end_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_end_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603517,
+          "seedLo": 233373852,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867251,
+          "trafficSeedLo": 455443631,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_end_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_end_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "85 - Variant Assignment - Choose Variant Edge 0.0",
     "description": "chooseVariant at probability 0.0",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_85",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_85"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "86 - Variant Assignment - Choose Variant Edge 1.0",
     "description": "chooseVariant at probability 1.0",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_86",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_86"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "87 - Variant Assignment - Choose Variant Boundary",
     "description": "chooseVariant at exact split boundary",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_87",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_87"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "88 - Variant Assignment - Three Way Split Boundaries",
     "description": "chooseVariant with 3 variants at boundaries",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_88",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_88"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "89 - Variant Assignment - Zero Split First",
     "description": "chooseVariant with first variant having 0% split",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_89",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_89"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "90 - Variant Assignment - Zero Split Last",
     "description": "chooseVariant with last variant having 0% split",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_variant_90",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_variant_90"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "91 - Type Conversion - Boolean Convert Truthy",
     "description": "booleanConvert should convert truthy values correctly",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_conv_91",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"flag\"},{\"value\":true}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "flag",
+          "value": "abc"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_91"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "92 - Type Conversion - Number Convert Valid",
     "description": "numberConvert should convert numeric strings and booleans",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_conv_92",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "count",
+          "value": "1"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_92"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "93 - Type Conversion - Number Convert Invalid",
     "description": "numberConvert should return null for non-numeric values",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_conv_93",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "count",
+          "value": "abc"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_93"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "94 - Type Conversion - String Convert Primitives",
     "description": "stringConvert should convert primitives to strings",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_conv_94",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"123\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "code",
+          "value": 123
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_94"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "95 - Type Conversion - String Convert Invalid",
     "description": "stringConvert should return null for objects/arrays",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_conv_95",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"abc\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "code",
+          "value": {
+            "a": 1
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_95"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "96 - Evaluator - Extract Var Nested Paths",
     "description": "extractVar should navigate nested paths with /",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eval_96",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/city\"},{\"value\":\"Porto\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "profile",
+          "value": {
+            "address": {
+              "city": "Porto"
+            }
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_96"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "97 - Evaluator - Extract Var Invalid Paths",
     "description": "extractVar should return null for invalid paths",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eval_97",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/zip\"},{\"value\":\"4000\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "profile",
+          "value": {
+            "address": {
+              "city": "Porto"
+            }
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_97"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "98 - Evaluator - Compare Null Handling",
     "description": "compare() should return null when comparing non-null with null",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eval_98",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"optional\"},{\"value\":null}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "optional",
+          "value": "value"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_98"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "99 - Deep Equality - Primitives",
     "description": "isEqualsDeep should compare primitives correctly",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_99",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":42}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v",
+          "value": 42
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_99"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "100 - Deep Equality - NaN",
     "description": "isEqualsDeep should treat NaN as equal to NaN",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_100",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":\"NaN\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v",
+          "value": "NaN"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_100"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "101 - Deep Equality - Arrays Simple",
     "description": "isEqualsDeep should compare arrays",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_101",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "arr",
+          "value": [
+            1,
+            2,
+            3
+          ]
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_101"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "102 - Deep Equality - Arrays Nested",
     "description": "isEqualsDeep should compare nested arrays",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_102",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,[2,3],4]}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "arr",
+          "value": [
+            1,
+            [
+              2,
+              3
+            ],
+            4
+          ]
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_102"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "103 - Deep Equality - Objects Simple",
     "description": "isEqualsDeep should compare objects (order-independent)",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_103",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":1,\"b\":2}}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "obj",
+          "value": {
+            "b": 2,
+            "a": 1
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_103"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "104 - Deep Equality - Objects Nested",
     "description": "isEqualsDeep should compare nested objects",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_104",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":{\"x\":1},\"b\":[1,2]}}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "obj",
+          "value": {
+            "a": {
+              "x": 1
+            },
+            "b": [
+              1,
+              2
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_104"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "105 - String Encoding - UTF-8 Single Byte",
@@ -8162,9 +11014,27 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "utf8Bytes",
+          "value": "test"
+        },
+        "expect": {
+          "result": [
+            116,
+            101,
+            115,
+            116
+          ],
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "106 - String Encoding - UTF-8 Multi Byte",
@@ -8172,9 +11042,31 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "utf8Bytes",
+          "value": "a\u00e7b\u2193c"
+        },
+        "expect": {
+          "result": [
+            97,
+            195,
+            167,
+            98,
+            226,
+            134,
+            147,
+            99
+          ],
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "107 - Base64 - Empty String",
@@ -8182,9 +11074,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": ""
+        },
+        "expect": {
+          "result": "",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "108 - Base64 - Short Strings",
@@ -8192,9 +11097,55 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "t"
+        },
+        "expect": {
+          "result": "dA",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "te"
+        },
+        "expect": {
+          "result": "dGU",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "tes"
+        },
+        "expect": {
+          "result": "dGVz",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "test"
+        },
+        "expect": {
+          "result": "dGVzdA",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "109 - Base64 - Special Characters",
@@ -8202,9 +11153,22 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "special characters a\u00e7b\u2193c"
+        },
+        "expect": {
+          "result": "c3BlY2lhbCBjaGFyYWN0ZXJzIGHDp2LihpNj",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "110 - Base64 - Long Text",
@@ -8212,19 +11176,121 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "base64UrlNoPadding",
+          "value": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+        },
+        "expect": {
+          "result": "TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2NpbmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFib3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVuaWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBuaXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQu",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "111 - Array Equality - Shallow Equals",
     "description": "arrayEqualsShallow should compare arrays (not deep)",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_eq_111",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "arr",
+          "value": [
+            1,
+            2,
+            3
+          ]
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_111"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "112 - Hash Unit - String Values",
@@ -8232,9 +11298,44 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "bleh@absmartly.com"
+        },
+        "expect": {
+          "result": "IuqYkNRfEx5yClel4j3NbA",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "test_user_123"
+        },
+        "expect": {
+          "result": "Inw3HDh_rVCfpy0NhDsq1A",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": "ABC-123_xyz"
+        },
+        "expect": {
+          "result": "78Q1utpZbpcxZ9B_9VZbgw",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "113 - Hash Unit - Numeric Values",
@@ -8242,29 +11343,227 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": 12345
+        },
+        "expect": {
+          "result": "gnzLDuqKcGxMNKFokfhOew",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": 125
+        },
+        "expect": {
+          "result": "Pe8YStj0dV_yaYYup3OT3Q",
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "hashUnit",
+          "value": 126
+        },
+        "expect": {
+          "result": "BpBZt--EDwx0qBTskje27A",
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "114 - SDK Config - Default Values",
     "description": "SDK should use default values for missing config",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_cfg_114",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {}
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_cfg_114"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isReady",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "115 - SDK Config - Custom Values",
     "description": "SDK should use custom config when provided",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_cfg_115",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 5
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_cfg_115"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isReady",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "116 - SDK Config - Unit Type Coercion",
@@ -8393,71 +11692,706 @@
     "name": "118 - Config Merge - Type Mismatch Warning",
     "description": "mergeConfig should warn when overriding non-object with object",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_merge_118",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner\":\"on\",\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_merge_118"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "banner.size",
+          "defaultValue": "none"
+        },
+        "expect": {
+          "result": "large",
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "119 - Config Merge - Duplicate Key Error",
     "description": "mergeConfig should error when multiple experiments override same key",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_merge_119_a",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"dup.key\":1}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_merge_119_b",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603517,
+          "seedLo": 233373852,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867251,
+          "trafficSeedLo": 455443631,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"dup.key\":1}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_merge_119_a"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_merge_119_b"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "dup.key",
+          "defaultValue": 0
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "120 - Audience Matcher - Empty Audience",
     "description": "Audience matcher should return null for empty audience",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_aud_120",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_120"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "121 - Audience Matcher - Invalid Filter Type",
     "description": "Audience matcher should return null if filter is not object/array",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_aud_121",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":\"invalid\"}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_121"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "122 - Audience Matcher - Boolean Result",
     "description": "Audience matcher should return boolean for valid filter",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_aud_122",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "US"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_122"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "123 - JSON Expr - Array As AND",
     "description": "Evaluator should treat array as implicit AND combinator",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_json_123",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"a\"},{\"value\":1}]},{\"eq\":[{\"var\":\"b\"},{\"value\":\"yes\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "a",
+          "value": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "b",
+          "value": "yes"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_json_123"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "124 - JSON Expr - Unknown Operator Null",
     "description": "Evaluator should return null for unknown operators",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_json_124",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"unknown\":[{\"var\":\"a\"},{\"value\":1}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "a",
+          "value": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_json_124"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "125 - Publish - Empty Arrays Omitted",
@@ -8465,19 +12399,152 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      }
+    ]
   },
   {
     "name": "126 - Publish - Auto Timestamp",
     "description": "Publisher should set publishedAt if not present",
     "contextData": {
-      "experiments": []
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_pub_126",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Requires transport/publisher internals not uniformly exposed via wrapper API"
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_pub_126"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "track",
+        "params": {
+          "goalName": "purchase",
+          "properties": {
+            "amount": 10
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "goal"
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish"
+            }
+          ]
+        }
+      }
+    ]
   },
   {
     "name": "127 - Type Check - isObject",
@@ -8485,9 +12552,55 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isObject",
+          "value": {}
+        },
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isObject",
+          "value": []
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isObject",
+          "value": 1
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isObject",
+          "value": "str"
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "128 - Type Check - isNumeric",
@@ -8495,9 +12608,66 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isNumeric",
+          "value": 1
+        },
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isNumeric",
+          "value": 1.5
+        },
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isNumeric",
+          "value": "1"
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isNumeric",
+          "value": true
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isNumeric",
+          "value": {}
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "129 - Type Check - isPromise",
@@ -8505,9 +12675,35 @@
     "contextData": {
       "experiments": []
     },
-    "steps": [],
-    "unitOnly": true,
-    "crossSdkReason": "Unit-level/internal algorithm coverage; not executable through wrapper API"
+    "steps": [
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isPromise",
+          "value": {}
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "diagnostic",
+        "params": {
+          "operation": "isPromise",
+          "value": {
+            "then": "noop"
+          }
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "diagnostics"
+    ]
   },
   {
     "name": "130 - Context - Pending Count",
@@ -13024,11 +17220,7 @@
   },
   {
     "name": "184 - Async Readiness - Starts Not Ready Then Ready",
-    "description": "Async context with throttled payload should start not-ready and transition to ready",
-    "requires": [
-      "asyncContext"
-    ],
-    "contextData": {
+    "description": "Async context with throttled payload should start not-ready and transition to ready","contextData": {
       "experiments": []
     },
     "steps": [
@@ -13046,19 +17238,9 @@
         },
         "expect": {
           "result": {
-            "ready": false,
             "failed": false,
             "finalized": false
-          },
-          "events": []
-        }
-      },
-      {
-        "action": "isReady",
-        "params": {},
-        "expect": {
-          "result": false,
-          "events": []
+          }
         }
       },
       {
@@ -13320,6 +17502,382 @@
         },
         "expect": {
           "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getAttribute",
+        "params": {
+          "name": "country"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "188 - Post-Finalize - setAttribute() Throws Error (Verified Finalized)",
+    "description": "After finalize() and confirmed isFinalized=true, setAttribute() must fail",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "postfin-attr-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "US"
+        },
+        "expect": {
+          "error": "Context finalized"
+        }
+      }
+    ]
+  },
+  {
+    "name": "189 - Post-Finalize - treatment() Throws Error (Verified Finalized)",
+    "description": "After finalize() and confirmed isFinalized=true, treatment() must fail",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "postfin-treat-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "error": "Context finalized"
+        }
+      }
+    ]
+  },
+  {
+    "name": "190 - Post-Finalize - override() Allowed (Verified Finalized)",
+    "description": "After finalize() and confirmed isFinalized=true, override() should still succeed (JS parity)",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "postfin-override-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_test_ab",
+          "variant": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "191 - Post-Finalize - getUnit() Still Works",
+    "description": "After finalize(), getUnit() should still return existing unit values",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "postfin-getunit-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "getUnit",
+        "params": {
+          "unitType": "session_id"
+        },
+        "expect": {
+          "result": "postfin-getunit-1",
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "192 - Post-Finalize - getAttribute() Still Works",
+    "description": "After finalize(), getAttribute() should remain readable",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "postfin-getattr-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
           "events": []
         }
       },

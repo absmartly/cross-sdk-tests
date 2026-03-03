@@ -2,8 +2,17 @@ const express = require('express');
 const React = require('react');
 const { renderToString } = require('react-dom/server');
 const absmartly = require('@absmartly/javascript-sdk');
+const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const { Treatment, TreatmentVariant, TreatmentFunction, useTreatment } = require('@absmartly/react-sdk');
 const SDKProvider = require('@absmartly/react-sdk').default;
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 const app = express();
 app.use(express.json());
@@ -36,6 +45,21 @@ class CustomPublisher extends absmartly.ContextPublisher {
 const contexts = new Map();
 const payloadStore = {};
 
+function normalizeAsyncEndpoint(endpoint) {
+  if (!endpoint) return endpoint;
+  try {
+    const url = new URL(endpoint);
+    if (url.pathname.startsWith('/context_payload/')) {
+      url.hostname = '127.0.0.1';
+      url.port = '3000';
+      return url.toString();
+    }
+  } catch (error) {
+    // Fallback to regex replacement below.
+  }
+  return endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+}
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -45,8 +69,7 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', (req, res) => {
-  res.json({
-    asyncContext: true,
+  res.json({diagnostics: true,
     attrsSeq: true,
     isWrapper: true,
     wrapsSDK: 'javascript',
@@ -80,57 +103,62 @@ app.get('/context_payload/:payloadId/context', (req, res) => {
 });
 
 app.post('/context', async (req, res) => {
-  let { data, endpoint, units, options } = req.body;
-  const contextId = `ctx-${Date.now()}-${Math.random()}`;
+  try {
+    let { data, endpoint, units, options } = req.body;
+    const contextId = `ctx-${Date.now()}-${Math.random()}`;
 
-  if (endpoint) {
-    endpoint = endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
-  }
-
-  const eventCollector = new EventCollector();
-  const customPublisher = new CustomPublisher(eventCollector);
-
-  const sdk = new absmartly.SDK({
-    endpoint: endpoint || 'http://dummy',
-    apiKey: 'dummy',
-    application: 'test',
-    environment: 'test',
-    eventLogger: (ctx, eventName, eventData) => {
-      eventCollector.handleEvent(ctx, eventName, eventData);
-    },
-    publisher: customPublisher
-  });
-
-  let context;
-  const payloadThrottle = options?.payloadThrottle || 0;
-
-  if (data) {
-    context = sdk.createContextWith(
-      { units },
-      data,
-      { publishDelay: -1, refreshPeriod: 0, ...options }
-    );
-  } else {
-    context = sdk.createContext(
-      { units },
-      { publishDelay: -1, refreshPeriod: 0, ...options }
-    );
-    if (payloadThrottle === 0) {
-      await context.ready();
+    if (endpoint) {
+      endpoint = normalizeAsyncEndpoint(endpoint);
     }
+
+    const eventCollector = new EventCollector();
+    const customPublisher = new CustomPublisher(eventCollector);
+
+    const sdk = new absmartly.SDK({
+      endpoint: endpoint || 'http://dummy',
+      apiKey: 'dummy',
+      application: 'test',
+      environment: 'test',
+      eventLogger: (ctx, eventName, eventData) => {
+        eventCollector.handleEvent(ctx, eventName, eventData);
+      },
+      publisher: customPublisher
+    });
+
+    let context;
+    const payloadThrottle = options?.payloadThrottle || 0;
+
+    if (data) {
+      context = sdk.createContextWith(
+        { units },
+        data,
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
+    } else {
+      context = sdk.createContext(
+        { units },
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
+      if (payloadThrottle === 0) {
+        await context.ready();
+      }
+    }
+
+    contexts.set(contextId, { context, eventCollector, sdk });
+
+    res.json({
+      result: {
+        contextId,
+        ready: context.isReady(),
+        failed: context.isFailed(),
+        finalized: context.isFinalized()
+      },
+      events: eventCollector.events
+    });
+  } catch (error) {
+    console.error('Context creation error:', error);
+    res.status(500).json({ error: error.message, type: error.constructor.name });
   }
-
-  contexts.set(contextId, { context, eventCollector, sdk });
-
-  res.json({
-    result: {
-      contextId,
-      ready: context.isReady(),
-      failed: context.isFailed(),
-      finalized: context.isFinalized()
-    },
-    events: eventCollector.events
-  });
 });
 
 app.post('/context/:contextId/treatment', async (req, res) => {
@@ -531,6 +559,45 @@ app.post('/context/:contextId/setCustomAssignment', (req, res) => {
 app.delete('/context/:contextId', (req, res) => {
   contexts.delete(req.params.contextId);
   res.json({ result: 'deleted' });
+});
+
+app.post('/diagnostic', (req, res) => {
+  try {
+    const body = req.body || {};
+    const op = body.operation;
+    let result;
+
+    switch (op) {
+      case 'hashUnit':
+        result = sdkUtils.hashUnit(body.value);
+        break;
+      case 'base64UrlNoPadding': {
+        const input = body.value == null ? '' : String(body.value);
+        result = sdkUtils.base64UrlNoPadding(sdkUtils.stringToUint8Array(input));
+        break;
+      }
+      case 'utf8Bytes': {
+        const input = body.value == null ? '' : String(body.value);
+        result = Array.from(sdkUtils.stringToUint8Array(input));
+        break;
+      }
+      case 'isObject':
+        result = sdkUtils.isObject(body.value);
+        break;
+      case 'isNumeric':
+        result = sdkUtils.isNumeric(body.value);
+        break;
+      case 'isPromise':
+        result = sdkUtils.isPromise(body.value);
+        break;
+      default:
+        return res.status(400).json({ error: `Unsupported diagnostic operation: ${op}` });
+    }
+
+    res.json({ result, events: [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

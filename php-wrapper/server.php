@@ -125,6 +125,26 @@ function parseJsonBody(ServerRequestInterface $request)
     return json_decode($body, true) ?? [];
 }
 
+function parseJsonBodyPreserveObjects(ServerRequestInterface $request)
+{
+    $body = (string) $request->getBody();
+    if (empty($body)) {
+        return null;
+    }
+    return json_decode($body);
+}
+
+function waitForClosed(Context $context, int $timeoutMs = 5000, int $pollIntervalMs = 5): void
+{
+    $deadline = microtime(true) + ($timeoutMs / 1000.0);
+    while (!$context->isClosed()) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Context did not finalize within timeout');
+        }
+        usleep($pollIntervalMs * 1000);
+    }
+}
+
 function translateEndpoint(string $endpoint): string
 {
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
@@ -143,10 +163,41 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
     }
 
     if ($method === 'GET' && $path === '/capabilities') {
-        return jsonResponse(200, [
-            'asyncContext' => true,
+        return jsonResponse(200, ['diagnostics' => true,
             'attrsSeq' => false
         ]);
+    }
+
+    if ($method === 'POST' && $path === '/diagnostic') {
+        $body = parseJsonBodyPreserveObjects($request);
+        $op = (is_object($body) && property_exists($body, 'operation')) ? $body->operation : null;
+        $value = (is_object($body) && property_exists($body, 'value')) ? $body->value : null;
+
+        try {
+            if ($op === 'hashUnit') {
+                $publishEvent = new PublishEvent();
+                $result = $publishEvent->hashUnit((string)$value);
+            } elseif ($op === 'base64UrlNoPadding') {
+                $str = (string)$value;
+                $result = rtrim(strtr(base64_encode($str), '+/', '-_'), '=');
+            } elseif ($op === 'utf8Bytes') {
+                $str = (string)$value;
+                $bytes = unpack('C*', $str);
+                $result = $bytes ? array_values($bytes) : [];
+            } elseif ($op === 'isObject') {
+                $result = is_object($value);
+            } elseif ($op === 'isNumeric') {
+                $result = is_int($value) || is_float($value);
+            } elseif ($op === 'isPromise') {
+                $result = false;
+            } else {
+                return jsonResponse(400, ['error' => "Unsupported diagnostic operation: {$op}"]);
+            }
+
+            return jsonResponse(200, ['result' => $result, 'events' => []]);
+        } catch (Throwable $e) {
+            return jsonResponse(500, ['error' => $e->getMessage()]);
+        }
     }
 
     if ($method === 'PUT' && preg_match('#^/context_payload/([^/]+)$#', $path, $matches)) {
@@ -337,7 +388,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            $error = $e->getMessage();
+            if (stripos($error, 'already set') !== false) {
+                $unitType = $body['unitType'] ?? '';
+                $error = "Unit '{$unitType}' UID already set.";
+            }
+            return jsonResponse(400, ['error' => $error]);
         }
     }
 
@@ -908,6 +964,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         try {
             $context->close();
+            waitForClosed($context);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);

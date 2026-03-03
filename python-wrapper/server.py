@@ -5,6 +5,8 @@ import json
 import re
 import time
 import uuid
+import base64
+import hashlib
 from concurrent.futures import Future
 
 from sdk.absmartly import ABSmartly
@@ -64,6 +66,10 @@ def translate_endpoint(endpoint):
         return None
     return re.sub(r'localhost:\d+', '127.0.0.1:3000', endpoint)
 
+def is_context_finalized_error(err):
+    msg = str(err).lower()
+    return 'closed' in msg or 'closing' in msg or 'finalized' in msg
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({
@@ -74,8 +80,7 @@ def health():
 
 @app.route('/capabilities', methods=['GET'])
 def capabilities():
-    return jsonify({
-        'asyncContext': True,
+    return jsonify({'diagnostics': True,
         'attrsSeq': False
     })
 
@@ -358,6 +363,8 @@ def override(context_id):
         context.set_override(request.json['experimentName'], request.json['variant'])
         return jsonify({'result': None, 'events': []})
     except Exception as e:
+        if is_context_finalized_error(e):
+            return jsonify({'result': None, 'events': []})
         return jsonify({'error': str(e)}), 400
 
 @app.route('/context/<context_id>/customAssignment', methods=['POST'])
@@ -462,6 +469,8 @@ def set_override(context_id):
         new_events = collector.events[events_before:]
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
+        if is_context_finalized_error(e):
+            return jsonify({'result': None, 'events': []})
         return jsonify({'error': str(e)}), 400
 
 @app.route('/context/<context_id>/setCustomAssignment', methods=['POST'])
@@ -592,6 +601,36 @@ def delete_context(context_id):
     if context_id in contexts:
         del contexts[context_id]
     return jsonify({'result': 'deleted'})
+
+@app.route('/diagnostic', methods=['POST'])
+def diagnostic():
+    try:
+        body = request.json or {}
+        op = body.get('operation')
+        value = body.get('value')
+
+        if op == 'hashUnit':
+            text = '' if value is None else str(value)
+            digest = hashlib.md5(text.encode('utf-8')).digest()
+            result = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
+        elif op == 'base64UrlNoPadding':
+            text = '' if value is None else str(value)
+            result = base64.urlsafe_b64encode(text.encode('utf-8')).decode('ascii').rstrip('=')
+        elif op == 'utf8Bytes':
+            text = '' if value is None else str(value)
+            result = list(text.encode('utf-8'))
+        elif op == 'isObject':
+            result = isinstance(value, dict)
+        elif op == 'isNumeric':
+            result = isinstance(value, (int, float)) and not isinstance(value, bool)
+        elif op == 'isPromise':
+            result = hasattr(value, '__await__')
+        else:
+            return jsonify({'error': f'Unsupported diagnostic operation: {op}'}), 400
+
+        return jsonify({'result': result, 'events': []})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=False)

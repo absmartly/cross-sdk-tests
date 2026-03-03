@@ -1,5 +1,6 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
+const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -45,6 +46,21 @@ class CustomPublisher extends absmartly.ContextPublisher {
 const contexts = new Map();
 const payloadStore = {};
 
+function normalizeAsyncEndpoint(endpoint) {
+  if (!endpoint) return endpoint;
+  try {
+    const url = new URL(endpoint);
+    if (url.pathname.startsWith('/context_payload/')) {
+      url.hostname = '127.0.0.1';
+      url.port = '3000';
+      return url.toString();
+    }
+  } catch (error) {
+    // Fallback to regex replacement below.
+  }
+  return endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+}
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
@@ -54,8 +70,8 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', (req, res) => {
-  res.json({
-    asyncContext: true,  // Supports async context creation
+  res.json({// Supports async context creation
+    diagnostics: true,
     attrsSeq: true       // Supports attribute sequence tracking
   });
 });
@@ -79,7 +95,7 @@ app.post('/context', async (req, res) => {
     units = units || {};
 
     if (endpoint) {
-      endpoint = endpoint.replace(/localhost:\d+/, '127.0.0.1:3000');
+      endpoint = normalizeAsyncEndpoint(endpoint);
     }
 
     const contextId = `ctx-${Date.now()}-${Math.random()}`;
@@ -493,6 +509,45 @@ app.post('/context/:contextId/finalize', async (req, res) => {
 app.delete('/context/:contextId', (req, res) => {
   contexts.delete(req.params.contextId);
   res.json({ result: 'deleted' });
+});
+
+app.post('/diagnostic', (req, res) => {
+  try {
+    const body = req.body || {};
+    const op = body.operation;
+    let result;
+
+    switch (op) {
+      case 'hashUnit':
+        result = sdkUtils.hashUnit(body.value);
+        break;
+      case 'base64UrlNoPadding': {
+        const input = body.value == null ? '' : String(body.value);
+        result = sdkUtils.base64UrlNoPadding(sdkUtils.stringToUint8Array(input));
+        break;
+      }
+      case 'utf8Bytes': {
+        const input = body.value == null ? '' : String(body.value);
+        result = Array.from(sdkUtils.stringToUint8Array(input));
+        break;
+      }
+      case 'isObject':
+        result = sdkUtils.isObject(body.value);
+        break;
+      case 'isNumeric':
+        result = sdkUtils.isNumeric(body.value);
+        break;
+      case 'isPromise':
+        result = sdkUtils.isPromise(body.value);
+        break;
+      default:
+        return res.status(400).json({ error: `Unsupported diagnostic operation: ${op}` });
+    }
+
+    res.json({ result, events: [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

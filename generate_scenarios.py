@@ -4118,9 +4118,7 @@ def generate_all_scenarios():
         # 67 - Goal Tracking - Before Ready
         {
             "name": '67 - Goal Tracking - Before Ready',
-            "description": 'track() should queue goals before context is ready',
-            "requires": ["asyncContext"],
-            "contextData": {"experiments": []},
+            "description": 'track() should queue goals before context is ready',"contextData": {"experiments": []},
             "steps": [
                 {
                 'action': 'createContext',
@@ -4878,6 +4876,104 @@ def generate_all_scenarios():
         },
     ]
     
+    scenarios.extend([
+        {
+            "name": "188 - Post-Finalize - setAttribute() Throws Error (Verified Finalized)",
+            "description": "After finalize() and confirmed isFinalized=true, setAttribute() must fail",
+            "contextData": {"experiments": []},
+            "steps": [
+                {
+                    "action": "createContext",
+                    "params": {"units": {"session_id": "postfin-attr-1"}, "options": {"publishDelay": -1}},
+                    "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
+                },
+                {"action": "finalize", "params": {}, "expect": {"result": None, "events": [{"type": "finalize"}]}},
+                {"action": "isFinalized", "params": {}, "expect": {"result": True, "events": []}},
+                {
+                    "action": "attribute",
+                    "params": {"name": "country", "value": "US"},
+                    "expect": {"error": "Context finalized"},
+                },
+            ],
+        },
+        {
+            "name": "189 - Post-Finalize - treatment() Throws Error (Verified Finalized)",
+            "description": "After finalize() and confirmed isFinalized=true, treatment() must fail",
+            "contextData": {"experiments": [EXP_TEST_AB]},
+            "steps": [
+                {
+                    "action": "createContext",
+                    "params": {"units": {"session_id": "postfin-treat-1"}, "options": {"publishDelay": -1}},
+                    "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
+                },
+                {"action": "finalize", "params": {}, "expect": {"result": None, "events": [{"type": "finalize"}]}},
+                {"action": "isFinalized", "params": {}, "expect": {"result": True, "events": []}},
+                {
+                    "action": "treatment",
+                    "params": {"experimentName": "exp_test_ab"},
+                    "expect": {"error": "Context finalized"},
+                },
+            ],
+        },
+        {
+            "name": "190 - Post-Finalize - override() Allowed (Verified Finalized)",
+            "description": "After finalize() and confirmed isFinalized=true, override() should still succeed (JS parity)",
+            "contextData": {"experiments": [EXP_TEST_AB]},
+            "steps": [
+                {
+                    "action": "createContext",
+                    "params": {"units": {"session_id": "postfin-override-1"}, "options": {"publishDelay": -1}},
+                    "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
+                },
+                {"action": "finalize", "params": {}, "expect": {"result": None, "events": [{"type": "finalize"}]}},
+                {"action": "isFinalized", "params": {}, "expect": {"result": True, "events": []}},
+                {
+                    "action": "override",
+                    "params": {"experimentName": "exp_test_ab", "variant": 1},
+                    "expect": {"result": None, "events": []},
+                },
+            ],
+        },
+        {
+            "name": "191 - Post-Finalize - getUnit() Still Works",
+            "description": "After finalize(), getUnit() should still return existing unit values",
+            "contextData": {"experiments": []},
+            "steps": [
+                {
+                    "action": "createContext",
+                    "params": {"units": {"session_id": "postfin-getunit-1"}, "options": {"publishDelay": -1}},
+                    "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
+                },
+                {"action": "finalize", "params": {}, "expect": {"result": None, "events": [{"type": "finalize"}]}},
+                {"action": "isFinalized", "params": {}, "expect": {"result": True, "events": []}},
+                {
+                    "action": "getUnit",
+                    "params": {"unitType": "session_id"},
+                    "expect": {"result": "postfin-getunit-1", "events": []},
+                },
+            ],
+        },
+        {
+            "name": "192 - Post-Finalize - getAttribute() Still Works",
+            "description": "After finalize(), getAttribute() should remain readable",
+            "contextData": {"experiments": []},
+            "steps": [
+                {
+                    "action": "createContext",
+                    "params": {"units": {"session_id": "postfin-getattr-1"}, "options": {"publishDelay": -1}},
+                    "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
+                },
+                {"action": "finalize", "params": {}, "expect": {"result": None, "events": [{"type": "finalize"}]}},
+                {"action": "isFinalized", "params": {}, "expect": {"result": True, "events": []}},
+                {
+                    "action": "getAttribute",
+                    "params": {"name": "country"},
+                    "expect": {"result": None, "events": []},
+                },
+            ],
+        },
+    ])
+
     return scenarios
 
 

@@ -14,6 +14,9 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -32,6 +35,18 @@ fun Application.configureRouting() {
     val contexts = ConcurrentHashMap<String, ContextWrapper>()
     val payloadStore = ConcurrentHashMap<String, ContextData>()
     val objectMapper = jacksonObjectMapper()
+    fun normalizeError(message: String?, unitType: String? = null): String {
+        val msg = message ?: "Unknown error"
+        if (msg.contains("closed", ignoreCase = true) ||
+            msg.contains("closing", ignoreCase = true) ||
+            msg.contains("finalized", ignoreCase = true)) {
+            return "Context finalized"
+        }
+        if (msg.contains("already set", ignoreCase = true) && unitType != null) {
+            return "Unit '$unitType' UID already set."
+        }
+        return msg
+    }
 
     routing {
         get("/health") {
@@ -43,9 +58,41 @@ fun Application.configureRouting() {
         }
 
         get("/capabilities") {
-            call.respond(mapOf(
-                "asyncContext" to true
+            call.respond(mapOf("diagnostics" to true
             ))
+        }
+
+        post("/diagnostic") {
+            try {
+                val request = call.receive<Map<String, Any?>>()
+                val op = request["operation"] as? String
+                val value = request["value"]
+                val text = value?.toString() ?: ""
+
+                val result: Any = when (op) {
+                    "hashUnit" -> {
+                        val md5 = MessageDigest.getInstance("MD5").digest(text.toByteArray(StandardCharsets.UTF_8))
+                        Base64.getUrlEncoder().withoutPadding().encodeToString(md5)
+                    }
+                    "base64UrlNoPadding" ->
+                        Base64.getUrlEncoder().withoutPadding().encodeToString(text.toByteArray(StandardCharsets.UTF_8))
+                    "utf8Bytes" -> text.toByteArray(StandardCharsets.UTF_8).map { it.toInt() and 0xff }
+                    "isObject" -> value is Map<*, *>
+                    "isNumeric" -> value is Number
+                    "isPromise" -> false
+                    else -> return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        mapOf("error" to "Unsupported diagnostic operation: $op"),
+                    )
+                }
+
+                call.respond(mapOf("result" to result, "events" to emptyList<Any>()))
+            } catch (e: Exception) {
+                call.respond(
+                    HttpStatusCode.InternalServerError,
+                    mapOf("error" to (e.message ?: "Unknown error")),
+                )
+            }
         }
 
         put("/context_payload/{payloadId}") {
@@ -165,17 +212,18 @@ fun Application.configureRouting() {
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
+            val request = call.receive<Map<String, Any>>()
+            val unitType = request["unitType"] as? String
             try {
-                val request = call.receive<Map<String, Any>>()
                 val eventsBefore = wrapper.eventCollector.getEvents().size
                 wrapper.context.setUnit(
-                    request["unitType"] as String,
+                    unitType ?: "",
                     request["uid"].toString()
                 )
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to normalizeError(e.message, unitType)))
             }
         }
 
@@ -348,7 +396,11 @@ fun Application.configureRouting() {
                 )
                 call.respond(mapOf("result" to null, "events" to emptyList<Any>()))
             } catch (e: Exception) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+                if (normalizeError(e.message) == "Context finalized") {
+                    call.respond(mapOf("result" to null, "events" to emptyList<Any>()))
+                    return@post
+                }
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to normalizeError(e.message)))
             }
         }
 
@@ -367,7 +419,11 @@ fun Application.configureRouting() {
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+                if (normalizeError(e.message) == "Context finalized") {
+                    call.respond(mapOf("result" to null, "events" to emptyList<Any>()))
+                    return@post
+                }
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to normalizeError(e.message)))
             }
         }
 

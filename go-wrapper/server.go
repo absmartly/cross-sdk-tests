@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +21,19 @@ import (
 )
 
 func translateEndpoint(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	// In matrix runs orchestrator can send localhost:<published-port>; inside
+	// the SDK container we must target the local service port instead.
+	if host == "localhost" || host == "127.0.0.1" || host == "go-sdk" {
+		parsed.Host = "localhost:3000"
+		return parsed.String()
+	}
+
 	endpoint = strings.Replace(endpoint, "http://localhost:3006", "http://localhost:3000", 1)
 	endpoint = strings.Replace(endpoint, "http://127.0.0.1:3006", "http://localhost:3000", 1)
 	endpoint = strings.Replace(endpoint, "http://go-sdk:3006", "http://localhost:3000", 1)
@@ -180,9 +196,56 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{
-		"asyncContext": true,
+	json.NewEncoder(w).Encode(map[string]bool{"diagnostics":  true,
 		"attrsSeq":     false,
+	})
+}
+
+func diagnosticHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Operation string      `json:"operation"`
+		Value     interface{} `json:"value"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var result interface{}
+	switch req.Operation {
+	case "hashUnit":
+		sum := md5.Sum([]byte(fmt.Sprint(req.Value)))
+		result = base64.RawURLEncoding.EncodeToString(sum[:])
+	case "base64UrlNoPadding":
+		result = base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprint(req.Value)))
+	case "utf8Bytes":
+		data := []byte(fmt.Sprint(req.Value))
+		out := make([]int, len(data))
+		for i, b := range data {
+			out[i] = int(b)
+		}
+		result = out
+	case "isObject":
+		_, ok := req.Value.(map[string]interface{})
+		result = ok
+	case "isNumeric":
+		switch req.Value.(type) {
+		case float64, float32, int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8:
+			result = true
+		default:
+			result = false
+		}
+	case "isPromise":
+		result = false
+	default:
+		http.Error(w, fmt.Sprintf("Unsupported diagnostic operation: %s", req.Operation), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"result": result,
+		"events": []interface{}{},
 	})
 }
 
@@ -290,25 +353,29 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	publishDelay := int64(-1)
-	refreshInterval := int64(0)
+	refreshInterval := int64(-1)
 
 	if req.Options != nil {
 		if pd, ok := req.Options["publishDelay"].(float64); ok {
 			publishDelay = int64(pd)
 		}
 		if ri, ok := req.Options["refreshPeriod"].(float64); ok {
-			refreshInterval = int64(ri)
+			if ri > 0 {
+				refreshInterval = int64(ri)
+			} else {
+				refreshInterval = -1
+			}
 		}
 	}
 
 	contextConfig := sdk.ContextConfig{
-		Units:            units,
-		Attributes:       make(map[string]interface{}),
-		Overrides:        make(map[string]int),
+		Units:             units,
+		Attributes:        make(map[string]interface{}),
+		Overrides:         make(map[string]int),
 		CustomAssignments: make(map[string]int),
-		EventLogger:      eventCollector,
-		PublishDelay:     publishDelay,
-		RefreshInterval:  refreshInterval,
+		EventLogger:       eventCollector,
+		PublishDelay:      publishDelay,
+		RefreshInterval:   refreshInterval,
 	}
 
 	var context *sdk.Context
@@ -344,6 +411,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
+		// Contexts created directly with payload data have no data provider, so
+		// periodic refresh must stay disabled to avoid nil provider panics.
+		contextConfig.RefreshInterval = -1
 		context = absmartly.CreateContextWith(contextConfig, req.Data)
 	}
 
@@ -875,6 +945,16 @@ func overrideHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = ctxData.context.SetOverride(req.ExperimentName, int(req.Variant))
 	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
+			response := Response{
+				Result: nil,
+				Events: []Event{},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1092,6 +1172,16 @@ func setOverrideHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = ctxData.context.SetOverride(req.ExperimentName, int(req.Variant))
 	if err != nil {
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
+			response := Response{
+				Result: nil,
+				Events: []Event{},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -1361,6 +1451,7 @@ func main() {
 
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/capabilities", capabilitiesHandler).Methods("GET")
+	router.HandleFunc("/diagnostic", diagnosticHandler).Methods("POST")
 	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")

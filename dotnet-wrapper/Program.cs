@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -52,6 +54,12 @@ string TranslateErrorMessage(string msg)
     if (string.IsNullOrEmpty(msg)) return msg;
     if (msg.Contains("closed") || msg.Contains("closing"))
         return "Context finalized";
+    if (msg.Contains("already set", StringComparison.OrdinalIgnoreCase))
+    {
+        var m = Regex.Match(msg, @"Unit ['""](?<unit>[^'""]+)['""]");
+        if (m.Success)
+            return $"Unit '{m.Groups["unit"].Value}' UID already set.";
+    }
     return msg;
 }
 
@@ -63,10 +71,58 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapGet("/capabilities", () => Results.Ok(new
-{
-    asyncContext = true,
+{diagnostics = true,
     attrsSeq = true
 }));
+
+app.MapPost("/diagnostic", async (HttpContext httpContext) =>
+{
+    try
+    {
+        using var reader = new StreamReader(httpContext.Request.Body);
+        var body = await reader.ReadToEndAsync();
+        var requestJson = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
+
+        var op = requestJson != null && requestJson.TryGetValue("operation", out var opEl)
+            ? opEl.GetString()
+            : null;
+        var value = requestJson != null && requestJson.TryGetValue("value", out var valEl)
+            ? valEl
+            : default;
+
+        string text = value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Undefined => string.Empty,
+            JsonValueKind.Null => string.Empty,
+            _ => value.ToString()
+        };
+
+        object? result = op switch
+        {
+            "hashUnit" => Convert.ToBase64String(MD5.HashData(Encoding.UTF8.GetBytes(text)))
+                .Replace('+', '-').Replace('/', '_').TrimEnd('='),
+            "base64UrlNoPadding" => Convert.ToBase64String(Encoding.UTF8.GetBytes(text))
+                .Replace('+', '-').Replace('/', '_').TrimEnd('='),
+            "utf8Bytes" => Encoding.UTF8.GetBytes(text).Select(b => (int)b).ToArray(),
+            "isObject" => value.ValueKind == JsonValueKind.Object,
+            "isNumeric" => value.ValueKind == JsonValueKind.Number,
+            "isPromise" => false,
+            _ => null
+        };
+
+        if (result == null && op != "isPromise")
+        {
+            return Results.BadRequest(new { error = $"Unsupported diagnostic operation: {op}" });
+        }
+
+        return Results.Ok(new { result, events = Array.Empty<object>() });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+});
 
 app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext httpContext) =>
 {
@@ -360,6 +416,14 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
     }
     catch (Exception ex)
     {
+        if (TranslateErrorMessage(ex.Message) == "Context finalized")
+        {
+            return Results.Ok(new ApiResponse
+            {
+                Result = null,
+                Events = new List<object>()
+            });
+        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -383,6 +447,14 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
     }
     catch (Exception ex)
     {
+        if (TranslateErrorMessage(ex.Message) == "Context finalized")
+        {
+            return Results.Ok(new ApiResponse
+            {
+                Result = null,
+                Events = new List<object>()
+            });
+        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -694,6 +766,14 @@ app.MapPost("/context/{contextId}/override", (string contextId, [FromBody] Overr
     }
     catch (Exception ex)
     {
+        if (TranslateErrorMessage(ex.Message) == "Context finalized")
+        {
+            return Results.Ok(new ApiResponse
+            {
+                Result = null,
+                Events = new List<object>()
+            });
+        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -835,6 +915,14 @@ app.MapPost("/context/{contextId}/setOverride", (string contextId, [FromBody] Ov
     }
     catch (Exception ex)
     {
+        if (TranslateErrorMessage(ex.Message) == "Context finalized")
+        {
+            return Results.Ok(new ApiResponse
+            {
+                Result = null,
+                Events = new List<object>()
+            });
+        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });

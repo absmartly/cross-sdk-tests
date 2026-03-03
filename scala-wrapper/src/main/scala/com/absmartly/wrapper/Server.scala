@@ -51,9 +51,40 @@ object Server extends IOApp {
       ))
 
     case GET -> Root / "capabilities" =>
-      Ok(Json.obj(
-        "asyncContext" -> Json.fromBoolean(true)
+      Ok(Json.obj("diagnostics" -> Json.fromBoolean(true)
       ))
+
+    case req @ POST -> Root / "diagnostic" =>
+      req.as[Json].flatMap { json =>
+        val cursor = json.hcursor
+        val op = cursor.downField("operation").as[String].getOrElse("")
+        val value = cursor.downField("value").focus.getOrElse(Json.Null)
+        val text = value.asString.getOrElse(value.noSpaces)
+
+        val result: Either[String, Json] = op match {
+          case "hashUnit" =>
+            Right(Json.fromString(Utils.hashUnit(text)))
+          case "base64UrlNoPadding" =>
+            val encoded = java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            Right(Json.fromString(encoded))
+          case "utf8Bytes" =>
+            val bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8).map(b => Json.fromInt(b & 0xff))
+            Right(Json.arr(bytes: _*))
+          case "isObject" =>
+            Right(Json.fromBoolean(value.isObject))
+          case "isNumeric" =>
+            Right(Json.fromBoolean(value.isNumber))
+          case "isPromise" =>
+            Right(Json.fromBoolean(false))
+          case _ =>
+            Left(s"Unsupported diagnostic operation: $op")
+        }
+
+        result match {
+          case Right(v) => Ok(wrapperResponse(v, List.empty))
+          case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err)))
+        }
+      }
 
     case req @ PUT -> Root / "context_payload" / payloadId =>
       req.as[Json].flatMap { json =>
@@ -305,10 +336,11 @@ object Server extends IOApp {
       withContext(contextId) { case (context, collector) =>
         req.as[Json].flatMap { json =>
           val cursor = json.hcursor
-          (cursor.downField("key").as[String], cursor.downField("defaultValue").as[String]) match {
-            case (Right(key), Right(defaultValue)) =>
+          (cursor.downField("key").as[String], cursor.downField("defaultValue").focus) match {
+            case (Right(key), Some(defaultValueJson)) =>
               try {
                 val prevCount = collector.getEvents().length
+                val defaultValue = defaultValueToString(defaultValueJson)
                 val value = context.variableValue(key, defaultValue)
                 val newEvents = collector.getEventsSince(prevCount)
                 Ok(wrapperResponse(parseVariableResult(value), newEvents))
@@ -325,9 +357,10 @@ object Server extends IOApp {
       withContext(contextId) { case (context, _) =>
         req.as[Json].flatMap { json =>
           val cursor = json.hcursor
-          (cursor.downField("key").as[String], cursor.downField("defaultValue").as[String]) match {
-            case (Right(key), Right(defaultValue)) =>
+          (cursor.downField("key").as[String], cursor.downField("defaultValue").focus) match {
+            case (Right(key), Some(defaultValueJson)) =>
               try {
+                val defaultValue = defaultValueToString(defaultValueJson)
                 val value = context.peekVariableValue(key, defaultValue)
                 Ok(wrapperResponse(parseVariableResult(value), List.empty))
               } catch {
@@ -370,7 +403,14 @@ object Server extends IOApp {
                 context.setOverride(experimentName, variant)
                 Ok(wrapperResponse(Json.Null, List.empty))
               } catch {
-                case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+                case e: Exception =>
+                  val msg = Option(e.getMessage).getOrElse("")
+                  val lower = msg.toLowerCase
+                  if (lower.contains("closed") || lower.contains("closing") || lower.contains("finalized")) {
+                    Ok(wrapperResponse(Json.Null, List.empty))
+                  } else {
+                    BadRequest(Json.obj("error" -> Json.fromString(msg)))
+                  }
               }
             case _ =>
               BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName or variant")))
@@ -533,6 +573,13 @@ object Server extends IOApp {
       case Right(json) => json
       case Left(_) => Json.fromString(value)
     }
+  }
+
+  private def defaultValueToString(value: Json): String = {
+    value.asString
+      .orElse(value.asNumber.map(_.toString))
+      .orElse(value.asBoolean.map(_.toString))
+      .getOrElse(value.noSpaces)
   }
 
   private def wrapperResponse(result: Json, events: List[WrapperEvent]): Json = {

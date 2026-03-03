@@ -24,10 +24,41 @@ defmodule ElixirWrapper.Router do
   end
 
   get "/capabilities" do
-    send_json(conn, 200, %{
-      asyncContext: true,
+    send_json(conn, 200, %{diagnostics: true,
       attrsSeq: false
     })
+  end
+
+  post "/diagnostic" do
+    op = conn.body_params["operation"]
+    value = conn.body_params["value"]
+    text =
+      cond do
+        is_nil(value) -> ""
+        is_binary(value) -> value
+        is_number(value) -> to_string(value)
+        is_boolean(value) -> to_string(value)
+        true -> Jason.encode!(value)
+      end
+
+    result =
+      case op do
+        "hashUnit" -> ABSmartly.Utils.hash_unit(text)
+        "base64UrlNoPadding" -> Base.url_encode64(text, padding: false)
+        "utf8Bytes" -> :binary.bin_to_list(text)
+        "isObject" -> is_map(value)
+        "isNumeric" -> is_number(value)
+        "isPromise" -> false
+        _ -> :unsupported
+      end
+
+    case result do
+      :unsupported ->
+        send_error(conn, 400, "Unsupported diagnostic operation: #{inspect(op)}")
+
+      _ ->
+        send_json(conn, 200, %{result: result, events: []})
+    end
   end
 
   post "/context" do
@@ -107,8 +138,16 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/treatment" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name} = conn.body_params
-      result = ABSmartly.Context.treatment(ctx, experiment_name)
-      send_action_response(conn, result, collector, eb)
+      case ABSmartly.Context.treatment(ctx, experiment_name) do
+        {:error, :finalized} ->
+          send_error(conn, 400, "Context finalized")
+
+        {:error, reason} ->
+          send_error(conn, 400, inspect(reason))
+
+        result ->
+          send_action_response(conn, result, collector, eb)
+      end
     end)
   end
 
@@ -261,7 +300,13 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/finalize" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       ABSmartly.Context.finalize(ctx)
-      send_action_response(conn, nil, collector, eb)
+      case wait_for_finalized(ctx) do
+        :ok ->
+          send_action_response(conn, nil, collector, eb)
+
+        {:error, :timeout} ->
+          send_error(conn, 500, "Context did not finalize within timeout")
+      end
     end)
   end
 
@@ -410,6 +455,17 @@ defmodule ElixirWrapper.Router do
     Process.sleep(10)
     events = EventCollector.get_since(collector, events_before)
     send_json(conn, 200, %{result: result, events: events})
+  end
+
+  defp wait_for_finalized(ctx, retries \\ 1000)
+  defp wait_for_finalized(_ctx, 0), do: {:error, :timeout}
+  defp wait_for_finalized(ctx, retries) do
+    if ABSmartly.Context.is_finalized?(ctx) do
+      :ok
+    else
+      Process.sleep(5)
+      wait_for_finalized(ctx, retries - 1)
+    end
   end
 
   defp send_json(conn, status, data) do

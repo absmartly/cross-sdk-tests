@@ -1,6 +1,9 @@
 import Vapor
 import ABSmartly
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -9,6 +12,13 @@ import PromiseKit
 typealias HTTPResponse = Vapor.Response
 typealias VaporApplication = Vapor.Application
 typealias ABSmartlyApplication = ABSmartly.Application
+
+private func base64UrlNoPadding(_ data: Data) -> String {
+    return data.base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+}
 
 extension Promise {
     func asyncValue() async throws -> T {
@@ -25,61 +35,72 @@ extension Promise {
 }
 
 class EventCollector: ContextEventLogger {
-    var events: [[String: Any]] = []
+    private var storedEvents: [[String: Any]] = []
+    private let lock = NSLock()
     private let maxEvents = 100 // Prevent unbounded growth
 
-    func handleEvent(context: Context, event: ContextEventLoggerEvent) {
-        // Prevent memory exhaustion from unbounded event accumulation
-        if events.count >= maxEvents {
-            events.removeFirst(maxEvents / 2) // Remove oldest half
-        }
+    var events: [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedEvents
+    }
 
+    func handleEvent(context: Context, event: ContextEventLoggerEvent) {
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        var eventRecord: [String: Any]
 
         switch event {
         case .ready(let data):
-            events.append([
+            eventRecord = [
                 "type": "ready",
                 "data": convertContextDataToDict(data),
                 "timestamp": timestamp
-            ])
+            ]
         case .refresh(let data):
-            events.append([
+            eventRecord = [
                 "type": "refresh",
                 "data": convertContextDataToDict(data),
                 "timestamp": timestamp
-            ])
+            ]
         case .publish(let publishEvent):
-            events.append([
+            eventRecord = [
                 "type": "publish",
                 "data": convertPublishEventToDict(publishEvent),
                 "timestamp": timestamp
-            ])
+            ]
         case .exposure(let exposure):
-            events.append([
+            eventRecord = [
                 "type": "exposure",
                 "data": convertExposureToDict(exposure),
                 "timestamp": timestamp
-            ])
+            ]
         case .goal(let goal):
-            events.append([
+            eventRecord = [
                 "type": "goal",
                 "data": convertGoalToDict(goal),
                 "timestamp": timestamp
-            ])
+            ]
         case .close:
-            events.append([
+            eventRecord = [
                 "type": "finalize",
                 "data": NSNull(),
                 "timestamp": timestamp
-            ])
+            ]
         case .error(let error):
-            events.append([
+            eventRecord = [
                 "type": "error",
                 "data": ["message": error.localizedDescription],
                 "timestamp": timestamp
-            ])
+            ]
         }
+
+        lock.lock()
+        // Prevent memory exhaustion from unbounded event accumulation
+        if storedEvents.count >= maxEvents {
+            storedEvents.removeFirst(maxEvents / 2) // Remove oldest half
+        }
+        storedEvents.append(eventRecord)
+        lock.unlock()
     }
 
     private func convertContextDataToDict(_ data: ContextData) -> [String: Any] {
@@ -289,11 +310,43 @@ func routes(_ app: VaporApplication) throws {
     }
 
     app.get("capabilities") { req -> HTTPResponse in
-        let capabilities: [String: Bool] = [
-            "asyncContext": true,
+        let capabilities: [String: Bool] = ["diagnostics": true,
             "attrsSeq": false
         ]
         return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(capabilities)))
+    }
+
+    app.post("diagnostic") { req -> HTTPResponse in
+        struct DiagnosticRequest: Content {
+            let operation: String
+            let value: AnyCodable?
+        }
+
+        let request = try req.content.decode(DiagnosticRequest.self)
+        let rawValue: Any? = request.value?.value
+        let text = rawValue.map { String(describing: $0) } ?? ""
+
+        let result: Any
+        switch request.operation {
+        case "hashUnit":
+            result = Hashing.hash(text)
+        case "base64UrlNoPadding":
+            result = base64UrlNoPadding(Data(text.utf8))
+        case "utf8Bytes":
+            result = Array(text.utf8).map(Int.init)
+        case "isObject":
+            result = rawValue is [String: Any]
+        case "isNumeric":
+            result = rawValue is Int || rawValue is Double || rawValue is Float
+        case "isPromise":
+            result = false
+        default:
+            let error = ["error": "Unsupported diagnostic operation: \(request.operation)"]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: error)))
+        }
+
+        let response: [String: Any] = ["result": result, "events": []]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response)))
     }
 
     app.put("context_payload", ":payloadId") { req -> HTTPResponse in
@@ -421,6 +474,14 @@ func routes(_ app: VaporApplication) throws {
             let payloadThrottle = request.options?.payloadThrottle ?? 0
             if payloadThrottle == 0 {
                 _ = try await context.waitUntilReady().asyncValue()
+                // Ensure the ready event has been observed by the event logger before responding.
+                let deadline = Date().addingTimeInterval(0.25)
+                while Date() < deadline {
+                    if eventCollector.events.contains(where: { ($0["type"] as? String) == "ready" }) {
+                        break
+                    }
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
             }
         } else {
             throw Abort(.badRequest, reason: "Either data or endpoint must be provided")
@@ -458,7 +519,11 @@ func routes(_ app: VaporApplication) throws {
         do {
             try storage.context.setUnit(unitType: request.unitType, uid: "\(request.uid.value)")
         } catch {
-            let errorResult: [String: Any] = ["error": error.localizedDescription]
+            var message = error.localizedDescription
+            if message.lowercased().contains("already set") {
+                message = "Unit '\(request.unitType)' UID already set."
+            }
+            let errorResult: [String: Any] = ["error": message]
             return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
         }
 
@@ -749,8 +814,14 @@ func routes(_ app: VaporApplication) throws {
         }
 
         let request = try req.content.decode(OverrideRequest.self)
-
-        try storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
+        do {
+            try storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
+        } catch {
+            let msg = error.localizedDescription.lowercased()
+            if !(msg.contains("closed") || msg.contains("closing") || msg.contains("finalized")) {
+                throw error
+            }
+        }
 
         let result: [String: Any] = [
             "result": NSNull(),

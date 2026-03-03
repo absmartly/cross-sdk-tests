@@ -16,11 +16,11 @@ COPY scala-sdk /app/scala-sdk
 COPY cross-sdk-tests/scala-wrapper /app/scala-wrapper
 
 WORKDIR /app/scala-wrapper
-RUN sbt assembly
+RUN sbt -J-Xms128M -J-Xmx512M assembly
 
 FROM builder AS tester
 WORKDIR /app/scala-sdk
-RUN sbt "Test / compile"
+RUN sbt -J-Xms128M -J-Xmx512M "Test / compile"
 CMD ["sbt", "test"]
 
 FROM eclipse-temurin:17-jre

@@ -6,6 +6,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
 import 'package:absmartly_sdk/absmartly_sdk.dart';
+import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 import 'lib/widget_test_queue.dart';
 
@@ -221,7 +222,7 @@ Future<void> startServer() async {
   router.get('/capabilities', (shelf.Request request) {
     return shelf.Response.ok(
       jsonEncode({
-        'asyncContext': true,
+        'diagnostics': true,
         'attrsSeq': false,
         'isWrapper': true,
         'wrapsSDK': 'dart',
@@ -235,6 +236,53 @@ Future<void> startServer() async {
       }),
       headers: {'Content-Type': 'application/json'},
     );
+  });
+
+  router.post('/diagnostic', (shelf.Request request) async {
+    try {
+      final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      final op = body['operation'] as String?;
+      final value = body['value'];
+      final text = value == null ? '' : value.toString();
+
+      dynamic result;
+      switch (op) {
+        case 'hashUnit':
+          result = String.fromCharCodes(Hashing.hashUnit(text));
+          break;
+        case 'base64UrlNoPadding':
+          result = base64Url.encode(utf8.encode(text)).replaceAll('=', '');
+          break;
+        case 'utf8Bytes':
+          result = utf8.encode(text);
+          break;
+        case 'isObject':
+          result = value is Map;
+          break;
+        case 'isNumeric':
+          result = value is num;
+          break;
+        case 'isPromise':
+          result = false;
+          break;
+        default:
+          return shelf.Response(
+            400,
+            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op'}),
+            headers: {'Content-Type': 'application/json'},
+          );
+      }
+
+      return shelf.Response.ok(
+        jsonEncode({'result': result, 'events': []}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
   });
 
   router.put('/context_payload/<payloadId>', (shelf.Request request, String payloadId) async {
@@ -354,7 +402,9 @@ Future<void> startServer() async {
 
       final publishDelay = options['publishDelay'] as int? ?? -1;
       contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
-      contextConfig.setRefreshInterval(options['refreshPeriod'] as int? ?? 0);
+      // Flutter wrapper uses createContextWith payload injection in this test harness.
+      // Disable auto-refresh to avoid background refresh noise without a real provider.
+      contextConfig.setRefreshInterval(-1);
 
       // Use createContextWith for all contexts in Flutter wrapper
       // This bypasses HTTP which doesn't work in the single-threaded test environment
@@ -452,6 +502,12 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -477,6 +533,12 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -701,6 +763,12 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -927,6 +995,12 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
+      if (translateErrorMessage(e.toString()) == 'Context finalized') {
+        return shelf.Response.ok(
+          jsonEncode({'result': null, 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},

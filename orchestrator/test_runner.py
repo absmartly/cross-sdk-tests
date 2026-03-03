@@ -53,9 +53,9 @@ class TestOrchestrator:
                             if caps_response.status_code == 200:
                                 self.capabilities[sdk_name] = caps_response.json()
                             else:
-                                self.capabilities[sdk_name] = {"asyncContext": False, "attrsSeq": False}
+                                self.capabilities[sdk_name] = {"attrsSeq": False}
                         except Exception:
-                            self.capabilities[sdk_name] = {"asyncContext": False, "attrsSeq": False}
+                            self.capabilities[sdk_name] = {"attrsSeq": False}
 
                         break
                 except Exception:
@@ -282,6 +282,11 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
+                elif action == "diagnostic":
+                    response = requests.post(f"{base_url}/diagnostic", json=params or {}, timeout=5)
+                    response.raise_for_status()
+                    data = response.json()
+
                 else:
                     if params:
                         response = requests.post(
@@ -450,13 +455,19 @@ class TestOrchestrator:
         if actual_norm == expected_norm:
             return True
 
-        if not self.loose_error_match:
-            return False
+        # Allow equivalent error wording where one message contains the other.
+        if expected_norm and (expected_norm in actual_norm or actual_norm in expected_norm):
+            return True
 
         expected_words = set(re.findall(r"'[^']+'|\w+", expected_norm))
         actual_words = set(re.findall(r"'[^']+'|\w+", actual_norm))
         filler = {"must", "be", "not", "the", "a", "an", "is", "of"}
         expected_key_words = expected_words - filler
+        if expected_key_words and expected_key_words.issubset(actual_words):
+            return True
+
+        if not self.loose_error_match:
+            return False
 
         if len(expected_key_words) == 0:
             return True

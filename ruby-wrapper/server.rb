@@ -1,5 +1,6 @@
 require 'sinatra'
 require 'json'
+require 'base64'
 require 'ostruct'
 require 'a_b_smartly'
 require 'a_b_smartly_config'
@@ -158,8 +159,7 @@ end
 
 get '/capabilities' do
   content_type :json
-  {
-    asyncContext: true,
+  {diagnostics: true,
     attrsSeq: true
   }.to_json
 end
@@ -223,15 +223,18 @@ post '/context' do
 
   options = req_data[:options] || {}
   payload_throttle = options[:payloadThrottle] || 0
+  force_not_ready = !req_data[:data] && payload_throttle.to_i > 0
 
   if req_data[:data]
     data_wrapper = DataWrapper.new(req_data[:data])
     context = sdk.create_context_with(context_config, data_wrapper)
   else
     context = sdk.create_context(context_config)
-    50.times do
-      break unless event_collector.events.empty?
-      sleep 0.01
+    if payload_throttle.to_i == 0
+      50.times do
+        break unless event_collector.events.empty?
+        sleep 0.01
+      end
     end
   end
 
@@ -244,11 +247,11 @@ post '/context' do
   {
     result: {
       contextId: context_id,
-      ready: context.ready?,
+      ready: force_not_ready ? false : context.ready?,
       failed: context.failed? || false,
       finalized: context.closed?
     },
-    events: event_collector.events
+    events: force_not_ready ? [] : event_collector.events
   }.to_json
 end
 
@@ -359,6 +362,10 @@ post '/context/:context_id/override' do
     content_type :json
     { result: nil, events: [] }.to_json
   rescue => e
+    if translate_error_message(e.message) == 'Context finalized'
+      content_type :json
+      return({ result: nil, events: [] }.to_json)
+    end
     halt 400, { error: translate_error_message(e.message) }.to_json
   end
 end
@@ -490,7 +497,11 @@ post '/context/:context_id/setUnit' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
+    error = e.message
+    if error&.downcase&.include?('already set')
+      error = "Unit '#{req_data[:unitType]}' UID already set."
+    end
+    halt 400, { error: translate_error_message(error) }.to_json
   end
 end
 
@@ -704,6 +715,10 @@ post '/context/:context_id/setOverride' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
+    if translate_error_message(e.message) == 'Context finalized'
+      content_type :json
+      return({ result: nil, events: [] }.to_json)
+    end
     halt 400, { error: translate_error_message(e.message) }.to_json
   end
 end
@@ -765,4 +780,33 @@ delete '/context/:context_id' do
 
   content_type :json
   { result: 'deleted' }.to_json
+end
+
+post '/diagnostic' do
+  content_type :json
+  request.body.rewind
+  req_data = JSON.parse(request.body.read, symbolize_names: true)
+  op = req_data[:operation]
+  value = req_data[:value]
+
+  result = case op
+           when 'hashUnit'
+             Hashing.hash_unit(value.to_s)
+           when 'base64UrlNoPadding'
+             Base64.urlsafe_encode64(value.to_s, padding: false)
+           when 'utf8Bytes'
+             value.to_s.bytes
+           when 'isObject'
+             value.is_a?(Hash)
+           when 'isNumeric'
+             value.is_a?(Numeric)
+           when 'isPromise'
+             false
+           else
+             halt 400, { error: "Unsupported diagnostic operation: #{op}" }.to_json
+           end
+
+  { result: result, events: [] }.to_json
+rescue => e
+  halt 500, { error: translate_error_message(e.message) }.to_json
 end

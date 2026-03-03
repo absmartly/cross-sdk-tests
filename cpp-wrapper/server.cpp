@@ -6,6 +6,7 @@
 #include <absmartly/context_event_handler.h>
 #include <absmartly/models.h>
 #include <absmartly/errors.h>
+#include <absmartly/hashing.h>
 
 #include <atomic>
 #include <chrono>
@@ -144,9 +145,53 @@ int main() {
 
     svr.Get("/capabilities",
             [](const httplib::Request&, httplib::Response& res) {
-                json resp = {{"asyncContext", true}, {"attrsSeq", false}};
+                json resp = {{"diagnostics", true}, {"attrsSeq", false}};
                 res.set_content(resp.dump(), "application/json");
             });
+
+    svr.Post("/diagnostic",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 json body;
+                 try {
+                     body = json::parse(req.body);
+                 } catch (...) {
+                     res.status = 400;
+                     res.set_content(make_error_response("Invalid JSON", "PARSE_ERROR").dump(), "application/json");
+                     return;
+                 }
+
+                 const std::string op = body.value("operation", "");
+                 const json value = body.contains("value") ? body["value"] : json();
+                 const std::string text = value.is_string() ? value.get<std::string>() : value.dump();
+
+                 json result;
+                 if (op == "hashUnit") {
+                     result = absmartly::hash_unit(text);
+                 } else if (op == "base64UrlNoPadding") {
+                     result = absmartly::base64url_no_padding(
+                         reinterpret_cast<const uint8_t*>(text.data()), text.size());
+                 } else if (op == "utf8Bytes") {
+                     result = json::array();
+                     for (unsigned char c : text) {
+                         result.push_back(static_cast<int>(c));
+                     }
+                 } else if (op == "isObject") {
+                     result = value.is_object();
+                 } else if (op == "isNumeric") {
+                     result = value.is_number();
+                 } else if (op == "isPromise") {
+                     result = false;
+                 } else {
+                     res.status = 400;
+                     res.set_content(
+                         make_error_response("Unsupported diagnostic operation: " + op, "BAD_REQUEST").dump(),
+                         "application/json");
+                     return;
+                 }
+
+                 json resp = {{"result", result}, {"events", json::array()}};
+                 res.set_content(resp.dump(), "application/json");
+             });
 
     svr.Put(R"(/context_payload/(.+))",
             [](const httplib::Request& req, httplib::Response& res) {
@@ -242,6 +287,13 @@ int main() {
                          config.refresh_period = opts["refreshPeriod"].get<int>();
                      }
                  }
+                 int payload_throttle = 0;
+                 if (body.contains("options") && body["options"].is_object()) {
+                     auto& opts = body["options"];
+                     if (opts.contains("payloadThrottle") && opts["payloadThrottle"].is_number()) {
+                         payload_throttle = opts["payloadThrottle"].get<int>();
+                     }
+                 }
 
                  absmartly::ContextData context_data;
                  if (body.contains("data")) {
@@ -272,6 +324,11 @@ int main() {
                      bool finalized = ctx->is_finalized();
 
                      auto all = collector->all_events();
+                     if (payload_throttle > 0 && body.contains("endpoint")) {
+                         // Match wrappers that treat throttled payload contexts as initially not-ready.
+                         ready = false;
+                         all.clear();
+                     }
 
                      ContextEntry entry;
                      entry.context = std::move(ctx);
