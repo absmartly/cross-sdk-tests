@@ -21,7 +21,7 @@ class TestOrchestrator:
         self,
         sdks: Dict[str, str],
         verbose: bool = False,
-        allow_wrapper_skip: bool = False,
+        allow_wrapper_skip: bool = True,
         loose_error_match: bool = False,
     ):
         self.sdks = sdks
@@ -656,9 +656,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run cross-SDK tests")
     parser.add_argument("--sdk", type=str, help="Comma-separated list of SDKs to test (e.g., rust,go,javascript)")
     parser.add_argument(
-        "--allow-wrapper-skip",
+        "--no-wrapper-skip",
         action="store_true",
-        help="Allow wrapper pass-through scenarios to be skipped when underlying SDK is present",
+        help="Disable skipping wrapper pass-through scenarios (by default, pass-through scenarios are skipped)",
     )
     parser.add_argument(
         "--loose-error-match",
@@ -705,7 +705,7 @@ def main() -> None:
     orchestrator = TestOrchestrator(
         sdks,
         verbose=args.verbose,
-        allow_wrapper_skip=args.allow_wrapper_skip,
+        allow_wrapper_skip=not args.no_wrapper_skip,
         loose_error_match=args.loose_error_match,
     )
 

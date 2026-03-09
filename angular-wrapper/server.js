@@ -77,7 +77,7 @@ function normalizeAsyncEndpoint(endpoint) {
 }
 
 const SERVICE_PASSTHROUGH = [
-  'customFieldKeys', 'refresh'
+  'customFieldKeys', 'refresh', 'diagnostic'
 ];
 
 app.get('/health', (req, res) => {

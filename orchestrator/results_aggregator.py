@@ -130,13 +130,8 @@ UNIT_TEST_PARSERS = {
         ],
     },
     "cpp": {
-        "framework": "catch2/ctest",
-        "patterns": [
-            (r"100% tests passed,\s+0\s+tests failed out of\s+(\d+)",
-             lambda m: (int(m.group(1)), 0, None)),
-            (r"(\d+)% tests passed,\s+(\d+)\s+tests failed out of\s+(\d+)",
-             lambda m: (int(m.group(3)) - int(m.group(2)), int(m.group(2)), int(m.group(3)))),
-        ],
+        "framework": "catch2",
+        "custom_parser": "catch2_junit",
     },
     "liquid": {
         "framework": "rspec",
@@ -190,6 +185,21 @@ UNIT_TEST_PARSERS = {
         ],
     },
 }
+
+
+def parse_catch2_junit(output):
+    output = strip_ansi(output)
+    total = len(re.findall(r'<testcase\b', output))
+    if total > 0:
+        failed = len(re.findall(r'<failure\b', output))
+        return total - failed, failed, total
+    m = re.search(r'(\d+)% tests passed,\s+(\d+)\s+tests failed out of\s+(\d+)', output)
+    if m:
+        return int(m.group(3)) - int(m.group(2)), int(m.group(2)), int(m.group(3))
+    m = re.search(r'100% tests passed,\s+0\s+tests failed out of\s+(\d+)', output)
+    if m:
+        return int(m.group(1)), 0, int(m.group(1))
+    return None, None, None
 
 
 def parse_pytest_summary(output):
@@ -249,6 +259,9 @@ def parse_unit_test_output(sdk, output):
 
     if parser.get("custom_parser") == "pytest":
         return parse_pytest_summary(output)
+
+    if parser.get("custom_parser") == "catch2_junit":
+        return parse_catch2_junit(output)
 
     if parser.get("aggregate"):
         passed = 0
@@ -313,7 +326,8 @@ def load_cross_sdk_report(report_path):
             passed = stats.get("passed", 0)
             failed = stats.get("failed", 0) + stats.get("errors", 0)
             tested = stats.get("tested", passed + failed)
-            results[sdk] = {"passed": passed, "failed": failed, "total": tested}
+            skipped = stats.get("skipped", 0)
+            results[sdk] = {"passed": passed, "failed": failed, "total": tested, "skipped": skipped}
         return results
 
     sdk_results = report.get("sdk_results", report.get("results", {}))
@@ -339,12 +353,14 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 
-def format_result(passed, failed, total):
+def format_result(passed, failed, total, skipped=0):
     if passed is None:
         return "N/A"
-    skipped = total - passed - failed
+    implicit_skipped = total - passed - failed
     status = "PASS" if failed == 0 else "FAIL"
     base = f"{passed}/{total} {status}"
+    if implicit_skipped > 0:
+        return f"{base} ({implicit_skipped}s)"
     if skipped > 0:
         return f"{base} ({skipped}s)"
     return base
@@ -423,7 +439,8 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             c_passed = cross.get("passed")
             c_failed = cross.get("failed") or 0
             c_total = cross.get("total") or ((c_passed or 0) + c_failed)
-            cross_str = format_result(c_passed, c_failed, c_total)
+            c_skipped = cross.get("skipped") or 0
+            cross_str = format_result(c_passed, c_failed, c_total, c_skipped)
             cells.append(colorize_result(cross_str))
             if c_passed is not None:
                 cross_sdk_total += 1

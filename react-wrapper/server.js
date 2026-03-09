@@ -78,7 +78,8 @@ app.get('/capabilities', (req, res) => {
       'customFieldValue', 'override', 'customAssignment', 'pending',
       'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
       'getAttribute', 'variableKeys', 'customFieldKeys',
-      'customFieldValueType', 'setOverride', 'setCustomAssignment', 'refresh'
+      'customFieldValueType', 'setOverride', 'setCustomAssignment', 'refresh',
+      'diagnostic', 'experiments', 'isReady', 'isFailed'
     ]
   });
 });

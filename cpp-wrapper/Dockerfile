@@ -1,7 +1,7 @@
 FROM ubuntu:22.04 AS build
 
 RUN apt-get update && \
-    apt-get install -y cmake g++ git curl ca-certificates && \
+    apt-get install -y cmake g++ git curl ca-certificates libcurl4-openssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -18,12 +18,12 @@ RUN mkdir -p /app/build-tests && cd /app/build-tests && \
     cmake ../cpp-sdk -DCMAKE_BUILD_TYPE=Release -DABSMARTLY_BUILD_TESTS=ON && \
     make -j$(nproc)
 WORKDIR /app/build-tests
-CMD ["ctest", "--output-on-failure"]
+CMD ["sh", "-c", "./tests/absmartly_tests --reporter JUnit 2>&1"]
 
 FROM ubuntu:22.04
 
 RUN apt-get update && \
-    apt-get install -y libstdc++6 && \
+    apt-get install -y libstdc++6 libcurl4 && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

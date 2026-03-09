@@ -172,7 +172,8 @@ get '/capabilities' do
       'attribute', 'override', 'customAssignment', 'pending', 'isFinalized',
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',
       'variableKeys', 'customFieldKeys', 'customFieldValueType',
-      'setOverride', 'setCustomAssignment', 'refresh'
+      'setOverride', 'setCustomAssignment', 'refresh',
+      'diagnostic', 'experiments', 'isReady', 'isFailed'
     ]
   }.to_json
 end
