@@ -516,16 +516,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(SetUnitRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        do {
-            try storage.context.setUnit(unitType: request.unitType, uid: "\(request.uid.value)")
-        } catch {
-            var message = error.localizedDescription
-            if message.lowercased().contains("already set") {
-                message = "Unit '\(request.unitType)' UID already set."
-            }
-            let errorResult: [String: Any] = ["error": message]
+        let existingUID = storage.context.getUnit(unitType: request.unitType)
+        let newUID = "\(request.uid.value)"
+        if let existing = existingUID, existing != newUID {
+            let errorResult: [String: Any] = ["error": "Unit '\(request.unitType)' UID already set."]
             return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
         }
+        storage.context.setUnit(unitType: request.unitType, uid: newUID)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -586,12 +583,7 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(AttributeRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        do {
-            try storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
-        } catch {
-            let errorResult: [String: Any] = ["error": error.localizedDescription]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
+        storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -645,13 +637,7 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(TreatmentRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant: Int
-        do {
-            variant = try storage.context.getTreatment(request.experimentName)
-        } catch {
-            let errorResult: [String: Any] = ["error": error.localizedDescription]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
+        let variant = storage.context.getTreatment(request.experimentName)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -675,13 +661,7 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(PeekRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant: Int
-        do {
-            variant = try storage.context.peekTreatment(request.experimentName)
-        } catch {
-            let errorResult: [String: Any] = ["error": error.localizedDescription]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
+        let variant = storage.context.peekTreatment(request.experimentName)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -707,7 +687,7 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = try storage.context.getVariableValue(request.key, defaultValue: defaultJSON)
+        let value = storage.context.getVariableValue(request.key, defaultValue: defaultJSON)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -739,7 +719,7 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = try storage.context.peekVariableValue(request.key, defaultValue: defaultJSON)
+        let value = storage.context.peekVariableValue(request.key, defaultValue: defaultJSON)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -786,12 +766,7 @@ func routes(_ app: VaporApplication) throws {
             }
         }
 
-        do {
-            try storage.context.track(request.goalName, properties: props)
-        } catch {
-            let errorResult: [String: Any] = ["error": error.localizedDescription]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
+        storage.context.track(request.goalName, properties: props)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -814,14 +789,7 @@ func routes(_ app: VaporApplication) throws {
         }
 
         let request = try req.content.decode(OverrideRequest.self)
-        do {
-            try storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
-        } catch {
-            let msg = error.localizedDescription.lowercased()
-            if !(msg.contains("closed") || msg.contains("closing") || msg.contains("finalized")) {
-                throw error
-            }
-        }
+        storage.context.setOverride(experimentName: request.experimentName, variant: request.variant)
 
         let result: [String: Any] = [
             "result": NSNull(),
@@ -844,7 +812,7 @@ func routes(_ app: VaporApplication) throws {
 
         let request = try req.content.decode(CustomAssignmentRequest.self)
 
-        try storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant)
+        storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant)
 
         let result: [String: Any] = [
             "result": NSNull(),
@@ -887,7 +855,7 @@ func routes(_ app: VaporApplication) throws {
 
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = try storage.context.getVariableKeys()
+        let keys = storage.context.getVariableKeys()
         let keyList = Array(keys.keys)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
@@ -1018,7 +986,7 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.notFound, reason: "Context not found")
         }
 
-        let experiments = try storage.context.getExperiments()
+        let experiments = storage.context.getExperiments()
 
         let result: [String: Any] = [
             "result": experiments,
