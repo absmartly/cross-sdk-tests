@@ -623,7 +623,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -649,7 +649,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -678,7 +678,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -717,7 +717,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -767,7 +767,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -822,7 +822,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -858,7 +858,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -913,7 +913,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -956,7 +956,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1004,7 +1004,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1036,7 +1036,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -1091,7 +1091,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_FULLON]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'any_unit_should_work'},
                     'options': {'publishDelay': -1}
@@ -1139,7 +1139,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_NOT_ELIGIBLE]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'user_id': 123456789},
                     'options': {'publishDelay': -1}
@@ -1189,7 +1189,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1232,7 +1232,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1282,7 +1282,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1354,7 +1354,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -1454,7 +1454,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1483,7 +1483,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -1556,7 +1556,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_AUDIENCE_TEST]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1609,7 +1609,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_AUDIENCE_TEST]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1662,7 +1662,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_AUDIENCE_STRICT]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1717,7 +1717,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_VARIABLES]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1767,7 +1767,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1791,7 +1791,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_VARIABLES_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -1827,7 +1827,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -1909,7 +1909,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2017,7 +2017,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2130,7 +2130,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2243,7 +2243,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2356,7 +2356,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2469,7 +2469,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2582,7 +2582,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2700,7 +2700,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2724,7 +2724,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'original_value'},
                     'options': {'publishDelay': -1}
@@ -2748,7 +2748,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'same_value'},
                     'options': {'publishDelay': -1}
@@ -2772,7 +2772,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2798,7 +2798,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2824,7 +2824,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2850,7 +2850,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V4]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -2905,7 +2905,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2948,7 +2948,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -2996,7 +2996,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V5]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3075,7 +3075,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V6]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3154,7 +3154,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V5]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3214,7 +3214,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3274,7 +3274,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V5]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3334,7 +3334,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3358,7 +3358,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3413,7 +3413,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3468,7 +3468,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3504,7 +3504,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -3559,7 +3559,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3591,7 +3591,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3623,7 +3623,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3655,7 +3655,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3687,7 +3687,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3719,7 +3719,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_ABC_V3]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3751,7 +3751,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3785,7 +3785,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3819,7 +3819,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3853,7 +3853,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3887,7 +3887,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3930,7 +3930,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_CUSTOM_FIELDS_V2]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -3964,7 +3964,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V4]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -4043,7 +4043,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V7]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -4126,7 +4126,6 @@ def generate_all_scenarios():
                     'units': {'session_id': 'test123'},
                     'options': {
                         'publishDelay': -1,
-                        'createContextWith': False,
                         'payloadThrottle': 100
                     }
                 },
@@ -4165,7 +4164,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4184,7 +4183,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4203,7 +4202,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4222,7 +4221,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4241,7 +4240,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4260,7 +4259,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4279,7 +4278,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4585,7 +4584,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'abc',
@@ -4618,7 +4617,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V8]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -4688,7 +4687,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4712,7 +4711,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4757,7 +4756,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB_V9]},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {
                         'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -4793,7 +4792,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                'action': 'createContext',
+                'action': 'createContextWith',
                 'params': {
                     'units': {'session_id': 'test123'},
                     'options': {'publishDelay': -1}
@@ -4829,7 +4828,7 @@ def generate_all_scenarios():
             "description": "isReady() should return true when context is created with data",
             "contextData": {"experiments": [EXP_TEST_AB]},
             "steps": [
-                {"action": "createContext", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
+                {"action": "createContextWith", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
                  "expect": {"result": {"ready": True, "failed": False, "finalized": False},
                            "events": [{"type": "ready", "data": {"experiments": [{"id": 1, "name": "exp_test_ab"}]}}]}},
                 {"action": "isReady", "params": {}, "expect": {"result": True, "events": []}}
@@ -4842,7 +4841,7 @@ def generate_all_scenarios():
             "description": "isFailed() should return false when context is created successfully",
             "contextData": {"experiments": [EXP_TEST_AB]},
             "steps": [
-                {"action": "createContext", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
+                {"action": "createContextWith", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
                  "expect": {"result": {"ready": True, "failed": False, "finalized": False},
                            "events": [{"type": "ready", "data": {"experiments": [{"id": 1, "name": "exp_test_ab"}]}}]}},
                 {"action": "isFailed", "params": {}, "expect": {"result": False, "events": []}}
@@ -4855,7 +4854,7 @@ def generate_all_scenarios():
             "description": "experiments() should return empty array when no experiments",
             "contextData": {"experiments": []},
             "steps": [
-                {"action": "createContext", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
+                {"action": "createContextWith", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
                  "expect": {"result": {"ready": True, "failed": False, "finalized": False},
                            "events": [{"type": "ready", "data": {"experiments": []}}]}},
                 {"action": "experiments", "params": {}, "expect": {"result": [], "events": []}}
@@ -4868,7 +4867,7 @@ def generate_all_scenarios():
             "description": "experiments() should return array of experiment names",
             "contextData": {"experiments": [EXP_TEST_AB, EXP_TEST_ABC]},
             "steps": [
-                {"action": "createContext", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
+                {"action": "createContextWith", "params": {"units": {"session_id": "test123"}, "options": {"publishDelay": -1}},
                  "expect": {"result": {"ready": True, "failed": False, "finalized": False},
                            "events": [{"type": "ready", "data": {"experiments": [{"id": 1, "name": "exp_test_ab"}, {"id": 2, "name": "exp_test_abc"}]}}]}},
                 {"action": "experiments", "params": {}, "expect": {"result": ["exp_test_ab", "exp_test_abc"], "events": []}}
@@ -4883,7 +4882,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                    "action": "createContext",
+                    "action": "createContextWith",
                     "params": {"units": {"session_id": "postfin-attr-1"}, "options": {"publishDelay": -1}},
                     "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
                 },
@@ -4902,7 +4901,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB]},
             "steps": [
                 {
-                    "action": "createContext",
+                    "action": "createContextWith",
                     "params": {"units": {"session_id": "postfin-treat-1"}, "options": {"publishDelay": -1}},
                     "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
                 },
@@ -4921,7 +4920,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": [EXP_TEST_AB]},
             "steps": [
                 {
-                    "action": "createContext",
+                    "action": "createContextWith",
                     "params": {"units": {"session_id": "postfin-override-1"}, "options": {"publishDelay": -1}},
                     "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
                 },
@@ -4940,7 +4939,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                    "action": "createContext",
+                    "action": "createContextWith",
                     "params": {"units": {"session_id": "postfin-getunit-1"}, "options": {"publishDelay": -1}},
                     "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
                 },
@@ -4959,7 +4958,7 @@ def generate_all_scenarios():
             "contextData": {"experiments": []},
             "steps": [
                 {
-                    "action": "createContext",
+                    "action": "createContextWith",
                     "params": {"units": {"session_id": "postfin-getattr-1"}, "options": {"publishDelay": -1}},
                     "expect": {"result": {"ready": True}, "events": [{"type": "ready"}]},
                 },

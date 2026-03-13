@@ -144,7 +144,7 @@ class TestOrchestrator:
         scenario_actions = set()
         for step in scenario.get("steps", []):
             action = step.get("action")
-            if action and action != "createContext":
+            if action and action not in ("createContext", "createContextWith"):
                 scenario_actions.add(action)
 
         if not scenario_actions:
@@ -212,41 +212,41 @@ class TestOrchestrator:
                 continue
 
             try:
-                if action == "createContext":
-                    create_with = params.get("options", {}).get("createContextWith", True)
+                if action == "createContextWith":
+                    response = requests.post(
+                        f"{base_url}/context",
+                        json={
+                            "data": scenario["contextData"],
+                            "units": params["units"],
+                            "options": params.get("options", {}),
+                        },
+                        timeout=5,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    context_id = data["result"]["contextId"]
 
-                    if create_with:
-                        response = requests.post(
-                            f"{base_url}/context",
-                            json={
-                                "data": scenario["contextData"],
-                                "units": params["units"],
-                                "options": params.get("options", {}),
-                            },
-                            timeout=5,
-                        )
-                    else:
-                        import uuid
+                elif action == "createContext":
+                    import uuid
 
-                        payload_id = f"payload-{uuid.uuid4()}"
-                        payload_response = requests.put(
-                            f"{base_url}/context_payload/{payload_id}",
-                            json={"data": scenario["contextData"]},
-                            timeout=5,
-                        )
-                        payload_response.raise_for_status()
+                    payload_id = f"payload-{uuid.uuid4()}"
+                    payload_response = requests.put(
+                        f"{base_url}/context_payload/{payload_id}",
+                        json={"data": scenario["contextData"]},
+                        timeout=5,
+                    )
+                    payload_response.raise_for_status()
 
-                        endpoint = f"{base_url}/context_payload/{payload_id}"
-                        response = requests.post(
-                            f"{base_url}/context",
-                            json={
-                                "endpoint": endpoint,
-                                "units": params["units"],
-                                "options": params.get("options", {}),
-                            },
-                            timeout=5,
-                        )
-
+                    endpoint = f"{base_url}/context_payload/{payload_id}"
+                    response = requests.post(
+                        f"{base_url}/context",
+                        json={
+                            "endpoint": endpoint,
+                            "units": params["units"],
+                            "options": params.get("options", {}),
+                        },
+                        timeout=5,
+                    )
                     response.raise_for_status()
                     data = response.json()
                     context_id = data["result"]["contextId"]
