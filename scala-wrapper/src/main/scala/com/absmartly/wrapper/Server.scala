@@ -12,6 +12,7 @@ import io.circe.syntax._
 import io.circe.generic.auto._
 import scala.concurrent.ExecutionContext
 import scala.collection.concurrent.TrieMap
+import java.util.concurrent.atomic.AtomicInteger
 import com.absmartly.sdk._
 
 object Server extends IOApp {
@@ -20,7 +21,7 @@ object Server extends IOApp {
 
   private val contexts = TrieMap[String, (Context, WrapperEventCollector)]()
   private val payloads = TrieMap[String, ContextData]()
-  private var contextCounter = 0
+  private val contextCounter = new AtomicInteger(0)
 
   implicit val jsonEntityDecoder: EntityDecoder[IO, Json] = jsonOf[IO, Json]
 
@@ -202,8 +203,7 @@ object Server extends IOApp {
         }
 
         createContext.flatMap { case (context, collector) =>
-          contextCounter += 1
-          val contextId = s"ctx-$contextCounter"
+          val contextId = s"ctx-${contextCounter.getAndIncrement()}"
           contexts(contextId) = (context, collector)
 
           Ok(wrapperResponse(

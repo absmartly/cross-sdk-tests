@@ -5,6 +5,16 @@ cd "$(dirname "$0")"
 
 SDK_NAME=$1
 PORT=$2
+
+if [[ ! "$SDK_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+  echo "Error: invalid SDK_NAME '$SDK_NAME' (must match [a-zA-Z0-9_-]+)" >&2
+  exit 1
+fi
+if [[ ! "$PORT" =~ ^[0-9]+$ ]]; then
+  echo "Error: invalid PORT '$PORT' (must be numeric)" >&2
+  exit 1
+fi
+
 IMAGE="cross-sdk-tests-${SDK_NAME}-sdk"
 
 echo "=== Testing $SDK_NAME SDK on port $PORT ==="
@@ -13,7 +23,7 @@ echo "=== Testing $SDK_NAME SDK on port $PORT ==="
 docker rm -f "test-${SDK_NAME}-sdk" 2>/dev/null || true
 
 # Run the container
-docker run -d --name "test-${SDK_NAME}-sdk" -p ${PORT}:3000 -e SDK_NAME=${SDK_NAME} ${IMAGE}
+docker run -d --name "test-${SDK_NAME}-sdk" -p "${PORT}:3000" -e "SDK_NAME=${SDK_NAME}" "${IMAGE}"
 
 # Wait for it to be ready
 echo "Waiting for $SDK_NAME to be ready..."
@@ -34,23 +44,26 @@ done
 
 # Run tests
 pip3 install -q requests 2>/dev/null || true
-python3 -c "
-import json, sys
+SDK_NAME="$SDK_NAME" SDK_PORT="$PORT" python3 -c "
+import json, os, sys
 sys.path.insert(0, 'orchestrator')
 from test_runner import TestOrchestrator
 
-sdks = {'${SDK_NAME}': 'http://localhost:${PORT}'}
+sdk_name = os.environ['SDK_NAME']
+sdk_port = os.environ['SDK_PORT']
+
+sdks = {sdk_name: f'http://localhost:{sdk_port}'}
 orchestrator = TestOrchestrator(sdks, verbose=False)
 working, failed = orchestrator.wait_for_services()
 
 with open('test_scenarios_complete.json') as f:
     scenarios = [s for s in json.load(f) if 'steps' in s]
 
-print(f'Running {len(scenarios)} scenarios against ${SDK_NAME}')
+print(f'Running {len(scenarios)} scenarios against {sdk_name}')
 for scenario in scenarios:
     orchestrator.run_scenario(scenario)
 
-exit_code = orchestrator.generate_report('test-results/report-${SDK_NAME}.json', failed)
+exit_code = orchestrator.generate_report(f'test-results/report-{sdk_name}.json', failed)
 sys.exit(exit_code)
 "
 TEST_EXIT_CODE=$?

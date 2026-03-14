@@ -17,11 +17,11 @@ defmodule ElixirWrapper.EventCollector do
       timestamp: System.system_time(:millisecond)
     }
 
-    Agent.update(agent, fn events -> events ++ [event] end)
+    Agent.update(agent, fn events -> [event | events] end)
   end
 
   def get_all(agent) do
-    Agent.get(agent, & &1)
+    Agent.get(agent, fn events -> Enum.reverse(events) end)
   end
 
   def count(agent) do
@@ -29,7 +29,9 @@ defmodule ElixirWrapper.EventCollector do
   end
 
   def get_since(agent, index) do
-    Agent.get(agent, fn events -> Enum.slice(events, index..-1//1) end)
+    Agent.get(agent, fn events ->
+      events |> Enum.reverse() |> Enum.slice(index..-1//1)
+    end)
   end
 
   defp deep_copy(data) do

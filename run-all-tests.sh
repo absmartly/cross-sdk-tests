@@ -128,7 +128,6 @@ mkdir -p test-results
 
 docker compose down --remove-orphans --volumes 2>/dev/null || true
 docker compose rm -f 2>/dev/null || true
-docker network prune -f 2>/dev/null || true
 
 # Unit tests phase (parallel)
 if [ "$CROSS_ONLY" = false ]; then

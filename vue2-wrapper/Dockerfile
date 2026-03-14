@@ -17,7 +17,7 @@ CMD ["npm", "test"]
 FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/vue2-wrapper/package*.json ./
-RUN npm install
+RUN npm ci
 
 # Ensure the local SDKs are properly linked in wrapper's node_modules
 RUN rm -rf /app/node_modules/@absmartly/javascript-sdk /app/node_modules/@absmartly/vue2-sdk 2>/dev/null || true && \

@@ -31,7 +31,8 @@ RUN apk add --no-cache libgcc libstdc++
 
 WORKDIR /app
 
-COPY --from=build /app /app
+COPY --from=build /app/elixir-wrapper /app/elixir-wrapper
+COPY --from=build /app/elixir-sdk /app/elixir-sdk
 
 WORKDIR /app/elixir-wrapper
 

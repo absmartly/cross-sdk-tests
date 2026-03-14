@@ -56,6 +56,97 @@ if [ "$VERBOSE" = true ]; then
   VERBOSE_FLAG="--verbose"
 fi
 
+restart_docker() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    echo "Restarting Docker Desktop..."
+    osascript -e 'quit app "Docker"' 2>/dev/null || true
+    sleep 2
+    if pgrep -q "com.docker.backend" 2>/dev/null; then
+      echo "Docker still running, force killing..."
+      killall Docker 2>/dev/null || true
+      killall com.docker.backend 2>/dev/null || true
+      killall com.docker.supervisor 2>/dev/null || true
+      sleep 3
+    fi
+    open -a Docker
+    echo "Waiting for Docker to become healthy..."
+    local retries=0
+    while ! docker run --rm hello-world >/dev/null 2>&1; do
+      retries=$((retries + 1))
+      if [ $retries -ge 120 ]; then
+        echo "ERROR: Docker failed to become healthy after 120 seconds"
+        exit 1
+      fi
+      sleep 1
+    done
+  else
+    echo "Restarting Docker daemon..."
+    sudo systemctl restart docker 2>/dev/null || sudo service docker restart 2>/dev/null || true
+    local retries=0
+    while ! docker run --rm hello-world >/dev/null 2>&1; do
+      retries=$((retries + 1))
+      if [ $retries -ge 30 ]; then
+        echo "ERROR: Docker failed to become healthy after 30 seconds"
+        exit 1
+      fi
+      sleep 1
+    done
+  fi
+  echo "Docker is healthy."
+}
+
+check_docker_health() {
+  if ! docker run --rm hello-world >/dev/null 2>&1; then
+    echo "Docker is not healthy (cannot run containers)."
+    restart_docker
+  fi
+}
+
+docker_compose_with_recovery() {
+  local cmd="$1"
+  shift
+  local max_attempts=3
+  local tmplog
+  tmplog=$(mktemp /tmp/docker-compose-XXXXXX.log)
+
+  for attempt in $(seq 1 $max_attempts); do
+    set +e
+    docker compose $cmd "$@" 2>&1 | tee "$tmplog"
+    EXIT_CODE=${PIPESTATUS[0]}
+    set -e
+
+    if [ $EXIT_CODE -eq 0 ]; then
+      rm -f "$tmplog"
+      return 0
+    fi
+
+    if [ $attempt -ge $max_attempts ]; then
+      rm -f "$tmplog"
+      echo "ERROR: docker compose $cmd failed after $max_attempts attempts"
+      return $EXIT_CODE
+    fi
+
+    if grep -qi "500 Internal Server Error" "$tmplog"; then
+      echo ""
+      echo "Docker returned 500 (attempt $attempt/$max_attempts). Restarting Docker..."
+      restart_docker
+    elif [ "$cmd" = "build" ]; then
+      echo ""
+      echo "Build failed (attempt $attempt/$max_attempts). Pruning failed layers and retrying..."
+      docker builder prune --filter type=regular -f >/dev/null 2>&1 || true
+      sleep 3
+    else
+      rm -f "$tmplog"
+      return $EXIT_CODE
+    fi
+  done
+
+  rm -f "$tmplog"
+  return 1
+}
+
+check_docker_health
+
 get_service_names() {
   local sdk_list="$1"
   local services=""
@@ -67,13 +158,14 @@ get_service_names() {
 }
 
 if [ "$SKIP_BUILD" = false ]; then
+  export COMPOSE_PARALLEL_LIMIT=${COMPOSE_PARALLEL_LIMIT:-5}
   if [ -n "$SDK_NAMES" ]; then
     SERVICES=$(get_service_names "$SDK_NAMES")
-    echo "Building containers for:$SERVICES orchestrator"
-    docker compose build $SERVICES orchestrator
+    echo "Building containers for:$SERVICES orchestrator (parallel limit: $COMPOSE_PARALLEL_LIMIT)"
+    docker_compose_with_recovery build $SERVICES orchestrator
   else
-    echo "Building all containers..."
-    docker compose build
+    echo "Building all containers (parallel limit: $COMPOSE_PARALLEL_LIMIT)..."
+    docker_compose_with_recovery build
   fi
 fi
 
@@ -84,7 +176,6 @@ fi
 
 docker compose down --remove-orphans --volumes 2>/dev/null || true
 docker compose rm -f 2>/dev/null || true
-docker network prune -f 2>/dev/null || true
 rm -f test-results/report.json 2>/dev/null || true
 
 if [ -n "$SDK_NAMES" ]; then
@@ -117,6 +208,14 @@ for attempt in 1 2 3; do
   if [ "$START_EXIT" -eq 0 ]; then
     started=true
     break
+  fi
+
+  if echo "$START_OUTPUT" | grep -qi "500 Internal Server Error"; then
+    echo "Docker returned 500 during startup (attempt $attempt/3). Restarting Docker..."
+    restart_docker
+    docker compose down --remove-orphans --volumes 2>/dev/null || true
+    sleep 2
+    continue
   fi
 
   if echo "$START_OUTPUT" | grep -q "No such container"; then
@@ -154,7 +253,6 @@ if [ "$started" != true ]; then
 fi
 
 echo "Waiting for services to be ready..."
-sleep 5
 
 echo "Running tests..."
 TEST_EXIT_CODE=0
@@ -179,13 +277,13 @@ elif [ -n "$SDK_NAMES" ]; then
   done
   SDK_URLS="${SDK_URLS%,}"
 
-  python3 -c "
-import json, sys
+  SDK_URLS="$SDK_URLS" VERBOSE="$VERBOSE" python3 -c "
+import json, os, sys
 sys.path.insert(0, 'orchestrator')
 from test_runner import TestOrchestrator
 
-sdk_urls = '$SDK_URLS'
-verbose = '$VERBOSE' == 'true'
+sdk_urls = os.environ['SDK_URLS']
+verbose = os.environ.get('VERBOSE', 'false') == 'true'
 sdks = dict(item.split(':http://') for item in sdk_urls.split(','))
 sdks = {k: 'http://' + v for k, v in sdks.items()}
 

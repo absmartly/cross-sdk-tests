@@ -71,7 +71,8 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.MapGet("/capabilities", () => Results.Ok(new
-{diagnostics = true,
+{
+    diagnostics = true,
     attrsSeq = true
 }));
 

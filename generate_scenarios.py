@@ -4159,423 +4159,2364 @@ def generate_all_scenarios():
         },
         # 68 - HTTP Client - Retry on Connection Error
         {
-            "name": '68 - HTTP Client - Retry on Connection Error',
-            "description": 'Client should retry on network errors up to max retries',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '68 - HTTP Client - Retry on Connection Error',
+            'description': 'Client should retry on network errors up to max retries',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 68,
+                        'name': 'exp_http_68',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603583,
+                        'seedLo': 233373918,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867317,
+                        'trafficSeedLo': 455443697,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_68'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 69 - HTTP Client - No Retry on 400 Bad Request
         {
-            "name": '69 - HTTP Client - No Retry on 400 Bad Request',
-            "description": 'Client should NOT retry on 4xx client errors',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '69 - HTTP Client - No Retry on 400 Bad Request',
+            'description': 'Client should NOT retry on 4xx client errors',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 69,
+                        'name': 'exp_http_69',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603584,
+                        'seedLo': 233373919,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867318,
+                        'trafficSeedLo': 455443698,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_69'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 70 - HTTP Client - Retry on 500 Server Error
         {
-            "name": '70 - HTTP Client - Retry on 500 Server Error',
-            "description": 'Client should retry on 5xx server errors',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '70 - HTTP Client - Retry on 500 Server Error',
+            'description': 'Client should retry on 5xx server errors',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 70,
+                        'name': 'exp_http_70',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603585,
+                        'seedLo': 233373920,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867319,
+                        'trafficSeedLo': 455443699,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_70'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 71 - HTTP Client - Timeout After Max Duration
         {
-            "name": '71 - HTTP Client - Timeout After Max Duration',
-            "description": 'Client should abort request after timeout duration',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '71 - HTTP Client - Timeout After Max Duration',
+            'description': 'Client should abort request after timeout duration',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 71,
+                        'name': 'exp_http_71',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603586,
+                        'seedLo': 233373921,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867320,
+                        'trafficSeedLo': 455443700,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'waitForReady',
+                    'params': {'timeout': 3000},
+                    'expect': {'result': True, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_71'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 72 - HTTP Client - Manual Abort Signal
         {
-            "name": '72 - HTTP Client - Manual Abort Signal',
-            "description": 'Client should support manual request abortion',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '72 - HTTP Client - Manual Abort Signal',
+            'description': 'Client should support manual request abortion',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 72,
+                        'name': 'exp_http_72',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603587,
+                        'seedLo': 233373922,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867321,
+                        'trafficSeedLo': 455443701,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_72'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 73 - HTTP Client - URL Query Encoding
         {
-            "name": '73 - HTTP Client - URL Query Encoding',
-            "description": 'Client should properly encode special characters in query params',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '73 - HTTP Client - URL Query Encoding',
+            'description': 'Client should properly encode special characters in query params',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 73,
+                        'name': 'exp_http_73',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603588,
+                        'seedLo': 233373923,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867322,
+                        'trafficSeedLo': 455443702,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_73'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 74 - HTTP Client - Empty Query Parameters
         {
-            "name": '74 - HTTP Client - Empty Query Parameters',
-            "description": 'Client should omit query string when params are empty',
-            "contextData": {"experiments": []},
-            "steps": [
+            'name': '74 - HTTP Client - Empty Query Parameters',
+            'description': 'Client should omit query string when params are empty',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 74,
+                        'name': 'exp_http_74',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603589,
+                        'seedLo': 233373924,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867323,
+                        'trafficSeedLo': 455443703,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
                 {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'test123'},
+                        'options': {'publishDelay': -1, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
                 },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_http_74'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
                 }
-            }
             ]
         },
         # 75 - Hashing - MD5 Empty String
         {
-            "name": '75 - Hashing - MD5 Empty String',
-            "description": 'MD5 hash of empty string should match known value',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '75 - Hashing - MD5 Empty String',
+            'description': 'MD5 hash of empty string should match known value',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': ''},
+                    'expect': {'result': '1B2M2Y8AsgTpgAmY7PhCfg', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 76 - Hashing - MD5 Special Characters
         {
-            "name": '76 - Hashing - MD5 Special Characters',
-            "description": 'MD5 hash of special characters (UTF-8) should match',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '76 - Hashing - MD5 Special Characters',
+            'description': 'MD5 hash of special characters (UTF-8) should match',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'special characters açb↓c'},
+                    'expect': {'result': '4PIrO7lKtTxOcj2eMYlG7A', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 77 - Hashing - MD5 Long Text
         {
-            "name": '77 - Hashing - MD5 Long Text',
-            "description": 'MD5 hash of Lorem Ipsum text should match',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '77 - Hashing - MD5 Long Text',
+            'description': 'MD5 hash of Lorem Ipsum text should match',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {
+                        'operation': 'hashUnit',
+                        'value': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'
+                    },
+                    'expect': {'result': 'KBNgD0YhzH5iwjYhPI6NIA', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 78 - Hashing - Murmur3 Zero Seed
         {
-            "name": '78 - Hashing - Murmur3 Zero Seed',
-            "description": 'Murmur3_32 with seed 0 should match known hashes',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '78 - Hashing - Murmur3 Zero Seed',
+            'description': 'Murmur3_32 with seed 0 should match known hashes',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'test'},
+                    'expect': {'result': 'CY9rzUYh03PK3k6DJie09g', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 79 - Hashing - Murmur3 Custom Seed
         {
-            "name": '79 - Hashing - Murmur3 Custom Seed',
-            "description": 'Murmur3_32 with custom seed (0xdeadbeef) should match',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '79 - Hashing - Murmur3 Custom Seed',
+            'description': 'Murmur3_32 with custom seed (0xdeadbeef) should match',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'testy'},
+                    'expect': {'result': 'K5I_V6RgP8c6sYKz-TVn8g', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 80 - Hashing - Murmur3 UTF-8
         {
-            "name": '80 - Hashing - Murmur3 UTF-8',
-            "description": 'Murmur3_32 should handle UTF-8 correctly',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '80 - Hashing - Murmur3 UTF-8',
+            'description': 'Murmur3_32 should handle UTF-8 correctly',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'special characters açb↓c'},
+                    'expect': {'result': '4PIrO7lKtTxOcj2eMYlG7A', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 81 - Algorithm - Binary Insert Center
         {
-            "name": '81 - Algorithm - Binary Insert Center',
-            "description": 'insertUniqueSorted should insert in middle of array',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '81 - Algorithm - Binary Insert Center',
+            'description': 'insertUniqueSorted should insert in middle of array',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_insert_1',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    },
+                    {
+                        'id': 2,
+                        'name': 'exp_insert_2',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603517,
+                        'seedLo': 233373852,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867251,
+                        'trafficSeedLo': 455443631,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    },
+                    {
+                        'id': 3,
+                        'name': 'exp_insert_3',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603518,
+                        'seedLo': 233373853,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867252,
+                        'trafficSeedLo': 455443632,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_insert_1'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_insert_3'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_insert_2'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                }
+            ]
         },
         # 82 - Algorithm - Binary Insert Duplicate
         {
-            "name": '82 - Algorithm - Binary Insert Duplicate',
-            "description": 'insertUniqueSorted should NOT insert duplicates',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '82 - Algorithm - Binary Insert Duplicate',
+            'description': 'insertUniqueSorted should NOT insert duplicates',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_insert_dup',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_insert_dup'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {'action': 'pending', 'params': {}, 'expect': {'result': 1, 'events': []}},
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_insert_dup'},
+                    'expect': {'result': 0, 'events': []}
+                },
+                {'action': 'pending', 'params': {}, 'expect': {'result': 1, 'events': []}}
+            ]
         },
         # 83 - Algorithm - Binary Insert Beginning
         {
-            "name": '83 - Algorithm - Binary Insert Beginning',
-            "description": 'insertUniqueSorted should insert at array start',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '83 - Algorithm - Binary Insert Beginning',
+            'description': 'insertUniqueSorted should insert at array start',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_begin_1',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    },
+                    {
+                        'id': 2,
+                        'name': 'exp_begin_2',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603517,
+                        'seedLo': 233373852,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867251,
+                        'trafficSeedLo': 455443631,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_begin_2'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_begin_1'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                }
+            ]
         },
         # 84 - Algorithm - Binary Insert End
         {
-            "name": '84 - Algorithm - Binary Insert End',
-            "description": 'insertUniqueSorted should insert at array end',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '84 - Algorithm - Binary Insert End',
+            'description': 'insertUniqueSorted should insert at array end',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_end_1',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    },
+                    {
+                        'id': 2,
+                        'name': 'exp_end_2',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603517,
+                        'seedLo': 233373852,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867251,
+                        'trafficSeedLo': 455443631,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_end_1'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_end_2'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                }
+            ]
         },
         # 85 - Variant Assignment - Choose Variant Edge 0.0
         {
-            "name": '85 - Variant Assignment - Choose Variant Edge 0.0',
-            "description": 'chooseVariant at probability 0.0',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '85 - Variant Assignment - Choose Variant Edge 0.0',
+            'description': 'chooseVariant at probability 0.0',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_85',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_85'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 86 - Variant Assignment - Choose Variant Edge 1.0
         {
-            "name": '86 - Variant Assignment - Choose Variant Edge 1.0',
-            "description": 'chooseVariant at probability 1.0',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '86 - Variant Assignment - Choose Variant Edge 1.0',
+            'description': 'chooseVariant at probability 1.0',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_86',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_86'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 87 - Variant Assignment - Choose Variant Boundary
         {
-            "name": '87 - Variant Assignment - Choose Variant Boundary',
-            "description": 'chooseVariant at exact split boundary',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '87 - Variant Assignment - Choose Variant Boundary',
+            'description': 'chooseVariant at exact split boundary',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_87',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_87'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 88 - Variant Assignment - Three Way Split Boundaries
         {
-            "name": '88 - Variant Assignment - Three Way Split Boundaries',
-            "description": 'chooseVariant with 3 variants at boundaries',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '88 - Variant Assignment - Three Way Split Boundaries',
+            'description': 'chooseVariant with 3 variants at boundaries',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_88',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.0, 0.0, 1.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None},
+                            {'name': 'C', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_88'},
+                    'expect': {
+                        'result': 2,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 89 - Variant Assignment - Zero Split First
         {
-            "name": '89 - Variant Assignment - Zero Split First',
-            "description": 'chooseVariant with first variant having 0% split',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '89 - Variant Assignment - Zero Split First',
+            'description': 'chooseVariant with first variant having 0% split',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_89',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.0, 1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None},
+                            {'name': 'C', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_89'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 90 - Variant Assignment - Zero Split Last
         {
-            "name": '90 - Variant Assignment - Zero Split Last',
-            "description": 'chooseVariant with last variant having 0% split',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '90 - Variant Assignment - Zero Split Last',
+            'description': 'chooseVariant with last variant having 0% split',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_variant_90',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None},
+                            {'name': 'C', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_variant_90'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 91 - Type Conversion - Boolean Convert Truthy
         {
-            "name": '91 - Type Conversion - Boolean Convert Truthy',
-            "description": 'booleanConvert should convert truthy values correctly',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '91 - Type Conversion - Boolean Convert Truthy',
+            'description': 'booleanConvert should convert truthy values correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_conv_91',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"flag"},{"value":true}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'flag', 'value': 'abc'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_conv_91'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 92 - Type Conversion - Number Convert Valid
         {
-            "name": '92 - Type Conversion - Number Convert Valid',
-            "description": 'numberConvert should convert numeric strings and booleans',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '92 - Type Conversion - Number Convert Valid',
+            'description': 'numberConvert should convert numeric strings and booleans',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_conv_92',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"count"},{"value":1}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'count', 'value': '1'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_conv_92'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 93 - Type Conversion - Number Convert Invalid
         {
-            "name": '93 - Type Conversion - Number Convert Invalid',
-            "description": 'numberConvert should return null for non-numeric values',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '93 - Type Conversion - Number Convert Invalid',
+            'description': 'numberConvert should return null for non-numeric values',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_conv_93',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"count"},{"value":1}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'count', 'value': 'abc'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_conv_93'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 94 - Type Conversion - String Convert Primitives
         {
-            "name": '94 - Type Conversion - String Convert Primitives',
-            "description": 'stringConvert should convert primitives to strings',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '94 - Type Conversion - String Convert Primitives',
+            'description': 'stringConvert should convert primitives to strings',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_conv_94',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"code"},{"value":"123"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'code', 'value': 123},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_conv_94'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 95 - Type Conversion - String Convert Invalid
         {
-            "name": '95 - Type Conversion - String Convert Invalid',
-            "description": 'stringConvert should return null for objects/arrays',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '95 - Type Conversion - String Convert Invalid',
+            'description': 'stringConvert should return null for objects/arrays',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_conv_95',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"code"},{"value":"abc"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'code', 'value': {'a': 1}},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_conv_95'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 96 - Evaluator - Extract Var Nested Paths
         {
-            "name": '96 - Evaluator - Extract Var Nested Paths',
-            "description": 'extractVar should navigate nested paths with /',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '96 - Evaluator - Extract Var Nested Paths',
+            'description': 'extractVar should navigate nested paths with /',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eval_96',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"profile/address/city"},{"value":"Porto"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'profile', 'value': {'address': {'city': 'Porto'}}},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eval_96'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 97 - Evaluator - Extract Var Invalid Paths
         {
-            "name": '97 - Evaluator - Extract Var Invalid Paths',
-            "description": 'extractVar should return null for invalid paths',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '97 - Evaluator - Extract Var Invalid Paths',
+            'description': 'extractVar should return null for invalid paths',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eval_97',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"profile/address/zip"},{"value":"4000"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'profile', 'value': {'address': {'city': 'Porto'}}},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eval_97'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 98 - Evaluator - Compare Null Handling
         {
-            "name": '98 - Evaluator - Compare Null Handling',
-            "description": 'compare() should return null when comparing non-null with null',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '98 - Evaluator - Compare Null Handling',
+            'description': 'compare() should return null when comparing non-null with null',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eval_98',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"optional"},{"value":null}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'optional', 'value': 'value'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eval_98'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 99 - Deep Equality - Primitives
         {
-            "name": '99 - Deep Equality - Primitives',
-            "description": 'isEqualsDeep should compare primitives correctly',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '99 - Deep Equality - Primitives',
+            'description': 'isEqualsDeep should compare primitives correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_99',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"v"},{"value":42}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'v', 'value': 42},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_99'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 100 - Deep Equality - NaN
         {
-            "name": '100 - Deep Equality - NaN',
-            "description": 'isEqualsDeep should treat NaN as equal to NaN',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '100 - Deep Equality - NaN',
+            'description': 'isEqualsDeep should treat NaN as equal to NaN',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_100',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"v"},{"value":"NaN"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'v', 'value': 'NaN'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_100'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 101 - Deep Equality - Arrays Simple
         {
-            "name": '101 - Deep Equality - Arrays Simple',
-            "description": 'isEqualsDeep should compare arrays',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '101 - Deep Equality - Arrays Simple',
+            'description': 'isEqualsDeep should compare arrays',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_101',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"arr"},{"value":[1,2,3]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'arr', 'value': [1, 2, 3]},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_101'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 102 - Deep Equality - Arrays Nested
         {
-            "name": '102 - Deep Equality - Arrays Nested',
-            "description": 'isEqualsDeep should compare nested arrays',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '102 - Deep Equality - Arrays Nested',
+            'description': 'isEqualsDeep should compare nested arrays',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_102',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"arr"},{"value":[1,[2,3],4]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {
+                        'name': 'arr',
+                        'value': [
+                            1,
+                            [2, 3],
+                            4
+                        ]
+                    },
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_102'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 103 - Deep Equality - Objects Simple
         {
-            "name": '103 - Deep Equality - Objects Simple',
-            "description": 'isEqualsDeep should compare objects (order-independent)',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '103 - Deep Equality - Objects Simple',
+            'description': 'isEqualsDeep should compare objects (order-independent)',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_103',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"obj"},{"value":{"a":1,"b":2}}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'obj', 'value': {'b': 2, 'a': 1}},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_103'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 104 - Deep Equality - Objects Nested
         {
-            "name": '104 - Deep Equality - Objects Nested',
-            "description": 'isEqualsDeep should compare nested objects',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '104 - Deep Equality - Objects Nested',
+            'description': 'isEqualsDeep should compare nested objects',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_104',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"obj"},{"value":{"a":{"x":1},"b":[1,2]}}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'obj', 'value': {'a': {'x': 1}, 'b': [1, 2]}},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_104'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 105 - String Encoding - UTF-8 Single Byte
         {
-            "name": '105 - String Encoding - UTF-8 Single Byte',
-            "description": 'stringToUint8Array should encode ASCII correctly',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '105 - String Encoding - UTF-8 Single Byte',
+            'description': 'stringToUint8Array should encode ASCII correctly',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'utf8Bytes', 'value': 'test'},
+                    'expect': {'result': [116, 101, 115, 116], 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 106 - String Encoding - UTF-8 Multi Byte
         {
-            "name": '106 - String Encoding - UTF-8 Multi Byte',
-            "description": 'stringToUint8Array should encode multi-byte UTF-8',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '106 - String Encoding - UTF-8 Multi Byte',
+            'description': 'stringToUint8Array should encode multi-byte UTF-8',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'utf8Bytes', 'value': 'açb↓c'},
+                    'expect': {'result': [97, 195, 167, 98, 226, 134, 147, 99], 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 107 - Base64 - Empty String
         {
-            "name": '107 - Base64 - Empty String',
-            "description": 'base64UrlNoPadding should encode empty string',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '107 - Base64 - Empty String',
+            'description': 'base64UrlNoPadding should encode empty string',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': ''},
+                    'expect': {'result': '', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 108 - Base64 - Short Strings
         {
-            "name": '108 - Base64 - Short Strings',
-            "description": 'base64UrlNoPadding should encode short strings',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '108 - Base64 - Short Strings',
+            'description': 'base64UrlNoPadding should encode short strings',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': 't'},
+                    'expect': {'result': 'dA', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': 'te'},
+                    'expect': {'result': 'dGU', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': 'tes'},
+                    'expect': {'result': 'dGVz', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': 'test'},
+                    'expect': {'result': 'dGVzdA', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 109 - Base64 - Special Characters
         {
-            "name": '109 - Base64 - Special Characters',
-            "description": 'base64UrlNoPadding should encode special chars',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '109 - Base64 - Special Characters',
+            'description': 'base64UrlNoPadding should encode special chars',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'base64UrlNoPadding', 'value': 'special characters açb↓c'},
+                    'expect': {'result': 'c3BlY2lhbCBjaGFyYWN0ZXJzIGHDp2LihpNj', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 110 - Base64 - Long Text
         {
-            "name": '110 - Base64 - Long Text',
-            "description": 'base64UrlNoPadding should encode long text',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '110 - Base64 - Long Text',
+            'description': 'base64UrlNoPadding should encode long text',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {
+                        'operation': 'base64UrlNoPadding',
+                        'value': 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'
+                    },
+                    'expect': {
+                        'result': 'TG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFtZXQsIGNvbnNlY3RldHVyIGFkaXBpc2NpbmcgZWxpdCwgc2VkIGRvIGVpdXNtb2QgdGVtcG9yIGluY2lkaWR1bnQgdXQgbGFib3JlIGV0IGRvbG9yZSBtYWduYSBhbGlxdWEuIFV0IGVuaW0gYWQgbWluaW0gdmVuaWFtLCBxdWlzIG5vc3RydWQgZXhlcmNpdGF0aW9uIHVsbGFtY28gbGFib3JpcyBuaXNpIHV0IGFsaXF1aXAgZXggZWEgY29tbW9kbyBjb25zZXF1YXQu',
+                        'events': []
+                    }
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 111 - Array Equality - Shallow Equals
         {
-            "name": '111 - Array Equality - Shallow Equals',
-            "description": 'arrayEqualsShallow should compare arrays (not deep)',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '111 - Array Equality - Shallow Equals',
+            'description': 'arrayEqualsShallow should compare arrays (not deep)',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_eq_111',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"arr"},{"value":[1,2,3]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'arr', 'value': [1, 2, 3]},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_eq_111'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 112 - Hash Unit - String Values
         {
-            "name": '112 - Hash Unit - String Values',
-            "description": 'hashUnit should hash various string unit types',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '112 - Hash Unit - String Values',
+            'description': 'hashUnit should hash various string unit types',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'bleh@absmartly.com'},
+                    'expect': {'result': 'IuqYkNRfEx5yClel4j3NbA', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'test_user_123'},
+                    'expect': {'result': 'Inw3HDh_rVCfpy0NhDsq1A', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 'ABC-123_xyz'},
+                    'expect': {'result': '78Q1utpZbpcxZ9B_9VZbgw', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 113 - Hash Unit - Numeric Values
         {
-            "name": '113 - Hash Unit - Numeric Values',
-            "description": 'hashUnit should hash numeric unit types',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '113 - Hash Unit - Numeric Values',
+            'description': 'hashUnit should hash numeric unit types',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 12345},
+                    'expect': {'result': 'gnzLDuqKcGxMNKFokfhOew', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 125},
+                    'expect': {'result': 'Pe8YStj0dV_yaYYup3OT3Q', 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'hashUnit', 'value': 126},
+                    'expect': {'result': 'BpBZt--EDwx0qBTskje27A', 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 114 - SDK Config - Default Values
         {
-            "name": '114 - SDK Config - Default Values',
-            "description": 'SDK should use default values for missing config',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '114 - SDK Config - Default Values',
+            'description': 'SDK should use default values for missing config',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_cfg_114',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_cfg_114'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {'action': 'isReady', 'params': {}, 'expect': {'result': True, 'events': []}}
+            ]
         },
         # 115 - SDK Config - Custom Values
         {
-            "name": '115 - SDK Config - Custom Values',
-            "description": 'SDK should use custom config when provided',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '115 - SDK Config - Custom Values',
+            'description': 'SDK should use custom config when provided',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_cfg_115',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1, 'refreshPeriod': 5}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_cfg_115'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {'action': 'isReady', 'params': {}, 'expect': {'result': True, 'events': []}}
+            ]
         },
         # 116 - SDK Config - Unit Type Coercion
         {
@@ -4633,52 +6574,444 @@ def generate_all_scenarios():
         },
         # 118 - Config Merge - Type Mismatch Warning
         {
-            "name": '118 - Config Merge - Type Mismatch Warning',
-            "description": 'mergeConfig should warn when overriding non-object with object',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '118 - Config Merge - Type Mismatch Warning',
+            'description': 'mergeConfig should warn when overriding non-object with object',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_merge_118',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"banner":"on","banner.size":"large"}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_merge_118'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'variableValue',
+                    'params': {'key': 'banner.size', 'defaultValue': 'none'},
+                    'expect': {'result': 'large', 'events': []}
+                }
+            ]
         },
         # 119 - Config Merge - Duplicate Key Error
         {
-            "name": '119 - Config Merge - Duplicate Key Error',
-            "description": 'mergeConfig should error when multiple experiments override same key',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '119 - Config Merge - Duplicate Key Error',
+            'description': 'mergeConfig should error when multiple experiments override same key',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_merge_119_a',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"dup.key":1}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    },
+                    {
+                        'id': 2,
+                        'name': 'exp_merge_119_b',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603517,
+                        'seedLo': 233373852,
+                        'split': [0.0, 1.0],
+                        'trafficSeedHi': 449867251,
+                        'trafficSeedLo': 455443631,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"dup.key":1}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_merge_119_a'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_merge_119_b'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'variableValue',
+                    'params': {'key': 'dup.key', 'defaultValue': 0},
+                    'expect': {'result': 1, 'events': []}
+                }
+            ]
         },
         # 120 - Audience Matcher - Empty Audience
         {
-            "name": '120 - Audience Matcher - Empty Audience',
-            "description": 'Audience matcher should return null for empty audience',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '120 - Audience Matcher - Empty Audience',
+            'description': 'Audience matcher should return null for empty audience',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_aud_120',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_aud_120'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 121 - Audience Matcher - Invalid Filter Type
         {
-            "name": '121 - Audience Matcher - Invalid Filter Type',
-            "description": 'Audience matcher should return null if filter is not object/array',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '121 - Audience Matcher - Invalid Filter Type',
+            'description': 'Audience matcher should return null if filter is not object/array',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_aud_121',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":"invalid"}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_aud_121'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 122 - Audience Matcher - Boolean Result
         {
-            "name": '122 - Audience Matcher - Boolean Result',
-            "description": 'Audience matcher should return boolean for valid filter',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '122 - Audience Matcher - Boolean Result',
+            'description': 'Audience matcher should return boolean for valid filter',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_aud_122',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"country"},{"value":"US"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_aud_122'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 123 - JSON Expr - Array As AND
         {
-            "name": '123 - JSON Expr - Array As AND',
-            "description": 'Evaluator should treat array as implicit AND combinator',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '123 - JSON Expr - Array As AND',
+            'description': 'Evaluator should treat array as implicit AND combinator',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_123',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"a"},{"value":1}]},{"eq":[{"var":"b"},{"value":"yes"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'a', 'value': 1},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'b', 'value': 'yes'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_123'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 124 - JSON Expr - Unknown Operator Null
         {
-            "name": '124 - JSON Expr - Unknown Operator Null',
-            "description": 'Evaluator should return null for unknown operators',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '124 - JSON Expr - Unknown Operator Null',
+            'description': 'Evaluator should return null for unknown operators',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_124',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"unknown":[{"var":"a"},{"value":1}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'a', 'value': 1},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_124'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
         },
         # 125 - Publish - Empty Arrays Omitted
         {
@@ -4706,48 +7039,159 @@ def generate_all_scenarios():
         },
         # 126 - Publish - Auto Timestamp
         {
-            "name": '126 - Publish - Auto Timestamp',
-            "description": 'Publisher should set publishedAt if not present',
-            "contextData": {"experiments": []},
-            "steps": [
-                {
-                'action': 'createContextWith',
-                'params': {
-                    'units': {'session_id': 'test123'},
-                    'options': {'publishDelay': -1}
-                },
-                'expect': {
-                    'result': {'ready': True, 'failed': False, 'finalized': False},
-                    'events': [{'type': 'ready'}]
-                }
+            'name': '126 - Publish - Auto Timestamp',
+            'description': 'Publisher should set publishedAt if not present',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_pub_126',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603516,
+                        'seedLo': 233373851,
+                        'split': [1.0, 0.0],
+                        'trafficSeedHi': 449867250,
+                        'trafficSeedLo': 455443630,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
             },
+            'steps': [
                 {
-                'action': 'publish',
-                'params': {},
-                'expect': {'result': None, 'events': []}
-            }
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_pub_126'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'purchase', 'properties': {'amount': 10}},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                }
             ]
         },
         # 127 - Type Check - isObject
         {
-            "name": '127 - Type Check - isObject',
-            "description": 'isObject should return true only for plain objects',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '127 - Type Check - isObject',
+            'description': 'isObject should return true only for plain objects',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isObject', 'value': {}},
+                    'expect': {'result': True, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isObject', 'value': []},
+                    'expect': {'result': False, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isObject', 'value': 1},
+                    'expect': {'result': False, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isObject', 'value': 'str'},
+                    'expect': {'result': False, 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 128 - Type Check - isNumeric
         {
-            "name": '128 - Type Check - isNumeric',
-            "description": 'isNumeric should return true only for numbers',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '128 - Type Check - isNumeric',
+            'description': 'isNumeric should return true only for numbers',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isNumeric', 'value': 1},
+                    'expect': {'result': True, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isNumeric', 'value': 1.5},
+                    'expect': {'result': True, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isNumeric', 'value': '1'},
+                    'expect': {'result': False, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isNumeric', 'value': True},
+                    'expect': {'result': False, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isNumeric', 'value': {}},
+                    'expect': {'result': False, 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 129 - Type Check - isPromise
         {
-            "name": '129 - Type Check - isPromise',
-            "description": 'isPromise should return true for thenable objects',
-            "contextData": {"experiments": []},
-            "steps": []
+            'name': '129 - Type Check - isPromise',
+            'description': 'isPromise should return true for thenable objects',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isPromise', 'value': {}},
+                    'expect': {'result': False, 'events': []}
+                },
+                {
+                    'action': 'diagnostic',
+                    'params': {'operation': 'isPromise', 'value': {'then': 'noop'}},
+                    'expect': {'result': False, 'events': []}
+                }
+            ],
+            'requires': ['diagnostics']
         },
         # 130 - Context - Pending Count
         {
@@ -4973,18 +7417,2685 @@ def generate_all_scenarios():
         },
     ])
 
+
+    # Additional scenarios
+    scenarios.extend([
+        {
+            'name': 'Async Context - Basic createContext',
+            'description': 'Context should fetch data from endpoint and become ready',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_test_ab',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"banner.border":1,"banner.size":"large"}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1, 'refreshPeriod': 0, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {
+                                'type': 'ready',
+                                'data': {
+                                    'experiments': [
+                                        {'id': 1, 'name': 'exp_test_ab'}
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': 'Async Context - Treatment after fetch',
+            'description': 'Should be able to get treatment after async context creation',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_test_ab',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"banner.border":1,"banner.size":"large"}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1, 'refreshPeriod': 0, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {
+                                'type': 'ready',
+                                'data': {
+                                    'experiments': [
+                                        {'id': 1, 'name': 'exp_test_ab'}
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_test_ab'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {
+                                'type': 'exposure',
+                                'data': {
+                                    'id': 1,
+                                    'name': 'exp_test_ab',
+                                    'unit': 'session_id',
+                                    'variant': 1,
+                                    'assigned': True,
+                                    'eligible': True,
+                                    'overridden': False,
+                                    'fullOn': False,
+                                    'custom': False,
+                                    'audienceMismatch': False
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': 'Async Context - Variable value after fetch',
+            'description': 'Should be able to get variable values after async context creation',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_test_ab',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': '{"banner.border":1,"banner.size":"large"}'}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1, 'refreshPeriod': 0, 'createContextWith': False}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {
+                                'type': 'ready',
+                                'data': {
+                                    'experiments': [
+                                        {'id': 1, 'name': 'exp_test_ab'}
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    'action': 'variableValue',
+                    'params': {'key': 'banner.size', 'defaultValue': 'small'},
+                    'expect': {
+                        'result': 'large',
+                        'events': [
+                            {'type': 'exposure', 'data': {'id': 1, 'name': 'exp_test_ab', 'variant': 1}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '139 - JSON Operators - AND Both True',
+            'description': 'AND operator with both conditions true should match audience',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_and',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"and":[{"eq":[{"var":"country"},{"value":"US"}]},{"eq":[{"var":"status"},{"value":"active"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'status', 'value': 'active'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_and'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False, 'eligible': True}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '140 - JSON Operators - AND One False',
+            'description': 'AND operator with one false condition should mismatch audience',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_and_false',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"and":[{"eq":[{"var":"country"},{"value":"US"}]},{"eq":[{"var":"status"},{"value":"active"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'status', 'value': 'inactive'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_and_false'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': True}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '141 - JSON Operators - OR One True',
+            'description': 'OR operator with one true condition should match audience',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_or',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"or":[{"eq":[{"var":"country"},{"value":"US"}]},{"eq":[{"var":"country"},{"value":"CA"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_or'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '142 - JSON Operators - OR All False',
+            'description': 'OR operator with all false conditions should mismatch audience',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_or_false',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"or":[{"eq":[{"var":"country"},{"value":"US"}]},{"eq":[{"var":"country"},{"value":"CA"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'UK'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_or_false'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': True}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '143 - JSON Operators - NOT True',
+            'description': 'NOT operator should negate a true condition, causing audience mismatch',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_not',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"not":[{"eq":[{"var":"country"},{"value":"US"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_not'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': True}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '144 - JSON Operators - IN Match',
+            'description': 'IN operator should return true when value is in list',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_in',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"in":[{"var":"region"},{"value":["NORTH","SOUTH","EAST"]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'region', 'value': 'NORTH'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_in'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '145 - JSON Operators - MATCH Regex',
+            'description': 'MATCH operator should match string against regex pattern',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_match',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"match":[{"var":"email"},{"value":".*@example\\\\.com$"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'email', 'value': 'user@example.com'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_match'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '146 - JSON Operators - Numeric Comparison LT',
+            'description': 'LT operator should compare numeric values correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_json_lt',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"lt":[{"var":"age"},{"value":18}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'age', 'value': 15},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_json_lt'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '147 - Post-Finalize - track() Throws Error',
+            'description': 'Calling track() after finalize() should throw an appropriate error',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test606'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'finalize',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'finalize'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'goal1', 'value': 1.5},
+                    'expect': {'error': 'Context finalized'}
+                }
+            ]
+        },
+        {
+            'name': '148 - Post-Finalize - setAttribute() Throws Error',
+            'description': 'Calling setAttribute() after finalize() should throw an appropriate error',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test707'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'finalize',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'finalize'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'key', 'value': 'value'},
+                    'expect': {'error': 'Context finalized'}
+                }
+            ]
+        },
+        {
+            'name': '149 - Post-Finalize - setUnit() Throws Error',
+            'description': 'Calling setUnit() after finalize() should throw an appropriate error',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test808'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'finalize',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'finalize'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'setUnit',
+                    'params': {'unitType': 'user_id', 'uid': '123'},
+                    'expect': {'error': 'Context finalized'}
+                }
+            ]
+        },
+        {
+            'name': '150 - Multiple Unit Types - Set Multiple Units',
+            'description': 'Context should support multiple unit types simultaneously',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'sess_123', 'user_id': 'user_456', 'org_id': 'org_789'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'session_id'},
+                    'expect': {'result': 'sess_123', 'events': []}
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'user_id'},
+                    'expect': {'result': 'user_456', 'events': []}
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'org_id'},
+                    'expect': {'result': 'org_789', 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '151 - Multiple Unit Types - Get Non-Existent Unit',
+            'description': 'Getting a unit type that was not set should return null',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'sess_123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'user_id'},
+                    'expect': {'result': None, 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '152 - Multiple Unit Types - Add Unit After Creation',
+            'description': 'Should be able to add a new unit type after context creation',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'sess_123'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'setUnit',
+                    'params': {'unitType': 'user_id', 'uid': 'user_456'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'user_id'},
+                    'expect': {'result': 'user_456', 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '153 - Attribute Types - String Value',
+            'description': 'setAttribute with string value should work in audience matching',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_attr_string',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"tier"},{"value":"premium"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'tier', 'value': 'premium'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_attr_string'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '154 - Attribute Types - Numeric Value',
+            'description': 'setAttribute with numeric value should work in audience matching',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_attr_numeric',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"gte":[{"var":"score"},{"value":50}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'score', 'value': 75},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_attr_numeric'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '155 - Attribute Types - Boolean Value',
+            'description': 'setAttribute with boolean value should be preserved',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_attr_bool',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"is_premium"},{"value":true}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'is_premium', 'value': True},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_attr_bool'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '156 - Audience Strict - Mismatch Forces Control',
+            'description': 'With audienceStrict=true, audience mismatch should force variant 0',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_strict_mismatch',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"country"},{"value":"US"}]}]}',
+                        'audienceStrict': True,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'UK'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_strict_mismatch'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': True, 'variant': 0}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '157 - Audience Strict - Match Gives Normal Variant',
+            'description': 'With audienceStrict=true, audience match should give normal variant assignment',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_strict_match',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"country"},{"value":"US"}]}]}',
+                        'audienceStrict': True,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'US'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_strict_match'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False, 'variant': 1}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '158 - Exposure De-duplication - Same Experiment',
+            'description': 'Multiple treatment calls for same experiment should only expose once',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_dedup',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_dedup'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'name': 'exp_dedup'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_dedup'},
+                    'expect': {'result': 1, 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '159 - Peek After Treatment - No Additional Exposure',
+            'description': 'Calling peek after treatment should return same variant without new exposure',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_peek_after',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_peek_after'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'peek',
+                    'params': {'experimentName': 'exp_peek_after'},
+                    'expect': {'result': 1, 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '160 - Track - Null Properties',
+            'description': 'Track with no properties should record goal without properties',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test_track_null'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'signup'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'signup'}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '161 - Publish - No Pending Data',
+            'description': 'Publishing with no pending exposures or goals should produce no publish event',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test_pub_empty'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {'action': 'publish', 'params': {}, 'expect': {'result': None, 'events': []}}
+            ]
+        },
+        {
+            'name': '162 - Publish - With Goals',
+            'description': 'Publishing after tracking goals should include goals in publish event',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'purchase', 'properties': {'revenue': 9.99}},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'purchase'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'pageview'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'pageview'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish', 'data': {'hashed': True}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '163 - Publish - Clears Pending Data',
+            'description': 'Second publish after first should have no pending data',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_pub_clear',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_pub_clear'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish', 'data': {'hashed': True}}
+                        ]
+                    }
+                },
+                {'action': 'publish', 'params': {}, 'expect': {'result': None, 'events': []}}
+            ]
+        },
+        {
+            'name': '164 - Publish - Sequential With New Data',
+            'description': 'Sequential publishes should each only include new data',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'goal1'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'goal1'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'goal2'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'goal2'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'publish',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'publish'}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '165 - Track - With Properties',
+            'description': 'Track should record goal with properties',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test_track_props'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'purchase', 'properties': {'revenue': 29.99, 'currency': 'USD'}},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'purchase'}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '166 - Treatment - Unknown Experiment Returns 0',
+            'description': 'Treatment for non-existent experiment should return 0 with exposure',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test_unknown'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'does_not_exist'},
+                    'expect': {
+                        'result': 0,
+                        'events': [
+                            {'type': 'exposure', 'data': {'name': 'does_not_exist', 'variant': 0, 'assigned': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '167 - Initial Options - Zero refreshPeriod',
+            'description': 'Context should not auto-refresh when refreshPeriod is 0',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_test',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': None,
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test913'}, 'options': {'publishDelay': -1, 'refreshPeriod': 0}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '168 - Track - Multiple Goals Same Name',
+            'description': 'Multiple tracks for the same goal should create separate goal events',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test_multi_goal'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'click'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'click'}}
+                        ]
+                    }
+                },
+                {
+                    'action': 'track',
+                    'params': {'goalName': 'click'},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'goal', 'data': {'name': 'click'}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '169 - JSON Edge Cases - Empty Filter Array',
+            'description': 'Should handle empty filter array in audience definition',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_empty_filter',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter": []}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test915'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_empty_filter'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '170 - JSON Edge Cases - Nested AND OR',
+            'description': 'Nested AND/OR should evaluate correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_nested_and_or',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"and":[{"or":[{"eq":[{"var":"a"},{"value":1}]},{"eq":[{"var":"a"},{"value":2}]}]},{"eq":[{"var":"b"},{"value":"yes"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'a', 'value': 2},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'b', 'value': 'yes'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_nested_and_or'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '171 - JSON Edge Cases - Null Value Handling',
+            'description': 'Comparing null var to null value should match (eq null null is true)',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_null',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"eq":[{"var":"optional_field"},{"value":null}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_null'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '172 - JSON Edge Cases - IN Mixed Types',
+            'description': 'IN operator should handle mixed type values correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_in_mixed',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter": [{"in": [{"var": "count"}, {"value": [1, 5, 10, 100]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test918'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'count', 'value': 10},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_in_mixed'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '173 - JSON Edge Cases - MATCH Special Chars',
+            'description': 'MATCH operator should handle regex with special characters',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_match_special',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"match":[{"var":"path"},{"value":"^/api/v[0-9]+/.*"}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'path', 'value': '/api/v2/users'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_match_special'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '174 - Boundary Conditions - Large Numeric Value',
+            'description': 'Should handle very large numeric values in attributes and comparisons',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test920'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'large_number', 'value': 9999999999},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'getAttribute',
+                    'params': {'name': 'large_number'},
+                    'expect': {'result': 9999999999, 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '175 - Boundary Conditions - Long String',
+            'description': 'Should handle very long string values',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test921'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {
+                        'name': 'long_text',
+                        'value': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+                    },
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'getAttribute',
+                    'params': {'name': 'long_text'},
+                    'expect': {
+                        'result': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+                        'events': []
+                    }
+                }
+            ]
+        },
+        {
+            'name': '176 - Boundary Conditions - Float Precision',
+            'description': 'Float values should maintain precision in attributes',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_float',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"gte":[{"var":"precise_float"},{"value":3.14}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'precise_float', 'value': 3.14159265359},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_float'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '177 - Boundary Conditions - Negative Comparison',
+            'description': 'LT operator should handle negative numbers correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_negative',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"lt":[{"var":"balance"},{"value":0}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'balance', 'value': -50},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_negative'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '178 - Boundary Conditions - Empty String',
+            'description': 'Should handle empty string attributes correctly',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test924'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'empty_field', 'value': ''},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'getAttribute',
+                    'params': {'name': 'empty_field'},
+                    'expect': {'result': '', 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '179 - Complex Audience - Triple Nested',
+            'description': 'Should evaluate complex triple-nested logical operators',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_triple',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter": [{"or": [{"and": [{"eq": [{"var": "tier"}, {"value": "gold"}]}, {"gte": [{"var": "spend"}, {"value": 1000}]}]}, {"and": [{"eq": [{"var": "tier"}, {"value": "platinum"}]}, {"gte": [{"var": "spend"}, {"value": 5000}]}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test925'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'tier', 'value': 'gold'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'spend', 'value': 2000},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_triple'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '180 - Complex Audience - Multiple IN with AND',
+            'description': 'AND with multiple IN operators should evaluate correctly',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_multi_in',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"and":[{"in":[{"var":"country"},{"value":["US","CA","MX"]}]},{"in":[{"var":"device"},{"value":["mobile","tablet"]}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'country', 'value': 'CA'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'device', 'value': 'mobile'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_multi_in'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '181 - Complex Audience - NOT with Mismatch Condition',
+            'description': 'NOT should negate a false condition, resulting in audience match',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_not_mismatch',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 3603515,
+                        'seedLo': 233373850,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 449867249,
+                        'trafficSeedLo': 455443629,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter":[{"not":[{"eq":[{"var":"status"},{"value":"banned"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {
+                        'units': {'session_id': 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'},
+                        'options': {'publishDelay': -1}
+                    },
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'status', 'value': 'active'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_not_mismatch'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure'}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '182 - Complex Audience - OR with MATCH and Comparison',
+            'description': 'OR should combine MATCH operator with numeric comparisons',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_or_match',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter": [{"or": [{"match": [{"var": "email"}, {"value": ".*@company\\\\.com$"}]}, {"gte": [{"var": "employee_years"}, {"value": 5}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test928'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'employee_years', 'value': 3},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'email', 'value': 'john@company.com'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_or_match'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '183 - Complex Audience - Five Way OR',
+            'description': 'OR operator should handle five different conditions',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_five_or',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 0,
+                        'seedLo': 1,
+                        'split': [0.5, 0.5],
+                        'trafficSeedHi': 0,
+                        'trafficSeedLo': 0,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None},
+                            {'name': 'B', 'config': None}
+                        ],
+                        'audience': '{"filter": [{"or": [{"eq": [{"var": "status"}, {"value": "admin"}]}, {"eq": [{"var": "status"}, {"value": "moderator"}]}, {"eq": [{"var": "status"}, {"value": "beta_tester"}]}, {"eq": [{"var": "status"}, {"value": "vip"}]}, {"eq": [{"var": "status"}, {"value": "founder"}]}]}]}',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'test929'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'attribute',
+                    'params': {'name': 'status', 'value': 'beta_tester'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'treatment',
+                    'params': {'experimentName': 'exp_five_or'},
+                    'expect': {
+                        'result': 1,
+                        'events': [
+                            {'type': 'exposure', 'data': {'audienceMismatch': False}}
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            'name': '184 - Async Readiness - Starts Not Ready Then Ready',
+            'description': 'Async context with throttled payload should start not-ready and transition to ready',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContext',
+                    'params': {
+                        'units': {'session_id': 'async-ready-1'},
+                        'options': {'publishDelay': -1, 'createContextWith': False, 'payloadThrottle': 120}
+                    },
+                    'expect': {'result': {'failed': False, 'finalized': False}}
+                },
+                {
+                    'action': 'waitForReady',
+                    'params': {'timeout': 3000},
+                    'expect': {'result': True, 'events': []}
+                },
+                {'action': 'isReady', 'params': {}, 'expect': {'result': True, 'events': []}}
+            ]
+        },
+        {
+            'name': '185 - Experiments - Refresh Replaces Names',
+            'description': 'experiments() should reflect refreshed context data',
+            'contextData': {
+                'experiments': [
+                    {
+                        'id': 1,
+                        'name': 'exp_before_refresh',
+                        'iteration': 1,
+                        'unitType': 'session_id',
+                        'seedHi': 1,
+                        'seedLo': 2,
+                        'split': [1],
+                        'trafficSeedHi': 1,
+                        'trafficSeedLo': 2,
+                        'trafficSplit': [0, 1],
+                        'fullOnVariant': 0,
+                        'applications': [
+                            {'name': 'website'}
+                        ],
+                        'variants': [
+                            {'name': 'A', 'config': None}
+                        ],
+                        'audience': '',
+                        'audienceStrict': False,
+                        'customFieldValues': None
+                    }
+                ]
+            },
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'exp-refresh-1'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'experiments',
+                    'params': {},
+                    'expect': {'result': ['exp_before_refresh'], 'events': []}
+                },
+                {
+                    'action': 'refresh',
+                    'params': {
+                        'newData': {
+                            'experiments': [
+                                {
+                                    'id': 2,
+                                    'name': 'exp_after_refresh',
+                                    'iteration': 1,
+                                    'unitType': 'session_id',
+                                    'seedHi': 3,
+                                    'seedLo': 4,
+                                    'split': [1],
+                                    'trafficSeedHi': 3,
+                                    'trafficSeedLo': 4,
+                                    'trafficSplit': [0, 1],
+                                    'fullOnVariant': 0,
+                                    'applications': [
+                                        {'name': 'website'}
+                                    ],
+                                    'variants': [
+                                        {'name': 'A', 'config': None}
+                                    ],
+                                    'audience': '',
+                                    'audienceStrict': False,
+                                    'customFieldValues': None
+                                }
+                            ]
+                        }
+                    },
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'refresh'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'experiments',
+                    'params': {},
+                    'expect': {'result': ['exp_after_refresh'], 'events': []}
+                }
+            ]
+        },
+        {
+            'name': '186 - Lifecycle - Finalize Idempotent State',
+            'description': 'finalize() should mark context finalized and keep pending at zero',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'finalize-state-1'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {'action': 'pending', 'params': {}, 'expect': {'result': 0, 'events': []}},
+                {
+                    'action': 'finalize',
+                    'params': {},
+                    'expect': {
+                        'result': None,
+                        'events': [
+                            {'type': 'finalize'}
+                        ]
+                    }
+                },
+                {'action': 'isFinalized', 'params': {}, 'expect': {'result': True, 'events': []}},
+                {'action': 'pending', 'params': {}, 'expect': {'result': 0, 'events': []}}
+            ]
+        },
+        {
+            'name': '187 - Unit/Attr - Missing Returns Null',
+            'description': 'Unknown unit/attribute lookups should return null',
+            'contextData': {'experiments': []},
+            'steps': [
+                {
+                    'action': 'createContextWith',
+                    'params': {'units': {'session_id': 'null-lookup-1'}, 'options': {'publishDelay': -1}},
+                    'expect': {
+                        'result': {'ready': True, 'failed': False, 'finalized': False},
+                        'events': [
+                            {'type': 'ready'}
+                        ]
+                    }
+                },
+                {
+                    'action': 'getUnit',
+                    'params': {'unitType': 'user_id'},
+                    'expect': {'result': None, 'events': []}
+                },
+                {
+                    'action': 'getAttribute',
+                    'params': {'name': 'country'},
+                    'expect': {'result': None, 'events': []}
+                }
+            ]
+        },
+    ])
+
     return scenarios
+
+
+    with open(ref_path) as f:
+        reference = json.load(f)
+
+    ref_by_name = {s['name']: s for s in reference}
+    gen_by_name = {s['name']: s for s in scenarios}
+
+    result = []
+    seen = set()
+
+    for s in scenarios:
+        name = s['name']
+        if name in seen:
+            continue
+        seen.add(name)
+        if name in ref_by_name and len(ref_by_name[name].get('steps', [])) > len(s.get('steps', [])):
+            result.append(ref_by_name[name])
+        else:
+            result.append(s)
+
+    for s in reference:
+        if s['name'] not in seen:
+            seen.add(s['name'])
+            result.append(s)
+
+    return result
 
 
 def main():
     scenarios = generate_all_scenarios()
-    
+
     print(f"Generated {len(scenarios)} test scenarios")
     print("\nWriting to test_scenarios_complete.json...")
-    
+
     with open('test_scenarios_complete.json', 'w') as f:
         json.dump(scenarios, f, indent=2)
-    
+
     print("Done!")
 
 

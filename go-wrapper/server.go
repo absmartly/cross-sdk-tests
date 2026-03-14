@@ -34,9 +34,6 @@ func translateEndpoint(endpoint string) string {
 		return parsed.String()
 	}
 
-	endpoint = strings.Replace(endpoint, "http://localhost:3006", "http://localhost:3000", 1)
-	endpoint = strings.Replace(endpoint, "http://127.0.0.1:3006", "http://localhost:3000", 1)
-	endpoint = strings.Replace(endpoint, "http://go-sdk:3006", "http://localhost:3000", 1)
 	return endpoint
 }
 

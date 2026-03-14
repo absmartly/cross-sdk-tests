@@ -200,8 +200,8 @@ Map<String, dynamic> _normalizeContextData(Map<String, dynamic> data) {
 
 String translateEndpoint(String endpoint) {
   return endpoint
-      .replaceFirst('http://localhost:3008', 'http://flutter-sdk:3000')
-      .replaceFirst('http://127.0.0.1:3008', 'http://flutter-sdk:3000');
+      .replaceAllMapped(RegExp(r'http://localhost:\d+'), (m) => 'http://localhost:3000')
+      .replaceAllMapped(RegExp(r'http://127\.0\.0\.1:\d+'), (m) => 'http://localhost:3000');
 }
 
 Future<void> startServer() async {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run cross-SDK tests against the Kotlin wrapper locally to identify failures."""
 import json
+import os
 import requests
 import sys
 import time
@@ -148,7 +149,7 @@ def run_scenario(scenario):
                 try:
                     error_body = e.response.json()
                     error_msg = error_body.get('error')
-                except:
+                except Exception:
                     error_msg = e.response.text
             if not error_msg:
                 error_msg = str(e)
@@ -168,13 +169,13 @@ def run_scenario(scenario):
     if context_id:
         try:
             requests.delete(f"{BASE_URL}/context/{context_id}", timeout=5)
-        except:
+        except Exception:
             pass
 
     return failures
 
 def main():
-    with open('/Users/joalves/git_tree/sdks/cross-sdk-tests/test_scenarios_complete.json') as f:
+    with open(os.path.join(os.path.dirname(__file__), 'test_scenarios_complete.json')) as f:
         all_scenarios = json.load(f)
 
     scenarios = [s for s in all_scenarios if 'steps' in s]
