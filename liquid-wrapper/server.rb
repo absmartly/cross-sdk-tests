@@ -577,14 +577,8 @@ post '/context/:context_id/getUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    units = context.instance_variable_get(:@units)
-    result = units[req_data[:unitType].to_sym]
+    result = context.get_unit(req_data[:unitType])
 
-    if result.nil?
-      result = units[req_data[:unitType].to_s]
-    end
-
-    # Convert numeric strings to proper numeric types
     if result && result.is_a?(String)
       if result.match?(/^\d+$/)
         result = result.to_i
@@ -614,10 +608,7 @@ post '/context/:context_id/getAttribute' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    result = nil
-    context.instance_variable_get(:@attributes).each do |attr|
-      result = attr.value if attr.name == req_data[:name]
-    end
+    result = context.get_attribute(req_data[:name])
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: result, events: new_events }.to_json
@@ -847,15 +838,7 @@ post '/context/:context_id/refresh' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    new_data_ostruct = DataWrapper.new(req_data[:newData]).data_future
-    context.send(:assign_data, new_data_ostruct)
-
-    # Clear assignment cache to force re-evaluation
-    if context.instance_variable_defined?(:@assignment_cache)
-      context.instance_variable_set(:@assignment_cache, {})
-    end
-
-    collector.handle_event(ContextEventLogger::EVENT_TYPE::REFRESH, req_data[:newData])
+    context.refresh
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: nil, events: new_events }.to_json
