@@ -685,40 +685,10 @@ func treatmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := len(ctxData.eventCollector.events)
 
-	variant := 0
-	var treatmentErr error
-	var assignment *sdk.Assignment
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Recovered from panic in treatment: %v", r)
-				if assignment != nil && assignment.Variant < 0 {
-					variant = assignment.Variant
-				} else {
-					variant = 0
-				}
-			}
-		}()
-
-		err := ctxData.context.CheckReady(true)
-		if err != nil {
-			treatmentErr = err
-			variant = -1
-			return
-		}
-
-		assignment = ctxData.context.GetAssignment(req.ExperimentName)
-		variant = assignment.Variant
-
-		if !assignment.Exposed.Load().(bool) {
-			ctxData.context.QueueExposure(assignment)
-		}
-	}()
-
-	if treatmentErr != nil {
-		log.Printf("Error in treatment: %v", treatmentErr)
-		variant = -1
+	variant, err := ctxData.context.GetTreatment(req.ExperimentName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	newEvents := ctxData.eventCollector.events[eventsBefore:]
@@ -1366,14 +1336,6 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	contextID := vars["contextId"]
 
-	var req struct {
-		NewData jsonmodels.ContextData `json:"newData"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
 	ctxData, err := getContext(contextID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -1382,16 +1344,7 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := len(ctxData.eventCollector.events)
 
-	// Clear assignment cache before refresh (like JavaScript SDK does)
-	ctxData.context.ContextLock_.Lock()
-	for k := range ctxData.context.AssignmentCache {
-		delete(ctxData.context.AssignmentCache, k)
-	}
-	ctxData.context.ContextLock_.Unlock()
-
-	ctxData.context.SetData(req.NewData)
-
-	ctxData.eventCollector.HandleEvent(*ctxData.context, sdk.Refresh, req.NewData)
+	ctxData.context.Refresh()
 
 	newEvents := ctxData.eventCollector.events[eventsBefore:]
 
