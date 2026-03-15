@@ -1048,33 +1048,7 @@ public class WrapperController {
         try {
             int eventsBefore = data.getEventCollector().getEvents().size();
 
-            com.absmartly.sdk.json.ContextData newData = objectMapper.convertValue(
-                request.get("newData"),
-                com.absmartly.sdk.json.ContextData.class
-            );
-
-            try {
-                java.lang.reflect.Field cacheField = com.absmartly.sdk.Context.class.getDeclaredField("assignmentCache_");
-                cacheField.setAccessible(true);
-                @SuppressWarnings("unchecked")
-                Map<String, Object> cache = (Map<String, Object>) cacheField.get(data.getContext());
-                cache.clear();
-            } catch (Exception ex) {
-            }
-
-            try {
-                java.lang.reflect.Method setDataMethod = com.absmartly.sdk.Context.class.getDeclaredMethod("setData", com.absmartly.sdk.json.ContextData.class);
-                setDataMethod.setAccessible(true);
-                setDataMethod.invoke(data.getContext(), newData);
-            } catch (Exception ex) {
-                throw new RuntimeException("Failed to set context data: " + ex.getMessage(), ex);
-            }
-
-            data.getEventCollector().handleEvent(
-                data.getContext(),
-                com.absmartly.sdk.ContextEventLogger.EventType.Refresh,
-                newData
-            );
+            data.getContext().refresh();
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
