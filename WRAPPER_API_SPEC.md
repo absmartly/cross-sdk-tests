@@ -717,3 +717,88 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | POST | /context/{id}/refresh | Refresh data |
 | POST | /context/{id}/finalize | Finalize context |
 | DELETE | /context/{id} | Delete context |
+
+## Optional Capability Endpoints
+
+These endpoints are required only when the wrapper advertises the corresponding capability in `/capabilities`.
+
+### Capability: `getUnits`
+
+```http
+POST /context/{contextId}/getUnits
+```
+
+**Response:** `{"result": {"session_id": "abc123", "user_id": 42}, "events": []}`
+
+### Capability: `getAttributes`
+
+```http
+POST /context/{contextId}/getAttributes
+```
+
+**Response:** `{"result": {"country": "US", "platform": "web"}, "events": []}`
+
+### Capability: `variableKeysMap`
+
+Returns the full variableKeys map (key → list of experiment names), not just the key list.
+
+```http
+POST /context/{contextId}/variableKeysMap
+```
+
+**Response:** `{"result": {"button.color": ["exp_a", "exp_b"]}, "events": []}`
+
+### Capability: `globalCustomFieldKeys`
+
+Returns the union of all custom field keys across all experiments (no argument).
+
+```http
+POST /context/{contextId}/customFieldKeysGlobal
+```
+
+**Response:** `{"result": ["country", "owner", "priority"], "events": []}`
+
+### Capability: `readyError`
+
+Requires both a `createContextFailed` creation mode and a `readyError` getter.
+
+#### Create a context that simulates data loading failure
+
+```http
+POST /context
+Content-Type: application/json
+
+{
+  "failLoad": true,
+  "units": {"session_id": "abc123"},
+  "options": {"publishDelay": -1}
+}
+```
+
+When `failLoad: true`, the wrapper must configure the SDK with an endpoint or data provider that immediately returns an error, causing `isFailed()` to be `true` and `readyError()` to return a non-null error object.
+
+**Response:**
+```json
+{
+  "result": {"contextId": "ctx-...", "ready": false, "failed": true, "finalized": false},
+  "events": [{"type": "error", "data": {...}}]
+}
+```
+
+#### Get ready error
+
+```http
+POST /context/{contextId}/readyError
+```
+
+**Response:** `{"result": {"isError": true, "message": "..."}, "events": []}`
+
+### Capability: `publishFail`
+
+Makes the next publish call fail, so pending events are preserved.
+
+```http
+POST /context/{contextId}/publishFail
+```
+
+**Response:** `{"result": null, "events": []}` — publish is attempted and fails silently; pending count stays unchanged.

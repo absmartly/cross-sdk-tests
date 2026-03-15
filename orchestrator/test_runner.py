@@ -144,7 +144,7 @@ class TestOrchestrator:
         scenario_actions = set()
         for step in scenario.get("steps", []):
             action = step.get("action")
-            if action and action not in ("createContext", "createContextWith"):
+            if action and action not in ("createContext", "createContextWith", "createContextFailed"):
                 scenario_actions.add(action)
 
         if not scenario_actions:
@@ -251,10 +251,31 @@ class TestOrchestrator:
                     data = response.json()
                     context_id = data["result"]["contextId"]
 
+                elif action == "createContextFailed":
+                    response = requests.post(
+                        f"{base_url}/context",
+                        json={
+                            "failLoad": True,
+                            "units": params["units"],
+                            "options": params.get("options", {}),
+                        },
+                        timeout=5,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    context_id = data["result"]["contextId"]
+
                 elif action == "refresh":
+                    if payload_id and "newData" in params:
+                        requests.put(
+                            f"{base_url}/context_payload/{payload_id}",
+                            json={"data": params["newData"]},
+                            timeout=5,
+                        ).raise_for_status()
+
                     response = requests.post(
                         f"{base_url}/context/{context_id}/refresh",
-                        json={"newData": params["newData"]},
+                        json={"newData": params.get("newData")} if "newData" in params else {},
                         timeout=5,
                     )
                     response.raise_for_status()
@@ -312,7 +333,18 @@ class TestOrchestrator:
                 if not error_msg:
                     error_msg = str(exc)
 
-                if "error" in expected:
+                if "errorContains" in expected:
+                    if expected["errorContains"].lower() not in error_msg.lower():
+                        failures.append(
+                            {
+                                "step": step_index,
+                                "action": action,
+                                "field": "errorContains",
+                                "expected": expected["errorContains"],
+                                "actual": error_msg,
+                            }
+                        )
+                elif "error" in expected:
                     if not self.error_matches(error_msg, expected["error"]):
                         failures.append(
                             {

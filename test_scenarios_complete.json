@@ -2571,7 +2571,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -2682,7 +2682,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -2869,7 +2869,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -3061,7 +3061,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -3253,7 +3253,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -3445,7 +3445,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -3637,7 +3637,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -3829,7 +3829,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
@@ -4026,7 +4026,7 @@
           "uid": ""
         },
         "expect": {
-          "error": "Unit 'user_id' UID must not be blank."
+          "error": "UID must not be blank"
         }
       }
     ]
@@ -17681,7 +17681,7 @@
     },
     "steps": [
       {
-        "action": "createContextWith",
+        "action": "createContext",
         "params": {
           "units": {
             "session_id": "exp-refresh-1"
@@ -17889,6 +17889,791 @@
         },
         "expect": {
           "result": null,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "193 - Publish Failure - Preserves Pending Events",
+    "description": "When publish fails, pending event count must be preserved so events are not lost",
+    "requires": ["publishFail"],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "pub-fail-preserve-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure"
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "publishFail",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "194 - Variable Keys - Returns Experiment List Per Key",
+    "description": "variableKeys() map must include all experiments that define each key — two experiments sharing a key both appear in the list",
+    "requires": ["variableKeysMap"],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_button_color_a",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"button.color\":\"blue\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_button_color_b",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 55006150,
+          "seedLo": 47189152,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 705671872,
+          "trafficSeedLo": 212903484,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"button.color\":\"red\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "varkeys-multi-exp-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableKeysMap",
+        "params": {},
+        "expect": {
+          "result": {
+            "button.color": [
+              "exp_button_color_a",
+              "exp_button_color_b"
+            ]
+          },
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "195 - Custom Field Keys - Returns Global Union Across Experiments",
+    "description": "customFieldKeys() with no argument must return the union of all custom field keys across all experiments",
+    "requires": ["globalCustomFieldKeys"],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_cf_alpha",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": [
+            {
+              "name": "country",
+              "value": "US,CA",
+              "type": "string"
+            },
+            {
+              "name": "owner",
+              "value": "team-alpha",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "exp_cf_beta",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 55006150,
+          "seedLo": 47189152,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 705671872,
+          "trafficSeedLo": 212903484,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": [
+            {
+              "name": "country",
+              "value": "DE,FR",
+              "type": "string"
+            },
+            {
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            }
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "cf-global-keys-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeysGlobal",
+        "params": {},
+        "expect": {
+          "result": [
+            "country",
+            "owner",
+            "priority"
+          ],
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "196 - Unit Getters - getUnit Returns Set Value",
+    "description": "getUnit() must return the UID that was set for each unit type",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "unit-getter-sess-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "setUnit",
+        "params": {
+          "unitType": "user_id",
+          "uid": 42
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getUnit",
+        "params": {
+          "unitType": "session_id"
+        },
+        "expect": {
+          "result": "unit-getter-sess-1",
+          "events": []
+        }
+      },
+      {
+        "action": "getUnit",
+        "params": {
+          "unitType": "user_id"
+        },
+        "expect": {
+          "result": 42,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "197 - Unit Getters - getUnits Returns All Units",
+    "description": "getUnits() must return a map of all unit types to their UIDs",
+    "requires": ["getUnits"],
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "get-units-sess-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "setUnit",
+        "params": {
+          "unitType": "user_id",
+          "uid": 99
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getUnits",
+        "params": {},
+        "expect": {
+          "result": {
+            "session_id": "get-units-sess-1",
+            "user_id": 99
+          },
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "198 - Attribute Getters - getAttribute Returns Set Value",
+    "description": "getAttribute() must return the most recently set value for the given attribute name",
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "attr-getter-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "device",
+          "value": "mobile"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "locale",
+          "value": "en-US"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getAttribute",
+        "params": {
+          "name": "device"
+        },
+        "expect": {
+          "result": "mobile",
+          "events": []
+        }
+      },
+      {
+        "action": "getAttribute",
+        "params": {
+          "name": "locale"
+        },
+        "expect": {
+          "result": "en-US",
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "199 - Attribute Getters - getAttributes Returns All Attributes",
+    "description": "getAttributes() must return all attributes that have been set",
+    "requires": ["getAttributes"],
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "get-attrs-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "US"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "platform",
+          "value": "web"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "getAttributes",
+        "params": {},
+        "expect": {
+          "result": {
+            "country": "US",
+            "platform": "web"
+          },
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "200 - Ready Error - Returns Error on Failed Context",
+    "description": "readyError() must return the error that caused context data loading to fail; isFailed() must be true",
+    "requires": ["readyError"],
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextFailed",
+        "params": {
+          "units": {
+            "session_id": "ready-error-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": false,
+            "failed": true,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "error"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFailed",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "readyError",
+        "params": {},
+        "expect": {
+          "result": {
+            "isError": true
+          },
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "201 - Not Ready - Read Methods Return Defaults",
+    "description": "treatment() called before context is ready must return 0 without throwing; variableValue() must return the provided default",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.color\":\"red\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "not-ready-defaults-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "createContextWith": false,
+            "payloadThrottle": 5000
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": false,
+            "failed": false,
+            "finalized": false
+          }
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "banner.color",
+          "defaultValue": "blue"
+        },
+        "expect": {
+          "result": "blue",
+          "events": []
+        }
+      },
+      {
+        "action": "variableKeys",
+        "params": {},
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "experiments",
+        "params": {},
+        "expect": {
+          "result": [],
           "events": []
         }
       }
