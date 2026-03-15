@@ -689,24 +689,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $reflection = new ReflectionClass($context);
-            $dataProperty = $reflection->getProperty('data');
-            $dataProperty->setAccessible(true);
-            $contextData = $dataProperty->getValue($context);
-
-            $keys = [];
-            if (isset($contextData->experiments)) {
-                foreach ($contextData->experiments as $experiment) {
-                    if (isset($experiment->customFieldValues)) {
-                        foreach (get_object_vars($experiment->customFieldValues) as $key => $value) {
-                            if (!str_ends_with($key, '_type')) {
-                                $keys[] = $key;
-                            }
-                        }
-                    }
-                }
-            }
-            $keys = array_values(array_unique($keys));
+            $keys = $context->getCustomFieldKeys();
             sort($keys);
 
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
@@ -731,25 +714,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $reflection = new ReflectionClass($context);
-            $dataProperty = $reflection->getProperty('data');
-            $dataProperty->setAccessible(true);
-            $contextData = $dataProperty->getValue($context);
-
-            $result = null;
-            if (isset($contextData->experiments)) {
-                foreach ($contextData->experiments as $experiment) {
-                    if ($experiment->name === $body['experimentName']) {
-                        if (isset($experiment->customFieldValues)) {
-                            $typeKey = $body['fieldName'] . '_type';
-                            if (property_exists($experiment->customFieldValues, $typeKey)) {
-                                $result = $experiment->customFieldValues->{$typeKey};
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
+            $result = $context->getCustomFieldValueType($body['experimentName'], $body['fieldName']);
 
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
@@ -909,39 +874,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $reflection = new ReflectionClass($context);
-
-            $cacheProperty = $reflection->getProperty('assignmentCache');
-            $cacheProperty->setAccessible(true);
-            $cacheProperty->setValue($context, []);
-
-            $method = $reflection->getMethod('setData');
-            $method->setAccessible(true);
-
-            $contextData = new ContextData();
-            if (isset($body['newData']['experiments'])) {
-                $contextData->experiments = array_map(function($exp) {
-                    if (isset($exp['customFieldValues']) && is_array($exp['customFieldValues'])) {
-                        $customFieldValuesObj = new \stdClass();
-                        foreach ($exp['customFieldValues'] as $field) {
-                            $name = $field['name'];
-                            $customFieldValuesObj->{$name} = $field['value'];
-                            $customFieldValuesObj->{$name . '_type'} = $field['type'];
-                        }
-                        $exp['customFieldValues'] = $customFieldValuesObj;
-                    }
-                    return json_decode(json_encode($exp));
-                }, $body['newData']['experiments']);
-            } else {
-                $contextData->experiments = [];
-            }
-
-            $method->invoke($context, $contextData);
-
-            $eventCollector->handleEvent(
-                $context,
-                new ContextEventLoggerEvent('Refresh', (object)$body['newData'])
-            );
+            $context->refresh();
 
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
