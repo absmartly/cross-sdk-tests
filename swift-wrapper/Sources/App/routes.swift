@@ -1048,18 +1048,9 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.notFound, reason: "Context not found")
         }
 
-        struct RefreshRequest: Content {
-            let newData: ContextDataDTO
-        }
-
-        let request = try req.content.decode(RefreshRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let newContextData = convertDTOToContextData(request.newData)
-
-        storage.context.setData(newContextData)
-
-        storage.eventCollector.handleEvent(context: storage.context, event: .refresh(data: newContextData))
+        try await storage.context.refresh().asyncValue()
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
