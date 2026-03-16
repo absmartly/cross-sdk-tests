@@ -240,6 +240,59 @@ class DummyContextDataProvider: ContextDataProvider {
     }
 }
 
+class DeferredContextDataProviderFromData: ContextDataProvider {
+    private let data: ContextData
+    private let throttleMs: Int
+
+    init(data: ContextData, throttleMs: Int) {
+        self.data = data
+        self.throttleMs = throttleMs
+    }
+
+    func getContextData() -> Promise<ContextData> {
+        return Promise { seal in
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(self.throttleMs)) {
+                seal.fulfill(self.data)
+            }
+        }
+    }
+}
+
+class DeferredContextDataProvider: ContextDataProvider {
+    private let endpoint: String
+    private let throttleMs: Int
+
+    init(endpoint: String, throttleMs: Int) {
+        self.endpoint = endpoint
+        self.throttleMs = throttleMs
+    }
+
+    func getContextData() -> Promise<ContextData> {
+        return Promise { seal in
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(self.throttleMs)) {
+                guard let url = URL(string: self.endpoint) else {
+                    seal.fulfill(ContextData(experiments: []))
+                    return
+                }
+                let task = URLSession.shared.dataTask(with: url) { data, _, error in
+                    if let data = data, error == nil {
+                        do {
+                            let decoder = JSONDecoder()
+                            let contextData = try decoder.decode(ContextData.self, from: data)
+                            seal.fulfill(contextData)
+                        } catch {
+                            seal.fulfill(ContextData(experiments: []))
+                        }
+                    } else {
+                        seal.fulfill(ContextData(experiments: []))
+                    }
+                }
+                task.resume()
+            }
+        }
+    }
+}
+
 struct ContextStorage {
     let context: Context
     let eventCollector: EventCollector
@@ -392,24 +445,38 @@ func routes(_ app: VaporApplication) throws {
         let sdk: ABSmartlySDK
 
         if let data = request.data {
-            let dummyProvider = DummyContextDataProvider()
-            let config = ABSmartlyConfig(
-                contextDataProvider: dummyProvider,
-                contextEventHandler: customPublisher,
-                contextEventLogger: eventCollector,
-                variableParser: nil,
-                scheduler: nil,
-                client: nil
-            )
+            let contextData = convertDTOToContextData(data)
+            let payloadThrottle = request.options?.payloadThrottle ?? 0
+
+            let sdkConfig: ABSmartlyConfig
+            if payloadThrottle > 0 {
+                let deferredProvider = DeferredContextDataProviderFromData(data: contextData, throttleMs: payloadThrottle)
+                sdkConfig = ABSmartlyConfig(
+                    contextDataProvider: deferredProvider,
+                    contextEventHandler: customPublisher,
+                    contextEventLogger: eventCollector,
+                    variableParser: nil,
+                    scheduler: nil,
+                    client: nil
+                )
+            } else {
+                let dummyProvider = DummyContextDataProvider()
+                sdkConfig = ABSmartlyConfig(
+                    contextDataProvider: dummyProvider,
+                    contextEventHandler: customPublisher,
+                    contextEventLogger: eventCollector,
+                    variableParser: nil,
+                    scheduler: nil,
+                    client: nil
+                )
+            }
 
             do {
-                sdk = try ABSmartlySDK(config: config)
+                sdk = try ABSmartlySDK(config: sdkConfig)
             } catch {
                 print("Error creating SDK: \(error)")
                 throw error
             }
-
-            let contextData = convertDTOToContextData(data)
 
             var configBuilder = ContextConfig()
             configBuilder.publishDelay = request.options?.publishDelay ?? -1
@@ -422,38 +489,57 @@ func routes(_ app: VaporApplication) throws {
             configBuilder.setUnits(units: unitsDict)
             configBuilder.eventLogger = eventCollector
 
-            context = sdk.createContextWithData(config: configBuilder, contextData: contextData)
+            if payloadThrottle > 0 {
+                context = sdk.createContext(config: configBuilder)
+            } else {
+                context = sdk.createContextWithData(config: configBuilder, contextData: contextData)
+            }
         } else if var endpoint = request.endpoint {
             if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {
                 endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
             }
 
-            let clientConfig = ClientConfig(
-                apiKey: "test-api-key",
-                application: "test-app",
-                endpoint: endpoint,
-                environment: "test-env"
-            )
+            let payloadThrottle = request.options?.payloadThrottle ?? 0
 
-            let client: DefaultClient
-            do {
-                client = try DefaultClient(config: clientConfig)
-            } catch {
-                print("Error creating client: \(error)")
-                throw error
+            let sdkConfig: ABSmartlyConfig
+            if payloadThrottle > 0 {
+                let deferredProvider = DeferredContextDataProvider(endpoint: endpoint, throttleMs: payloadThrottle)
+                sdkConfig = ABSmartlyConfig(
+                    contextDataProvider: deferredProvider,
+                    contextEventHandler: customPublisher,
+                    contextEventLogger: eventCollector,
+                    variableParser: nil,
+                    scheduler: nil,
+                    client: nil
+                )
+            } else {
+                let clientConfig = ClientConfig(
+                    apiKey: "test-api-key",
+                    application: "test-app",
+                    endpoint: endpoint,
+                    environment: "test-env"
+                )
+
+                let client: DefaultClient
+                do {
+                    client = try DefaultClient(config: clientConfig)
+                } catch {
+                    print("Error creating client: \(error)")
+                    throw error
+                }
+
+                sdkConfig = ABSmartlyConfig(
+                    contextDataProvider: nil,
+                    contextEventHandler: customPublisher,
+                    contextEventLogger: eventCollector,
+                    variableParser: nil,
+                    scheduler: nil,
+                    client: client
+                )
             }
 
-            let config = ABSmartlyConfig(
-                contextDataProvider: nil,
-                contextEventHandler: customPublisher,
-                contextEventLogger: eventCollector,
-                variableParser: nil,
-                scheduler: nil,
-                client: client
-            )
-
             do {
-                sdk = try ABSmartlySDK(config: config)
+                sdk = try ABSmartlySDK(config: sdkConfig)
             } catch {
                 print("Error creating SDK: \(error)")
                 throw error
@@ -471,7 +557,6 @@ func routes(_ app: VaporApplication) throws {
             configBuilder.eventLogger = eventCollector
 
             context = sdk.createContext(config: configBuilder)
-            let payloadThrottle = request.options?.payloadThrottle ?? 0
             if payloadThrottle == 0 {
                 _ = try await context.waitUntilReady().asyncValue()
                 // Ensure the ready event has been observed by the event logger before responding.
@@ -635,6 +720,12 @@ func routes(_ app: VaporApplication) throws {
         }
 
         let request = try req.content.decode(TreatmentRequest.self)
+
+        if !storage.context.isReady() {
+            let result: [String: Any] = ["result": 0, "events": [Any]()]
+            return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+        }
+
         let eventsBefore = storage.eventCollector.events.count
 
         let variant = storage.context.getTreatment(request.experimentName)
@@ -873,14 +964,9 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.notFound, reason: "Context not found")
         }
 
-        struct CustomFieldKeysRequest: Content {
-            let experimentName: String
-        }
-
-        let request = try req.content.decode(CustomFieldKeysRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = storage.context.getCustomFieldKeys()
+        let keys = Array(storage.context.getCustomFieldKeys()).sorted()
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
