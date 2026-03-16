@@ -138,15 +138,19 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/treatment" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name} = conn.body_params
-      case ABSmartly.Context.treatment(ctx, experiment_name) do
-        {:error, :finalized} ->
-          send_error(conn, 400, "Context finalized")
+      if not ABSmartly.Context.is_ready?(ctx) do
+        send_json(conn, 200, %{result: 0, events: []})
+      else
+        case ABSmartly.Context.treatment(ctx, experiment_name) do
+          {:error, :finalized} ->
+            send_error(conn, 400, "Context finalized")
 
-        {:error, reason} ->
-          send_error(conn, 400, inspect(reason))
+          {:error, reason} ->
+            send_error(conn, 400, inspect(reason))
 
-        result ->
-          send_action_response(conn, result, collector, eb)
+          result ->
+            send_action_response(conn, result, collector, eb)
+        end
       end
     end)
   end
@@ -162,8 +166,12 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/variableValue" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"key" => key, "defaultValue" => default_value} = conn.body_params
-      result = ABSmartly.Context.variable_value(ctx, key, default_value)
-      send_action_response(conn, result, collector, eb)
+      if not ABSmartly.Context.is_ready?(ctx) do
+        send_json(conn, 200, %{result: default_value, events: []})
+      else
+        result = ABSmartly.Context.variable_value(ctx, key, default_value)
+        send_action_response(conn, result, collector, eb)
+      end
     end)
   end
 
@@ -177,8 +185,12 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/variableKeys" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      result = ABSmartly.Context.variable_keys(ctx)
-      send_action_response(conn, result, collector, eb)
+      if not ABSmartly.Context.is_ready?(ctx) do
+        send_json(conn, 200, %{result: [], events: []})
+      else
+        result = ABSmartly.Context.variable_keys(ctx) |> Map.keys()
+        send_action_response(conn, result, collector, eb)
+      end
     end)
   end
 

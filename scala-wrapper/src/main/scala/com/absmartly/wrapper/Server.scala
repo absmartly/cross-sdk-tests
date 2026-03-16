@@ -513,13 +513,12 @@ object Server extends IOApp {
 
     case POST -> Root / "context" / contextId / "publish" =>
       withContext(contextId) { case (context, collector) =>
-        try {
-          val prevCount = collector.getEvents().length
-          context.publish()
+        val prevCount = collector.getEvents().length
+        IO.fromFuture(IO(context.publish())).flatMap { _ =>
           val newEvents = collector.getEventsSince(prevCount)
           Ok(wrapperResponse(Json.Null, newEvents))
-        } catch {
-          case e: Exception => InternalServerError(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }.handleErrorWith { err =>
+          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
         }
       }
 
