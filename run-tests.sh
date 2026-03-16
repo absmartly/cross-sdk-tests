@@ -288,8 +288,8 @@ elif [ -n "$SDK_NAMES" ]; then
   for sdk in "${SDKS[@]}"; do
     PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | cut -d: -f2)
     if [ -z "$PORT" ]; then
-      echo "Error: could not resolve port for ${sdk}-sdk" >&2
-      exit 1
+      echo "Warning: could not resolve port for ${sdk}-sdk — skipping" >&2
+      continue
     fi
     SDK_URLS="$SDK_URLS$sdk:http://localhost:$PORT,"
   done
