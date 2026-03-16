@@ -135,14 +135,26 @@ app.post('/context', async (req, res) => {
         data,
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
+    } else if (payloadThrottle > 0 && endpoint) {
+      const deferredData = new Promise((resolve) => {
+        setTimeout(() => {
+          fetch(endpoint)
+            .then(r => r.json())
+            .then(resolve)
+            .catch(() => resolve({ experiments: [] }));
+        }, payloadThrottle);
+      });
+      context = sdk.createContextWith(
+        { units },
+        deferredData,
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
     } else {
       context = sdk.createContext(
         { units },
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
-      if (payloadThrottle === 0) {
-        await context.ready();
-      }
+      await context.ready();
     }
 
     contexts.set(contextId, { context, eventCollector, sdk });
@@ -170,9 +182,11 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
   const experimentName = req.body.experimentName;
 
-  try {
-    await context.ready();
+  if (!context.isReady()) {
+    return res.json({ result: 0, events: [] });
+  }
 
+  try {
     let capturedVariant = 0;
     const variants = [];
     for (let i = 0; i <= 10; i++) {
@@ -274,6 +288,10 @@ app.post('/context/:contextId/variableValue', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
+  if (!context.isReady()) {
+    return res.json({ result: req.body.defaultValue, events: [] });
+  }
+
   try {
     const value = context.variableValue(req.body.key, req.body.defaultValue);
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -350,6 +368,10 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
+  if (!context.isReady()) {
+    return res.json({ result: [], events: [] });
+  }
+
   try {
     const keys = context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -422,6 +444,10 @@ app.get('/context/:contextId/isFailed', (req, res) => {
 app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  if (!data.context.isReady()) {
+    return res.json({ result: [], events: [] });
+  }
 
   try {
     const experiments = data.context.experiments();
