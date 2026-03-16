@@ -174,6 +174,32 @@ class CustomDataProvider implements ContextDataProvider {
   }
 }
 
+class DeferredDataProvider implements ContextDataProvider {
+  final String endpoint;
+  final int throttleMs;
+
+  DeferredDataProvider(this.endpoint, this.throttleMs);
+
+  @override
+  Completer<ContextData> getContextData() {
+    final completer = Completer<ContextData>();
+    Future.delayed(Duration(milliseconds: throttleMs), () async {
+      try {
+        final uri = Uri.parse(endpoint);
+        final httpClient = HttpClient();
+        final req = await httpClient.getUrl(uri);
+        final response = await req.close();
+        final body = await response.transform(utf8.decoder).join();
+        final raw = jsonDecode(body) as Map<String, dynamic>;
+        completer.complete(ContextData.fromMap(raw));
+      } catch (e) {
+        completer.complete(ContextData());
+      }
+    });
+    return completer;
+  }
+}
+
 class CustomVariableParser implements VariableParser {
   @override
   Map<String, dynamic>? parse(
@@ -372,6 +398,9 @@ void main() async {
       final dataProvider = CustomDataProvider();
       final variableParser = CustomVariableParser();
 
+      final translatedEndpoint = endpoint != null ? translateEndpoint(endpoint) : null;
+      final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
+
       HTTPClient httpClient;
       if (data != null) {
         final normalizedData = _normalizeContextData(data);
@@ -383,8 +412,6 @@ void main() async {
         final httpClientConfig = DefaultHTTPClientConfig();
         httpClient = DefaultHTTPClient(httpClientConfig);
       }
-
-      final translatedEndpoint = endpoint != null ? translateEndpoint(endpoint) : null;
 
       final clientConfig = ClientConfig.create()
         .setEndpoint(translatedEndpoint ?? 'http://dummy')
@@ -402,6 +429,8 @@ void main() async {
 
       if (data != null) {
         sdkConfig.setContextDataProvider(dataProvider);
+      } else if (payloadThrottle > 0 && translatedEndpoint != null) {
+        sdkConfig.setContextDataProvider(DeferredDataProvider(translatedEndpoint, payloadThrottle));
       }
 
       final sdk = ABSmartly(sdkConfig);
@@ -419,7 +448,6 @@ void main() async {
 
       final context = sdk.createContext(contextConfig);
 
-      final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
         // Wait for events to be collected (like Go/Java wrappers)
