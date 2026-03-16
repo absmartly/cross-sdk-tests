@@ -137,6 +137,22 @@ class CustomDataProvider implements ContextDataProvider {
   }
 }
 
+class DeferredDataProvider implements ContextDataProvider {
+  final ContextData data;
+  final int throttleMs;
+
+  DeferredDataProvider(this.data, this.throttleMs);
+
+  @override
+  Completer<ContextData> getContextData() {
+    final completer = Completer<ContextData>();
+    Future.delayed(Duration(milliseconds: throttleMs), () {
+      completer.complete(data);
+    });
+    return completer;
+  }
+}
+
 class CustomVariableParser implements VariableParser {
   @override
   Map<String, dynamic>? parse(
@@ -353,6 +369,7 @@ Future<void> startServer() async {
 
       ContextData? contextDataForCreation;
       Map<String, dynamic> rawDataForStore = {};
+      final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
 
       if (data != null) {
         final normalizedData = _normalizeContextData(data);
@@ -366,12 +383,8 @@ Future<void> startServer() async {
         if (payloadMatch != null) {
           final payloadId = payloadMatch.group(1)!;
           final storedData = payloadStore[payloadId];
-          if (storedData != null) {
-            contextDataForCreation = storedData;
-            rawDataForStore = storedData.toMap();
-          } else {
-            contextDataForCreation = ContextData();
-          }
+          contextDataForCreation = storedData ?? ContextData();
+          rawDataForStore = storedData?.toMap() ?? {};
         } else {
           contextDataForCreation = ContextData();
         }
@@ -386,10 +399,16 @@ Future<void> startServer() async {
 
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)
-        .setContextDataProvider(dataProvider)
         .setContextEventHandler(eventHandler)
         .setContextEventLogger(eventCollector)
         .setVariableParser(variableParser);
+
+      if (payloadThrottle > 0 && contextDataForCreation != null) {
+        sdkConfig.setContextDataProvider(DeferredDataProvider(contextDataForCreation, payloadThrottle));
+        contextDataForCreation = null;
+      } else {
+        sdkConfig.setContextDataProvider(dataProvider);
+      }
 
       final sdk = ABSmartly(sdkConfig);
 
@@ -406,13 +425,11 @@ Future<void> startServer() async {
       // Disable auto-refresh to avoid background refresh noise without a real provider.
       contextConfig.setRefreshInterval(-1);
 
-      // Use createContextWith for all contexts in Flutter wrapper
-      // This bypasses HTTP which doesn't work in the single-threaded test environment
+      // Use createContextWith for sync data, createContext for deferred
       final context = contextDataForCreation != null
           ? sdk.createContextWith(contextConfig, contextDataForCreation)
           : sdk.createContext(contextConfig);
 
-      final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
         // Wait for events to be collected (like Go/Java wrappers)
@@ -638,6 +655,13 @@ Future<void> startServer() async {
     try {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
+
+      if (!ctxData.context.isReady()) {
+        return shelf.Response.ok(
+          jsonEncode({'result': body['defaultValue'], 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
 
       final widgetRequest = WidgetTestRequest(
         type: WidgetTestRequestType.variableValue,
