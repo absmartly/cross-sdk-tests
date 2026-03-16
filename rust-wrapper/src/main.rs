@@ -605,12 +605,18 @@ async fn treatment_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    let variant = {
+    let (variant, is_ready) = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.treatment(&req.experiment_name)
+        let ready = context.is_ready();
+        let v = if ready { context.treatment(&req.experiment_name) } else { 0 };
+        (v, ready)
     };
 
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    let new_events = if is_ready {
+        ctx_data.event_collector.get_events_since(events_before)
+    } else {
+        vec![]
+    };
 
     Ok(Json(ApiResponse {
         result: Value::Number(variant.into()),
@@ -649,12 +655,22 @@ async fn variable_value_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    let value = {
+    let (value, is_ready) = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.variable_value(&req.key, req.default_value)
+        let ready = context.is_ready();
+        let v = if ready {
+            context.variable_value(&req.key, req.default_value.clone())
+        } else {
+            req.default_value
+        };
+        (v, ready)
     };
 
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    let new_events = if is_ready {
+        ctx_data.event_collector.get_events_since(events_before)
+    } else {
+        vec![]
+    };
 
     Ok(Json(ApiResponse {
         result: value,
@@ -799,6 +815,13 @@ async fn variable_keys_handler(
 
     let keys = {
         let context = ctx_data.context.lock().unwrap();
+        if !context.is_ready() {
+            return Ok(Json(ApiResponse {
+                result: Value::Array(vec![]),
+                events: vec![],
+                error: None,
+            }));
+        }
         context.variable_keys()
     };
 
@@ -944,6 +967,13 @@ async fn experiments_handler(
 
     let experiments = {
         let context = ctx_data.context.lock().unwrap();
+        if !context.is_ready() {
+            return Ok(Json(ApiResponse {
+                result: Value::Array(vec![]),
+                events: vec![],
+                error: None,
+            }));
+        }
         context.experiments()
     };
 
