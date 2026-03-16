@@ -156,14 +156,26 @@ app.post('/context', async (req, res) => {
         data,
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
+    } else if (payloadThrottle > 0 && endpoint) {
+      const deferredData = new Promise((resolve) => {
+        setTimeout(() => {
+          fetch(endpoint)
+            .then(r => r.json())
+            .then(resolve)
+            .catch(() => resolve({ experiments: [] }));
+        }, payloadThrottle);
+      });
+      context = sdk.createContextWith(
+        { units },
+        deferredData,
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
     } else {
       context = sdk.createContext(
         { units },
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
-      if (payloadThrottle === 0) {
-        await context.ready();
-      }
+      await context.ready();
     }
 
     const service = createService(context);
@@ -190,6 +202,10 @@ app.post('/context/:contextId/treatment', (req, res) => {
 
   const { context, service, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
+
+  if (!context.isReady()) {
+    return res.json({ result: 0, events: [] });
+  }
 
   try {
     const variant = service
@@ -359,6 +375,10 @@ app.post('/context/:contextId/variableValue', (req, res) => {
   const { context, service, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
+  if (!context.isReady()) {
+    return res.json({ result: req.body.defaultValue, events: [] });
+  }
+
   try {
     const value = service
       ? service.variableValue(req.body.key, req.body.defaultValue)
@@ -449,6 +469,10 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, service, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
+  if (!context.isReady()) {
+    return res.json({ result: [], events: [] });
+  }
+
   try {
     const keys = service ? service.variableKeys() : context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -531,6 +555,10 @@ app.get('/context/:contextId/isFailed', (req, res) => {
 app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
+
+  if (!data.context.isReady()) {
+    return res.json({ result: [], events: [] });
+  }
 
   try {
     const { service, context } = data;
