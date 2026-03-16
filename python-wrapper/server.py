@@ -19,18 +19,43 @@ from sdk.context_event_handler import ContextEventHandler
 from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
+from sdk.context_data_provider import ContextDataProvider
 import jsons
+import threading
+import urllib.request
 
 app = Flask(__name__)
+
+class DeferredContextDataProvider(ContextDataProvider):
+    def __init__(self, endpoint, throttle_ms):
+        self.endpoint = endpoint
+        self.throttle_ms = throttle_ms
+
+    def get_context_data(self):
+        future = Future()
+        def fetch():
+            time.sleep(self.throttle_ms / 1000.0)
+            try:
+                with urllib.request.urlopen(self.endpoint, timeout=10) as response:
+                    raw = json.loads(response.read().decode())
+                    data = jsons.load(raw, ContextData)
+                    future.set_result(data)
+            except Exception:
+                future.set_result(ContextData())
+        threading.Thread(target=fetch, daemon=True).start()
+        return future
 
 class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
+        self._suppress_init_errors = False
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
         if event_type_str == 'close':
             event_type_str = 'finalize'
+        if event_type_str == 'error' and self._suppress_init_errors:
+            return
         serialized_data = self._serialize(data) if data is not None else None
         self.events.append({
             'type': event_type_str,
@@ -138,22 +163,32 @@ def create_context():
     context_config.publish_delay = -1
     context_config.refresh_interval = 0
 
+    options = req_data.get('options', {})
+    payload_throttle = int(options.get('payloadThrottle', 0))
+
     if 'data' in req_data:
         # Sync: createContextWith
         context_data = jsons.load(req_data['data'], ContextData)
+        event_collector._suppress_init_errors = True
         context = sdk.create_context_with(context_config, context_data)
+        event_collector._suppress_init_errors = False
+    elif payload_throttle > 0 and endpoint:
+        deferred_provider = DeferredContextDataProvider(translated_endpoint, payload_throttle)
+        deferred_sdk_config = ABSmartlyConfig()
+        deferred_sdk_config.context_data_provider = deferred_provider
+        deferred_sdk_config.context_event_logger = event_collector
+        deferred_sdk_config.context_event_handler = custom_event_handler
+        deferred_sdk = ABSmartly(deferred_sdk_config)
+        context = deferred_sdk.create_context(context_config)
     else:
         # Async: createContext (SDK will fetch from endpoint)
         context = sdk.create_context(context_config)
-        options = req_data.get('options', {})
-        payload_throttle = options.get('payloadThrottle', 0)
-        if payload_throttle == 0:
-            context.wait_until_ready()
-            # Wait for events to be collected (like Go/Java wrappers)
-            for _ in range(50):
-                if event_collector.events:
-                    break
-                time.sleep(0.01)
+        context.wait_until_ready()
+        # Wait for events to be collected (like Go/Java wrappers)
+        for _ in range(50):
+            if event_collector.events:
+                break
+            time.sleep(0.01)
 
     contexts[context_id] = {
         'context': context,
