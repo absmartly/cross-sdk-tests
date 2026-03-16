@@ -486,21 +486,6 @@ func setUnitHandler(w http.ResponseWriter, r *http.Request) {
 		uidStr = fmt.Sprintf("%v", v)
 	}
 
-	// Check if unit already set with different value
-	ctxData.context.ContextLock_.RLock()
-	existingUnit, exists := ctxData.context.Units_[req.UnitType]
-	ctxData.context.ContextLock_.RUnlock()
-
-	if ctxData.context.IsClosed() {
-		http.Error(w, "Context finalized", http.StatusBadRequest)
-		return
-	}
-
-	if exists && existingUnit != uidStr {
-		http.Error(w, fmt.Sprintf("Unit '%s' UID already set.", req.UnitType), http.StatusBadRequest)
-		return
-	}
-
 	err = ctxData.context.SetUnit(req.UnitType, uidStr)
 	if err != nil {
 		errMsg := err.Error()
@@ -542,11 +527,9 @@ func getUnitHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := len(ctxData.eventCollector.events)
 
-	ctxData.context.ContextLock_.RLock()
-	unit, exists := ctxData.context.Units_[req.UnitType]
-	ctxData.context.ContextLock_.RUnlock()
+	unit := ctxData.context.GetUnit(req.UnitType)
 
-	if !exists {
+	if unit == "" {
 		newEvents := ctxData.eventCollector.events[eventsBefore:]
 		response := Response{
 			Result: nil,
@@ -639,20 +622,7 @@ func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := len(ctxData.eventCollector.events)
 
-	var result interface{} = nil
-	var latestSetAt int64 = 0
-	ctxData.context.ContextLock_.RLock()
-	for _, attr := range ctxData.context.Attributes_ {
-		if attrMap, ok := attr.(jsonmodels.Attribute); ok {
-			if attrMap.Name == req.Name {
-				if attrMap.SetAt >= latestSetAt {
-					result = attrMap.Value
-					latestSetAt = attrMap.SetAt
-				}
-			}
-		}
-	}
-	ctxData.context.ContextLock_.RUnlock()
+	result := ctxData.context.GetAttribute(req.Name)
 
 	newEvents := ctxData.eventCollector.events[eventsBefore:]
 
@@ -1345,6 +1315,10 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 	eventsBefore := len(ctxData.eventCollector.events)
 
 	ctxData.context.Refresh()
+
+	for i := 0; i < 50 && len(ctxData.eventCollector.events) == eventsBefore; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	newEvents := ctxData.eventCollector.events[eventsBefore:]
 
