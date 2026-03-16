@@ -104,6 +104,40 @@ class DummyContextDataProvider extends ContextDataProvider
     }
 }
 
+class DeferredContextDataProvider extends AsyncContextDataProvider
+{
+    private int $throttleMs;
+    private Client $httpClient;
+
+    public function __construct(Client $client, int $throttleMs)
+    {
+        parent::__construct($client);
+        $this->httpClient = $client;
+        $this->throttleMs = $throttleMs;
+    }
+
+    public function getContextDataAsync(): \React\Promise\PromiseInterface
+    {
+        $deferred = new \React\Promise\Deferred();
+        $loop = \React\EventLoop\Loop::get();
+        $throttleMs = $this->throttleMs;
+        $httpClient = $this->httpClient;
+
+        $loop->addTimer($throttleMs / 1000.0, function() use ($deferred, $httpClient) {
+            $httpClient->getContextDataAsync()->then(
+                function($data) use ($deferred) {
+                    $deferred->resolve($data);
+                },
+                function($error) use ($deferred) {
+                    $deferred->reject($error);
+                }
+            );
+        });
+
+        return $deferred->promise();
+    }
+}
+
 $contexts = [];
 $payloadStore = [];
 
@@ -251,8 +285,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $sdkConfig = new Config($client);
         $sdkConfig->setContextEventHandler($eventHandler);
 
+        $payloadThrottle = (int)($body['options']['payloadThrottle'] ?? 0);
+
         if (isset($body['data'])) {
             $sdkConfig->setContextDataProvider(new DummyContextDataProvider());
+        } elseif ($payloadThrottle > 0) {
+            $sdkConfig->setContextDataProvider(new DeferredContextDataProvider($client, $payloadThrottle));
         } else {
             $sdkConfig->setContextDataProvider(new AsyncContextDataProvider($client));
         }
@@ -314,8 +352,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 'events' => $eventCollector->getEvents()
             ]);
         } else {
-            $payloadThrottle = $body['options']['payloadThrottle'] ?? 0;
-
             if ($payloadThrottle > 0) {
                 $result = $sdk->createContextPending($contextConfig);
                 $context = $result['context'];
@@ -486,6 +522,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $body = parseJsonBody($request);
 
+        if (!$context->isReady()) {
+            return jsonResponse(200, ['result' => 0, 'events' => []]);
+        }
+
         try {
             $experimentName = $body['experimentName'] ?? $body['experiment'] ?? null;
             $variant = $context->getTreatment($experimentName);
@@ -532,6 +572,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
+
+        if (!$context->isReady()) {
+            return jsonResponse(200, ['result' => $body['defaultValue'] ?? null, 'events' => []]);
+        }
 
         try {
             $value = $context->getVariableValue($body['key'], $body['defaultValue'] ?? null);
@@ -663,6 +707,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $context = $data['context'];
         $eventCollector = $data['eventCollector'];
         $eventsBefore = count($eventCollector->getEvents());
+
+        if (!$context->isReady()) {
+            return jsonResponse(200, ['result' => [], 'events' => []]);
+        }
 
         try {
             $keys = $context->getVariableKeys();
@@ -831,6 +879,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $context = $data['context'];
 
+        if (!$context->isReady()) {
+            return jsonResponse(200, ['result' => [], 'events' => []]);
+        }
+
         try {
             $experiments = $context->getExperiments();
             return jsonResponse(200, ['result' => $experiments, 'events' => []]);
@@ -871,17 +923,17 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventCollector = $data['eventCollector'];
         $eventsBefore = count($eventCollector->getEvents());
 
-        $body = parseJsonBody($request);
+        return \React\Async\async(function() use ($context, $eventCollector, $eventsBefore) {
+            try {
+                $context->refresh();
 
-        try {
-            $context->refresh();
+                $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
-            $newEvents = $eventCollector->getNewEvents($eventsBefore);
-
-            return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
-        } catch (Throwable $e) {
-            return jsonResponse(500, ['error' => $e->getMessage()]);
-        }
+                return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
+            } catch (Throwable $e) {
+                return jsonResponse(500, ['error' => $e->getMessage()]);
+            }
+        })();
     }
 
     if (preg_match('#^/context/([^/]+)/finalize$#', $path, $matches)) {
