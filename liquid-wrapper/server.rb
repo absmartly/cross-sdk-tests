@@ -3,7 +3,11 @@ require 'json'
 require 'base64'
 require 'digest'
 require 'ostruct'
+require 'net/http'
+require 'uri'
 require 'absmartly/liquid'
+require 'context_data_provider'
+require 'a_b_smartly_config'
 
 # Register Liquid SDK filters and tags
 ABsmartly::Liquid.register_all
@@ -137,6 +141,25 @@ class DataWrapper
   end
 end
 
+class DeferredDataProvider < ContextDataProvider
+  def initialize(endpoint, throttle_ms)
+    @endpoint = endpoint
+    @throttle_ms = throttle_ms
+  end
+
+  def context_data
+    sleep(@throttle_ms / 1000.0) if @throttle_ms > 0
+    begin
+      uri = URI(@endpoint)
+      response = Net::HTTP.get_response(uri)
+      data = JSON.parse(response.body, symbolize_names: false)
+      DataWrapper.new(data)
+    rescue => e
+      DataWrapper.new({ 'experiments' => [] })
+    end
+  end
+end
+
 class CustomEventHandler < ContextEventHandler
   def initialize(event_collector)
     @event_collector = event_collector
@@ -236,19 +259,52 @@ post '/context' do
   context_config.refresh_interval = 0
   options = req_data[:options] || {}
   payload_throttle = options[:payloadThrottle] || 0
-  force_not_ready = !req_data[:data] && payload_throttle.to_i > 0
 
   if req_data[:data]
-    # Sync: createContextWith
     data_wrapper = DataWrapper.new(req_data[:data])
     context = sdk.create_context_with(context_config, data_wrapper)
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: event_collector.events
+    }.to_json
+  elsif payload_throttle.to_i > 0
+    deferred_provider = DeferredDataProvider.new(translated_endpoint, payload_throttle.to_i)
+    deferred_sdk_config = ABSmartlyConfig.new
+    deferred_sdk_config.context_data_provider = deferred_provider
+    deferred_sdk_config.context_event_handler = custom_event_handler
+    deferred_sdk_config.context_event_logger = event_collector
+    deferred_sdk_config.client = client
+    deferred_sdk = ABSmartly.new(deferred_sdk_config)
+    context = deferred_sdk.create_context_async(context_config)
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: []
+    }.to_json
   else
     context = sdk.create_context(context_config)
-    if payload_throttle.to_i == 0
-      50.times do
-        break unless event_collector.events.empty?
-        sleep 0.01
-      end
+    50.times do
+      break unless event_collector.events.empty?
+      sleep 0.01
     end
   end
 
@@ -261,11 +317,11 @@ post '/context' do
   {
     result: {
       contextId: context_id,
-      ready: force_not_ready ? false : context.ready?,
+      ready: context.ready?,
       failed: context.failed? || false,
       finalized: context.closed?
     },
-    events: force_not_ready ? [] : event_collector.events
+    events: event_collector.events
   }.to_json
 end
 

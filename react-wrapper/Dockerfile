@@ -17,7 +17,7 @@ CMD ["yarn", "test"]
 FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/react-wrapper/package*.json ./
-RUN npm ci
+RUN npm install
 
 # Symlink React to react-sdk's node_modules to ensure single React instance
 RUN rm -rf /react-sdk/node_modules/react /react-sdk/node_modules/react-dom && \

@@ -12,7 +12,7 @@ CMD ["npx", "jest", "--coverage", "--forceExit", "--maxWorkers=2"]
 FROM sdk-builder AS server
 WORKDIR /app
 COPY cross-sdk-tests/javascript-wrapper/package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY cross-sdk-tests/javascript-wrapper/server.js ./
 

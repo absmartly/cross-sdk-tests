@@ -46,7 +46,9 @@ var payloadStore = new ConcurrentDictionary<string, ABSmartly.Models.ContextData
 string TranslateEndpoint(string endpoint)
 {
     if (string.IsNullOrEmpty(endpoint)) return endpoint;
-    return Regex.Replace(endpoint, @"localhost:\d+", "127.0.0.1:3000");
+    endpoint = Regex.Replace(endpoint, @"localhost:\d+", "127.0.0.1:3000");
+    endpoint = Regex.Replace(endpoint, @"[\w-]+-sdk:\d+", "127.0.0.1:3000");
+    return endpoint;
 }
 
 string TranslateErrorMessage(string msg)
@@ -207,10 +209,10 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             });
         }
 
-        var endpoint = "http://dummy";
+        var endpoint = "http://localhost:3000";
         if (requestJson.ContainsKey("endpoint"))
         {
-            endpoint = requestJson["endpoint"].GetString() ?? "http://dummy";
+            endpoint = requestJson["endpoint"].GetString() ?? "http://localhost:3000";
             endpoint = TranslateEndpoint(endpoint);
         }
 
@@ -833,7 +835,7 @@ app.MapPost("/context/{contextId}/variableKeys", (string contextId) =>
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
         var context = data.Context as Context;
-        var keys = context?.GetVariableKeys();
+        var keys = context?.VariableKeys;
         var result = keys?.Keys.ToList() ?? new List<string>();
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -1007,7 +1009,7 @@ app.MapGet("/context/{contextId}/experiments", (string contextId) =>
     try
     {
         var context = data.Context as Context;
-        var experiments = context?.GetExperiments() ?? Array.Empty<string>();
+        var experiments = context?.Experiments ?? Array.Empty<string>();
         return Results.Ok(new ApiResponse
         {
             Result = experiments,
@@ -1050,36 +1052,10 @@ app.MapPost("/context/{contextId}/refresh", async (string contextId, HttpContext
 
     try
     {
-        using var reader = new StreamReader(httpContext.Request.Body);
-        var body = await reader.ReadToEndAsync();
-        var requestJson = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
-
-        var newDataJson = requestJson["newData"].GetRawText();
-        var newData = JsonSerializer.Deserialize<ABSmartly.Models.ContextData>(newDataJson, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        var context = data.Context as Context;
-        if (context != null)
-        {
-            var assignmentCacheField = typeof(Context).GetField("_assignmentCache", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (assignmentCacheField != null)
-            {
-                var cache = assignmentCacheField.GetValue(context) as System.Collections.IDictionary;
-                cache?.Clear();
-            }
+        await data.Context.RefreshAsync();
 
-            var setDataMethod = typeof(Context).GetMethod("SetData", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (setDataMethod != null)
-            {
-                setDataMethod.Invoke(context, new object[] { newData });
-            }
-        }
-
-        data.EventCollector.HandleEvent(data.Context, EventType.Refresh, newData);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -1423,8 +1399,21 @@ public class LazyContext : IContext
     public bool IsFailed() => _inner?.IsFailed() ?? false;
     public bool IsClosed() => _inner?.IsClosed() ?? false;
     public bool IsClosing() => _inner?.IsClosing() ?? false;
+    public bool IsFinalized => _inner?.IsFinalized ?? false;
+    public bool IsFinalizing => _inner?.IsFinalizing ?? false;
+    public Exception ReadyError => _inner?.ReadyError;
+    public Dictionary<string, string> Units => _inner?.Units ?? new Dictionary<string, string>();
+    [Obsolete("Use the Units property instead.")]
+    public Dictionary<string, string> GetUnits() => Units;
+    public object GetAttribute(string name) => _inner?.GetAttribute(name);
+    public Dictionary<string, object> Attributes => _inner?.Attributes ?? new Dictionary<string, object>();
+    [Obsolete("Use the Attributes property instead.")]
+    public Dictionary<string, object> GetAttributes() => Attributes;
+    public void Close() => _inner?.Close();
 
-    public string[] GetExperiments() => _inner?.GetExperiments() ?? Array.Empty<string>();
+    public string[] Experiments => _inner?.Experiments ?? Array.Empty<string>();
+    [Obsolete("Use the Experiments property instead.")]
+    public string[] GetExperiments() => Experiments;
     public ABSmartly.Models.ContextData GetContextData() => _inner?.GetContextData();
 
     public void SetAttribute(string name, object value)
@@ -1455,7 +1444,9 @@ public class LazyContext : IContext
     public int PeekTreatment(string experimentName) => _inner?.PeekTreatment(experimentName) ?? 0;
     public void SetUnit(string unitType, string uid) => _inner?.SetUnit(unitType, uid);
     public void SetUnits(Dictionary<string, string> units) => _inner?.SetUnits(units);
+    public Dictionary<string, List<string>> VariableKeys => _inner?.VariableKeys ?? new Dictionary<string, List<string>>();
     public Dictionary<string, string> GetVariableKeys() => _inner?.GetVariableKeys() ?? new Dictionary<string, string>();
+    public Dictionary<string, List<string>> GetVariableExperimentKeys() => _inner?.GetVariableExperimentKeys() ?? new Dictionary<string, List<string>>();
     public object GetVariableValue(string key, object defaultValue) => _inner?.GetVariableValue(key, defaultValue) ?? defaultValue;
     public object PeekVariableValue(string key, object defaultValue) => _inner?.PeekVariableValue(key, defaultValue) ?? defaultValue;
     public void Publish() => _inner?.Publish();

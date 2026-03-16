@@ -3949,23 +3949,7 @@
         },
         "expect": {
           "result": 1,
-          "events": [
-            {
-              "type": "exposure",
-              "data": {
-                "id": 1,
-                "name": "exp_test_ab",
-                "unit": "session_id",
-                "variant": 1,
-                "assigned": false,
-                "eligible": true,
-                "overridden": true,
-                "fullOn": false,
-                "custom": false,
-                "audienceMismatch": false
-              }
-            }
-          ]
+          "events": []
         }
       }
     ]

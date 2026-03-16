@@ -2,11 +2,14 @@ require 'sinatra'
 require 'json'
 require 'base64'
 require 'ostruct'
+require 'net/http'
+require 'uri'
 require 'a_b_smartly'
 require 'a_b_smartly_config'
 require 'client'
 require 'client_config'
 require 'context_config'
+require 'context_data_provider'
 require 'context_event_handler'
 require 'context_event_logger'
 
@@ -133,6 +136,25 @@ class DataWrapper
   end
 end
 
+class DeferredDataProvider < ContextDataProvider
+  def initialize(endpoint, throttle_ms)
+    @endpoint = endpoint
+    @throttle_ms = throttle_ms
+  end
+
+  def context_data
+    sleep(@throttle_ms / 1000.0) if @throttle_ms > 0
+    begin
+      uri = URI(@endpoint)
+      response = Net::HTTP.get_response(uri)
+      data = JSON.parse(response.body, symbolize_names: false)
+      DataWrapper.new(data)
+    rescue => e
+      DataWrapper.new({ 'experiments' => [] })
+    end
+  end
+end
+
 class CustomEventHandler < ContextEventHandler
   def initialize(event_collector)
     @event_collector = event_collector
@@ -223,18 +245,52 @@ post '/context' do
 
   options = req_data[:options] || {}
   payload_throttle = options[:payloadThrottle] || 0
-  force_not_ready = !req_data[:data] && payload_throttle.to_i > 0
 
   if req_data[:data]
     data_wrapper = DataWrapper.new(req_data[:data])
     context = sdk.create_context_with(context_config, data_wrapper)
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: event_collector.events
+    }.to_json
+  elsif payload_throttle.to_i > 0
+    deferred_provider = DeferredDataProvider.new(translated_endpoint, payload_throttle.to_i)
+    deferred_sdk_config = ABSmartlyConfig.new
+    deferred_sdk_config.context_data_provider = deferred_provider
+    deferred_sdk_config.context_event_handler = custom_event_handler
+    deferred_sdk_config.context_event_logger = event_collector
+    deferred_sdk_config.client = client
+    deferred_sdk = ABSmartly.new(deferred_sdk_config)
+    context = deferred_sdk.create_context_async(context_config)
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: []
+    }.to_json
   else
     context = sdk.create_context(context_config)
-    if payload_throttle.to_i == 0
-      50.times do
-        break unless event_collector.events.empty?
-        sleep 0.01
-      end
+    50.times do
+      break unless event_collector.events.empty?
+      sleep 0.01
     end
   end
 
@@ -247,11 +303,11 @@ post '/context' do
   {
     result: {
       contextId: context_id,
-      ready: force_not_ready ? false : context.ready?,
+      ready: context.ready?,
       failed: context.failed? || false,
       finalized: context.closed?
     },
-    events: force_not_ready ? [] : event_collector.events
+    events: event_collector.events
   }.to_json
 end
 
@@ -518,12 +574,7 @@ post '/context/:context_id/getUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    units = context.instance_variable_get(:@units)
-    result = units[req_data[:unitType].to_sym]
-
-    if result.nil?
-      result = units[req_data[:unitType].to_s]
-    end
+    result = context.get_unit(req_data[:unitType])
 
     if result
       if result.to_s.match?(/^\d+\.\d+$/)
@@ -554,11 +605,7 @@ post '/context/:context_id/getAttribute' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    # Ruby SDK doesn't have get_attribute, search in attributes
-    result = nil
-    context.instance_variable_get(:@attributes).each do |attr|
-      result = attr.value if attr.name == req_data[:name]
-    end
+    result = context.get_attribute(req_data[:name])
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: result, events: new_events }.to_json
@@ -758,14 +805,7 @@ post '/context/:context_id/refresh' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    # Convert new data to OpenStruct
-    new_data_ostruct = DataWrapper.new(req_data[:newData]).data_future
-    # Clear assignment cache before refreshing (like JavaScript SDK does)
-    context.instance_variable_get(:@assignment_cache).clear
-    # Call private assign_data method
-    context.send(:assign_data, new_data_ostruct)
-    # Log refresh event
-    collector.handle_event(ContextEventLogger::EVENT_TYPE::REFRESH, req_data[:newData])
+    context.refresh
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: nil, events: new_events }.to_json

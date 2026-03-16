@@ -3,6 +3,8 @@ set -e
 
 cd "$(dirname "$0")"
 
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-csdk}"
+
 SDK_FILTER=""
 SDK_NAMES=""
 BUILD_ONLY=false
@@ -158,14 +160,34 @@ get_service_names() {
 }
 
 if [ "$SKIP_BUILD" = false ]; then
-  export COMPOSE_PARALLEL_LIMIT=${COMPOSE_PARALLEL_LIMIT:-5}
+  export COMPOSE_PARALLEL_LIMIT=${COMPOSE_PARALLEL_LIMIT:-3}
+
+  # Build heavy SDKs first (JVM/native — need lots of memory) in small batches,
+  # then build the rest. This prevents OOM during parallel builds.
+  HEAVY_SDKS="scala-sdk scala-unit java-sdk java-unit kotlin-sdk kotlin-unit swift-sdk swift-unit cpp-sdk cpp-unit dotnet-sdk dotnet-unit elixir-sdk elixir-unit rust-sdk rust-unit"
+  LIGHT_SDKS=""
+  ALL_SERVICES=$(docker compose config --services 2>/dev/null)
+
+  for svc in $ALL_SERVICES; do
+    is_heavy=false
+    for h in $HEAVY_SDKS; do
+      if [ "$svc" = "$h" ]; then is_heavy=true; break; fi
+    done
+    if [ "$is_heavy" = false ]; then
+      LIGHT_SDKS="$LIGHT_SDKS $svc"
+    fi
+  done
+
   if [ -n "$SDK_NAMES" ]; then
     SERVICES=$(get_service_names "$SDK_NAMES")
     echo "Building containers for:$SERVICES orchestrator (parallel limit: $COMPOSE_PARALLEL_LIMIT)"
     docker_compose_with_recovery build $SERVICES orchestrator
   else
-    echo "Building all containers (parallel limit: $COMPOSE_PARALLEL_LIMIT)..."
-    docker_compose_with_recovery build
+    echo "Building heavy SDKs first (parallel limit: 2)..."
+    COMPOSE_PARALLEL_LIMIT=2 docker_compose_with_recovery build $HEAVY_SDKS
+
+    echo "Building remaining SDKs (parallel limit: $COMPOSE_PARALLEL_LIMIT)..."
+    docker_compose_with_recovery build $LIGHT_SDKS
   fi
 fi
 
@@ -195,62 +217,58 @@ TARGET_SERVICES=$(get_service_names "$SDK_CSV")
 RUN_FALLBACK=false
 FALLBACK_CONTAINERS=()
 
-started=false
-for attempt in 1 2 3; do
-  echo "Starting services:$TARGET_SERVICES"
+BATCH_SIZE=${COMPOSE_SERVICE_BATCH:-5}
+echo "Starting services in batches of $BATCH_SIZE:$TARGET_SERVICES"
+
+IFS=' ' read -ra SVC_ARRAY <<< "$TARGET_SERVICES"
+for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
+  BATCH=("${SVC_ARRAY[@]:i:BATCH_SIZE}")
+  echo "  Starting batch: ${BATCH[*]}"
   set +e
-  START_OUTPUT=$(docker compose up -d --remove-orphans $TARGET_SERVICES 2>&1)
+  START_OUTPUT=$(docker compose up -d --remove-orphans "${BATCH[@]}" 2>&1)
   START_EXIT=$?
   set -e
 
-  echo "$START_OUTPUT"
+  if [ "$START_EXIT" -ne 0 ]; then
+    if echo "$START_OUTPUT" | grep -qi "500 Internal Server Error"; then
+      echo "Docker returned 500. Restarting Docker..."
+      restart_docker
+      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
+    elif echo "$START_OUTPUT" | grep -q "No such container"; then
+      docker compose rm -f "${BATCH[@]}" 2>/dev/null || true
+      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
+    fi
+  fi
+  sleep 2
+done
 
-  if [ "$START_EXIT" -eq 0 ]; then
-    started=true
+echo "All containers launched. Checking health and restarting crashed services..."
+sleep 5
+MAX_HEALTH_RETRIES=3
+for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
+  UNHEALTHY=""
+  for svc in "${SVC_ARRAY[@]}"; do
+    STATUS=$(docker compose ps --format '{{.Status}}' "$svc" 2>/dev/null)
+    if echo "$STATUS" | grep -qi "exit\|dead\|created"; then
+      UNHEALTHY="$UNHEALTHY $svc"
+    fi
+  done
+
+  if [ -z "$UNHEALTHY" ]; then
     break
   fi
 
-  if echo "$START_OUTPUT" | grep -qi "500 Internal Server Error"; then
-    echo "Docker returned 500 during startup (attempt $attempt/3). Restarting Docker..."
-    restart_docker
-    docker compose down --remove-orphans --volumes 2>/dev/null || true
-    sleep 2
-    continue
+  if [ "$health_attempt" -lt "$MAX_HEALTH_RETRIES" ]; then
+    echo "  Restarting crashed services (attempt $health_attempt/$MAX_HEALTH_RETRIES):$UNHEALTHY"
+    docker compose up -d $UNHEALTHY 2>/dev/null || true
+    sleep 5
+  else
+    echo "  ⚠️  Some services still unhealthy after $MAX_HEALTH_RETRIES attempts:$UNHEALTHY"
   fi
-
-  if echo "$START_OUTPUT" | grep -q "No such container"; then
-    echo "Compose startup hit stale container reference (attempt $attempt/3), retrying..."
-    docker compose down --remove-orphans --volumes 2>/dev/null || true
-    docker compose rm -f 2>/dev/null || true
-    sleep 2
-    continue
-  fi
-
-  exit "$START_EXIT"
 done
 
-if [ "$started" != true ]; then
-  echo "Compose startup failed after retries. Falling back to detached service runs..."
-  RUN_FALLBACK=true
-  for sdk in "${TARGET_SDKS[@]}"; do
-    service="${sdk}-sdk"
-    container_name="${sdk}-sdk"
-    docker rm -f "$container_name" >/dev/null 2>&1 || true
-
-    set +e
-    START_OUTPUT=$(docker compose run -d --name "$container_name" "$service" 2>&1)
-    START_EXIT=$?
-    set -e
-    echo "$START_OUTPUT"
-
-    if [ "$START_EXIT" -ne 0 ]; then
-      echo "Failed to start fallback service: $service (exit code: $START_EXIT)"
-      exit "$START_EXIT"
-    fi
-
-    FALLBACK_CONTAINERS+=("$container_name")
-  done
-fi
+RUN_FALLBACK=false
+FALLBACK_CONTAINERS=()
 
 echo "Waiting for services to be ready..."
 

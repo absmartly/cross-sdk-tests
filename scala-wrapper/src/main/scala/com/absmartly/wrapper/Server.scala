@@ -452,15 +452,8 @@ object Server extends IOApp {
 
     case req @ POST -> Root / "context" / contextId / "customFieldKeys" =>
       withContext(contextId) { case (context, _) =>
-        req.as[Json].flatMap { json =>
-          json.hcursor.downField("experimentName").as[String] match {
-            case Right(experimentName) =>
-              val keys = context.customFieldKeys(experimentName)
-              Ok(wrapperResponse(keys.asJson, List.empty))
-            case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName")))
-          }
-        }
+        val keys = context.customFieldKeys()
+        Ok(wrapperResponse(keys.asJson, List.empty))
       }
 
     case req @ POST -> Root / "context" / contextId / "customFieldValueType" =>
@@ -532,21 +525,16 @@ object Server extends IOApp {
 
     case req @ POST -> Root / "context" / contextId / "refresh" =>
       withContext(contextId) { case (context, collector) =>
-        req.as[Json].flatMap { json =>
-          json.hcursor.downField("newData").as[ContextData] match {
-            case Right(newData) =>
-              try {
-                val prevCount = collector.getEvents().length
-                context.refresh(newData)
-                val newEvents = collector.getEventsSince(prevCount)
-                Ok(wrapperResponse(Json.Null, newEvents))
-              } catch {
-                case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        IO {
+          try {
+            val prevCount = collector.getEvents().length
+            context.refresh()
+            val newEvents = collector.getEventsSince(prevCount)
+            Ok(wrapperResponse(Json.Null, newEvents))
+          } catch {
+            case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
               }
-            case Left(err) =>
-              BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
-          }
-        }
+        }.flatten
       }
 
     case POST -> Root / "context" / contextId / "finalize" =>

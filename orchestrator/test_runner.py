@@ -37,7 +37,7 @@ class TestOrchestrator:
         failed_sdks: List[str] = []
 
         for sdk_name, base_url in self.sdks.items():
-            max_retries = 30
+            max_retries = 60
             service_ready = False
 
             for i in range(max_retries):

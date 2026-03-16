@@ -10,10 +10,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <future>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <iostream>
 
@@ -295,40 +297,55 @@ int main() {
                      }
                  }
 
-                 absmartly::ContextData context_data;
-                 if (body.contains("data")) {
-                     context_data = parse_context_data(body["data"]);
-                 } else if (body.contains("endpoint") && body["endpoint"].is_string()) {
-                     std::string endpoint = body["endpoint"].get<std::string>();
-                     auto payload_pos = endpoint.find("/context_payload/");
-                     if (payload_pos != std::string::npos) {
-                         std::string payload_id = endpoint.substr(payload_pos + 17);
-                         std::lock_guard<std::mutex> plock(payloads_mu);
-                         auto it = payload_store.find(payload_id);
-                         if (it != payload_store.end()) {
-                             context_data = it->second;
-                         }
-                     }
-                 }
-
                  auto collector = std::make_shared<EventCollector>();
-
                  std::string context_id = make_context_id();
 
                  try {
-                     auto ctx = std::make_unique<absmartly::Context>(
-                         config, context_data, collector);
+                     std::unique_ptr<absmartly::Context> ctx;
+
+                     if (payload_throttle > 0 && body.contains("endpoint") && body["endpoint"].is_string()) {
+                         // Deferred context: create with a pending future, resolve after throttle delay
+                         std::string endpoint = body["endpoint"].get<std::string>();
+                         auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
+                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector);
+
+                         std::thread([promise, endpoint, payload_throttle]() {
+                             std::this_thread::sleep_for(std::chrono::milliseconds(payload_throttle));
+                             absmartly::ContextData deferred_data;
+                             auto payload_pos = endpoint.find("/context_payload/");
+                             if (payload_pos != std::string::npos) {
+                                 std::string payload_id = endpoint.substr(payload_pos + 17);
+                                 std::lock_guard<std::mutex> plock(payloads_mu);
+                                 auto it = payload_store.find(payload_id);
+                                 if (it != payload_store.end()) {
+                                     deferred_data = it->second;
+                                 }
+                             }
+                             promise->set_value(std::move(deferred_data));
+                         }).detach();
+                     } else {
+                         absmartly::ContextData context_data;
+                         if (body.contains("data")) {
+                             context_data = parse_context_data(body["data"]);
+                         } else if (body.contains("endpoint") && body["endpoint"].is_string()) {
+                             std::string endpoint = body["endpoint"].get<std::string>();
+                             auto payload_pos = endpoint.find("/context_payload/");
+                             if (payload_pos != std::string::npos) {
+                                 std::string payload_id = endpoint.substr(payload_pos + 17);
+                                 std::lock_guard<std::mutex> plock(payloads_mu);
+                                 auto it = payload_store.find(payload_id);
+                                 if (it != payload_store.end()) {
+                                     context_data = it->second;
+                                 }
+                             }
+                         }
+                         ctx = std::make_unique<absmartly::Context>(config, context_data, collector);
+                     }
 
                      bool ready = ctx->is_ready();
                      bool failed = ctx->is_failed();
                      bool finalized = ctx->is_finalized();
-
                      auto all = collector->all_events();
-                     if (payload_throttle > 0 && body.contains("endpoint")) {
-                         // Match wrappers that treat throttled payload contexts as initially not-ready.
-                         ready = false;
-                         all.clear();
-                     }
 
                      ContextEntry entry;
                      entry.context = std::move(ctx);

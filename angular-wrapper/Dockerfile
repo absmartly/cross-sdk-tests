@@ -23,7 +23,7 @@ function fix(dir){for(const f of fs.readdirSync(dir)){const fp=path.join(dir,f);
 fix('/angular-sdk/lib/esm');"
 WORKDIR /app
 COPY cross-sdk-tests/angular-wrapper/package*.json ./
-RUN npm ci
+RUN npm install
 
 # Ensure the local SDKs are properly linked in wrapper's node_modules
 RUN rm -rf /app/node_modules/@absmartly/javascript-sdk /app/node_modules/@absmartly/angular-sdk 2>/dev/null || true && \

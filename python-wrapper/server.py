@@ -567,13 +567,7 @@ def refresh(context_id):
     events_before = len(collector.events)
 
     try:
-        new_data_dict = request.json['newData']
-        context_data = jsons.load(new_data_dict, ContextData)
-
-        context.assignment_cache.clear()
-
-        context.set_data(context_data)
-        collector.handle_event(EventType.REFRESH, context_data)
+        context.refresh()
         new_events = collector.events[events_before:]
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
