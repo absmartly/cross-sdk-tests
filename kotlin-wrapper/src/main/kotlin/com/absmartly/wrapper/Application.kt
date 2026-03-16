@@ -1,9 +1,12 @@
 package com.absmartly.wrapper
 
-import com.absmartly.sdk.Context
+import com.absmartly.sdk.ABSmartlyConfig
+import com.absmartly.sdk.ABsmartly
+import com.absmartly.sdk.ContextConfig
 import com.absmartly.sdk.ContextData
 import com.absmartly.sdk.ContextEventLogger
 import com.absmartly.sdk.ContextOptions
+import com.absmartly.sdk.PublishEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
@@ -129,12 +132,17 @@ fun Application.configureRouting() {
 
                 val publishDelay = (options["publishDelay"] as? Number)?.toLong() ?: -1L
                 val refreshPeriod = (options["refreshPeriod"] as? Number)?.toLong() ?: 0L
-                val contextOptions = ContextOptions(publishDelay = publishDelay, refreshPeriod = refreshPeriod)
 
                 val unitMap = mutableMapOf<String, String>()
                 for ((key, value) in units) {
                     unitMap[key] = value.toString()
                 }
+
+                val contextConfig = ContextConfig.create()
+                    .setUnits(unitMap)
+                    .setPublishDelay(publishDelay)
+                    .setRefreshInterval(refreshPeriod)
+                    .setEventLogger(eventCollector)
 
                 val payloadThrottle = (options["payloadThrottle"] as? Number)?.toLong() ?: 0L
                 val isAsync = request.containsKey("endpoint") && !request.containsKey("data")
@@ -154,17 +162,21 @@ fun Application.configureRouting() {
                     ContextData()
                 }
 
-                val context = if (deferReady) {
-                    Context(contextData, unitMap, contextOptions, eventCollector, startReady = false)
-                } else {
-                    Context(contextData, unitMap, contextOptions, eventCollector)
+                val noOpEventHandler = object : com.absmartly.sdk.ContextEventHandler {
+                    override fun publish(context: com.absmartly.sdk.Context, event: PublishEvent) =
+                        java.util.concurrent.CompletableFuture.completedFuture<Void>(null)
                 }
 
-                if (!deferReady) {
-                    eventCollector.handleEvent(context, ContextEventLogger.EventType.Ready, contextData)
-                }
+                val dataProvider: DummyContextDataProvider?
+                val context: com.absmartly.sdk.Context
 
                 if (deferReady) {
+                    dataProvider = null
+                    val oldOptions = ContextOptions(
+                        publishDelay = publishDelay,
+                        refreshPeriod = refreshPeriod
+                    )
+                    val ctx = com.absmartly.sdk.Context(contextData, unitMap, oldOptions, eventCollector, startReady = false)
                     val endpoint = request["endpoint"] as String
                     Thread {
                         try {
@@ -175,12 +187,20 @@ fun Application.configureRouting() {
                             } else {
                                 ContextData()
                             }
-                            context.setDataAndReady(asyncData)
+                            ctx.setDataAndReady(asyncData)
                         } catch (_: Exception) {}
                     }.start()
+                    context = ctx
+                } else {
+                    dataProvider = DummyContextDataProvider()
+                    val sdkConfig = ABSmartlyConfig.create()
+                        .setContextDataProvider(dataProvider)
+                        .setContextEventHandler(noOpEventHandler)
+                    val sdk = ABsmartly.create(sdkConfig)
+                    context = sdk.createContextWith(contextConfig, contextData)
                 }
 
-                val wrapper = ContextWrapper(context, eventCollector)
+                val wrapper = ContextWrapper(context, eventCollector, dataProvider)
                 contexts[contextId] = wrapper
 
                 call.respond(mapOf(
@@ -604,8 +624,17 @@ fun Application.configureRouting() {
             try {
                 val request = call.receive<Map<String, Any>>()
                 val eventsBefore = wrapper.eventCollector.getEvents().size
-                val newData = objectMapper.convertValue(request["newData"], ContextData::class.java)
-                wrapper.context.refresh(newData)
+                val newData = if (request.containsKey("newData")) {
+                    objectMapper.convertValue(request["newData"], ContextData::class.java)
+                } else null
+                if (wrapper.dataProvider != null && newData != null) {
+                    wrapper.dataProvider.setNextData(newData)
+                    wrapper.context.refresh().join()
+                } else if (newData != null) {
+                    wrapper.context.refresh(newData)
+                } else {
+                    wrapper.context.refresh().join()
+                }
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {
