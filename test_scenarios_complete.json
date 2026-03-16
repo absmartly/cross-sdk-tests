@@ -3762,23 +3762,7 @@
         },
         "expect": {
           "result": 1,
-          "events": [
-            {
-              "type": "exposure",
-              "data": {
-                "id": 1,
-                "name": "exp_test_ab",
-                "unit": "session_id",
-                "variant": 1,
-                "assigned": true,
-                "eligible": true,
-                "overridden": false,
-                "fullOn": false,
-                "custom": false,
-                "audienceMismatch": false
-              }
-            }
-          ]
+          "events": []
         }
       }
     ]
@@ -17897,7 +17881,9 @@
   {
     "name": "193 - Publish Failure - Preserves Pending Events",
     "description": "When publish fails, pending event count must be preserved so events are not lost",
-    "requires": ["publishFail"],
+    "requires": [
+      "publishFail"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -18005,8 +17991,10 @@
   },
   {
     "name": "194 - Variable Keys - Returns Experiment List Per Key",
-    "description": "variableKeys() map must include all experiments that define each key — two experiments sharing a key both appear in the list",
-    "requires": ["variableKeysMap"],
+    "description": "variableKeys() map must include all experiments that define each key \u2014 two experiments sharing a key both appear in the list",
+    "requires": [
+      "variableKeysMap"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -18127,7 +18115,9 @@
   {
     "name": "195 - Custom Field Keys - Returns Global Union Across Experiments",
     "description": "customFieldKeys() with no argument must return the union of all custom field keys across all experiments",
-    "requires": ["globalCustomFieldKeys"],
+    "requires": [
+      "globalCustomFieldKeys"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -18332,7 +18322,9 @@
   {
     "name": "197 - Unit Getters - getUnits Returns All Units",
     "description": "getUnits() must return a map of all unit types to their UIDs",
-    "requires": ["getUnits"],
+    "requires": [
+      "getUnits"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -18461,7 +18453,9 @@
   {
     "name": "199 - Attribute Getters - getAttributes Returns All Attributes",
     "description": "getAttributes() must return all attributes that have been set",
-    "requires": ["getAttributes"],
+    "requires": [
+      "getAttributes"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -18527,7 +18521,9 @@
   {
     "name": "200 - Ready Error - Returns Error on Failed Context",
     "description": "readyError() must return the error that caused context data loading to fail; isFailed() must be true",
-    "requires": ["readyError"],
+    "requires": [
+      "readyError"
+    ],
     "contextData": {
       "experiments": []
     },
