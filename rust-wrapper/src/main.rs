@@ -985,7 +985,7 @@ async fn refresh_handler(
 
     {
         let mut context = ctx_data.context.lock().unwrap();
-        context.refresh(req.new_data);
+        context.refresh_with(req.new_data);
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
