@@ -1050,6 +1050,15 @@ public class WrapperController {
 
             data.getContext().refresh();
 
+            for (int i = 0; i < 50 && data.getEventCollector().getEvents().size() == eventsBefore; i++) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
             Map<String, Object> response = new HashMap<>();
