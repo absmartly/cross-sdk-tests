@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 @RestController
 public class WrapperController {
@@ -201,11 +202,12 @@ public class WrapperController {
 
             Context context;
             ABSmartly sdk;
+            DummyContextDataProvider contextDataProvider = null;
             if (contextData != null) {
                 // Sync: createContextWith - use dummy data provider
-                DummyContextDataProvider dataProvider = new DummyContextDataProvider();
+                contextDataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setContextDataProvider(dataProvider)
+                    .setContextDataProvider(contextDataProvider)
                     .setContextEventHandler(eventHandler)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
@@ -213,22 +215,29 @@ public class WrapperController {
             } else if (endpoint != null) {
                 // createContext with endpoint - create a real client to fetch data
                 String translatedEndpoint = translateEndpoint(endpoint);
-                ClientConfig clientConfig = ClientConfig.create()
-                    .setEndpoint(translatedEndpoint)
-                    .setAPIKey("test-api-key")
-                    .setApplication("test-app")
-                    .setEnvironment("test-env");
-                Client client = Client.create(clientConfig);
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(client)
-                    .setContextEventHandler(eventHandler)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-
                 Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
-                context = sdk.createContext(contextConfig);
 
-                if (payloadThrottle == 0) {
+                if (payloadThrottle > 0) {
+                    DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(translatedEndpoint, payloadThrottle);
+                    ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                        .setContextDataProvider(deferredProvider)
+                        .setContextEventHandler(eventHandler)
+                        .setContextEventLogger(eventCollector);
+                    sdk = ABSmartly.create(sdkConfig);
+                    context = sdk.createContext(contextConfig);
+                } else {
+                    ClientConfig clientConfig = ClientConfig.create()
+                        .setEndpoint(translatedEndpoint)
+                        .setAPIKey("test-api-key")
+                        .setApplication("test-app")
+                        .setEnvironment("test-env");
+                    Client client = Client.create(clientConfig);
+                    ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
+                        .setContextEventHandler(eventHandler)
+                        .setContextEventLogger(eventCollector);
+                    sdk = ABSmartly.create(sdkConfig);
+                    context = sdk.createContext(contextConfig);
                     context.waitUntilReady();
                     // Wait for events to be collected (like Go wrapper)
                     for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
@@ -252,7 +261,7 @@ public class WrapperController {
             }
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            contexts.put(contextId, new ContextWrapper(context, eventCollector, null));
+            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider));
 
             Map<String, Object> result = new HashMap<>();
             result.put("contextId", contextId);
@@ -1048,9 +1057,17 @@ public class WrapperController {
         try {
             int eventsBefore = data.getEventCollector().getEvents().size();
 
+            if (request.containsKey("newData") && data.getDataProvider() != null) {
+                com.absmartly.sdk.json.ContextData newContextData = objectMapper.convertValue(
+                    request.get("newData"),
+                    com.absmartly.sdk.json.ContextData.class
+                );
+                data.getDataProvider().setNextData(newContextData);
+            }
+
             data.getContext().refresh();
 
-            for (int i = 0; i < 50 && data.getEventCollector().getEvents().size() == eventsBefore; i++) {
+            for (int i = 0; i < 100 && data.getEventCollector().getEvents().size() == eventsBefore; i++) {
                 try {
                     Thread.sleep(10);
                 } catch (InterruptedException ie) {
