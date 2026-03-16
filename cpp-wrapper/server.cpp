@@ -1174,7 +1174,7 @@ int main() {
                          absmartly::ContextData new_data = parse_context_data(body["newData"]);
                          entry->context->refresh(new_data);
                      } else {
-                         entry->context->refresh();
+                         entry->context->refresh(entry->context->data());
                      }
                      auto new_events = entry->collector->get_new_events(events_before);
                      json resp = make_response(nullptr, new_events);
