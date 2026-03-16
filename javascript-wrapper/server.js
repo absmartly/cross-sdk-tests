@@ -474,6 +474,10 @@ app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
+  if (!data.context.isReady()) {
+    return res.json({ result: [], events: [] });
+  }
+
   try {
     const experiments = data.context.experiments();
     res.json({ result: experiments, events: [] });
