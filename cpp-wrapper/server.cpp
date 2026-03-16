@@ -1153,7 +1153,12 @@ int main() {
                  size_t events_before = entry->collector->size();
 
                  try {
-                     entry->context->refresh();
+                     if (body.contains("newData")) {
+                         absmartly::ContextData new_data = parse_context_data(body["newData"]);
+                         entry->context->refresh(new_data);
+                     } else {
+                         entry->context->refresh();
+                     }
                      auto new_events = entry->collector->get_new_events(events_before);
                      json resp = make_response(nullptr, new_events);
                      res.set_content(resp.dump(), "application/json");
