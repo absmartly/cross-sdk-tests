@@ -880,7 +880,7 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(CustomFieldKeysRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = storage.context.getCustomFieldKeys(experimentName: request.experimentName)
+        let keys = storage.context.getCustomFieldKeys()
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [

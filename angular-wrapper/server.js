@@ -466,7 +466,7 @@ app.post('/context/:contextId/customFieldKeys', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const keys = context.customFieldKeys(req.body.experimentName);
+    const keys = context.customFieldKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: keys, events: newEvents });
   } catch (error) {
@@ -561,19 +561,26 @@ app.post('/context/:contextId/publish', async (req, res) => {
   }
 });
 
-app.post('/context/:contextId/refresh', (req, res) => {
+app.post('/context/:contextId/refresh', async (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  context._init(req.body.newData);
-  const newEvents = eventCollector.events.slice(eventsBefore);
-  eventCollector.handleEvent(context, 'refresh', req.body.newData);
-  const finalEvents = eventCollector.events.slice(eventsBefore);
+  try {
+    await new Promise((resolve, reject) => {
+      context._refresh((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  } catch (e) {
+    // refresh may fail if no endpoint, still report events
+  }
 
-  res.json({ result: null, events: finalEvents });
+  const newEvents = eventCollector.events.slice(eventsBefore);
+  res.json({ result: null, events: newEvents });
 });
 
 app.post('/context/:contextId/finalize', async (req, res) => {

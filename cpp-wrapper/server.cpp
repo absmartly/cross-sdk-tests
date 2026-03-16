@@ -1041,17 +1041,9 @@ int main() {
                      return;
                  }
 
-                 std::string experiment_name = body.value("experimentName", "");
-
                  json result = json::array();
-                 const auto& ctx_data = entry->context->data();
-                 for (const auto& exp : ctx_data.experiments) {
-                     if (exp.name == experiment_name) {
-                         for (const auto& field : exp.customFieldValues) {
-                             result.push_back(field.name);
-                         }
-                         break;
-                     }
+                 for (const auto& key : entry->context->custom_field_keys()) {
+                     result.push_back(key);
                  }
 
                  std::vector<Event> empty;
@@ -1158,15 +1150,10 @@ int main() {
                      return;
                  }
 
-                 absmartly::ContextData new_data;
-                 if (body.contains("newData")) {
-                     new_data = parse_context_data(body["newData"]);
-                 }
-
                  size_t events_before = entry->collector->size();
 
                  try {
-                     entry->context->refresh(new_data);
+                     entry->context->refresh();
                      auto new_events = entry->collector->get_new_events(events_before);
                      json resp = make_response(nullptr, new_events);
                      res.set_content(resp.dump(), "application/json");

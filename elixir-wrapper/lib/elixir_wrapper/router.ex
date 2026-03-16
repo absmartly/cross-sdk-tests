@@ -233,8 +233,7 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/customFieldKeys" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      %{"experimentName" => experiment_name} = conn.body_params
-      result = ABSmartly.Context.custom_field_keys(ctx, experiment_name)
+      result = ABSmartly.Context.custom_field_keys(ctx)
       send_action_response(conn, result, collector, eb)
     end)
   end
@@ -291,8 +290,7 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/refresh" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      %{"newData" => new_data} = conn.body_params
-      ABSmartly.Context.refresh(ctx, new_data)
+      ABSmartly.Context.refresh(ctx)
       send_action_response(conn, nil, collector, eb)
     end)
   end
