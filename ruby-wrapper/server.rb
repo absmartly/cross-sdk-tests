@@ -323,6 +323,11 @@ post '/context/:context_id/treatment' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
+  unless context.ready?
+    content_type :json
+    return { result: 0, events: [] }.to_json
+  end
+
   begin
     variant = context.treatment(req_data[:experimentName])
     new_events = collector.events[events_before..-1] || []
@@ -486,6 +491,11 @@ get '/context/:context_id/experiments' do
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
 
   ctx_data = $contexts[context_id]
+  unless ctx_data[:context].ready?
+    content_type :json
+    return { result: [], events: [] }.to_json
+  end
+
   begin
     experiments = ctx_data[:context].experiments
     content_type :json
@@ -548,7 +558,7 @@ post '/context/:context_id/setUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    context.set_unit(req_data[:unitType], req_data[:uid])
+    context.set_unit(req_data[:unitType].to_sym, req_data[:uid].to_s)
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: nil, events: new_events }.to_json
@@ -574,7 +584,7 @@ post '/context/:context_id/getUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    result = context.get_unit(req_data[:unitType])
+    result = context.get_unit(req_data[:unitType].to_sym)
 
     if result
       if result.to_s.match?(/^\d+\.\d+$/)
@@ -625,6 +635,11 @@ post '/context/:context_id/variableValue' do
 
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
+
+  unless context.ready?
+    content_type :json
+    return { result: req_data[:defaultValue], events: [] }.to_json
+  end
 
   begin
     result = context.variable_value(req_data[:key], req_data[:defaultValue])
@@ -688,6 +703,11 @@ post '/context/:context_id/variableKeys' do
   context = ctx_data[:context]
   collector = ctx_data[:eventCollector]
   events_before = collector.events.length
+
+  unless context.ready?
+    content_type :json
+    return { result: [], events: [] }.to_json
+  end
 
   begin
     keys = context.variable_keys
