@@ -287,16 +287,34 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         }
 
         IContext context;
-        if (contextData != null)
+        if (contextData != null && payloadThrottle > 0)
+        {
+            var capturedContextData = contextData;
+            var capturedPayloadThrottle2 = payloadThrottle;
+            var lazyContext2 = new LazyContext(Task.Run(async () =>
+            {
+                await Task.Delay(capturedPayloadThrottle2);
+                return (IContext)sdk.CreateContextWith(contextConfig, capturedContextData);
+            }), eventCollector);
+            context = lazyContext2;
+        }
+        else if (contextData != null)
         {
             context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
         }
         else if (payloadThrottle > 0)
         {
-            var lazyContext = new LazyContext(Task.Run(() =>
+            var capturedPayloadThrottle = payloadThrottle;
+            var lazyContext = new LazyContext(Task.Run(async () =>
             {
-                return (IContext)sdk.CreateContext(contextConfig);
-            }), eventCollector);
+                await Task.Delay(capturedPayloadThrottle);
+                var innerContext = sdk.CreateContext(contextConfig);
+                for (int i = 0; i < 100 && !innerContext.IsReady(); i++)
+                {
+                    await Task.Delay(10);
+                }
+                return (IContext)innerContext;
+            }).Unwrap(), eventCollector);
             context = lazyContext;
         }
         else
