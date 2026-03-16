@@ -116,6 +116,14 @@ func normalizeEmptyStrings(v interface{}) interface{} {
 	}
 }
 
+type deferredContextDataProvider struct {
+	dataFuture *future.Future
+}
+
+func (d *deferredContextDataProvider) GetContextData() *future.Future {
+	return d.dataFuture
+}
+
 type CustomPublisher struct {
 	eventCollector *EventCollector
 }
@@ -378,21 +386,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	var context *sdk.Context
 	if req.Endpoint != "" {
 		endpoint := translateEndpoint(req.Endpoint)
-		clientConfig := sdk.ClientConfig{
-			Endpoint:    endpoint,
-			APIKey:      "test-api-key",
-			Application: "test-app",
-			Environment: "test-env",
-		}
-		client := sdk.CreateDefaultClient(clientConfig)
-		absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
-			Client:               client,
-			ContextEventHandler:  customPublisher,
-			ContextEventLogger:   eventCollector,
-			VariableParser:       customVariableParser,
-			AudienceDeserializer: nil,
-		})
-		context = absmartlyWithClient.CreateContext(contextConfig)
 
 		payloadThrottle := 0
 		if req.Options != nil {
@@ -401,7 +394,49 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if payloadThrottle == 0 {
+		if payloadThrottle > 0 {
+			dataFuture, done := future.New()
+			go func() {
+				time.Sleep(time.Duration(payloadThrottle) * time.Millisecond)
+				resp, err := http.Get(endpoint)
+				if err != nil {
+					done(jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}, nil)
+					return
+				}
+				defer resp.Body.Close()
+				var data jsonmodels.ContextData
+				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+					done(jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}, nil)
+					return
+				}
+				done(data, nil)
+			}()
+
+			deferredProvider := &deferredContextDataProvider{dataFuture: dataFuture}
+			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
+				ContextDataProvider:  deferredProvider,
+				ContextEventHandler:  customPublisher,
+				ContextEventLogger:   eventCollector,
+				VariableParser:       customVariableParser,
+				AudienceDeserializer: nil,
+			})
+			context = absmartlyDeferred.CreateContext(contextConfig)
+		} else {
+			clientConfig := sdk.ClientConfig{
+				Endpoint:    endpoint,
+				APIKey:      "test-api-key",
+				Application: "test-app",
+				Environment: "test-env",
+			}
+			client := sdk.CreateDefaultClient(clientConfig)
+			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
+				Client:               client,
+				ContextEventHandler:  customPublisher,
+				ContextEventLogger:   eventCollector,
+				VariableParser:       customVariableParser,
+				AudienceDeserializer: nil,
+			})
+			context = absmartlyWithClient.CreateContext(contextConfig)
 			context.WaitUntilReady()
 			for i := 0; i < 50 && len(eventCollector.events) == 0; i++ {
 				time.Sleep(10 * time.Millisecond)
