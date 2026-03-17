@@ -192,6 +192,7 @@ object Server extends IOApp {
                   })
                 }
               case Left(_) =>
+                val failLoad = cursor.downField("failLoad").as[Boolean].getOrElse(false)
                 IO {
                   val collector = new WrapperEventCollector()
                   val emptyData = ContextData(experiments = List.empty)
@@ -203,8 +204,16 @@ object Server extends IOApp {
                     eventLogger = collector
                   )
                   val sdk = new SDK(config)
-                  val context = sdk.createContextWith(units, emptyData, options)
-                  (context, collector)
+                  if (failLoad) {
+                    val context = new Context(sdk, None, units, options, collector)
+                    context.setDataFailed()
+                    collector.logEvent("error", Json.obj("message" -> Json.fromString("Context load failed")))
+                    Thread.sleep(50)
+                    (context, collector)
+                  } else {
+                    val context = sdk.createContextWith(units, emptyData, options)
+                    (context, collector)
+                  }
                 }
             }
         }
