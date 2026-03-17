@@ -84,6 +84,7 @@ impl EventCollector {
 struct ContextData_ {
     context: Mutex<Context>,
     event_collector: Arc<EventCollector>,
+    publish_fail: std::sync::atomic::AtomicBool,
 }
 
 struct AppState {
@@ -212,7 +213,13 @@ async fn health_handler() -> impl IntoResponse {
 
 async fn capabilities_handler() -> impl IntoResponse {
     Json(json!({"diagnostics": true,
-        "attrsSeq": false
+        "attrsSeq": false,
+        "publishFail": true,
+        "variableKeysMap": true,
+        "globalCustomFieldKeys": true,
+        "getUnits": true,
+        "getAttributes": true,
+        "readyError": true
     }))
 }
 
@@ -336,6 +343,7 @@ async fn create_context_handler(
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
+                publish_fail: std::sync::atomic::AtomicBool::new(false),
             });
 
             {
@@ -457,6 +465,7 @@ async fn create_context_handler(
     let context_data = Arc::new(ContextData_ {
         context: Mutex::new(context),
         event_collector: event_collector.clone(),
+        publish_fail: std::sync::atomic::AtomicBool::new(false),
     });
 
     let mut contexts = state.contexts.write().unwrap();
@@ -984,11 +993,104 @@ async fn experiments_handler(
     }))
 }
 
+async fn get_units_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    let events_before = ctx_data.event_collector.len();
+    let result = {
+        let context = ctx_data.context.lock().unwrap();
+        let units = context.get_units();
+        let mut map = serde_json::Map::new();
+        for (k, v) in units {
+            if let Ok(n) = v.parse::<i64>() {
+                map.insert(k.clone(), Value::Number(n.into()));
+            } else if let Ok(f) = v.parse::<f64>() {
+                map.insert(k.clone(), serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::String(v.clone())));
+            } else {
+                map.insert(k.clone(), Value::String(v.clone()));
+            }
+        }
+        Value::Object(map)
+    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    Ok(Json(ApiResponse { result, events: new_events, error: None }))
+}
+
+async fn get_attributes_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    let events_before = ctx_data.event_collector.len();
+    let result = {
+        let context = ctx_data.context.lock().unwrap();
+        context.get_attributes()
+    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    Ok(Json(ApiResponse { result: serde_json::to_value(result).unwrap_or(Value::Object(serde_json::Map::new())), events: new_events, error: None }))
+}
+
+async fn ready_error_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    let result = {
+        let context = ctx_data.context.lock().unwrap();
+        context.ready_error().map(|e| Value::String(e.clone())).unwrap_or(Value::Null)
+    };
+    Ok(Json(ApiResponse { result, events: vec![], error: None }))
+}
+
+async fn variable_keys_map_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    let events_before = ctx_data.event_collector.len();
+    let keys = {
+        let context = ctx_data.context.lock().unwrap();
+        context.variable_keys()
+    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Object(serde_json::Map::new())), events: new_events, error: None }))
+}
+
+async fn global_custom_field_keys_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    let events_before = ctx_data.event_collector.len();
+    let keys = {
+        let context = ctx_data.context.lock().unwrap();
+        context.custom_field_keys()
+    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
+    Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Array(vec![])), events: new_events, error: None }))
+}
+
+async fn publish_fail_handler(
+    State(state): State<Arc<AppState>>,
+    Path(context_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    let ctx_data = get_context(&state, &context_id)?;
+    ctx_data.publish_fail.store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(Json(ApiResponse { result: Value::Null, events: vec![], error: None }))
+}
+
 async fn publish_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     let ctx_data = get_context(&state, &context_id)?;
+
+    if ctx_data.publish_fail.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "publish failed"}))));
+    }
+
     let events_before = ctx_data.event_collector.len();
 
     {
@@ -1093,6 +1195,12 @@ async fn main() {
         .route("/context/{contextId}/isReady", get(is_ready_handler))
         .route("/context/{contextId}/isFailed", get(is_failed_handler))
         .route("/context/{contextId}/experiments", get(experiments_handler))
+        .route("/context/{contextId}/getUnits", post(get_units_handler))
+        .route("/context/{contextId}/getAttributes", post(get_attributes_handler))
+        .route("/context/{contextId}/readyError", post(ready_error_handler))
+        .route("/context/{contextId}/variableKeysMap", post(variable_keys_map_handler))
+        .route("/context/{contextId}/globalCustomFieldKeys", post(global_custom_field_keys_handler))
+        .route("/context/{contextId}/publishFail", post(publish_fail_handler))
         .route("/context/{contextId}/publish", post(publish_handler))
         .route("/context/{contextId}/refresh", post(refresh_handler))
         .route("/context/{contextId}/finalize", post(finalize_handler))
