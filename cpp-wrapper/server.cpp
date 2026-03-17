@@ -81,6 +81,7 @@ struct ContextEntry {
     std::unique_ptr<absmartly::Context> context;
     std::shared_ptr<EventCollector> collector;
     std::map<std::string, json> unit_original_values;
+    bool publishFail = false;
 };
 
 static std::mutex contexts_mu;
@@ -147,7 +148,10 @@ int main() {
 
     svr.Get("/capabilities",
             [](const httplib::Request&, httplib::Response& res) {
-                json resp = {{"diagnostics", true}, {"attrsSeq", false}};
+                json resp = {{"diagnostics", true}, {"attrsSeq", false},
+                    {"publishFail", true}, {"variableKeysMap", true},
+                    {"globalCustomFieldKeys", true}, {"getUnits", true},
+                    {"getAttributes", true}, {"readyError", true}};
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1114,6 +1118,107 @@ int main() {
                  res.set_content(resp.dump(), "application/json");
              });
 
+    svr.Post(R"(/context/([^/]+)/getUnits)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 size_t eb = entry->collector->size();
+                 auto units = entry->context->get_units();
+                 json result = json::object();
+                 for (auto& [k, v] : units) {
+                     try { result[k] = std::stoi(v); }
+                     catch (...) {
+                         try { result[k] = std::stod(v); }
+                         catch (...) { result[k] = v; }
+                     }
+                 }
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(result, ne).dump(), "application/json");
+             });
+
+    svr.Post(R"(/context/([^/]+)/getAttributes)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 size_t eb = entry->collector->size();
+                 auto attrs = entry->context->get_attributes();
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(attrs, ne).dump(), "application/json");
+             });
+
+    svr.Post(R"(/context/([^/]+)/readyError)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 auto error = entry->context->ready_error();
+                 json result = error.empty() ? json(nullptr) : json(error);
+                 res.set_content(make_response(result, {}).dump(), "application/json");
+             });
+
+    svr.Post(R"(/context/([^/]+)/variableKeysMap)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 size_t eb = entry->collector->size();
+                 auto keys = entry->context->variable_keys();
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(keys, ne).dump(), "application/json");
+             });
+
+    svr.Post(R"(/context/([^/]+)/globalCustomFieldKeys)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 size_t eb = entry->collector->size();
+                 auto keys = entry->context->custom_field_keys();
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(keys, ne).dump(), "application/json");
+             });
+
+    svr.Post(R"(/context/([^/]+)/publishFail)",
+             [](const httplib::Request& req, httplib::Response& res) {
+                 std::string id = req.matches[1];
+                 std::lock_guard<std::mutex> lock(contexts_mu);
+                 auto* entry = get_context(id);
+                 if (!entry) {
+                     res.status = 404;
+                     res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
+                     return;
+                 }
+                 entry->publishFail = true;
+                 res.set_content(make_response(nullptr, {}).dump(), "application/json");
+             });
+
     svr.Post(R"(/context/([^/]+)/publish)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
@@ -1124,6 +1229,14 @@ int main() {
                      res.status = 404;
                      res.set_content(
                          make_error_response("Context not found", "NOT_FOUND").dump(),
+                         "application/json");
+                     return;
+                 }
+
+                 if (entry->publishFail) {
+                     res.status = 500;
+                     res.set_content(
+                         make_error_response("publish failed", "PUBLISH_ERROR").dump(),
                          "application/json");
                      return;
                  }
