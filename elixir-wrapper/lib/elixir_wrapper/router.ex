@@ -25,7 +25,13 @@ defmodule ElixirWrapper.Router do
 
   get "/capabilities" do
     send_json(conn, 200, %{diagnostics: true,
-      attrsSeq: false
+      attrsSeq: false,
+      publishFail: true,
+      variableKeysMap: true,
+      globalCustomFieldKeys: true,
+      getUnits: true,
+      getAttributes: true,
+      readyError: true
     })
   end
 
@@ -66,6 +72,10 @@ defmodule ElixirWrapper.Router do
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
         create_context_sync(conn, data, units, options)
+
+      %{"failLoad" => true, "units" => units} = params ->
+        options = params["options"] || %{}
+        create_context_failed(conn, units, options)
 
       %{"endpoint" => endpoint, "units" => units} = params ->
         options = params["options"] || %{}
@@ -293,11 +303,66 @@ defmodule ElixirWrapper.Router do
     end)
   end
 
-  post "/context/:context_id/publish" do
+  post "/context/:context_id/getUnits" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      ABSmartly.Context.publish(ctx)
-      send_action_response(conn, nil, collector, eb)
+      result = ABSmartly.Context.get_units(ctx)
+      result = Enum.into(result, %{}, fn {k, v} -> {k, maybe_parse_number(v)} end)
+      send_action_response(conn, result, collector, eb)
     end)
+  end
+
+  post "/context/:context_id/getAttributes" do
+    with_context_action(conn, fn {ctx, collector, eb} ->
+      attrs = ABSmartly.Context.get_attributes(ctx)
+      result = Enum.into(attrs, %{}, fn entry -> {entry.name, entry.value} end)
+      send_action_response(conn, result, collector, eb)
+    end)
+  end
+
+  post "/context/:context_id/readyError" do
+    with_context_action(conn, fn {ctx, _collector, _eb} ->
+      result = ABSmartly.Context.ready_error(ctx)
+      send_json(conn, 200, %{result: result, events: []})
+    end)
+  end
+
+  post "/context/:context_id/variableKeysMap" do
+    with_context_action(conn, fn {ctx, collector, eb} ->
+      result = ABSmartly.Context.variable_keys(ctx)
+      send_action_response(conn, result, collector, eb)
+    end)
+  end
+
+  post "/context/:context_id/globalCustomFieldKeys" do
+    with_context_action(conn, fn {ctx, collector, eb} ->
+      result = ABSmartly.Context.custom_field_keys(ctx)
+      send_action_response(conn, result, collector, eb)
+    end)
+  end
+
+  post "/context/:context_id/publishFail" do
+    context_id = conn.path_params["context_id"]
+    ContextStore.set_publish_fail(context_id, true)
+    send_json(conn, 200, %{result: nil, events: []})
+  end
+
+  post "/context/:context_id/publish" do
+    context_id = conn.path_params["context_id"]
+    should_fail = ContextStore.get_publish_fail(context_id)
+
+    if should_fail do
+      ContextStore.set_publish_fail(context_id, false)
+
+      with_context_action(conn, fn {_ctx, collector, eb} ->
+        EventCollector.push(collector, "error", %{message: "Publish failed"})
+        send_action_response(conn, nil, collector, eb)
+      end)
+    else
+      with_context_action(conn, fn {ctx, collector, eb} ->
+        ABSmartly.Context.publish(ctx)
+        send_action_response(conn, nil, collector, eb)
+      end)
+    end
   end
 
   post "/context/:context_id/refresh" do
@@ -436,6 +501,54 @@ defmodule ElixirWrapper.Router do
 
       {:error, reason} ->
         send_error(conn, 500, "Failed to create async context: #{inspect(reason)}")
+    end
+  end
+
+  defp create_context_failed(conn, units, options) do
+    collector = EventCollector.new()
+
+    event_handler = fn event_type, event_data ->
+      EventCollector.push(collector, event_type, event_data)
+    end
+
+    sdk_config = %ABSmartly.Types.SDKConfig{
+      endpoint: "http://localhost:3000",
+      api_key: "test-key",
+      application: "test-app",
+      environment: "test"
+    }
+
+    context_options =
+      options
+      |> Map.put("units", units)
+      |> Map.put("publishDelay", -1)
+      |> Map.put("refreshPeriod", 0)
+      |> Map.put(:event_handler, event_handler)
+
+    context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
+
+    case ABSmartly.Context.start_link_async(sdk_config, context_config) do
+      {:ok, ctx} ->
+        ABSmartly.Context.set_failed(ctx, "Context load failed")
+        EventCollector.push(collector, "error", %{message: "Context load failed"})
+        Process.sleep(50)
+
+        context_id = UUID.uuid4()
+        ContextStore.store_context(context_id, ctx, collector)
+
+        events = EventCollector.get_all(collector)
+
+        result = %{
+          contextId: context_id,
+          ready: false,
+          failed: true,
+          finalized: false
+        }
+
+        send_json(conn, 200, %{result: result, events: events})
+
+      {:error, reason} ->
+        send_error(conn, 500, "Failed to create failed context: #{inspect(reason)}")
     end
   end
 
