@@ -4,7 +4,7 @@ COPY flutter-sdk/packages/dart_sdk /flutter-sdk/packages/dart_sdk
 
 FROM sdk-builder AS tester
 WORKDIR /flutter-sdk/packages/dart_sdk
-RUN dart pub get
+RUN dart pub get && dart run build_runner build --delete-conflicting-outputs
 CMD ["dart", "test"]
 
 FROM sdk-builder AS server
