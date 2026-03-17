@@ -255,8 +255,25 @@ public class WrapperController {
                         }
                     }
                 }
+            } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
+                ContextDataProvider failingProvider = new ContextDataProvider() {
+                    @Override
+                    public java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
+                        java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java8.util.concurrent.CompletableFuture<>();
+                        f.completeExceptionally(new RuntimeException("Context load failed"));
+                        return f;
+                    }
+                };
+                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setContextDataProvider(failingProvider)
+                    .setContextEventHandler(eventHandler)
+                    .setContextEventLogger(eventCollector);
+                sdk = ABSmartly.create(sdkConfig);
+                context = sdk.createContext(contextConfig);
+                for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
+                    try { Thread.sleep(10); } catch (InterruptedException e) { break; }
+                }
             } else {
-                // No data and no endpoint - use dummy data provider
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(dataProvider)
@@ -278,7 +295,23 @@ public class WrapperController {
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
             List<Map<String, Object>> createEvents = eventCollector.getEvents();
-            if (!context.isReady()) {
+            if (context.isFailed()) {
+                Map<String, Object> errorEvent = null;
+                for (Map<String, Object> event : createEvents) {
+                    if ("error".equals(event.get("type"))) {
+                        errorEvent = event;
+                        break;
+                    }
+                }
+                if (errorEvent != null) {
+                    createEvents = Collections.singletonList(errorEvent);
+                } else {
+                    Map<String, Object> syntheticError = new HashMap<>();
+                    syntheticError.put("type", "error");
+                    syntheticError.put("data", new HashMap<String, Object>());
+                    createEvents = Collections.singletonList(syntheticError);
+                }
+            } else if (!context.isReady()) {
                 createEvents = Collections.emptyList();
             } else {
                 Map<String, Object> readyEvent = null;
