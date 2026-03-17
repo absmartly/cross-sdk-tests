@@ -459,19 +459,7 @@ post '/context/:context_id/track' do
       halt 400, { error: "Goal '#{req_data[:goalName]}' properties must be of type object." }.to_json
     end
 
-    # Use Liquid template with absmartly_track filter
-    ABsmartly::Liquid.current_context = context
-
-    if props && !props.empty?
-      # With properties - pass as filter argument
-      template = Liquid::Template.parse("{{ goal_name | absmartly_track: properties }}")
-      template.render('goal_name' => req_data[:goalName], 'properties' => props)
-    else
-      # No properties - the filter defaults to {} but we need nil for the SDK
-      # Use the filter without second arg, then fix the event if needed
-      template = Liquid::Template.parse("{{ goal_name | absmartly_track }}")
-      template.render('goal_name' => req_data[:goalName])
-    end
+    context.track(req_data[:goalName].to_s, props || {})
 
     new_events = collector.events[events_before..-1] || []
 
