@@ -65,9 +65,14 @@ class CustomPublisher extends absmartly.ContextPublisher {
   constructor(eventCollector) {
     super();
     this.eventCollector = eventCollector;
+    this._shouldFail = false;
   }
 
   publish(request, sdk, context) {
+    if (this._shouldFail) {
+      this._shouldFail = false;
+      return Promise.reject(new Error('Publish failed'));
+    }
     return Promise.resolve();
   }
 }
@@ -103,13 +108,21 @@ app.get('/capabilities', (req, res) => {
     attrsSeq: true,
     isWrapper: true,
     wrapsSDK: 'javascript',
+    publishFail: true,
+    variableKeysMap: true,
+    globalCustomFieldKeys: true,
+    getUnits: true,
+    getAttributes: true,
+    readyError: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
       'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
       'getAttribute', 'variableKeys', 'customFieldKeys',
       'customFieldValueType', 'setOverride', 'setCustomAssignment', 'refresh',
-      'diagnostic', 'experiments', 'isReady', 'isFailed'
+      'diagnostic', 'experiments', 'isReady', 'isFailed',
+      'getUnits', 'getAttributes', 'readyError', 'variableKeysMap',
+      'globalCustomFieldKeys', 'publishFail'
     ]
   });
 });
@@ -157,6 +170,7 @@ app.post('/context', async (req, res) => {
 
     let context;
     const payloadThrottle = options?.payloadThrottle || 0;
+    const failLoad = req.body.failLoad || false;
 
     if (data) {
       context = sdk.createContextWith(
@@ -164,6 +178,16 @@ app.post('/context', async (req, res) => {
         data,
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
+    } else if (failLoad) {
+      const failedData = Promise.reject(new Error('Context load failed'));
+      failedData.catch(() => {});
+      context = sdk.createContextWith(
+        { units },
+        failedData,
+        { publishDelay: -1, refreshPeriod: 0, ...options }
+      );
+      try { await context.ready(); } catch (e) {}
+      await new Promise(r => setTimeout(r, 50));
     } else if (payloadThrottle > 0 && endpoint) {
       const deferredData = new Promise((resolve) => {
         setTimeout(() => {
@@ -186,7 +210,7 @@ app.post('/context', async (req, res) => {
       await context.ready();
     }
 
-    contexts.set(contextId, { context, eventCollector, sdk });
+    contexts.set(contextId, { context, eventCollector, sdk, customPublisher });
 
     res.json({
       result: {
@@ -465,6 +489,48 @@ app.get('/context/:contextId/experiments', (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+app.post('/context/:contextId/getUnits', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  try { res.json({ result: data.context.getUnits(), events: [] }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.post('/context/:contextId/getAttributes', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  try { res.json({ result: data.context.getAttributes(), events: [] }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.post('/context/:contextId/readyError', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  const error = data.context.readyError();
+  res.json({ result: error ? error.message || String(error) : null, events: [] });
+});
+
+app.post('/context/:contextId/variableKeysMap', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  try { res.json({ result: data.context.variableKeys(), events: [] }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.post('/context/:contextId/globalCustomFieldKeys', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  try { res.json({ result: data.context.customFieldKeys(), events: [] }); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.post('/context/:contextId/publishFail', (req, res) => {
+  const data = contexts.get(req.params.contextId);
+  if (!data) return res.status(404).json({ error: 'Context not found' });
+  data.customPublisher._shouldFail = true;
+  res.json({ result: null, events: [] });
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

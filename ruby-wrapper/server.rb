@@ -136,6 +136,26 @@ class DataWrapper
   end
 end
 
+class FailingDataWrapper
+  def data_future
+    nil
+  end
+
+  def success?
+    false
+  end
+
+  def exception
+    StandardError.new('Context load failed')
+  end
+end
+
+class FailingDataProvider < ContextDataProvider
+  def context_data
+    FailingDataWrapper.new
+  end
+end
+
 class DeferredDataProvider < ContextDataProvider
   def initialize(endpoint, throttle_ms)
     @endpoint = endpoint
@@ -156,13 +176,18 @@ class DeferredDataProvider < ContextDataProvider
 end
 
 class CustomEventHandler < ContextEventHandler
+  attr_accessor :should_fail
+
   def initialize(event_collector)
     @event_collector = event_collector
+    @should_fail = false
   end
 
   def publish(context, event)
-    # Do nothing - event logger already captures the publish event
-    # Just return self without making HTTP call
+    if @should_fail
+      @should_fail = false
+      raise 'Publish failed'
+    end
     self
   end
 end
@@ -182,7 +207,13 @@ end
 get '/capabilities' do
   content_type :json
   {diagnostics: true,
-    attrsSeq: true
+    attrsSeq: true,
+    publishFail: true,
+    variableKeysMap: true,
+    globalCustomFieldKeys: true,
+    getUnits: true,
+    getAttributes: true,
+    readyError: true
   }.to_json
 end
 
@@ -251,13 +282,41 @@ post '/context' do
     context = sdk.create_context_with(context_config, data_wrapper)
     $contexts[context_id] = {
       context: context,
-      eventCollector: event_collector
+      eventCollector: event_collector,
+      eventHandler: custom_event_handler
     }
     content_type :json
     return {
       result: {
         contextId: context_id,
         ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: event_collector.events
+    }.to_json
+  elsif req_data[:failLoad]
+    failing_provider = FailingDataProvider.new
+    failing_sdk_config = ABSmartlyConfig.new
+    failing_sdk_config.context_data_provider = failing_provider
+    failing_sdk_config.context_event_handler = custom_event_handler
+    failing_sdk_config.context_event_logger = event_collector
+    failing_sdk = ABSmartly.new(failing_sdk_config)
+    context = failing_sdk.create_context(context_config)
+    50.times do
+      break unless event_collector.events.empty?
+      sleep 0.01
+    end
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector,
+      eventHandler: custom_event_handler
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: false,
         failed: context.failed? || false,
         finalized: context.closed?
       },
@@ -296,7 +355,8 @@ post '/context' do
 
   $contexts[context_id] = {
     context: context,
-    eventCollector: event_collector
+    eventCollector: event_collector,
+    eventHandler: custom_event_handler
   }
 
   content_type :json
@@ -503,6 +563,120 @@ get '/context/:context_id/experiments' do
   rescue => e
     halt 400, { error: translate_error_message(e.message) }.to_json
   end
+end
+
+post '/context/:context_id/getUnits' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  collector = ctx_data[:eventCollector]
+  events_before = collector.events.length
+
+  begin
+    raw_units = context.get_units
+    units = {}
+    raw_units.each do |k, v|
+      val = v.to_s
+      if val.match?(/^\d+$/)
+        units[k.to_s] = val.to_i
+      elsif val.match?(/^\d+\.\d+$/)
+        units[k.to_s] = val.to_f
+      else
+        units[k.to_s] = val
+      end
+    end
+    new_events = collector.events[events_before..-1] || []
+    content_type :json
+    { result: units, events: new_events }.to_json
+  rescue => e
+    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+end
+
+post '/context/:context_id/getAttributes' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  collector = ctx_data[:eventCollector]
+  events_before = collector.events.length
+
+  begin
+    attrs = context.get_attributes
+    new_events = collector.events[events_before..-1] || []
+    content_type :json
+    { result: attrs, events: new_events }.to_json
+  rescue => e
+    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+end
+
+post '/context/:context_id/readyError' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+
+  begin
+    error = context.respond_to?(:ready_error) ? context.ready_error : nil
+    result = error ? error.to_s : nil
+    content_type :json
+    { result: result, events: [] }.to_json
+  rescue => e
+    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+end
+
+post '/context/:context_id/variableKeysMap' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  collector = ctx_data[:eventCollector]
+  events_before = collector.events.length
+
+  begin
+    keys = context.variable_keys
+    result = keys.is_a?(Hash) ? keys.transform_keys(&:to_s) : keys
+    new_events = collector.events[events_before..-1] || []
+    content_type :json
+    { result: result, events: new_events }.to_json
+  rescue => e
+    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+end
+
+post '/context/:context_id/globalCustomFieldKeys' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  collector = ctx_data[:eventCollector]
+  events_before = collector.events.length
+
+  begin
+    keys = context.custom_field_keys
+    new_events = collector.events[events_before..-1] || []
+    content_type :json
+    { result: keys, events: new_events }.to_json
+  rescue => e
+    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+end
+
+post '/context/:context_id/publishFail' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+
+  $contexts[context_id][:eventHandler].should_fail = true
+  content_type :json
+  { result: nil, events: [] }.to_json
 end
 
 post '/context/:context_id/publish' do

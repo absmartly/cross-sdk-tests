@@ -173,6 +173,7 @@ type CreateContextRequest struct {
 	Endpoint string                 `json:"endpoint"`
 	Units    map[string]interface{} `json:"units"`
 	Options  map[string]interface{} `json:"options"`
+	FailLoad bool                   `json:"failLoad"`
 }
 
 type StorePayloadRequest struct {
@@ -449,9 +450,22 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
+	} else if req.FailLoad {
+		dataFuture, done := future.New()
+		done(jsonmodels.ContextData{}, fmt.Errorf("Context load failed"))
+		failingProvider := &deferredContextDataProvider{dataFuture: dataFuture}
+		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
+			ContextDataProvider:  failingProvider,
+			ContextEventHandler:  customPublisher,
+			ContextEventLogger:   eventCollector,
+			VariableParser:       customVariableParser,
+			AudienceDeserializer: nil,
+		})
+		context = absmartlyFailing.CreateContext(contextConfig)
+		for i := 0; i < 50 && len(eventCollector.events) == 0; i++ {
+			time.Sleep(10 * time.Millisecond)
+		}
 	} else {
-		// Contexts created directly with payload data have no data provider, so
-		// periodic refresh must stay disabled to avoid nil provider panics.
 		contextConfig.RefreshInterval = -1
 		context = absmartly.CreateContextWith(contextConfig, req.Data)
 	}

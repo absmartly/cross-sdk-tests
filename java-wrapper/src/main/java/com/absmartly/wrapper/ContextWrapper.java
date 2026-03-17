@@ -6,11 +6,20 @@ public class ContextWrapper {
     private Context context;
     private EventCollector eventCollector;
     private DummyContextDataProvider dataProvider;
+    private CustomContextEventHandler eventHandler;
+    private boolean publishFail;
 
     public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider) {
         this.context = context;
         this.eventCollector = eventCollector;
         this.dataProvider = dataProvider;
+    }
+
+    public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider, CustomContextEventHandler eventHandler) {
+        this.context = context;
+        this.eventCollector = eventCollector;
+        this.dataProvider = dataProvider;
+        this.eventHandler = eventHandler;
     }
 
     public Context getContext() {
@@ -23,5 +32,16 @@ public class ContextWrapper {
 
     public DummyContextDataProvider getDataProvider() {
         return dataProvider;
+    }
+
+    public boolean isPublishFail() {
+        return publishFail;
+    }
+
+    public void setPublishFail(boolean publishFail) {
+        this.publishFail = publishFail;
+        if (eventHandler != null) {
+            eventHandler.setShouldFail(publishFail);
+        }
     }
 }

@@ -176,7 +176,25 @@ fun Application.configureRouting() {
                 val dataProvider: DummyContextDataProvider?
                 val context: com.absmartly.sdk.Context
 
-                if (deferReady) {
+                val failLoad = request["failLoad"] == true
+
+                if (failLoad) {
+                    dataProvider = null
+                    val failingProvider = object : com.absmartly.sdk.ContextDataProvider {
+                        override fun getContextData(): java.util.concurrent.CompletableFuture<ContextData> {
+                            val f = java.util.concurrent.CompletableFuture<ContextData>()
+                            f.completeExceptionally(RuntimeException("Context load failed"))
+                            return f
+                        }
+                    }
+                    val sdkConfig = ABSmartlyConfig.create()
+                        .setContextDataProvider(failingProvider)
+                        .setContextEventHandler(noOpEventHandler)
+                        .setContextEventLogger(eventCollector)
+                    val failingSdk = ABsmartly.create(sdkConfig)
+                    context = failingSdk.createContext(contextConfig)
+                    Thread.sleep(50)
+                } else if (deferReady) {
                     dataProvider = null
                     val oldOptions = ContextOptions(
                         publishDelay = publishDelay,

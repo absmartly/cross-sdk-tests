@@ -45,6 +45,12 @@ class DeferredContextDataProvider(ContextDataProvider):
         threading.Thread(target=fetch, daemon=True).start()
         return future
 
+class FailingContextDataProvider(ContextDataProvider):
+    def get_context_data(self):
+        future = Future()
+        future.set_exception(Exception('Context load failed'))
+        return future
+
 class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
@@ -75,10 +81,14 @@ class EventCollector(ContextEventLogger):
 class CustomEventHandler(ContextEventHandler):
     def __init__(self, event_collector):
         self.event_collector = event_collector
+        self._should_fail = False
 
     def publish(self, context, event):
-        # Don't log publish event here - SDK's event_logger will handle it
-        # Just return resolved future without HTTP call
+        if self._should_fail:
+            self._should_fail = False
+            future = Future()
+            future.set_exception(Exception('Publish failed'))
+            return future
         future = Future()
         future.set_result(None)
         return future
@@ -106,7 +116,13 @@ def health():
 @app.route('/capabilities', methods=['GET'])
 def capabilities():
     return jsonify({'diagnostics': True,
-        'attrsSeq': False
+        'attrsSeq': False,
+        'publishFail': True,
+        'variableKeysMap': True,
+        'globalCustomFieldKeys': True,
+        'getUnits': True,
+        'getAttributes': True,
+        'readyError': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -166,12 +182,25 @@ def create_context():
     options = req_data.get('options', {})
     payload_throttle = int(options.get('payloadThrottle', 0))
 
+    fail_load = req_data.get('failLoad', False)
+
     if 'data' in req_data:
         # Sync: createContextWith
         context_data = jsons.load(req_data['data'], ContextData)
         event_collector._suppress_init_errors = True
         context = sdk.create_context_with(context_config, context_data)
         event_collector._suppress_init_errors = False
+    elif fail_load:
+        failing_sdk_config = ABSmartlyConfig()
+        failing_sdk_config.context_data_provider = FailingContextDataProvider()
+        failing_sdk_config.context_event_logger = event_collector
+        failing_sdk_config.context_event_handler = custom_event_handler
+        failing_sdk = ABSmartly(failing_sdk_config)
+        context = failing_sdk.create_context(context_config)
+        for _ in range(50):
+            if event_collector.events:
+                break
+            time.sleep(0.01)
     elif payload_throttle > 0 and endpoint:
         deferred_provider = DeferredContextDataProvider(translated_endpoint, payload_throttle)
         deferred_sdk_config = ABSmartlyConfig()
@@ -192,7 +221,8 @@ def create_context():
 
     contexts[context_id] = {
         'context': context,
-        'eventCollector': event_collector
+        'eventCollector': event_collector,
+        'eventHandler': custom_event_handler
     }
 
     return jsonify({
@@ -573,6 +603,113 @@ def experiments(context_id):
         return jsonify({'result': result, 'events': []})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/getUnits', methods=['POST'])
+def get_units(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+    collector = ctx_data['eventCollector']
+    events_before = len(collector.events)
+
+    try:
+        result = dict(context.units)
+        for k, v in result.items():
+            try:
+                if '.' in str(v):
+                    result[k] = float(v)
+                else:
+                    result[k] = int(v)
+            except (ValueError, TypeError):
+                pass
+        new_events = collector.events[events_before:]
+        return jsonify({'result': result, 'events': new_events})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/getAttributes', methods=['POST'])
+def get_attributes(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+    collector = ctx_data['eventCollector']
+    events_before = len(collector.events)
+
+    try:
+        result = {}
+        for attr in context.attributes:
+            result[attr.name] = attr.value
+        new_events = collector.events[events_before:]
+        return jsonify({'result': result, 'events': new_events})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/readyError', methods=['POST'])
+def ready_error(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+    collector = ctx_data['eventCollector']
+    events_before = len(collector.events)
+
+    try:
+        error = getattr(context, 'ready_error', None)
+        if callable(error):
+            error = error()
+        result = {'isError': True, 'message': str(error)} if error else None
+        new_events = collector.events[events_before:]
+        return jsonify({'result': result, 'events': new_events})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/variableKeysMap', methods=['POST'])
+def variable_keys_map(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+    collector = ctx_data['eventCollector']
+    events_before = len(collector.events)
+
+    try:
+        keys = context.get_variable_keys()
+        new_events = collector.events[events_before:]
+        return jsonify({'result': keys, 'events': new_events})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/globalCustomFieldKeys', methods=['POST'])
+def global_custom_field_keys(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    context = ctx_data['context']
+    collector = ctx_data['eventCollector']
+    events_before = len(collector.events)
+
+    try:
+        keys = context.get_custom_field_keys()
+        new_events = collector.events[events_before:]
+        return jsonify({'result': keys, 'events': new_events})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/context/<context_id>/publishFail', methods=['POST'])
+def publish_fail(context_id):
+    if context_id not in contexts:
+        return jsonify({'error': 'Context not found'}), 404
+
+    ctx_data = contexts[context_id]
+    ctx_data['eventHandler']._should_fail = True
+    return jsonify({'result': None, 'events': []})
 
 @app.route('/context/<context_id>/publish', methods=['POST'])
 def publish(context_id):

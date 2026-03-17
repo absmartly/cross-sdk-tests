@@ -8,15 +8,24 @@ import java8.util.concurrent.CompletableFuture;
 
 public class CustomContextEventHandler implements ContextEventHandler {
     private final EventCollector eventCollector;
+    private volatile boolean shouldFail;
 
     public CustomContextEventHandler(EventCollector eventCollector) {
         this.eventCollector = eventCollector;
     }
 
+    public void setShouldFail(boolean shouldFail) {
+        this.shouldFail = shouldFail;
+    }
+
     @Override
     public CompletableFuture<Void> publish(Context context, PublishEvent event) {
-        // Don't log publish event here - SDK's event logger will handle it after this completes
-        // Just return resolved future without HTTP call
+        if (shouldFail) {
+            shouldFail = false;
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            future.completeExceptionally(new RuntimeException("Publish failed"));
+            return future;
+        }
         return CompletableFuture.completedFuture(null);
     }
 }

@@ -174,6 +174,15 @@ class CustomDataProvider implements ContextDataProvider {
   }
 }
 
+class FailingDataProvider implements ContextDataProvider {
+  @override
+  Completer<ContextData> getContextData() {
+    final completer = Completer<ContextData>();
+    completer.completeError(Exception('Context load failed'));
+    return completer;
+  }
+}
+
 class DeferredDataProvider implements ContextDataProvider {
   final String endpoint;
   final int throttleMs;
@@ -229,6 +238,7 @@ class ContextStore {
   final EventCollector eventCollector;
   final CustomDataProvider dataProvider;
   final Map<String, dynamic> rawData;
+  bool publishFail = false;
 
   ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData);
 }
@@ -280,6 +290,12 @@ void main() async {
       jsonEncode({
         'diagnostics': true,
         'attrsSeq': false,
+        'publishFail': true,
+        'variableKeysMap': true,
+        'globalCustomFieldKeys': true,
+        'getUnits': true,
+        'getAttributes': true,
+        'readyError': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );
@@ -427,7 +443,11 @@ void main() async {
         .setContextEventLogger(eventCollector)
         .setVariableParser(variableParser);
 
-      if (data != null) {
+      final failLoad = body['failLoad'] == true;
+
+      if (failLoad) {
+        sdkConfig.setContextDataProvider(FailingDataProvider());
+      } else if (data != null) {
         sdkConfig.setContextDataProvider(dataProvider);
       } else if (payloadThrottle > 0 && translatedEndpoint != null) {
         sdkConfig.setContextDataProvider(DeferredDataProvider(translatedEndpoint, payloadThrottle));
@@ -1143,10 +1163,96 @@ void main() async {
     }
   });
 
+  router.post('/context/<contextId>/getUnits', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    try {
+      final units = ctxData.context.getUnits();
+      final result = <String, dynamic>{};
+      units.forEach((k, v) {
+        final numVal = num.tryParse(v);
+        result[k] = numVal ?? v;
+      });
+      return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  });
+
+  router.post('/context/<contextId>/getAttributes', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    try {
+      final attrs = ctxData.context.getAttributes();
+      return shelf.Response.ok(jsonEncode({'result': attrs, 'events': []}), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  });
+
+  router.post('/context/<contextId>/readyError', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    try {
+      final error = ctxData.context.readyError();
+      final result = error != null ? error.toString() : null;
+      return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  });
+
+  router.post('/context/<contextId>/variableKeysMap', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    try {
+      final keys = ctxData.context.getVariableKeys();
+      return shelf.Response.ok(jsonEncode({'result': keys, 'events': []}), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  });
+
+  router.post('/context/<contextId>/globalCustomFieldKeys', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    try {
+      final keys = <String>{};
+      final experiments = ctxData.rawData['experiments'] as List<dynamic>?;
+      if (experiments != null) {
+        for (final exp in experiments) {
+          final cfv = exp['customFieldValues'] as List<dynamic>?;
+          if (cfv != null) {
+            for (final field in cfv) { keys.add(field['name'] as String); }
+          }
+        }
+      }
+      final result = keys.toList()..sort();
+      return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
+    } catch (e) {
+      return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
+    }
+  });
+
+  router.post('/context/<contextId>/publishFail', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    ctxData.publishFail = true;
+    return shelf.Response.ok(jsonEncode({'result': null, 'events': []}), headers: {'Content-Type': 'application/json'});
+  });
+
   router.post('/context/<contextId>/publish', (shelf.Request request, String contextId) async {
     final ctxData = contexts[contextId];
     if (ctxData == null) {
       return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    if (ctxData.publishFail) {
+      ctxData.publishFail = false;
+      return shelf.Response.internalServerError(
+        body: jsonEncode({'error': 'publish failed', 'code': 'PUBLISH_ERROR'}),
+        headers: {'Content-Type': 'application/json'},
+      );
     }
 
     try {

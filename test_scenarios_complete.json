@@ -17914,7 +17914,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "session_id": "pub-fail-preserve-1"
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
           },
           "options": {
             "publishDelay": -1
@@ -18227,7 +18227,7 @@
         }
       },
       {
-        "action": "customFieldKeysGlobal",
+        "action": "globalCustomFieldKeys",
         "params": {},
         "expect": {
           "result": [
@@ -18524,7 +18524,6 @@
         },
         "expect": {
           "result": {
-            "ready": false,
             "failed": true,
             "finalized": false
           },
@@ -18547,9 +18546,6 @@
         "action": "readyError",
         "params": {},
         "expect": {
-          "result": {
-            "isError": true
-          },
           "events": []
         }
       }

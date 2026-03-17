@@ -161,11 +161,18 @@ class DeferredDataProvider < ContextDataProvider
 end
 
 class CustomEventHandler < ContextEventHandler
+  attr_accessor :should_fail
+
   def initialize(event_collector)
     @event_collector = event_collector
+    @should_fail = false
   end
 
   def publish(context, event)
+    if @should_fail
+      @should_fail = false
+      raise 'Publish failed'
+    end
     self
   end
 end
@@ -188,15 +195,20 @@ get '/capabilities' do
     attrsSeq: false,
     isWrapper: true,
     wrapsSDK: 'ruby',
-    # These operations are pass-through to Ruby SDK (no Liquid-specific implementation)
-    # Operations using Liquid templates: treatment, peek, track, variableValue,
-    # peekVariableValue, customFieldValue
+    publishFail: true,
+    variableKeysMap: true,
+    globalCustomFieldKeys: true,
+    getUnits: true,
+    getAttributes: true,
+    readyError: true,
     passThroughOperations: [
       'attribute', 'override', 'customAssignment', 'pending', 'isFinalized',
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',
       'variableKeys', 'customFieldKeys', 'customFieldValueType',
       'setOverride', 'setCustomAssignment', 'refresh',
-      'diagnostic', 'experiments', 'isReady', 'isFailed'
+      'diagnostic', 'experiments', 'isReady', 'isFailed',
+      'getUnits', 'getAttributes', 'readyError', 'variableKeysMap',
+      'globalCustomFieldKeys', 'publishFail'
     ]
   }.to_json
 end
@@ -265,13 +277,55 @@ post '/context' do
     context = sdk.create_context_with(context_config, data_wrapper)
     $contexts[context_id] = {
       context: context,
-      eventCollector: event_collector
+      eventCollector: event_collector,
+      eventHandler: custom_event_handler
     }
     content_type :json
     return {
       result: {
         contextId: context_id,
         ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: event_collector.events
+    }.to_json
+  elsif req_data[:failLoad]
+    failing_provider = DeferredDataProvider.new('http://invalid-host:9999/nonexistent', 0)
+    class << failing_provider
+      def context_data
+        wrapper = DataWrapper.new({ 'experiments' => [] })
+        class << wrapper
+          def success?
+            false
+          end
+          def exception
+            StandardError.new('Context load failed')
+          end
+        end
+        wrapper
+      end
+    end
+    failing_sdk_config = ABSmartlyConfig.new
+    failing_sdk_config.context_data_provider = failing_provider
+    failing_sdk_config.context_event_handler = custom_event_handler
+    failing_sdk_config.context_event_logger = event_collector
+    failing_sdk = ABSmartly.new(failing_sdk_config)
+    context = failing_sdk.create_context(context_config)
+    50.times do
+      break unless event_collector.events.empty?
+      sleep 0.01
+    end
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector,
+      eventHandler: custom_event_handler
+    }
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: false,
         failed: context.failed? || false,
         finalized: context.closed?
       },
@@ -310,7 +364,8 @@ post '/context' do
 
   $contexts[context_id] = {
     context: context,
-    eventCollector: event_collector
+    eventCollector: event_collector,
+    eventHandler: custom_event_handler
   }
 
   content_type :json
@@ -552,6 +607,69 @@ get '/context/:context_id/experiments' do
   ctx_data = $contexts[context_id]
   content_type :json
   { result: ctx_data[:context].experiments, events: [] }.to_json
+end
+
+post '/context/:context_id/getUnits' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  units = {}
+  context.get_units.each do |k, v|
+    val = v.to_s
+    units[k.to_s] = val.match?(/^\d+$/) ? val.to_i : (val.match?(/^\d+\.\d+$/) ? val.to_f : val)
+  end
+  content_type :json
+  { result: units, events: [] }.to_json
+end
+
+post '/context/:context_id/getAttributes' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  attrs = context.get_attributes
+  content_type :json
+  { result: attrs, events: [] }.to_json
+end
+
+post '/context/:context_id/readyError' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  error = context.respond_to?(:ready_error) ? context.ready_error : nil
+  content_type :json
+  { result: error ? error.to_s : nil, events: [] }.to_json
+end
+
+post '/context/:context_id/variableKeysMap' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  keys = context.variable_keys
+  result = keys.is_a?(Hash) ? keys.transform_keys(&:to_s) : keys
+  content_type :json
+  { result: result, events: [] }.to_json
+end
+
+post '/context/:context_id/globalCustomFieldKeys' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  ctx_data = $contexts[context_id]
+  context = ctx_data[:context]
+  keys = context.custom_field_keys
+  content_type :json
+  { result: keys, events: [] }.to_json
+end
+
+post '/context/:context_id/publishFail' do
+  context_id = params['context_id']
+  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  $contexts[context_id][:eventHandler].should_fail = true
+  content_type :json
+  { result: nil, events: [] }.to_json
 end
 
 post '/context/:context_id/publish' do

@@ -75,7 +75,13 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapGet("/capabilities", () => Results.Ok(new
 {
     diagnostics = true,
-    attrsSeq = true
+    attrsSeq = true,
+    publishFail = true,
+    variableKeysMap = true,
+    globalCustomFieldKeys = true,
+    getUnits = true,
+    getAttributes = true,
+    readyError = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -286,8 +292,16 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
+        bool failLoad = requestJson.ContainsKey("failLoad") &&
+            requestJson["failLoad"].ValueKind == JsonValueKind.True;
+
         IContext context;
-        if (contextData != null && payloadThrottle > 0)
+        if (failLoad)
+        {
+            var failedContext = new FailedContext(contextConfig, eventCollector);
+            context = failedContext;
+        }
+        else if (contextData != null && payloadThrottle > 0)
         {
             var capturedContextData = contextData;
             var capturedPayloadThrottle2 = payloadThrottle;
@@ -314,7 +328,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                     await Task.Delay(10);
                 }
                 return (IContext)innerContext;
-            }).Unwrap(), eventCollector);
+            }), eventCollector);
             context = lazyContext;
         }
         else
@@ -1040,6 +1054,109 @@ app.MapGet("/context/{contextId}/experiments", (string contextId) =>
     }
 });
 
+app.MapPost("/context/{contextId}/getUnits", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    try
+    {
+        var eventsBefore = data.EventCollector.GetEventsCount();
+        var rawUnits = data.Context.Units;
+        var units = new Dictionary<string, object>();
+        foreach (var kvp in rawUnits)
+        {
+            if (long.TryParse(kvp.Value, out var longVal))
+                units[kvp.Key] = longVal;
+            else if (double.TryParse(kvp.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
+                units[kvp.Key] = dblVal;
+            else
+                units[kvp.Key] = kvp.Value;
+        }
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
+        return Results.Ok(new ApiResponse { Result = units, Events = newEvents });
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+});
+
+app.MapPost("/context/{contextId}/getAttributes", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    try
+    {
+        var eventsBefore = data.EventCollector.GetEventsCount();
+        var attrs = data.Context.Attributes;
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
+        return Results.Ok(new ApiResponse { Result = attrs, Events = newEvents });
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+});
+
+app.MapPost("/context/{contextId}/readyError", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    try
+    {
+        var error = data.Context.ReadyError;
+        var result = error?.Message;
+        return Results.Ok(new ApiResponse { Result = result, Events = new List<object>() });
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+});
+
+app.MapPost("/context/{contextId}/variableKeysMap", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    try
+    {
+        var eventsBefore = data.EventCollector.GetEventsCount();
+        var keys = data.Context.VariableKeys;
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
+        return Results.Ok(new ApiResponse { Result = keys, Events = newEvents });
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+});
+
+app.MapPost("/context/{contextId}/globalCustomFieldKeys", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    try
+    {
+        var context = data.Context as Context;
+        var eventsBefore = data.EventCollector.GetEventsCount();
+        var keys = (object)context?.GetCustomFieldKeys() ?? new List<string>();
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
+        return Results.Ok(new ApiResponse { Result = keys, Events = newEvents });
+    }
+    catch (Exception e)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+});
+
+app.MapPost("/context/{contextId}/publishFail", (string contextId) =>
+{
+    if (!contexts.TryGetValue(contextId, out var data))
+        return Results.NotFound(new { error = "Context not found" });
+    data.PublishFail = true;
+    return Results.Ok(new { result = (object?)null, events = Array.Empty<object>() });
+});
+
 app.MapPost("/context/{contextId}/publish", async (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
@@ -1282,6 +1399,7 @@ public class ContextData
     public EventCollector EventCollector { get; set; }
     public Dictionary<string, object> Units { get; set; }
     public Dictionary<string, object> Attributes { get; set; }
+    public bool PublishFail { get; set; }
 }
 
 public class ApiResponse
@@ -1487,4 +1605,56 @@ public class LazyContext : IContext
             }
         }
     }
+}
+
+public class FailedContext : IContext
+{
+    private readonly Dictionary<string, string> _units;
+    private readonly Exception _error = new Exception("Context load failed");
+
+    public FailedContext(ContextConfig config, EventCollector eventCollector)
+    {
+        _units = new Dictionary<string, string>(config.Units);
+        eventCollector.HandleEvent(this, EventType.Error, _error);
+    }
+
+    public int PendingCount => 0;
+    public bool IsReady() => false;
+    public bool IsFailed() => true;
+    public Exception ReadyError => _error;
+    public bool IsClosed() => false;
+    public bool IsClosing() => false;
+    public bool IsFinalized => false;
+    public bool IsFinalizing => false;
+    public string[] Experiments => Array.Empty<string>();
+    public string[] GetExperiments() => Experiments;
+    public ABSmartly.Models.ContextData GetContextData() => null;
+    public void SetAttribute(string name, object value) { }
+    public void SetAttributes(Dictionary<string, object> attributes) { }
+    public void SetCustomAssignment(string experimentName, int variant) { }
+    public int? GetCustomAssignment(string experimentName) => null;
+    public void SetCustomAssignments(Dictionary<string, int> customAssignments) { }
+    public void SetOverride(string experimentName, int variant) { }
+    public int? GetOverride(string experimentName) => null;
+    public void SetOverrides(Dictionary<string, int> overrides) { }
+    public int GetTreatment(string experimentName) => 0;
+    public int PeekTreatment(string experimentName) => 0;
+    public void SetUnit(string unitType, string uid) { }
+    public void SetUnits(Dictionary<string, string> units) { }
+    public Dictionary<string, string> Units => _units;
+    public Dictionary<string, string> GetUnits() => _units;
+    public object GetAttribute(string name) => null;
+    public Dictionary<string, object> Attributes => new Dictionary<string, object>();
+    public Dictionary<string, object> GetAttributes() => Attributes;
+    public Dictionary<string, string> GetVariableKeys() => new Dictionary<string, string>();
+    public Dictionary<string, List<string>> VariableKeys => new Dictionary<string, List<string>>();
+    public Dictionary<string, List<string>> GetVariableExperimentKeys() => VariableKeys;
+    public object GetVariableValue(string key, object defaultValue) => defaultValue;
+    public object PeekVariableValue(string key, object defaultValue) => defaultValue;
+    public void Publish() { }
+    public Task PublishAsync() => Task.CompletedTask;
+    public void Refresh() { }
+    public Task RefreshAsync() => Task.CompletedTask;
+    public void Track(string goalName, Dictionary<string, object> properties) { }
+    public void Close() { }
 }

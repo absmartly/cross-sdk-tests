@@ -327,6 +327,11 @@ int main() {
                              }
                              promise->set_value(std::move(deferred_data));
                          }).detach();
+                     } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
+                         auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
+                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector);
+                         promise->set_exception(std::make_exception_ptr(std::runtime_error("Context load failed")));
+                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
                      } else {
                          absmartly::ContextData context_data;
                          if (body.contains("data")) {

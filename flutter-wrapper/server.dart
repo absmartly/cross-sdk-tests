@@ -98,13 +98,28 @@ class EventCollector implements ContextEventLogger {
 
 class CustomEventHandler implements ContextEventHandler {
   final EventCollector eventCollector;
+  bool shouldFail = false;
 
   CustomEventHandler(this.eventCollector);
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
     final completer = Completer<void>();
-    completer.complete();
+    if (shouldFail) {
+      shouldFail = false;
+      completer.completeError(Exception('publish failed'));
+    } else {
+      completer.complete();
+    }
+    return completer;
+  }
+}
+
+class FailingContextDataProvider implements ContextDataProvider {
+  @override
+  Completer<ContextData> getContextData() {
+    final completer = Completer<ContextData>();
+    completer.completeError(Exception('Context load failed'));
     return completer;
   }
 }
@@ -182,8 +197,9 @@ class ContextStore {
   final EventCollector eventCollector;
   final CustomDataProvider dataProvider;
   final Map<String, dynamic> rawData;
+  final CustomEventHandler eventHandler;
 
-  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData);
+  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.eventHandler);
 }
 
 final Map<String, ContextStore> contexts = {};
@@ -242,12 +258,20 @@ Future<void> startServer() async {
         'attrsSeq': false,
         'isWrapper': true,
         'wrapsSDK': 'dart',
+        'publishFail': true,
+        'variableKeysMap': true,
+        'globalCustomFieldKeys': true,
+        'getUnits': true,
+        'getAttributes': true,
+        'readyError': true,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
           'getAttribute', 'peekVariableValue', 'customFieldValue',
           'variableKeys', 'customFieldKeys', 'customFieldValueType', 'setOverride',
-          'setCustomAssignment', 'refresh'
+          'setCustomAssignment', 'refresh',
+          'getUnits', 'getAttributes', 'readyError', 'variableKeysMap',
+          'globalCustomFieldKeys', 'publishFail'
         ],
       }),
       headers: {'Content-Type': 'application/json'},
@@ -361,6 +385,7 @@ Future<void> startServer() async {
       final options = body['options'] as Map<String, dynamic>? ?? {};
 
       final contextId = 'ctx-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+      final failLoad = body['failLoad'] == true;
 
       final eventCollector = EventCollector();
       final eventHandler = CustomEventHandler(eventCollector);
@@ -375,7 +400,7 @@ Future<void> startServer() async {
         final normalizedData = _normalizeContextData(data);
         contextDataForCreation = ContextData.fromMap(normalizedData);
         rawDataForStore = data;
-      } else if (endpoint != null) {
+      } else if (!failLoad && endpoint != null) {
         // Flutter test environment can't make HTTP requests to itself.
         // For async context tests, use createContextWith instead.
         // Extract payloadId from endpoint URL and fetch directly from payloadStore.
@@ -425,10 +450,16 @@ Future<void> startServer() async {
       // Disable auto-refresh to avoid background refresh noise without a real provider.
       contextConfig.setRefreshInterval(-1);
 
-      // Use createContextWith for sync data, createContext for deferred
-      final context = contextDataForCreation != null
-          ? sdk.createContextWith(contextConfig, contextDataForCreation)
-          : sdk.createContext(contextConfig);
+      late Context context;
+      if (failLoad) {
+        sdkConfig.setContextDataProvider(FailingContextDataProvider());
+        final failingSdk = ABSmartly(sdkConfig);
+        context = failingSdk.createContext(contextConfig);
+      } else if (contextDataForCreation != null) {
+        context = sdk.createContextWith(contextConfig, contextDataForCreation);
+      } else {
+        context = sdk.createContext(contextConfig);
+      }
 
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
@@ -438,7 +469,7 @@ Future<void> startServer() async {
         }
       }
 
-      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore);
+      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore, eventHandler);
 
       return shelf.Response.ok(
         jsonEncode({
@@ -1218,6 +1249,144 @@ Future<void> startServer() async {
       print('Finalize error: $e');
       return shelf.Response.internalServerError(
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
+  router.post('/context/<contextId>/publishFail', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+    ctxData.eventHandler.shouldFail = true;
+    return shelf.Response.ok(
+      jsonEncode({'result': null, 'events': []}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.post('/context/<contextId>/readyError', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final eventsBefore = ctxData.eventCollector.events.length;
+      final error = ctxData.context.readyError();
+      final result = error != null ? {'isError': true, 'message': error.toString()} : null;
+      final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+      return shelf.Response.ok(
+        jsonEncode({'result': result, 'events': newEvents}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
+  router.post('/context/<contextId>/variableKeysMap', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final eventsBefore = ctxData.eventCollector.events.length;
+      final keys = ctxData.context.getVariableKeys();
+      final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+      return shelf.Response.ok(
+        jsonEncode({'result': keys, 'events': newEvents}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
+  router.post('/context/<contextId>/getUnits', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final eventsBefore = ctxData.eventCollector.events.length;
+      final units = ctxData.context.getUnits();
+      final result = <String, dynamic>{};
+      units.forEach((k, v) {
+        final intVal = int.tryParse(v);
+        if (intVal != null) {
+          result[k] = intVal;
+        } else {
+          final dblVal = double.tryParse(v);
+          if (dblVal != null) {
+            result[k] = dblVal;
+          } else {
+            result[k] = v;
+          }
+        }
+      });
+      final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+      return shelf.Response.ok(
+        jsonEncode({'result': result, 'events': newEvents}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
+  router.post('/context/<contextId>/getAttributes', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final eventsBefore = ctxData.eventCollector.events.length;
+      final attrs = ctxData.context.getAttributes();
+      final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+      return shelf.Response.ok(
+        jsonEncode({'result': attrs, 'events': newEvents}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
+  });
+
+  router.post('/context/<contextId>/globalCustomFieldKeys', (shelf.Request request, String contextId) async {
+    final ctxData = contexts[contextId];
+    if (ctxData == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
+    }
+
+    try {
+      final eventsBefore = ctxData.eventCollector.events.length;
+      final keys = ctxData.context.getCustomFieldKeys().toList();
+      keys.sort();
+      final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
+      return shelf.Response.ok(
+        jsonEncode({'result': keys, 'events': newEvents}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } catch (e) {
+      return shelf.Response(400,
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }

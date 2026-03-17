@@ -81,6 +81,7 @@ class EventCollector implements ContextEventLogger
 class CustomContextEventHandler extends ContextEventHandler
 {
     private EventCollector $eventCollector;
+    public bool $shouldFail = false;
 
     public function __construct(EventCollector $eventCollector)
     {
@@ -89,6 +90,24 @@ class CustomContextEventHandler extends ContextEventHandler
 
     public function publish(PublishEvent $event): void
     {
+        if ($this->shouldFail) {
+            $this->shouldFail = false;
+            throw new \RuntimeException('publish failed');
+        }
+    }
+}
+
+class FailingAsyncContextDataProvider extends AsyncContextDataProvider
+{
+    public function __construct()
+    {
+        // no client needed
+    }
+
+    public function getContextDataAsync(): \React\Promise\PromiseInterface
+    {
+        $badData = new ContextData([(object)['name' => 'failing_load']]);
+        return \React\Promise\resolve($badData);
     }
 }
 
@@ -198,7 +217,13 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
     if ($method === 'GET' && $path === '/capabilities') {
         return jsonResponse(200, ['diagnostics' => true,
-            'attrsSeq' => false
+            'attrsSeq' => false,
+            'publishFail' => true,
+            'variableKeysMap' => true,
+            'globalCustomFieldKeys' => true,
+            'getUnits' => true,
+            'getAttributes' => true,
+            'readyError' => true
         ]);
     }
 
@@ -287,8 +312,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $payloadThrottle = (int)($body['options']['payloadThrottle'] ?? 0);
 
+        $failLoad = (bool)($body['failLoad'] ?? false);
+
         if (isset($body['data'])) {
             $sdkConfig->setContextDataProvider(new DummyContextDataProvider());
+        } elseif ($failLoad) {
+            $sdkConfig->setContextDataProvider(new FailingAsyncContextDataProvider());
         } elseif ($payloadThrottle > 0) {
             $sdkConfig->setContextDataProvider(new DeferredContextDataProvider($client, $payloadThrottle));
         } else {
@@ -339,6 +368,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $contexts[$contextId] = [
                 'context' => $context,
                 'eventCollector' => $eventCollector,
+                'eventHandler' => $eventHandler,
                 'sdk' => $sdk
             ];
 
@@ -351,6 +381,28 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 ],
                 'events' => $eventCollector->getEvents()
             ]);
+        } elseif ($failLoad) {
+            $result = $sdk->createContextPending($contextConfig);
+            $promise = $result['promise'];
+
+            return $promise->then(function($ctx) use ($contextId, $eventCollector, $eventHandler, $sdk, &$contexts) {
+                $contexts[$contextId] = [
+                    'context' => $ctx,
+                    'eventCollector' => $eventCollector,
+                    'eventHandler' => $eventHandler,
+                    'sdk' => $sdk
+                ];
+
+                return jsonResponse(200, [
+                    'result' => [
+                        'contextId' => $contextId,
+                        'ready' => $ctx->isReady(),
+                        'failed' => $ctx->isFailed(),
+                        'finalized' => $ctx->isClosed()
+                    ],
+                    'events' => $eventCollector->getEvents()
+                ]);
+            });
         } else {
             if ($payloadThrottle > 0) {
                 $result = $sdk->createContextPending($contextConfig);
@@ -360,6 +412,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 $contexts[$contextId] = [
                     'context' => $context,
                     'eventCollector' => $eventCollector,
+                    'eventHandler' => $eventHandler,
                     'sdk' => $sdk,
                     'pendingPromise' => $promise
                 ];
@@ -376,7 +429,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             }
 
             return $sdk->createContextAsync($contextConfig)->then(
-                function($context) use ($contextId, $eventCollector, $sdk, &$contexts) {
+                function($context) use ($contextId, $eventCollector, $eventHandler, $sdk, &$contexts) {
                     for ($i = 0; $i < 50 && empty($eventCollector->getEvents()); $i++) {
                         usleep(10000);
                     }
@@ -384,6 +437,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                     $contexts[$contextId] = [
                         'context' => $context,
                         'eventCollector' => $eventCollector,
+                        'eventHandler' => $eventHandler,
                         'sdk' => $sdk
                     ];
 
@@ -889,6 +943,118 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         } catch (Throwable $e) {
             return jsonResponse(400, ['error' => $e->getMessage()]);
         }
+    }
+
+    if (preg_match('#^/context/([^/]+)/getUnits$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
+        try {
+            $units = $context->getUnits();
+            $result = [];
+            foreach ($units as $k => $v) {
+                if (is_numeric($v)) {
+                    $result[$k] = strpos($v, '.') !== false ? (float)$v : (int)$v;
+                } else {
+                    $result[$k] = $v;
+                }
+            }
+            $newEvents = $eventCollector->getNewEvents($eventsBefore);
+            return jsonResponse(200, ['result' => (object)$result, 'events' => $newEvents]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
+    }
+
+    if (preg_match('#^/context/([^/]+)/getAttributes$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
+        try {
+            $result = $context->getAttributes();
+            $newEvents = $eventCollector->getNewEvents($eventsBefore);
+            return jsonResponse(200, ['result' => (object)$result, 'events' => $newEvents]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
+    }
+
+    if (preg_match('#^/context/([^/]+)/readyError$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $context = $data['context'];
+        try {
+            $error = $context->readyError();
+            $result = $error ? ['isError' => true, 'message' => $error->getMessage()] : null;
+            return jsonResponse(200, ['result' => $result, 'events' => []]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
+    }
+
+    if (preg_match('#^/context/([^/]+)/variableKeysMap$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
+        try {
+            $keysMap = [];
+            foreach ($context->getContextData()->experiments as $experiment) {
+                $expName = $experiment->name;
+                foreach ($experiment->variants as $variant) {
+                    if (empty($variant->config)) continue;
+                    $parsed = json_decode($variant->config, false);
+                    if (!$parsed) continue;
+                    foreach (array_keys(get_object_vars($parsed)) as $varKey) {
+                        if (!isset($keysMap[$varKey])) {
+                            $keysMap[$varKey] = [];
+                        }
+                        if (!in_array($expName, $keysMap[$varKey], true)) {
+                            $keysMap[$varKey][] = $expName;
+                        }
+                    }
+                }
+            }
+            $newEvents = $eventCollector->getNewEvents($eventsBefore);
+            return jsonResponse(200, ['result' => (object)$keysMap, 'events' => $newEvents]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
+    }
+
+    if (preg_match('#^/context/([^/]+)/globalCustomFieldKeys$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
+        try {
+            $keys = $context->getCustomFieldKeys();
+            sort($keys);
+            $newEvents = $eventCollector->getNewEvents($eventsBefore);
+            return jsonResponse(200, ['result' => $keys, 'events' => $newEvents]);
+        } catch (Throwable $e) {
+            return jsonResponse(400, ['error' => $e->getMessage()]);
+        }
+    }
+
+    if (preg_match('#^/context/([^/]+)/publishFail$#', $path, $matches)) {
+        $contextId = $matches[1];
+        $data = $contexts[$contextId] ?? null;
+        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
+        $data['eventHandler']->shouldFail = true;
+        $contexts[$contextId] = $data;
+        return jsonResponse(200, ['result' => null, 'events' => []]);
     }
 
     if (preg_match('#^/context/([^/]+)/publish$#', $path, $matches)) {
