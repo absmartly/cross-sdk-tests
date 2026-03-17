@@ -152,6 +152,7 @@ func (cvp *CustomVariableParser) Parse(context sdk.Context, experimentName strin
 type ContextData struct {
 	context        *sdk.Context
 	eventCollector *EventCollector
+	publishFail    bool
 }
 
 var (
@@ -203,6 +204,12 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"diagnostics":  true,
 		"attrsSeq":     false,
+		"publishFail":  true,
+		"variableKeysMap": true,
+		"globalCustomFieldKeys": true,
+		"getUnits":     true,
+		"getAttributes": true,
+		"readyError":   true,
 	})
 }
 
@@ -1308,6 +1315,142 @@ func experimentsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func getUnitsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	eventsBefore := len(ctxData.eventCollector.events)
+
+	units := ctxData.context.GetUnits()
+	result := make(map[string]interface{})
+	for k, v := range units {
+		if num, err := strconv.ParseFloat(v, 64); err == nil {
+			if num == float64(int64(num)) {
+				result[k] = int64(num)
+			} else {
+				result[k] = num
+			}
+		} else {
+			result[k] = v
+		}
+	}
+
+	newEvents := ctxData.eventCollector.events[eventsBefore:]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: result, Events: newEvents})
+}
+
+func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	eventsBefore := len(ctxData.eventCollector.events)
+
+	attrs := ctxData.context.GetAttributes()
+
+	newEvents := ctxData.eventCollector.events[eventsBefore:]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: attrs, Events: newEvents})
+}
+
+func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	readyErr := ctxData.context.ReadyError()
+	var result interface{}
+	if readyErr != nil {
+		result = readyErr.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: result, Events: []Event{}})
+}
+
+func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	eventsBefore := len(ctxData.eventCollector.events)
+
+	keys, err := ctxData.context.GetVariableKeys()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	newEvents := ctxData.eventCollector.events[eventsBefore:]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
+}
+
+func globalCustomFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	eventsBefore := len(ctxData.eventCollector.events)
+
+	keys, err := ctxData.context.GetCustomFieldValueKeys()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	newEvents := ctxData.eventCollector.events[eventsBefore:]
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
+}
+
+func publishFailHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	contextID := vars["contextId"]
+
+	ctxData, err := getContext(contextID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	ctxData.publishFail = true
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: nil, Events: []Event{}})
+}
+
 func publishHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	contextID := vars["contextId"]
@@ -1315,6 +1458,14 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 	ctxData, err := getContext(contextID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if ctxData.publishFail {
+		ctxData.publishFail = false
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "publish failed", "code": "PUBLISH_ERROR"})
 		return
 	}
 
@@ -1437,6 +1588,12 @@ func main() {
 	router.HandleFunc("/context/{contextId}/isReady", isReadyHandler).Methods("GET")
 	router.HandleFunc("/context/{contextId}/isFailed", isFailedHandler).Methods("GET")
 	router.HandleFunc("/context/{contextId}/experiments", experimentsHandler).Methods("GET")
+	router.HandleFunc("/context/{contextId}/getUnits", getUnitsHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/getAttributes", getAttributesHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/readyError", readyErrorHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/variableKeysMap", variableKeysMapHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/globalCustomFieldKeys", globalCustomFieldKeysHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/publishFail", publishFailHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/publish", publishHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/refresh", refreshHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/finalize", finalizeHandler).Methods("POST")
