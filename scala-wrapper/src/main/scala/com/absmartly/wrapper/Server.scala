@@ -32,6 +32,19 @@ object Server extends IOApp {
       .replaceAll("http://127\\.0\\.0\\.1:\\d+", "http://localhost:3000")
   }
 
+  private val noOpPublishHandler: Option[(Map[String, String], Boolean, List[Exposure], List[Goal], Option[List[Attribute]]) => scala.concurrent.Future[Unit]] =
+    Some((_, _, _, _, _) => scala.concurrent.Future.successful(()))
+
+  private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector): SDKConfig =
+    SDKConfig(
+      endpoint = endpoint,
+      apiKey = "test-key",
+      application = "test-app",
+      environment = "test",
+      eventLogger = collector,
+      publishHandler = noOpPublishHandler
+    )
+
   private def parseUnitsMap(cursor: io.circe.ACursor): Map[String, String] = {
     cursor.focus.flatMap(_.asObject).map { obj =>
       obj.toMap.flatMap { case (key, value) =>
@@ -133,14 +146,7 @@ object Server extends IOApp {
           case Right(data) =>
             IO {
               val collector = new WrapperEventCollector()
-              val config = SDKConfig(
-                endpoint = "http://localhost:3000",
-                apiKey = "test-key",
-                application = "test-app",
-                environment = "test",
-                eventLogger = collector
-              )
-              val sdk = new SDK(config)
+              val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector))
               val context = sdk.createContextWith(units, data, options)
               (context, collector)
             }
@@ -154,14 +160,7 @@ object Server extends IOApp {
                 if (payloadThrottle > 0) {
                   IO {
                     val collector = new WrapperEventCollector()
-                    val config = SDKConfig(
-                      endpoint = translatedEndpoint,
-                      apiKey = "test-key",
-                      application = "test-app",
-                      environment = "test",
-                      eventLogger = collector
-                    )
-                    val sdk = new SDK(config)
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector))
                     val context = new Context(sdk, None, units, options, collector)
                     scala.concurrent.Future {
                       try {
@@ -178,14 +177,7 @@ object Server extends IOApp {
                 } else {
                   IO.fromFuture(IO {
                     val collector = new WrapperEventCollector()
-                    val config = SDKConfig(
-                      endpoint = translatedEndpoint,
-                      apiKey = "test-key",
-                      application = "test-app",
-                      environment = "test",
-                      eventLogger = collector
-                    )
-                    val sdk = new SDK(config)
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector))
                     sdk.createContext(units, options).map { context =>
                       (context, collector)
                     }
@@ -196,14 +188,7 @@ object Server extends IOApp {
                 IO {
                   val collector = new WrapperEventCollector()
                   val emptyData = ContextData(experiments = List.empty)
-                  val config = SDKConfig(
-                    endpoint = "http://localhost:3000",
-                    apiKey = "test-key",
-                    application = "test-app",
-                    environment = "test",
-                    eventLogger = collector
-                  )
-                  val sdk = new SDK(config)
+                  val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector))
                   if (failLoad) {
                     val context = new Context(sdk, None, units, options, collector)
                     context.setDataFailed()

@@ -740,6 +740,10 @@ def refresh(context_id):
 
     try:
         context.refresh()
+        for _ in range(50):
+            if len(collector.events) > events_before:
+                break
+            time.sleep(0.01)
         new_events = collector.events[events_before:]
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
