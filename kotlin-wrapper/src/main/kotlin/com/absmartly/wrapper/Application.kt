@@ -61,7 +61,13 @@ fun Application.configureRouting() {
         }
 
         get("/capabilities") {
-            call.respond(mapOf("diagnostics" to true
+            call.respond(mapOf("diagnostics" to true,
+                "publishFail" to true,
+                "variableKeysMap" to true,
+                "globalCustomFieldKeys" to true,
+                "getUnits" to true,
+                "getAttributes" to true,
+                "readyError" to true
             ))
         }
 
@@ -598,6 +604,97 @@ fun Application.configureRouting() {
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
             }
+        }
+
+        post("/context/{contextId}/getUnits") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            try {
+                val eventsBefore = wrapper.eventCollector.getEvents().size
+                val units = wrapper.context.getUnits()
+                val result = mutableMapOf<String, Any?>()
+                for ((key, value) in units) {
+                    result[key] = try { value.toInt() }
+                    catch (e: NumberFormatException) {
+                        try { value.toDouble() }
+                        catch (e2: NumberFormatException) { value }
+                    }
+                }
+                val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
+                call.respond(mapOf("result" to result, "events" to newEvents))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+            }
+        }
+
+        post("/context/{contextId}/getAttributes") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            try {
+                val eventsBefore = wrapper.eventCollector.getEvents().size
+                val attrs = wrapper.context.getAttributes()
+                val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
+                call.respond(mapOf("result" to attrs, "events" to newEvents))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+            }
+        }
+
+        post("/context/{contextId}/readyError") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            try {
+                val error = wrapper.context.readyError()
+                val result = error?.message
+                call.respond(mapOf("result" to result, "events" to emptyList<Any>()))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+            }
+        }
+
+        post("/context/{contextId}/variableKeysMap") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            try {
+                val eventsBefore = wrapper.eventCollector.getEvents().size
+                val keys = wrapper.context.variableKeys
+                val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
+                call.respond(mapOf("result" to keys, "events" to newEvents))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+            }
+        }
+
+        post("/context/{contextId}/globalCustomFieldKeys") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            try {
+                val eventsBefore = wrapper.eventCollector.getEvents().size
+                val keys = wrapper.context.customFieldKeys
+                val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
+                call.respond(mapOf("result" to keys.toList(), "events" to newEvents))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
+            }
+        }
+
+        post("/context/{contextId}/publishFail") {
+            val contextId = call.parameters["contextId"]!!
+            val wrapper = contexts[contextId] ?: return@post call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Context not found")
+            )
+            wrapper.publishFail = true
+            call.respond(mapOf("result" to null, "events" to emptyList<Any>()))
         }
 
         post("/context/{contextId}/publish") {
