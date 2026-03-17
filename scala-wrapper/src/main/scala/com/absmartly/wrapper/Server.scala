@@ -20,6 +20,7 @@ object Server extends IOApp {
   implicit val ec: ExecutionContext = ExecutionContext.global
 
   private val contexts = TrieMap[String, (Context, WrapperEventCollector)]()
+  private val publishFailFlags = TrieMap[String, Boolean]()
   private val payloads = TrieMap[String, ContextData]()
   private val contextCounter = new AtomicInteger(0)
 
@@ -52,7 +53,13 @@ object Server extends IOApp {
       ))
 
     case GET -> Root / "capabilities" =>
-      Ok(Json.obj("diagnostics" -> Json.fromBoolean(true)
+      Ok(Json.obj("diagnostics" -> Json.fromBoolean(true),
+        "publishFail" -> Json.fromBoolean(true),
+        "variableKeysMap" -> Json.fromBoolean(true),
+        "globalCustomFieldKeys" -> Json.fromBoolean(true),
+        "getUnits" -> Json.fromBoolean(true),
+        "getAttributes" -> Json.fromBoolean(true),
+        "readyError" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -222,6 +229,7 @@ object Server extends IOApp {
 
     case DELETE -> Root / "context" / contextId =>
       contexts.remove(contextId)
+      publishFailFlags.remove(contextId)
       Ok(Json.obj("result" -> Json.fromString("deleted")))
 
     case req @ POST -> Root / "context" / contextId / "setUnit" =>
@@ -511,14 +519,84 @@ object Server extends IOApp {
         }
       }
 
+    case POST -> Root / "context" / contextId / "getUnits" =>
+      withContext(contextId) { case (context, _) =>
+        try {
+          val units = context.getUnits()
+          val result = units.map { case (k, v) =>
+            val parsed = try { Json.fromInt(v.toInt) }
+            catch { case _: NumberFormatException =>
+              try { Json.fromDoubleOrNull(v.toDouble) }
+              catch { case _: NumberFormatException => Json.fromString(v) }
+            }
+            k -> parsed
+          }
+          Ok(wrapperResponse(Json.obj(result.toSeq: _*), List.empty))
+        } catch {
+          case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }
+      }
+
+    case POST -> Root / "context" / contextId / "getAttributes" =>
+      withContext(contextId) { case (context, _) =>
+        try {
+          val attrs = context.getAttributes()
+          Ok(wrapperResponse(attrs.map { case (k, v) => k -> v }.asJson, List.empty))
+        } catch {
+          case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }
+      }
+
+    case POST -> Root / "context" / contextId / "readyError" =>
+      withContext(contextId) { case (context, _) =>
+        try {
+          val error = context.readyError()
+          val result = error.map(e => Json.fromString(e.getMessage)).getOrElse(Json.Null)
+          Ok(wrapperResponse(result, List.empty))
+        } catch {
+          case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }
+      }
+
+    case POST -> Root / "context" / contextId / "variableKeysMap" =>
+      withContext(contextId) { case (context, _) =>
+        try {
+          val keys = context.variableKeys()
+          val result = keys.map { case (k, v) => k -> v.asJson }.asJson
+          Ok(wrapperResponse(result, List.empty))
+        } catch {
+          case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }
+      }
+
+    case POST -> Root / "context" / contextId / "globalCustomFieldKeys" =>
+      withContext(contextId) { case (context, _) =>
+        try {
+          val keys = context.customFieldKeys()
+          Ok(wrapperResponse(keys.asJson, List.empty))
+        } catch {
+          case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        }
+      }
+
+    case POST -> Root / "context" / contextId / "publishFail" =>
+      withContext(contextId) { case (_, _) =>
+        publishFailFlags(contextId) = true
+        Ok(wrapperResponse(Json.Null, List.empty))
+      }
+
     case POST -> Root / "context" / contextId / "publish" =>
       withContext(contextId) { case (context, collector) =>
-        val prevCount = collector.getEvents().length
-        IO.fromFuture(IO(context.publish())).flatMap { _ =>
-          val newEvents = collector.getEventsSince(prevCount)
-          Ok(wrapperResponse(Json.Null, newEvents))
-        }.handleErrorWith { err =>
-          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+        if (publishFailFlags.getOrElse(contextId, false)) {
+          InternalServerError(Json.obj("error" -> Json.fromString("publish failed")))
+        } else {
+          val prevCount = collector.getEvents().length
+          IO.fromFuture(IO(context.publish())).flatMap { _ =>
+            val newEvents = collector.getEventsSince(prevCount)
+            Ok(wrapperResponse(Json.Null, newEvents))
+          }.handleErrorWith { err =>
+            InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+          }
         }
       }
 
