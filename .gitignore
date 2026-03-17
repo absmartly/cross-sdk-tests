@@ -46,3 +46,5 @@ venv/
 *.swp
 *.backup
 *.backup2
+*/target/
+*/project/target/
