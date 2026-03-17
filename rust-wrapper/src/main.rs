@@ -116,6 +116,8 @@ struct CreateContextRequest {
     units: HashMap<String, Value>,
     #[serde(default)]
     options: Option<HashMap<String, Value>>,
+    #[serde(default, rename = "failLoad")]
+    fail_load: bool,
 }
 
 #[derive(Serialize)]
@@ -448,6 +450,14 @@ async fn create_context_handler(
                 (ctx, true, true)
             }
         }
+    } else if req.fail_load {
+        let mut ctx = Context::new_loading();
+        for (unit_type, uid) in &units {
+            let _ = ctx.set_unit(unit_type, uid);
+        }
+        ctx.become_failed_with_error("Context load failed".to_string());
+        event_collector.push("error", Some(json!({"message": "Context load failed"})));
+        (ctx, false, true)
     } else {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, ContextData::default(), None);
