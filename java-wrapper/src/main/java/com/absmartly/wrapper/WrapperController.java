@@ -61,6 +61,12 @@ public class WrapperController {
     public Map<String, Object> capabilities() {
         Map<String, Object> response = new HashMap<>();response.put("diagnostics", true);
         response.put("attrsSeq", false);
+        response.put("publishFail", true);
+        response.put("variableKeysMap", true);
+        response.put("globalCustomFieldKeys", true);
+        response.put("getUnits", true);
+        response.put("getAttributes", true);
+        response.put("readyError", true);
         return response;
     }
 
@@ -261,7 +267,7 @@ public class WrapperController {
             }
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider));
+            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider, eventHandler));
 
             Map<String, Object> result = new HashMap<>();
             result.put("contextId", contextId);
@@ -1013,6 +1019,132 @@ public class WrapperController {
             error.put("error", normalizeError(e.getMessage()));
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
+    }
+
+    @PostMapping("/context/{contextId}/getUnits")
+    public ResponseEntity<?> getUnits(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        try {
+            int eventsBefore = data.getEventCollector().getEvents().size();
+            Map<String, String> units = data.getContext().getUnits();
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (Map.Entry<String, String> e : units.entrySet()) {
+                try { result.put(e.getKey(), Integer.parseInt(e.getValue())); }
+                catch (NumberFormatException nfe) {
+                    try { result.put(e.getKey(), Double.parseDouble(e.getValue())); }
+                    catch (NumberFormatException nfe2) { result.put(e.getKey(), e.getValue()); }
+                }
+            }
+            List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", result);
+            response.put("events", newEvents);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/context/{contextId}/getAttributes")
+    public ResponseEntity<?> getAttributes(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        try {
+            int eventsBefore = data.getEventCollector().getEvents().size();
+            Map<String, Object> result = data.getContext().getAttributes();
+            List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", result);
+            response.put("events", newEvents);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/context/{contextId}/readyError")
+    public ResponseEntity<?> readyError(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        try {
+            Throwable error = data.getContext().readyError();
+            String result = error != null ? error.getMessage() : null;
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", result);
+            response.put("events", Collections.emptyList());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/context/{contextId}/variableKeysMap")
+    public ResponseEntity<?> variableKeysMap(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        try {
+            int eventsBefore = data.getEventCollector().getEvents().size();
+            Map<String, List<String>> keys = data.getContext().getVariableKeys();
+            List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", keys);
+            response.put("events", newEvents);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/context/{contextId}/globalCustomFieldKeys")
+    public ResponseEntity<?> globalCustomFieldKeys(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        try {
+            int eventsBefore = data.getEventCollector().getEvents().size();
+            List<String> keys = Arrays.asList(data.getContext().getCustomFieldKeys());
+            List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", keys);
+            response.put("events", newEvents);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/context/{contextId}/publishFail")
+    public ResponseEntity<?> publishFail(@PathVariable String contextId) {
+        ContextWrapper data = contexts.get(contextId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Context not found"));
+        }
+        data.setPublishFail(true);
+        Map<String, Object> response = new HashMap<>();
+        response.put("result", null);
+        response.put("events", Collections.emptyList());
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/context/{contextId}/publish")
