@@ -234,6 +234,12 @@ class DummyClient: ABSmartly.Client {
     }
 }
 
+class FailingContextDataProvider: ContextDataProvider {
+    func getContextData() -> Promise<ContextData> {
+        return Promise(error: NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Context load failed"]))
+    }
+}
+
 class DummyContextDataProvider: ContextDataProvider {
     func getContextData() -> Promise<ContextData> {
         return Promise.value(ContextData(experiments: []))
@@ -293,10 +299,17 @@ class DeferredContextDataProvider: ContextDataProvider {
     }
 }
 
-struct ContextStorage {
+class ContextStorage {
     let context: Context
     let eventCollector: EventCollector
     let sdk: ABSmartlySDK
+    var publishFail: Bool = false
+
+    init(context: Context, eventCollector: EventCollector, sdk: ABSmartlySDK) {
+        self.context = context
+        self.eventCollector = eventCollector
+        self.sdk = sdk
+    }
 }
 
 class ContextManager {
@@ -364,7 +377,13 @@ func routes(_ app: VaporApplication) throws {
 
     app.get("capabilities") { req -> HTTPResponse in
         let capabilities: [String: Bool] = ["diagnostics": true,
-            "attrsSeq": false
+            "attrsSeq": false,
+            "publishFail": true,
+            "variableKeysMap": true,
+            "globalCustomFieldKeys": true,
+            "getUnits": true,
+            "getAttributes": true,
+            "readyError": true
         ]
         return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(capabilities)))
     }
@@ -433,6 +452,7 @@ func routes(_ app: VaporApplication) throws {
             let endpoint: String?
             let units: [String: AnyCodable]
             let options: ContextOptionsDTO?
+            let failLoad: Bool?
         }
 
         let request = try req.content.decode(CreateContextRequest.self)
@@ -567,6 +587,34 @@ func routes(_ app: VaporApplication) throws {
                     }
                     try await Task.sleep(nanoseconds: 10_000_000)
                 }
+            }
+        } else if request.failLoad == true {
+            let failingProvider = FailingContextDataProvider()
+            let sdkConfig = ABSmartlyConfig(
+                contextDataProvider: failingProvider,
+                contextEventHandler: customPublisher,
+                contextEventLogger: eventCollector,
+                variableParser: nil,
+                scheduler: nil,
+                client: nil
+            )
+            sdk = try ABSmartlySDK(config: sdkConfig)
+
+            var configBuilder = ContextConfig()
+            configBuilder.publishDelay = request.options?.publishDelay ?? -1
+            configBuilder.refreshInterval = request.options?.refreshPeriod ?? 0
+            var unitsDict: [String: String] = [:]
+            for (key, value) in request.units {
+                unitsDict[key] = "\(value.value)"
+            }
+            configBuilder.setUnits(units: unitsDict)
+            configBuilder.eventLogger = eventCollector
+
+            context = sdk.createContext(config: configBuilder)
+            let deadline = Date().addingTimeInterval(0.5)
+            while Date() < deadline {
+                if !eventCollector.events.isEmpty { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
             }
         } else {
             throw Abort(.badRequest, reason: "Either data or endpoint must be provided")
@@ -1080,6 +1128,77 @@ func routes(_ app: VaporApplication) throws {
         ]
 
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+    }
+
+    app.post("context", ":contextId", "getUnits") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        let units = storage.context.getUnits()
+        var result: [String: Any] = [:]
+        for (k, v) in units {
+            if let intVal = Int(v) { result[k] = intVal }
+            else if let dblVal = Double(v) { result[k] = dblVal }
+            else { result[k] = v }
+        }
+        let response: [String: Any] = ["result": result, "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
+    }
+
+    app.post("context", ":contextId", "getAttributes") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        let attrs = storage.context.getAttributes()
+        var sanitizedAttrs: [String: Any] = [:]
+        for (key, value) in attrs {
+            sanitizedAttrs[key] = jsonToAnyHelper(value)
+        }
+        let response: [String: Any] = ["result": sanitizeForJSON(sanitizedAttrs), "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
+    }
+
+    app.post("context", ":contextId", "readyError") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        let error = storage.context.readyError()
+        let result: Any = error?.localizedDescription ?? NSNull()
+        let response: [String: Any] = ["result": result, "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
+    }
+
+    app.post("context", ":contextId", "variableKeysMap") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        let keys = storage.context.getVariableKeys()
+        let response: [String: Any] = ["result": keys, "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
+    }
+
+    app.post("context", ":contextId", "globalCustomFieldKeys") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        let keys = Array(storage.context.getCustomFieldKeys()).sorted()
+        let response: [String: Any] = ["result": keys, "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
+    }
+
+    app.post("context", ":contextId", "publishFail") { req async throws -> HTTPResponse in
+        guard let contextId = req.parameters.get("contextId"),
+              let storage = contextManager.get(contextId: contextId) else {
+            throw Abort(.notFound, reason: "Context not found")
+        }
+        storage.publishFail = true
+        let response: [String: Any] = ["result": NSNull(), "events": [] as [Any]]
+        return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
     }
 
     app.post("context", ":contextId", "publish") { req async throws -> HTTPResponse in
