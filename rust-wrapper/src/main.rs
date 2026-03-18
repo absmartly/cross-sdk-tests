@@ -338,7 +338,7 @@ async fn create_context_handler(
             }
 
             let ec = event_collector.clone();
-            ctx.set_event_logger(Box::new(move |_ctx, event_name, data| {
+            ctx.set_event_logger(Arc::new(move |_ctx, event_name, data| {
                 ec.push(event_name, data);
             }));
 
@@ -466,7 +466,7 @@ async fn create_context_handler(
     };
 
     let ec = event_collector.clone();
-    context.set_event_logger(Box::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
+    context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
         ec.push(event_name, data);
     }));
 
