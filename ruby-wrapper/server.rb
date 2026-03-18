@@ -10,7 +10,7 @@ require 'client'
 require 'client_config'
 require 'context_config'
 require 'context_data_provider'
-require 'context_event_handler'
+require 'context_publisher'
 require 'context_event_logger'
 
 set :port, 3000
@@ -175,7 +175,7 @@ class DeferredDataProvider < ContextDataProvider
   end
 end
 
-class CustomEventHandler < ContextEventHandler
+class CustomPublisher < ContextPublisher
   attr_accessor :should_fail
 
   def initialize(event_collector)
@@ -250,7 +250,7 @@ post '/context' do
   context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
 
   event_collector = EventCollector.new
-  custom_event_handler = CustomEventHandler.new(event_collector)
+  publisher = CustomPublisher.new(event_collector)
 
   client_config = ClientConfig.new
   endpoint = req_data[:endpoint]
@@ -264,7 +264,7 @@ post '/context' do
 
   sdk_config = ABSmartlyConfig.new
   sdk_config.client = client
-  sdk_config.context_event_handler = custom_event_handler
+  sdk_config.context_event_handler = publisher
   sdk_config.context_event_logger = event_collector
 
   sdk = ABSmartly.new(sdk_config)
@@ -283,7 +283,7 @@ post '/context' do
     $contexts[context_id] = {
       context: context,
       eventCollector: event_collector,
-      eventHandler: custom_event_handler
+      publisher: publisher
     }
     content_type :json
     return {
@@ -299,7 +299,7 @@ post '/context' do
     failing_provider = FailingDataProvider.new
     failing_sdk_config = ABSmartlyConfig.new
     failing_sdk_config.context_data_provider = failing_provider
-    failing_sdk_config.context_event_handler = custom_event_handler
+    failing_sdk_config.context_event_handler = publisher
     failing_sdk_config.context_event_logger = event_collector
     failing_sdk = ABSmartly.new(failing_sdk_config)
     context = failing_sdk.create_context(context_config)
@@ -310,7 +310,7 @@ post '/context' do
     $contexts[context_id] = {
       context: context,
       eventCollector: event_collector,
-      eventHandler: custom_event_handler
+      publisher: publisher
     }
     content_type :json
     return {
@@ -326,7 +326,7 @@ post '/context' do
     deferred_provider = DeferredDataProvider.new(translated_endpoint, payload_throttle.to_i)
     deferred_sdk_config = ABSmartlyConfig.new
     deferred_sdk_config.context_data_provider = deferred_provider
-    deferred_sdk_config.context_event_handler = custom_event_handler
+    deferred_sdk_config.context_event_handler = publisher
     deferred_sdk_config.context_event_logger = event_collector
     deferred_sdk_config.client = client
     deferred_sdk = ABSmartly.new(deferred_sdk_config)
@@ -356,7 +356,7 @@ post '/context' do
   $contexts[context_id] = {
     context: context,
     eventCollector: event_collector,
-    eventHandler: custom_event_handler
+    publisher: publisher
   }
 
   content_type :json
@@ -674,7 +674,7 @@ post '/context/:context_id/publishFail' do
   context_id = params['context_id']
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
 
-  $contexts[context_id][:eventHandler].should_fail = true
+  $contexts[context_id][:publisher].should_fail = true
   content_type :json
   { result: nil, events: [] }.to_json
 end

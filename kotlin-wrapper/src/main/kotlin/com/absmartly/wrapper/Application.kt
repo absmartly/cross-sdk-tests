@@ -168,7 +168,7 @@ fun Application.configureRouting() {
                     ContextData()
                 }
 
-                val noOpEventHandler = object : com.absmartly.sdk.ContextEventHandler {
+                val noOpPublisher = object : com.absmartly.sdk.ContextPublisher {
                     override fun publish(context: com.absmartly.sdk.Context, event: PublishEvent) =
                         java.util.concurrent.CompletableFuture.completedFuture<Void>(null)
                 }
@@ -189,7 +189,7 @@ fun Application.configureRouting() {
                     }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(failingProvider)
-                        .setContextEventHandler(noOpEventHandler)
+                        .setContextPublisher(noOpPublisher)
                         .setContextEventLogger(eventCollector)
                     val failingSdk = ABsmartly.create(sdkConfig)
                     context = failingSdk.createContext(contextConfig)
@@ -219,7 +219,7 @@ fun Application.configureRouting() {
                     dataProvider = DummyContextDataProvider()
                     val sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(dataProvider)
-                        .setContextEventHandler(noOpEventHandler)
+                        .setContextPublisher(noOpPublisher)
                     val sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContextWith(contextConfig, contextData)
                 }

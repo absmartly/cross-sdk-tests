@@ -3,7 +3,7 @@
 
 #include <absmartly/context.h>
 #include <absmartly/context_config.h>
-#include <absmartly/context_event_handler.h>
+#include <absmartly/context_event_logger.h>
 #include <absmartly/models.h>
 #include <absmartly/errors.h>
 #include <absmartly/hashing.h>
@@ -46,7 +46,7 @@ json events_to_json(const std::vector<Event>& events) {
     return arr;
 }
 
-class EventCollector : public absmartly::ContextEventHandler {
+class EventCollector : public absmartly::ContextEventLogger {
 public:
     std::vector<Event> events;
     std::mutex mu;

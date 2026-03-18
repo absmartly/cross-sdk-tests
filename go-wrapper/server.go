@@ -337,7 +337,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	config := sdk.ABSmartlyConfig{
 		Client:               nil,
-		ContextEventHandler:  customPublisher,
+		ContextPublisher:  customPublisher,
 		ContextEventLogger:   eventCollector,
 		ContextDataProvider:  nil,
 		VariableParser:       customVariableParser,
@@ -423,7 +423,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			deferredProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
 				ContextDataProvider:  deferredProvider,
-				ContextEventHandler:  customPublisher,
+				ContextPublisher:  customPublisher,
 				ContextEventLogger:   eventCollector,
 				VariableParser:       customVariableParser,
 				AudienceDeserializer: nil,
@@ -439,7 +439,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			client := sdk.CreateDefaultClient(clientConfig)
 			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
 				Client:               client,
-				ContextEventHandler:  customPublisher,
+				ContextPublisher:  customPublisher,
 				ContextEventLogger:   eventCollector,
 				VariableParser:       customVariableParser,
 				AudienceDeserializer: nil,
@@ -456,7 +456,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		failingProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
 			ContextDataProvider:  failingProvider,
-			ContextEventHandler:  customPublisher,
+			ContextPublisher:  customPublisher,
 			ContextEventLogger:   eventCollector,
 			VariableParser:       customVariableParser,
 			AudienceDeserializer: nil,

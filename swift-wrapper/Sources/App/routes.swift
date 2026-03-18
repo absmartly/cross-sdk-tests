@@ -214,7 +214,7 @@ class EventCollector: ContextEventLogger {
     }
 }
 
-class CustomPublisher: ContextEventHandler {
+class CustomPublisher: ContextPublisher {
     func publish(event: PublishEvent) -> Promise<Void> {
         return Promise.value(())
     }
@@ -473,7 +473,7 @@ func routes(_ app: VaporApplication) throws {
                 let deferredProvider = DeferredContextDataProviderFromData(data: contextData, throttleMs: payloadThrottle)
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: deferredProvider,
-                    contextEventHandler: customPublisher,
+                    contextPublisher: customPublisher,
                     contextEventLogger: eventCollector,
                     variableParser: nil,
                     scheduler: nil,
@@ -483,7 +483,7 @@ func routes(_ app: VaporApplication) throws {
                 let dummyProvider = DummyContextDataProvider()
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: dummyProvider,
-                    contextEventHandler: customPublisher,
+                    contextPublisher: customPublisher,
                     contextEventLogger: eventCollector,
                     variableParser: nil,
                     scheduler: nil,
@@ -526,7 +526,7 @@ func routes(_ app: VaporApplication) throws {
                 let deferredProvider = DeferredContextDataProvider(endpoint: endpoint, throttleMs: payloadThrottle)
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: deferredProvider,
-                    contextEventHandler: customPublisher,
+                    contextPublisher: customPublisher,
                     contextEventLogger: eventCollector,
                     variableParser: nil,
                     scheduler: nil,
@@ -550,7 +550,7 @@ func routes(_ app: VaporApplication) throws {
 
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: nil,
-                    contextEventHandler: customPublisher,
+                    contextPublisher: customPublisher,
                     contextEventLogger: eventCollector,
                     variableParser: nil,
                     scheduler: nil,
@@ -592,7 +592,7 @@ func routes(_ app: VaporApplication) throws {
             let failingProvider = FailingContextDataProvider()
             let sdkConfig = ABSmartlyConfig(
                 contextDataProvider: failingProvider,
-                contextEventHandler: customPublisher,
+                contextPublisher: customPublisher,
                 contextEventLogger: eventCollector,
                 variableParser: nil,
                 scheduler: nil,

@@ -6,7 +6,7 @@ public class ContextWrapper {
     private Context context;
     private EventCollector eventCollector;
     private DummyContextDataProvider dataProvider;
-    private CustomContextEventHandler eventHandler;
+    private CustomPublisher eventHandler;
     private boolean publishFail;
 
     public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider) {
@@ -15,7 +15,7 @@ public class ContextWrapper {
         this.dataProvider = dataProvider;
     }
 
-    public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider, CustomContextEventHandler eventHandler) {
+    public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider, CustomPublisher eventHandler) {
         this.context = context;
         this.eventCollector = eventCollector;
         this.dataProvider = dataProvider;

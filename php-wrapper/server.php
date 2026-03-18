@@ -14,7 +14,7 @@ use ABSmartly\SDK\Context\ContextConfig;
 use ABSmartly\SDK\Context\ContextData;
 use ABSmartly\SDK\Context\ContextDataProvider;
 use ABSmartly\SDK\Context\AsyncContextDataProvider;
-use ABSmartly\SDK\Context\ContextEventHandler;
+use ABSmartly\SDK\Context\ContextPublisher;
 use ABSmartly\SDK\Context\ContextEventLogger;
 use ABSmartly\SDK\Context\ContextEventLoggerEvent;
 use ABSmartly\SDK\PublishEvent;
@@ -78,7 +78,7 @@ class EventCollector implements ContextEventLogger
     }
 }
 
-class CustomContextEventHandler extends ContextEventHandler
+class CustomPublisher extends ContextPublisher
 {
     private EventCollector $eventCollector;
     public bool $shouldFail = false;
@@ -291,7 +291,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextId = 'ctx-' . time() . '-' . mt_rand();
 
         $eventCollector = new EventCollector();
-        $eventHandler = new CustomContextEventHandler($eventCollector);
+        $publisher = new CustomPublisher($eventCollector);
 
         $endpoint = $body['endpoint'] ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
@@ -308,7 +308,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $client = new Client($clientConfig, $reactHttpClient);
 
         $sdkConfig = new Config($client);
-        $sdkConfig->setContextEventHandler($eventHandler);
+        $sdkConfig->setContextPublisher($publisher);
 
         $payloadThrottle = (int)($body['options']['payloadThrottle'] ?? 0);
 
@@ -368,7 +368,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $contexts[$contextId] = [
                 'context' => $context,
                 'eventCollector' => $eventCollector,
-                'eventHandler' => $eventHandler,
+                'publisher' => $publisher,
                 'sdk' => $sdk
             ];
 
@@ -385,11 +385,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $result = $sdk->createContextPending($contextConfig);
             $promise = $result['promise'];
 
-            return $promise->then(function($ctx) use ($contextId, $eventCollector, $eventHandler, $sdk, &$contexts) {
+            return $promise->then(function($ctx) use ($contextId, $eventCollector, $publisher, $sdk, &$contexts) {
                 $contexts[$contextId] = [
                     'context' => $ctx,
                     'eventCollector' => $eventCollector,
-                    'eventHandler' => $eventHandler,
+                    'publisher' => $publisher,
                     'sdk' => $sdk
                 ];
 
@@ -412,7 +412,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 $contexts[$contextId] = [
                     'context' => $context,
                     'eventCollector' => $eventCollector,
-                    'eventHandler' => $eventHandler,
+                    'publisher' => $publisher,
                     'sdk' => $sdk,
                     'pendingPromise' => $promise
                 ];
@@ -429,7 +429,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             }
 
             return $sdk->createContextAsync($contextConfig)->then(
-                function($context) use ($contextId, $eventCollector, $eventHandler, $sdk, &$contexts) {
+                function($context) use ($contextId, $eventCollector, $publisher, $sdk, &$contexts) {
                     for ($i = 0; $i < 50 && empty($eventCollector->getEvents()); $i++) {
                         usleep(10000);
                     }
@@ -437,7 +437,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                     $contexts[$contextId] = [
                         'context' => $context,
                         'eventCollector' => $eventCollector,
-                        'eventHandler' => $eventHandler,
+                        'publisher' => $publisher,
                         'sdk' => $sdk
                     ];
 
@@ -1052,7 +1052,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextId = $matches[1];
         $data = $contexts[$contextId] ?? null;
         if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
-        $data['eventHandler']->shouldFail = true;
+        $data['publisher']->shouldFail = true;
         $contexts[$contextId] = $data;
         return jsonResponse(200, ['result' => null, 'events' => []]);
     }

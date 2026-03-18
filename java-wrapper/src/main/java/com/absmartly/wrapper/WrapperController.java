@@ -190,7 +190,7 @@ public class WrapperController {
             Map<String, Object> options = (Map<String, Object>) request.getOrDefault("options", new HashMap<>());
 
             EventCollector eventCollector = new EventCollector();
-            CustomContextEventHandler eventHandler = new CustomContextEventHandler(eventCollector);
+            CustomPublisher publisher = new CustomPublisher(eventCollector);
 
             ContextConfig contextConfig = ContextConfig.create();
 
@@ -214,7 +214,7 @@ public class WrapperController {
                 contextDataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(contextDataProvider)
-                    .setContextEventHandler(eventHandler)
+                    .setContextPublisher(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContextWith(contextConfig, contextData);
@@ -227,7 +227,7 @@ public class WrapperController {
                     DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(translatedEndpoint, payloadThrottle);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(deferredProvider)
-                        .setContextEventHandler(eventHandler)
+                        .setContextPublisher(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
@@ -240,7 +240,7 @@ public class WrapperController {
                     Client client = Client.create(clientConfig);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
-                        .setContextEventHandler(eventHandler)
+                        .setContextPublisher(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
@@ -266,7 +266,7 @@ public class WrapperController {
                 };
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(failingProvider)
-                    .setContextEventHandler(eventHandler)
+                    .setContextPublisher(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
@@ -277,14 +277,14 @@ public class WrapperController {
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(dataProvider)
-                    .setContextEventHandler(eventHandler)
+                    .setContextPublisher(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
             }
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider, eventHandler));
+            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider, publisher));
 
             Map<String, Object> result = new HashMap<>();
             result.put("contextId", contextId);

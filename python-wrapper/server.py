@@ -15,7 +15,7 @@ from sdk.client import Client
 from sdk.client_config import ClientConfig
 from sdk.context_config import ContextConfig
 from sdk.context_event_logger import ContextEventLogger, EventType
-from sdk.context_event_handler import ContextEventHandler
+from sdk.context_publisher import ContextPublisher
 from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
@@ -78,7 +78,7 @@ class EventCollector(ContextEventLogger):
             except Exception:
                 return str(data)
 
-class CustomEventHandler(ContextEventHandler):
+class CustomPublisher(ContextPublisher):
     def __init__(self, event_collector):
         self.event_collector = event_collector
         self._should_fail = False
@@ -152,7 +152,7 @@ def create_context():
     context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
     event_collector = EventCollector()
-    custom_event_handler = CustomEventHandler(event_collector)
+    publisher = CustomPublisher(event_collector)
 
     client_config = ClientConfig()
     endpoint = req_data.get('endpoint')
@@ -169,7 +169,7 @@ def create_context():
     sdk_config = ABSmartlyConfig()
     sdk_config.client = client
     sdk_config.context_event_logger = event_collector
-    sdk_config.context_event_handler = custom_event_handler
+    sdk_config.context_event_handler = publisher
 
     sdk = ABSmartly(sdk_config)
 
@@ -194,7 +194,7 @@ def create_context():
         failing_sdk_config = ABSmartlyConfig()
         failing_sdk_config.context_data_provider = FailingContextDataProvider()
         failing_sdk_config.context_event_logger = event_collector
-        failing_sdk_config.context_event_handler = custom_event_handler
+        failing_sdk_config.context_event_handler = publisher
         failing_sdk = ABSmartly(failing_sdk_config)
         context = failing_sdk.create_context(context_config)
         for _ in range(50):
@@ -206,7 +206,7 @@ def create_context():
         deferred_sdk_config = ABSmartlyConfig()
         deferred_sdk_config.context_data_provider = deferred_provider
         deferred_sdk_config.context_event_logger = event_collector
-        deferred_sdk_config.context_event_handler = custom_event_handler
+        deferred_sdk_config.context_event_handler = publisher
         deferred_sdk = ABSmartly(deferred_sdk_config)
         context = deferred_sdk.create_context(context_config)
     else:
@@ -222,7 +222,7 @@ def create_context():
     contexts[context_id] = {
         'context': context,
         'eventCollector': event_collector,
-        'eventHandler': custom_event_handler
+        'publisher': publisher
     }
 
     return jsonify({
@@ -708,7 +708,7 @@ def publish_fail(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
-    ctx_data['eventHandler']._should_fail = True
+    ctx_data['publisher']._should_fail = True
     return jsonify({'result': None, 'events': []})
 
 @app.route('/context/<context_id>/publish', methods=['POST'])

@@ -133,10 +133,10 @@ class EventCollector implements ContextEventLogger {
   }
 }
 
-class CustomEventHandler implements ContextEventHandler {
+class CustomPublisher implements ContextPublisher {
   final EventCollector eventCollector;
 
-  CustomEventHandler(this.eventCollector);
+  CustomPublisher(this.eventCollector);
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
@@ -410,7 +410,7 @@ void main() async {
       final contextId = 'ctx-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
 
       final eventCollector = EventCollector();
-      final eventHandler = CustomEventHandler(eventCollector);
+      final publisher = CustomPublisher(eventCollector);
       final dataProvider = CustomDataProvider();
       final variableParser = CustomVariableParser();
 
@@ -439,7 +439,7 @@ void main() async {
 
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)
-        .setContextEventHandler(eventHandler)
+        .setContextPublisher(publisher)
         .setContextEventLogger(eventCollector)
         .setVariableParser(variableParser);
 

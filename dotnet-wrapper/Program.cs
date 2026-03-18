@@ -237,7 +237,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             new ABSdkConfig
             {
                 ContextEventLogger = eventCollector,
-                ContextEventHandler = new CustomPublisher(eventCollector)
+                ContextPublisher = new CustomPublisher(eventCollector)
             }
         );
 
@@ -1332,7 +1332,7 @@ public class EventCollector : IContextEventLogger
     }
 }
 
-public class CustomPublisher : IContextEventHandler
+public class CustomPublisher : IContextPublisher
 {
     private readonly EventCollector _eventCollector;
 

@@ -96,11 +96,11 @@ class EventCollector implements ContextEventLogger {
   }
 }
 
-class CustomEventHandler implements ContextEventHandler {
+class CustomPublisher implements ContextPublisher {
   final EventCollector eventCollector;
   bool shouldFail = false;
 
-  CustomEventHandler(this.eventCollector);
+  CustomPublisher(this.eventCollector);
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
@@ -197,9 +197,9 @@ class ContextStore {
   final EventCollector eventCollector;
   final CustomDataProvider dataProvider;
   final Map<String, dynamic> rawData;
-  final CustomEventHandler eventHandler;
+  final CustomPublisher publisher;
 
-  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.eventHandler);
+  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.publisher);
 }
 
 final Map<String, ContextStore> contexts = {};
@@ -388,7 +388,7 @@ Future<void> startServer() async {
       final failLoad = body['failLoad'] == true;
 
       final eventCollector = EventCollector();
-      final eventHandler = CustomEventHandler(eventCollector);
+      final publisher = CustomPublisher(eventCollector);
       final variableParser = CustomVariableParser();
       final dataProvider = CustomDataProvider();
 
@@ -424,7 +424,7 @@ Future<void> startServer() async {
 
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)
-        .setContextEventHandler(eventHandler)
+        .setContextPublisher(publisher)
         .setContextEventLogger(eventCollector)
         .setVariableParser(variableParser);
 
@@ -469,7 +469,7 @@ Future<void> startServer() async {
         }
       }
 
-      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore, eventHandler);
+      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore, publisher);
 
       return shelf.Response.ok(
         jsonEncode({
@@ -1259,7 +1259,7 @@ Future<void> startServer() async {
     if (ctxData == null) {
       return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
     }
-    ctxData.eventHandler.shouldFail = true;
+    ctxData.publisher.shouldFail = true;
     return shelf.Response.ok(
       jsonEncode({'result': null, 'events': []}),
       headers: {'Content-Type': 'application/json'},
