@@ -29,10 +29,14 @@ FROM elixir:1.15-alpine
 
 RUN apk add --no-cache libgcc libstdc++
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 WORKDIR /app
 
 COPY --from=build /app/elixir-wrapper /app/elixir-wrapper
 COPY --from=build /app/elixir-sdk /app/elixir-sdk
+
+RUN chown -R appuser:appgroup /app
 
 WORKDIR /app/elixir-wrapper
 
@@ -40,5 +44,9 @@ RUN mix local.hex --force && \
     mix local.rebar --force
 
 EXPOSE 3000
+
+USER appuser
+
+ENV MIX_ENV=prod
 
 CMD ["mix", "run", "--no-halt"]

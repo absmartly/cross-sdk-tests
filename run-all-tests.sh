@@ -13,10 +13,18 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
   case $1 in
     --sdk)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --sdk requires a value"
+        exit 1
+      fi
       SDK_NAMES="$2"
       shift 2
       ;;
     --exclude)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --exclude requires a value"
+        exit 1
+      fi
       EXCLUDE_NAMES="$2"
       shift 2
       ;;
@@ -65,6 +73,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ "$UNIT_ONLY" = true ] && [ "$CROSS_ONLY" = true ]; then
+  echo "Error: --unit-only and --cross-only cannot be used together"
+  exit 1
+fi
+
 ALL_SDKS=$(docker compose config --services | grep -- '-sdk$' | sed 's/-sdk$//' | tr '\n' ' ')
 UNIT_TEST_TIMEOUT=${UNIT_TEST_TIMEOUT:-600}
 
@@ -107,6 +120,11 @@ get_cross_service_names() {
   done
   echo "$services"
 }
+
+if [ ${#TARGET_SDKS[@]} -eq 0 ]; then
+  echo "Error: no SDKs selected (all may have been excluded)"
+  exit 1
+fi
 
 # Build phase
 if [ "$SKIP_BUILD" = false ]; then
@@ -198,7 +216,7 @@ if [ "$CROSS_ONLY" = false ]; then
       echo ""
     fi
 
-    ESCAPED_OUTPUT=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+    ESCAPED_OUTPUT=$(echo "$OUTPUT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" 2>/dev/null || echo '"no output"')
 
     if [ "$first" = true ]; then
       first=false

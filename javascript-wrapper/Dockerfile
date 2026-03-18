@@ -1,4 +1,4 @@
-FROM node:18-alpine AS sdk-builder
+FROM node:20-alpine AS sdk-builder
 
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./

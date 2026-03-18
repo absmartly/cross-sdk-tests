@@ -48,6 +48,20 @@ type Event struct {
 	Timestamp int64       `json:"timestamp"`
 }
 
+func (ec *EventCollector) Len() int {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	return len(ec.events)
+}
+
+func (ec *EventCollector) SliceFrom(start int) []Event {
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	result := make([]Event, len(ec.events)-start)
+	copy(result, ec.events[start:])
+	return result
+}
+
 func (ec *EventCollector) HandleEvent(context sdk.Context, eventType sdk.EventType, data interface{}) {
 	ec.mu.Lock()
 	defer ec.mu.Unlock()
@@ -446,7 +460,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			})
 			context = absmartlyWithClient.CreateContext(contextConfig)
 			context.WaitUntilReady()
-			for i := 0; i < 50 && len(eventCollector.events) == 0; i++ {
+			for i := 0; i < 50 && eventCollector.Len() == 0; i++ {
 				time.Sleep(10 * time.Millisecond)
 			}
 		}
@@ -462,7 +476,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			AudienceDeserializer: nil,
 		})
 		context = absmartlyFailing.CreateContext(contextConfig)
-		for i := 0; i < 50 && len(eventCollector.events) == 0; i++ {
+		for i := 0; i < 50 && eventCollector.Len() == 0; i++ {
 			time.Sleep(10 * time.Millisecond)
 		}
 	} else {
@@ -486,7 +500,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			Failed:    context.IsFailed(),
 			Finalized: context.IsClosed(),
 		},
-		Events: eventCollector.events,
+		Events: eventCollector.SliceFrom(0),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -523,7 +537,7 @@ func setUnitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	uidStr := ""
 	switch v := req.UID.(type) {
@@ -552,7 +566,7 @@ func setUnitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -581,12 +595,12 @@ func getUnitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	unit := ctxData.context.GetUnit(req.UnitType)
 
 	if unit == "" {
-		newEvents := ctxData.eventCollector.events[eventsBefore:]
+		newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 		response := Response{
 			Result: nil,
 			Events: newEvents,
@@ -605,7 +619,7 @@ func getUnitHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: result,
@@ -635,7 +649,7 @@ func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.SetAttribute(req.Name, req.Value)
 	if err != nil {
@@ -647,7 +661,7 @@ func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -676,11 +690,11 @@ func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	result := ctxData.context.GetAttribute(req.Name)
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: result,
@@ -709,7 +723,7 @@ func treatmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	variant, err := ctxData.context.GetTreatment(req.ExperimentName)
 	if err != nil {
@@ -717,7 +731,7 @@ func treatmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: variant,
@@ -746,7 +760,7 @@ func peekHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	variant, err := ctxData.context.PeekTreatment(req.ExperimentName)
 	if err != nil {
@@ -754,7 +768,7 @@ func peekHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: variant,
@@ -784,7 +798,7 @@ func variableValueHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	value := req.DefaultValue
 	var varErr error
@@ -804,7 +818,7 @@ func variableValueHandler(w http.ResponseWriter, r *http.Request) {
 		value = req.DefaultValue
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: value,
@@ -834,7 +848,7 @@ func peekVariableValueHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	value := req.DefaultValue
 	var peekErr error
@@ -854,7 +868,7 @@ func peekVariableValueHandler(w http.ResponseWriter, r *http.Request) {
 		value = req.DefaultValue
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: value,
@@ -894,7 +908,7 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.Track(goalName, properties)
 	if err != nil {
@@ -906,7 +920,7 @@ func trackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -1014,7 +1028,7 @@ func customFieldValueHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	value := ctxData.context.GetCustomFieldValue(req.ExperimentName, req.FieldName)
 	log.Printf("GetCustomFieldValue(%s, %s) returned: %v (type: %T)", req.ExperimentName, req.FieldName, value, value)
@@ -1026,7 +1040,7 @@ func customFieldValueHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: value,
@@ -1047,7 +1061,7 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
@@ -1060,7 +1074,7 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 		result = append(result, key)
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: result,
@@ -1089,7 +1103,7 @@ func customFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	keys, err := ctxData.context.GetCustomFieldValueKeys()
 	if err != nil {
@@ -1097,7 +1111,7 @@ func customFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: keys,
@@ -1127,11 +1141,11 @@ func customFieldValueTypeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	valueType := ctxData.context.GetCustomFieldValueType(req.ExperimentName, req.FieldName)
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: valueType,
@@ -1161,7 +1175,7 @@ func setOverrideHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.SetOverride(req.ExperimentName, int(req.Variant))
 	if err != nil {
@@ -1179,7 +1193,7 @@ func setOverrideHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -1209,7 +1223,7 @@ func setCustomAssignmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.SetCustomAssignment(req.ExperimentName, int(req.Variant))
 	if err != nil {
@@ -1217,7 +1231,7 @@ func setCustomAssignmentHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -1339,7 +1353,7 @@ func getUnitsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	units := ctxData.context.GetUnits()
 	result := make(map[string]interface{})
@@ -1355,7 +1369,7 @@ func getUnitsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Result: result, Events: newEvents})
@@ -1371,11 +1385,11 @@ func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	attrs := ctxData.context.GetAttributes()
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Result: attrs, Events: newEvents})
@@ -1411,7 +1425,7 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
@@ -1419,7 +1433,7 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
@@ -1435,7 +1449,7 @@ func globalCustomFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	keys, err := ctxData.context.GetCustomFieldValueKeys()
 	if err != nil {
@@ -1443,7 +1457,7 @@ func globalCustomFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
@@ -1483,7 +1497,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.Publish()
 	if err != nil {
@@ -1491,7 +1505,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -1512,15 +1526,15 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	ctxData.context.Refresh()
 
-	for i := 0; i < 50 && len(ctxData.eventCollector.events) == eventsBefore; i++ {
+	for i := 0; i < 50 && ctxData.eventCollector.Len() == eventsBefore; i++ {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,
@@ -1541,11 +1555,11 @@ func finalizeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsBefore := len(ctxData.eventCollector.events)
+	eventsBefore := ctxData.eventCollector.Len()
 
 	ctxData.context.Close()
 
-	newEvents := ctxData.eventCollector.events[eventsBefore:]
+	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
 		Result: nil,

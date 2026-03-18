@@ -17,9 +17,13 @@ FROM eclipse-temurin:17-jre
 
 WORKDIR /app
 
-COPY --from=build /build/kotlin-wrapper/build/libs/*-all.jar /app/wrapper.jar
+RUN groupadd -r app && useradd -r -g app app
+
+COPY --from=build --chown=app:app /build/kotlin-wrapper/build/libs/*-all.jar /app/wrapper.jar
 
 EXPOSE 3000
+
+USER app
 
 ENTRYPOINT []
 CMD ["java", "-Xmx256m", "-Xms128m", "-jar", "/app/wrapper.jar"]

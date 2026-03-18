@@ -286,7 +286,7 @@ elif [ -n "$SDK_NAMES" ]; then
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
   for sdk in "${SDKS[@]}"; do
-    PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | cut -d: -f2)
+    PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
     if [ -z "$PORT" ]; then
       echo "Warning: could not resolve port for ${sdk}-sdk — skipping" >&2
       continue
