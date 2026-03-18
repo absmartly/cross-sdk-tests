@@ -32,8 +32,10 @@ object Server extends IOApp {
       .replaceAll("http://127\\.0\\.0\\.1:\\d+", "http://localhost:3000")
   }
 
-  private val noOpPublishHandler: Option[(Map[String, String], Boolean, List[Exposure], List[Goal], Option[List[Attribute]]) => scala.concurrent.Future[Unit]] =
-    Some((_, _, _, _, _) => scala.concurrent.Future.successful(()))
+  private val noOpPublisher: Option[ContextPublisher] = Some(new ContextPublisher {
+    def publish(units: Map[String, String], hashed: Boolean, exposures: List[Exposure], goals: List[Goal], attributes: Option[List[Attribute]]): scala.concurrent.Future[Unit] =
+      scala.concurrent.Future.successful(())
+  })
 
   private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector): SDKConfig =
     SDKConfig(
@@ -42,7 +44,7 @@ object Server extends IOApp {
       application = "test-app",
       environment = "test",
       eventLogger = collector,
-      publishHandler = noOpPublishHandler
+      publisher = noOpPublisher
     )
 
   private def parseUnitsMap(cursor: io.circe.ACursor): Map[String, String] = {
