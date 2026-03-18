@@ -29,23 +29,21 @@ FROM elixir:1.15-alpine
 
 RUN apk add --no-cache libgcc libstdc++
 
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
 WORKDIR /app
 
 COPY --from=build /app/elixir-wrapper /app/elixir-wrapper
 COPY --from=build /app/elixir-sdk /app/elixir-sdk
-
-RUN chown -R appuser:appgroup /app
+COPY --from=build /root/.mix /root/.mix
+COPY --from=build /root/.hex /root/.hex
 
 WORKDIR /app/elixir-wrapper
 
 RUN mix local.hex --force && \
-    mix local.rebar --force
+    mix local.rebar --force && \
+    mix deps.get --only prod && \
+    MIX_ENV=prod mix compile
 
 EXPOSE 3000
-
-USER appuser
 
 ENV MIX_ENV=prod
 
