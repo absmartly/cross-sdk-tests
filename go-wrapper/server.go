@@ -397,7 +397,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	contextConfig := sdk.ContextConfig{
 		Units_:            units,
-		Attributes_:       make(map[string]interface{}),
+		Attributes_:       make([]interface{}, 0),
 		Overrides_:        make(map[string]int),
 		Cassigmnents_:    make(map[string]int),
 		EventLogger_:      eventCollector,
@@ -480,7 +480,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	} else {
-		contextConfig.RefreshInterval = -1
+		contextConfig.RefreshInterval_ = -1
 		context = absmartly.CreateContextWith(contextConfig, req.Data)
 	}
 
@@ -692,7 +692,12 @@ func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	result := ctxData.context.Attributes_[req.Name]
+	var result interface{}
+	for _, attr := range ctxData.context.Attributes_ {
+		if a, ok := attr.(map[string]interface{}); ok && a["name"] == req.Name {
+			result = a["value"]
+		}
+	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
@@ -1387,12 +1392,17 @@ func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	attrs := ctxData.context.Attributes_
+	attrsMap := make(map[string]interface{})
+	for _, attr := range ctxData.context.Attributes_ {
+		if a, ok := attr.(map[string]interface{}); ok {
+			attrsMap[a["name"].(string)] = a["value"]
+		}
+	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: attrs, Events: newEvents})
+	json.NewEncoder(w).Encode(Response{Result: attrsMap, Events: newEvents})
 }
 
 func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
