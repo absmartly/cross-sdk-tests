@@ -11,12 +11,9 @@ FROM sdk-builder AS server
 WORKDIR /app
 
 COPY cross-sdk-tests/go-wrapper/go.mod ./
-COPY cross-sdk-tests/go-wrapper/go.sum ./
 COPY cross-sdk-tests/go-wrapper/server.go ./
 
-RUN go mod download
-
-RUN go build -o server server.go
+RUN go mod tidy && go build -o server server.go
 
 EXPOSE 3000
 
