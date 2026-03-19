@@ -350,10 +350,10 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	customVariableParser := &CustomVariableParser{}
 
 	config := sdk.ABSmartlyConfig{
-		Client:               nil,
+		Client_:               nil,
 		ContextPublisher_:  customPublisher,
 		ContextEventLogger_:  eventCollector,
-		ContextDataProvider:  nil,
+		ContextDataProvider_:  nil,
 		VariableParser_:      customVariableParser,
 		AudienceDeserializer_:nil,
 	}
@@ -401,8 +401,8 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		Overrides_:        make(map[string]int),
 		Cassigmnents_:    make(map[string]int),
 		EventLogger_:      eventCollector,
-		PublishDelay:      publishDelay,
-		RefreshInterval:   refreshInterval,
+		PublishDelay_:      publishDelay,
+		RefreshInterval_:   refreshInterval,
 	}
 
 	var context *sdk.Context
@@ -436,7 +436,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 			deferredProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
-				ContextDataProvider:  deferredProvider,
+				ContextDataProvider_:  deferredProvider,
 				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
 				VariableParser_:      customVariableParser,
@@ -445,14 +445,14 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			context = absmartlyDeferred.CreateContext(contextConfig)
 		} else {
 			clientConfig := sdk.ClientConfig{
-				Endpoint:    endpoint,
-				APIKey:      "test-api-key",
-				Application: "test-app",
-				Environment: "test-env",
+				Endpoint_:    endpoint,
+				APIKey_:      "test-api-key",
+				Application_: "test-app",
+				Environment_: "test-env",
 			}
 			client := sdk.CreateDefaultClient(clientConfig)
 			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
-				Client:               client,
+				Client_:               client,
 				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
 				VariableParser_:      customVariableParser,
@@ -469,7 +469,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		done(jsonmodels.ContextData{}, fmt.Errorf("Context load failed"))
 		failingProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
-			ContextDataProvider:  failingProvider,
+			ContextDataProvider_:  failingProvider,
 			ContextPublisher_:  customPublisher,
 			ContextEventLogger_:  eventCollector,
 			VariableParser_:      customVariableParser,
