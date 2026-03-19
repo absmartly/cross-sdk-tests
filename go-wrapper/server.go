@@ -352,10 +352,10 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	config := sdk.ABSmartlyConfig{
 		Client:               nil,
 		ContextPublisher_:  customPublisher,
-		ContextEventLogger:   eventCollector,
+		ContextEventLogger_:  eventCollector,
 		ContextDataProvider:  nil,
-		VariableParser:       customVariableParser,
-		AudienceDeserializer: nil,
+		VariableParser_:      customVariableParser,
+		AudienceDeserializer_:nil,
 	}
 
 	absmartly := sdk.Create(config)
@@ -396,11 +396,11 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextConfig := sdk.ContextConfig{
-		Units:             units,
-		Attributes:        make(map[string]interface{}),
-		Overrides:         make(map[string]int),
-		CustomAssignments: make(map[string]int),
-		EventLogger:       eventCollector,
+		Units_:            units,
+		Attributes_:       make(map[string]interface{}),
+		Overrides_:        make(map[string]int),
+		Cassigmnents_:    make(map[string]int),
+		EventLogger_:      eventCollector,
 		PublishDelay:      publishDelay,
 		RefreshInterval:   refreshInterval,
 	}
@@ -438,9 +438,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
 				ContextDataProvider:  deferredProvider,
 				ContextPublisher_:  customPublisher,
-				ContextEventLogger:   eventCollector,
-				VariableParser:       customVariableParser,
-				AudienceDeserializer: nil,
+				ContextEventLogger_:  eventCollector,
+				VariableParser_:      customVariableParser,
+				AudienceDeserializer_:nil,
 			})
 			context = absmartlyDeferred.CreateContext(contextConfig)
 		} else {
@@ -454,9 +454,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
 				Client:               client,
 				ContextPublisher_:  customPublisher,
-				ContextEventLogger:   eventCollector,
-				VariableParser:       customVariableParser,
-				AudienceDeserializer: nil,
+				ContextEventLogger_:  eventCollector,
+				VariableParser_:      customVariableParser,
+				AudienceDeserializer_:nil,
 			})
 			context = absmartlyWithClient.CreateContext(contextConfig)
 			context.WaitUntilReady()
@@ -471,9 +471,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
 			ContextDataProvider:  failingProvider,
 			ContextPublisher_:  customPublisher,
-			ContextEventLogger:   eventCollector,
-			VariableParser:       customVariableParser,
-			AudienceDeserializer: nil,
+			ContextEventLogger_:  eventCollector,
+			VariableParser_:      customVariableParser,
+			AudienceDeserializer_:nil,
 		})
 		context = absmartlyFailing.CreateContext(contextConfig)
 		for i := 0; i < 50 && eventCollector.Len() == 0; i++ {
