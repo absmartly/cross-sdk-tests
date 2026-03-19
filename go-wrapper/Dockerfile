@@ -1,4 +1,4 @@
-FROM golang:1.23-alpine AS sdk-builder
+FROM golang:latest AS sdk-builder
 
 COPY go-sdk /go-sdk
 
