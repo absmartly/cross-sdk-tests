@@ -446,7 +446,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		} else {
 			clientConfig := sdk.ClientConfig{
 				Endpoint_:    endpoint,
-				APIKey_:      "test-api-key",
+				ApiKey_:      "test-api-key",
 				Application_: "test-app",
 				Environment_: "test-env",
 			}
@@ -597,7 +597,7 @@ func getUnitHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	unit := ctxData.context.GetUnit(req.UnitType)
+	unit := ctxData.context.Units_[req.UnitType]
 
 	if unit == "" {
 		newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -692,7 +692,7 @@ func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	result := ctxData.context.GetAttribute(req.Name)
+	result := ctxData.context.Attributes_[req.Name]
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
@@ -1355,7 +1355,7 @@ func getUnitsHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	units := ctxData.context.GetUnits()
+	units := ctxData.context.Units_
 	result := make(map[string]interface{})
 	for k, v := range units {
 		if num, err := strconv.ParseFloat(v, 64); err == nil {
@@ -1387,7 +1387,7 @@ func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	attrs := ctxData.context.GetAttributes()
+	attrs := ctxData.context.Attributes_
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
@@ -1405,10 +1405,9 @@ func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	readyErr := ctxData.context.ReadyError()
 	var result interface{}
-	if readyErr != nil {
-		result = readyErr.Error()
+	if ctxData.context.IsFailed() {
+		result = "Context load failed"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
