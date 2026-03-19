@@ -397,7 +397,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	contextConfig := sdk.ContextConfig{
 		Units_:            units,
-		Attributes_:       make([]interface{}, 0),
+		Attributes_:       make(map[string]interface{}),
 		Overrides_:        make(map[string]int),
 		Cassigmnents_:    make(map[string]int),
 		EventLogger_:      eventCollector,
