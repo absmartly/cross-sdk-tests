@@ -575,6 +575,16 @@ def cleanup_stale_experiments(profile: str, verbose: bool = False) -> None:
 
 
 def discover_sdks() -> Dict[str, str]:
+    sdk_urls_override = os.getenv("SDK_URLS_OVERRIDE", "")
+    if sdk_urls_override:
+        sdks = {}
+        for entry in sdk_urls_override.split(","):
+            if "=" in entry:
+                name, url = entry.split("=", 1)
+                sdks[name.strip()] = url.strip()
+        if sdks:
+            return sdks
+
     sdk_services_env = os.getenv("SDK_SERVICES", "")
     if not sdk_services_env:
         print("Error: SDK_SERVICES environment variable is not set.")

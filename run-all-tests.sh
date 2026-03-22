@@ -7,6 +7,7 @@ SDK_NAMES=""
 EXCLUDE_NAMES=""
 UNIT_ONLY=false
 CROSS_ONLY=false
+E2E=false
 SKIP_BUILD=false
 VERBOSE=false
 
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
       CROSS_ONLY=true
       shift
       ;;
+    --e2e)
+      E2E=true
+      shift
+      ;;
     --skip-build)
       SKIP_BUILD=true
       shift
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --exclude <name>  Exclude SDK(s), comma-separated (e.g., --exclude swift,python)"
       echo "  --unit-only       Only run unit tests"
       echo "  --cross-only      Only run cross-SDK tests (same as run-tests.sh)"
+      echo "  --e2e             Also run end-to-end tests after unit+cross-SDK tests"
       echo "  --skip-build      Skip building images"
       echo "  -v, --verbose     Show verbose output"
       echo "  -h, --help        Show this help message"
@@ -251,6 +257,26 @@ if [ "$UNIT_ONLY" = false ]; then
   ./run-tests.sh $CROSS_ARGS || CROSS_EXIT_CODE=$?
 fi
 
+E2E_EXIT_CODE=0
+
+# E2E tests phase
+if [ "$E2E" = true ]; then
+  echo ""
+  echo "============================================"
+  echo "  Running E2E Tests"
+  echo "============================================"
+
+  E2E_ARGS="--skip-build"
+  if [ -n "$SDK_NAMES" ]; then
+    E2E_ARGS="$E2E_ARGS --sdk $SDK_NAMES"
+  fi
+  if [ "$VERBOSE" = true ]; then
+    E2E_ARGS="$E2E_ARGS --verbose"
+  fi
+
+  ./run-e2e-tests.sh $E2E_ARGS || E2E_EXIT_CODE=$?
+fi
+
 # Results aggregation
 echo ""
 AGGREGATOR_ARGS=""
@@ -268,7 +294,7 @@ fi
 python3 orchestrator/results_aggregator.py $AGGREGATOR_ARGS || true
 
 # Final exit code
-if [ "$UNIT_EXIT_CODE" -ne 0 ] || [ "$CROSS_EXIT_CODE" -ne 0 ]; then
+if [ "$UNIT_EXIT_CODE" -ne 0 ] || [ "$CROSS_EXIT_CODE" -ne 0 ] || [ "$E2E_EXIT_CODE" -ne 0 ]; then
   exit 1
 fi
 exit 0
