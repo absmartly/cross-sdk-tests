@@ -188,19 +188,19 @@ class E2ERunner:
             if data:
                 items = data if isinstance(data, list) else data.get("goals", data.get("items", []))
                 for item in items:
-                    if item.get("name") == "e2e_purchase":
+                    if item.get("name") == "purchase":
                         self.goal_id = str(item["id"])
-                        self.log(f"Found goal 'e2e_purchase' with id={self.goal_id}")
+                        self.log(f"Found goal 'purchase' with id={self.goal_id}")
                         return
 
-        rc, output = run_abs(["goals", "create", "--name", "e2e_purchase"], self.profile)
+        rc, output = run_abs(["goals", "create", "--name", "purchase"], self.profile)
         if rc != 0:
-            raise RuntimeError(f"Failed to create goal 'e2e_purchase': {output}")
+            raise RuntimeError(f"Failed to create goal 'purchase': {output}")
 
         self.goal_id = _extract_id(output)
         if not self.goal_id:
             raise RuntimeError(f"Could not determine goal ID from output: {output}")
-        self.log(f"Created goal 'e2e_purchase' with id={self.goal_id}")
+        self.log(f"Created goal 'purchase' with id={self.goal_id}")
 
     def _ensure_metric(self) -> None:
         rc, output = run_abs(["metrics", "list"], self.profile)
@@ -209,19 +209,19 @@ class E2ERunner:
             if data:
                 items = data if isinstance(data, list) else data.get("metrics", data.get("items", []))
                 for item in items:
-                    if item.get("name") == "e2e_purchase_count":
+                    if item.get("name") == "purchase_count":
                         self.metric_id = str(item["id"])
-                        self.log(f"Found metric 'e2e_purchase_count' with id={self.metric_id}")
+                        self.log(f"Found metric 'purchase_count' with id={self.metric_id}")
                         return
 
-        rc, output = run_abs(["metrics", "create", "--name", "e2e_purchase_count", "--type", "goal_count"], self.profile)
+        rc, output = run_abs(["metrics", "create", "--name", "purchase_count", "--type", "goal_count"], self.profile)
         if rc != 0:
-            raise RuntimeError(f"Failed to create metric 'e2e_purchase_count': {output}")
+            raise RuntimeError(f"Failed to create metric 'purchase_count': {output}")
 
         self.metric_id = _extract_id(output)
         if not self.metric_id:
             raise RuntimeError(f"Could not determine metric ID from output: {output}")
-        self.log(f"Created metric 'e2e_purchase_count' with id={self.metric_id}")
+        self.log(f"Created metric 'purchase_count' with id={self.metric_id}")
 
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"
