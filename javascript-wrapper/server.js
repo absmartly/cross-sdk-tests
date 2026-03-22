@@ -101,6 +101,47 @@ app.get('/context_payload/:payloadId/context', (req, res) => {
 
 app.post('/context', async (req, res) => {
   try {
+    if (req.body.mode === "e2e") {
+      const e2eEndpoint = process.env.ABSMARTLY_E2E_ENDPOINT;
+      const e2eApiKey = process.env.ABSMARTLY_E2E_API_KEY;
+      const e2eApp = process.env.ABSMARTLY_E2E_APPLICATION || "e2e-tests";
+      const e2eEnv = process.env.ABSMARTLY_E2E_ENVIRONMENT || "production";
+
+      if (!e2eEndpoint || !e2eApiKey) {
+        return res.status(501).json({ error: "e2e mode not configured" });
+      }
+
+      const contextId = `ctx-${Date.now()}-${Math.random()}`;
+      const eventCollector = new EventCollector();
+
+      const e2eSdk = new absmartly.SDK({
+        endpoint: e2eEndpoint,
+        apiKey: e2eApiKey,
+        application: e2eApp,
+        environment: e2eEnv,
+        eventLogger: (ctx, eventName, eventData) => {
+          eventCollector.handleEvent(ctx, eventName, eventData);
+        }
+      });
+
+      const contextConfig = { units: req.body.units || {} };
+      const context = e2eSdk.createContext(contextConfig);
+      await context.ready();
+
+      if (req.body.attributes) {
+        for (const [key, value] of Object.entries(req.body.attributes)) {
+          context.attribute(key, value);
+        }
+      }
+
+      contexts.set(contextId, { context, eventCollector });
+
+      return res.json({
+        result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
+        events: eventCollector.events
+      });
+    }
+
     let { data, endpoint, units, options } = req.body;
 
     units = units || {};
