@@ -25,8 +25,12 @@ def generate_run_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def run_abs(args: List[str], profile: str, output_json: bool = True) -> Tuple[int, str]:
-    cmd = ["abs"] + args + ["--profile", profile]
+def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str = "", output_json: bool = True) -> Tuple[int, str]:
+    cmd = ["abs"] + args
+    if api_key and endpoint:
+        cmd += ["--api-key", api_key, "--endpoint", endpoint]
+    elif profile:
+        cmd += ["--profile", profile]
     if output_json:
         cmd += ["-o", "json"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
