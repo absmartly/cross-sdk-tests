@@ -69,6 +69,10 @@ defmodule ElixirWrapper.Router do
 
   post "/context" do
     case conn.body_params do
+      %{"mode" => "e2e", "units" => units} = params ->
+        attributes = params["attributes"] || %{}
+        create_context_e2e(conn, units, attributes)
+
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
         create_context_sync(conn, data, units, options)
@@ -549,6 +553,66 @@ defmodule ElixirWrapper.Router do
 
       {:error, reason} ->
         send_error(conn, 500, "Failed to create failed context: #{inspect(reason)}")
+    end
+  end
+
+  defp create_context_e2e(conn, units, attributes) do
+    e2e_endpoint = System.get_env("ABSMARTLY_E2E_ENDPOINT")
+    e2e_api_key = System.get_env("ABSMARTLY_E2E_API_KEY")
+    e2e_app = System.get_env("ABSMARTLY_E2E_APPLICATION")
+    e2e_env = System.get_env("ABSMARTLY_E2E_ENVIRONMENT")
+
+    if is_nil(e2e_endpoint) or is_nil(e2e_api_key) or is_nil(e2e_app) or is_nil(e2e_env) do
+      send_error(conn, 501, "e2e mode not configured")
+    else
+      collector = EventCollector.new()
+
+      event_handler = fn event_type, event_data ->
+        EventCollector.push(collector, event_type, event_data)
+      end
+
+      sdk_config = %ABSmartly.Types.SDKConfig{
+        endpoint: e2e_endpoint,
+        api_key: e2e_api_key,
+        application: e2e_app,
+        environment: e2e_env
+      }
+
+      context_options =
+        %{}
+        |> Map.put("units", units)
+        |> Map.put("publishDelay", -1)
+        |> Map.put("refreshPeriod", 0)
+        |> Map.put(:event_handler, event_handler)
+
+      context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
+
+      case ABSmartly.Context.start_link_async(sdk_config, context_config) do
+        {:ok, ctx} ->
+          ABSmartly.Context.wait_until_ready(ctx, 10000)
+
+          Enum.each(attributes, fn {name, value} ->
+            ABSmartly.Context.set_attribute(ctx, name, value)
+          end)
+
+          context_id = UUID.uuid4()
+          ContextStore.store_context(context_id, ctx, collector)
+
+          Process.sleep(10)
+          events = EventCollector.get_all(collector)
+
+          result = %{
+            contextId: context_id,
+            ready: ABSmartly.Context.is_ready?(ctx),
+            failed: ABSmartly.Context.is_failed?(ctx),
+            finalized: ABSmartly.Context.is_finalized?(ctx)
+          }
+
+          send_json(conn, 200, %{result: result, events: events})
+
+        {:error, reason} ->
+          send_error(conn, 500, "Failed to create e2e context: #{inspect(reason)}")
+      end
     end
   end
 

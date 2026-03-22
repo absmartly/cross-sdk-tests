@@ -118,6 +118,10 @@ struct CreateContextRequest {
     options: Option<HashMap<String, Value>>,
     #[serde(default, rename = "failLoad")]
     fail_load: bool,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default)]
+    attributes: Option<HashMap<String, Value>>,
 }
 
 #[derive(Serialize)]
@@ -311,6 +315,94 @@ async fn create_context_handler(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateContextRequest>,
 ) -> impl IntoResponse {
+    if req.mode.as_deref() == Some("e2e") {
+        let e2e_endpoint = std::env::var("ABSMARTLY_E2E_ENDPOINT").unwrap_or_default();
+        let e2e_api_key = std::env::var("ABSMARTLY_E2E_API_KEY").unwrap_or_default();
+        let e2e_app = std::env::var("ABSMARTLY_E2E_APPLICATION").unwrap_or_default();
+        let e2e_env = std::env::var("ABSMARTLY_E2E_ENVIRONMENT").unwrap_or_default();
+
+        if e2e_endpoint.is_empty() || e2e_api_key.is_empty() || e2e_app.is_empty() || e2e_env.is_empty() {
+            return (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({"error": "e2e mode not configured"})),
+            ).into_response();
+        }
+
+        let context_id = format!("ctx-{}", Uuid::new_v4());
+        let event_collector = Arc::new(EventCollector::new());
+
+        let units: HashMap<String, String> = req
+            .units
+            .iter()
+            .map(|(k, v)| (k.clone(), value_to_string(v)))
+            .collect();
+
+        let sdk = match ABsmartly::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
+            Ok(s) => s,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("Failed to create SDK: {}", e)})),
+                ).into_response();
+            }
+        };
+
+        let result = sdk.create_context(units.clone(), None).await;
+        let (mut context, ready, failed) = match result {
+            Ok(ctx) => {
+                let data = ctx.data().clone();
+                event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                (ctx, true, false)
+            }
+            Err(e) => {
+                let mut ctx = Context::new_loading();
+                for (unit_type, uid) in &units {
+                    let _ = ctx.set_unit(unit_type, uid);
+                }
+                ctx.become_failed();
+                event_collector.push("error", Some(json!({"message": format!("{}", e)})));
+                (ctx, false, true)
+            }
+        };
+
+        let ec = event_collector.clone();
+        context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
+            ec.push(event_name, data);
+        }));
+
+        if let Some(attributes) = &req.attributes {
+            for (name, value) in attributes {
+                let _ = context.set_attribute(name, value.clone());
+            }
+        }
+
+        let finalized = context.is_finalized();
+
+        let context_data = Arc::new(ContextData_ {
+            context: Mutex::new(context),
+            event_collector: event_collector.clone(),
+            publish_fail: std::sync::atomic::AtomicBool::new(false),
+        });
+
+        let mut contexts = state.contexts.write().unwrap();
+        contexts.insert(context_id.clone(), context_data);
+
+        let events = event_collector.get_events_since(0);
+
+        return Json(ApiResponse {
+            result: serde_json::to_value(CreateContextResponse {
+                context_id,
+                ready,
+                failed,
+                finalized,
+            })
+            .unwrap(),
+            events,
+            error: None,
+        })
+        .into_response();
+    }
+
     let context_id = format!("ctx-{}", Uuid::new_v4());
     let event_collector = Arc::new(EventCollector::new());
 
@@ -421,7 +513,8 @@ async fn create_context_handler(
                 .unwrap(),
                 events,
                 error: None,
-            });
+            })
+            .into_response();
         } else {
             let translated_endpoint = translate_endpoint(&endpoint);
             let payload_data = if let Some(payload_id) = translated_endpoint
@@ -494,6 +587,7 @@ async fn create_context_handler(
         events,
         error: None,
     })
+    .into_response()
 }
 
 fn get_context(

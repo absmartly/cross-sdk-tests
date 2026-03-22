@@ -205,6 +205,112 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             return Results.BadRequest(new { error = "Invalid request format" });
         }
 
+        if (requestJson.ContainsKey("mode") && requestJson["mode"].GetString() == "e2e")
+        {
+            var e2eEndpoint = Environment.GetEnvironmentVariable("ABSMARTLY_E2E_ENDPOINT");
+            var e2eApiKey = Environment.GetEnvironmentVariable("ABSMARTLY_E2E_API_KEY");
+            var e2eApp = Environment.GetEnvironmentVariable("ABSMARTLY_E2E_APPLICATION");
+            var e2eEnv = Environment.GetEnvironmentVariable("ABSMARTLY_E2E_ENVIRONMENT");
+
+            if (string.IsNullOrEmpty(e2eEndpoint) || string.IsNullOrEmpty(e2eApiKey) ||
+                string.IsNullOrEmpty(e2eApp) || string.IsNullOrEmpty(e2eEnv))
+            {
+                return Results.Json(new { error = "e2e mode not configured" }, statusCode: 501);
+            }
+
+            var e2eContextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
+            var e2eEventCollector = new EventCollector();
+
+            var e2eSdk = new ABSdk(
+                new DummyHttpClientFactory(),
+                new ABSmartlyServiceConfiguration
+                {
+                    Endpoint = e2eEndpoint,
+                    ApiKey = e2eApiKey,
+                    Application = e2eApp,
+                    Environment = e2eEnv
+                },
+                new ABSdkConfig
+                {
+                    ContextEventLogger = e2eEventCollector
+                }
+            );
+
+            var e2eContextConfig = new ContextConfig
+            {
+                PublishDelay = TimeSpan.FromMilliseconds(-1),
+                RefreshInterval = TimeSpan.FromMilliseconds(0)
+            };
+
+            if (requestJson.ContainsKey("units"))
+            {
+                var units = requestJson["units"];
+                foreach (var prop in units.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Number)
+                    {
+                        if (prop.Value.TryGetInt64(out var intVal))
+                            e2eContextConfig.Units[prop.Name] = intVal.ToString();
+                        else if (prop.Value.TryGetDouble(out var doubleVal))
+                            e2eContextConfig.Units[prop.Name] = doubleVal.ToString();
+                        else
+                            e2eContextConfig.Units[prop.Name] = prop.Value.GetRawText();
+                    }
+                    else
+                    {
+                        e2eContextConfig.Units[prop.Name] = prop.Value.GetString();
+                    }
+                }
+            }
+
+            var e2eContext = e2eSdk.CreateContext(e2eContextConfig);
+            for (int i = 0; i < 100 && !e2eContext.IsReady(); i++)
+            {
+                await Task.Delay(10);
+            }
+            for (int i = 0; i < 50 && e2eEventCollector.GetEventsCount() == 0; i++)
+            {
+                await Task.Delay(10);
+            }
+
+            if (requestJson.ContainsKey("attributes"))
+            {
+                foreach (var prop in requestJson["attributes"].EnumerateObject())
+                {
+                    object attrValue = prop.Value.ValueKind switch
+                    {
+                        JsonValueKind.String => prop.Value.GetString()!,
+                        JsonValueKind.Number when prop.Value.TryGetInt64(out var iv) => (object)iv,
+                        JsonValueKind.Number => prop.Value.GetDouble(),
+                        JsonValueKind.True => true,
+                        JsonValueKind.False => false,
+                        _ => prop.Value.GetRawText()
+                    };
+                    e2eContext.SetAttribute(prop.Name, attrValue);
+                }
+            }
+
+            contexts[e2eContextId] = new ContextData
+            {
+                Context = e2eContext,
+                EventCollector = e2eEventCollector,
+                Units = new Dictionary<string, object>(),
+                Attributes = new Dictionary<string, object>()
+            };
+
+            return Results.Ok(new ApiResponse
+            {
+                Result = new
+                {
+                    ContextId = e2eContextId,
+                    Ready = e2eContext.IsReady(),
+                    Failed = e2eContext.IsFailed(),
+                    Finalized = e2eContext.IsClosed()
+                },
+                Events = e2eEventCollector.GetEvents()
+            });
+        }
+
         ABSmartly.Models.ContextData? contextData = null;
         if (requestJson.ContainsKey("data"))
         {

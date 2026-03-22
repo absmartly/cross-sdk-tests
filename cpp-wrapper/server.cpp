@@ -7,6 +7,10 @@
 #include <absmartly/models.h>
 #include <absmartly/errors.h>
 #include <absmartly/hashing.h>
+#include <absmartly/sdk.h>
+#include <absmartly/client_config.h>
+#include <absmartly/client.h>
+#include <absmartly/default_http_client.h>
 
 #include <atomic>
 #include <chrono>
@@ -271,6 +275,75 @@ int main() {
                      res.set_content(
                          make_error_response("Invalid JSON", "PARSE_ERROR").dump(),
                          "application/json");
+                     return;
+                 }
+
+                 if (body.contains("mode") && body["mode"].is_string() && body["mode"].get<std::string>() == "e2e") {
+                     const char* e2e_endpoint = std::getenv("ABSMARTLY_E2E_ENDPOINT");
+                     const char* e2e_api_key = std::getenv("ABSMARTLY_E2E_API_KEY");
+                     const char* e2e_app = std::getenv("ABSMARTLY_E2E_APPLICATION");
+                     const char* e2e_env = std::getenv("ABSMARTLY_E2E_ENVIRONMENT");
+
+                     if (!e2e_endpoint || !e2e_api_key || !e2e_app || !e2e_env) {
+                         res.status = 501;
+                         res.set_content(json{{"error", "e2e mode not configured"}}.dump(), "application/json");
+                         return;
+                     }
+
+                     absmartly::ClientConfig client_config;
+                     client_config.endpoint = e2e_endpoint;
+                     client_config.api_key = e2e_api_key;
+                     client_config.application = e2e_app;
+                     client_config.environment = e2e_env;
+
+                     auto e2e_collector = std::make_shared<EventCollector>();
+
+                     absmartly::SDKConfig e2e_sdk_config;
+                     e2e_sdk_config.client = std::make_shared<absmartly::Client>(client_config,
+                         std::make_shared<absmartly::DefaultHTTPClient>());
+                     e2e_sdk_config.context_event_handler = e2e_collector;
+
+                     auto e2e_sdk = absmartly::SDK::create(std::move(e2e_sdk_config));
+
+                     absmartly::ContextConfig e2e_ctx_config;
+                     std::map<std::string, json> e2e_original_units;
+                     if (body.contains("units") && body["units"].is_object()) {
+                         for (auto& [key, val] : body["units"].items()) {
+                             e2e_ctx_config.units[key] = uid_to_string(val);
+                             e2e_original_units[key] = val;
+                         }
+                     }
+
+                     auto e2e_ctx = e2e_sdk->create_context(e2e_ctx_config);
+                     e2e_ctx->wait_until_ready();
+
+                     if (body.contains("attributes") && body["attributes"].is_object()) {
+                         for (auto& [key, val] : body["attributes"].items()) {
+                             e2e_ctx->set_attribute(key, val);
+                         }
+                     }
+
+                     std::string e2e_context_id = make_context_id();
+                     bool ready = e2e_ctx->is_ready();
+                     bool failed = e2e_ctx->is_failed();
+                     bool finalized = e2e_ctx->is_finalized();
+                     auto all = e2e_collector->all_events();
+
+                     ContextEntry entry;
+                     entry.context = std::move(e2e_ctx);
+                     entry.collector = e2e_collector;
+                     entry.unit_original_values = std::move(e2e_original_units);
+
+                     {
+                         std::lock_guard<std::mutex> lock(contexts_mu);
+                         contexts[e2e_context_id] = std::move(entry);
+                     }
+
+                     json result = {{"contextId", e2e_context_id},
+                                    {"ready", ready},
+                                    {"failed", failed},
+                                    {"finalized", finalized}};
+                     res.set_content(make_response(result, all).dump(), "application/json");
                      return;
                  }
 
