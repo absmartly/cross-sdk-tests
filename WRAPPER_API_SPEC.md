@@ -74,7 +74,45 @@ Content-Type: application/json
 }
 ```
 
-**Response (both modes):**
+#### E2E Mode
+When `mode: "e2e"` is set, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
+
+```http
+POST /context
+Content-Type: application/json
+
+{
+  "mode": "e2e",
+  "units": {"session_id": "e2e-run123-javascript-0"},
+  "attributes": {"sdk_name": "javascript"}
+}
+```
+
+**Required Environment Variables**
+
+The wrapper reads credentials from its environment (NOT from the request body):
+
+| Variable | Description |
+|----------|-------------|
+| `ABSMARTLY_E2E_ENDPOINT` | ABsmartly API URL (e.g., `https://test-1.absmartly.com/v1`) |
+| `ABSMARTLY_E2E_API_KEY` | API key |
+| `ABSMARTLY_E2E_APPLICATION` | Application name (default: `e2e-tests`) |
+| `ABSMARTLY_E2E_ENVIRONMENT` | Environment name (default: `production`) |
+
+**Behavior:**
+- Uses the SDK's `DefaultContextPublisher` (real HTTP to ABsmartly)
+- No mock publishers or payload endpoints
+- Attributes from the request are set on the context
+- Context is waited until ready before returning
+
+**Error: Not Configured**
+
+If required env vars are missing, returns HTTP 501:
+```json
+{"error": "e2e mode not configured"}
+```
+
+**Response (e2e mode):**
 ```json
 {
   "result": {
@@ -575,6 +613,44 @@ DELETE /context/{contextId}
   "result": "deleted"
 }
 ```
+
+## E2E Mode
+
+When `mode: "e2e"` is set in the `POST /context` request body, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
+
+### Request
+```json
+{
+  "mode": "e2e",
+  "units": {"session_id": "e2e-run123-javascript-0"},
+  "attributes": {"sdk_name": "javascript"}
+}
+```
+
+### Required Environment Variables
+The wrapper reads credentials from its environment (NOT from the request body):
+- `ABSMARTLY_E2E_ENDPOINT` — ABsmartly API URL (e.g., `https://test-1.absmartly.com/v1`)
+- `ABSMARTLY_E2E_API_KEY` — API key
+- `ABSMARTLY_E2E_APPLICATION` — Application name (default: `e2e-tests`)
+- `ABSMARTLY_E2E_ENVIRONMENT` — Environment name (default: `production`)
+
+### Response
+Same shape as normal `createContext`:
+```json
+{"result": {"contextId": "...", "ready": true, "failed": false, "finalized": false}, "events": [...]}
+```
+
+### Error: Not Configured
+If required env vars are missing, returns HTTP 501:
+```json
+{"error": "e2e mode not configured"}
+```
+
+### Behavior
+- Uses the SDK's `DefaultContextPublisher` (real HTTP to ABsmartly)
+- No mock publishers or payload endpoints
+- Attributes from the request are set on the context
+- Context is waited until ready before returning
 
 ## Implementation Notes
 
