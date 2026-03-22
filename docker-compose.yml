@@ -149,6 +149,10 @@ services:
       - "3001:3000"
     environment:
       - SDK_NAME=javascript
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   python-sdk:
     build:
@@ -158,6 +162,10 @@ services:
       - "3002:3000"
     environment:
       - SDK_NAME=python
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   ruby-sdk:
     build:
@@ -167,6 +175,10 @@ services:
       - "3003:3000"
     environment:
       - SDK_NAME=ruby
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   java-sdk:
     build:
@@ -176,6 +188,10 @@ services:
       - "3004:3000"
     environment:
       - SDK_NAME=java
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   php-sdk:
     build:
@@ -185,6 +201,10 @@ services:
       - "3005:3000"
     environment:
       - SDK_NAME=php
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   go-sdk:
     build:
@@ -194,6 +214,10 @@ services:
       - "3006:3000"
     environment:
       - SDK_NAME=go
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   liquid-sdk:
     build:
@@ -203,6 +227,10 @@ services:
       - "3007:3000"
     environment:
       - SDK_NAME=liquid
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   dart-sdk:
     build:
@@ -212,6 +240,10 @@ services:
       - "3011:3000"
     environment:
       - SDK_NAME=dart
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   flutter-sdk:
     build:
@@ -221,6 +253,10 @@ services:
       - "3008:3000"
     environment:
       - SDK_NAME=flutter
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   swift-sdk:
     build:
@@ -230,6 +266,10 @@ services:
       - "3010:3000"
     environment:
       - SDK_NAME=swift
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   dotnet-sdk:
     build:
@@ -239,6 +279,10 @@ services:
       - "3009:3000"
     environment:
       - SDK_NAME=dotnet
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   react-sdk:
     build:
@@ -248,6 +292,10 @@ services:
       - "3012:3000"
     environment:
       - SDK_NAME=react
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   vue2-sdk:
     build:
@@ -257,6 +305,10 @@ services:
       - "3013:3000"
     environment:
       - SDK_NAME=vue2
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   vue3-sdk:
     build:
@@ -266,6 +318,10 @@ services:
       - "3014:3000"
     environment:
       - SDK_NAME=vue3
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   rust-sdk:
     build:
@@ -275,6 +331,10 @@ services:
       - "3015:3000"
     environment:
       - SDK_NAME=rust
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   elixir-sdk:
     build:
@@ -284,6 +344,10 @@ services:
       - "3016:3000"
     environment:
       - SDK_NAME=elixir
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   scala-sdk:
     build:
@@ -293,6 +357,10 @@ services:
       - "3017:3000"
     environment:
       - SDK_NAME=scala
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   kotlin-sdk:
     build:
@@ -302,6 +370,10 @@ services:
       - "3018:3000"
     environment:
       - SDK_NAME=kotlin
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   angular-sdk:
     build:
@@ -311,6 +383,10 @@ services:
       - "3019:3000"
     environment:
       - SDK_NAME=angular
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   cpp-sdk:
     build:
@@ -320,6 +396,10 @@ services:
       - "3020:3000"
     environment:
       - SDK_NAME=cpp
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
   orchestrator:
     build:
