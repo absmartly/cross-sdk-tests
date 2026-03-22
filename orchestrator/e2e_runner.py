@@ -90,7 +90,7 @@ class E2ERunner:
             return
 
         app_id = self.config.get("application_id", os.getenv("ABSMARTLY_E2E_APPLICATION_ID", "1"))
-        unit_type = self.config.get("unit_type", os.getenv("ABSMARTLY_E2E_UNIT_TYPE", "session_id"))
+        unit_type = self.config.get("unit_type", os.getenv("ABSMARTLY_E2E_UNIT_TYPE", "34"))
         env_name = self.config.get("environment", os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "production"))
 
         rc, output = run_abs([
@@ -216,7 +216,7 @@ class E2ERunner:
             try:
                 ctx_resp = requests.post(f"{base_url}/context", json={
                     "mode": "e2e",
-                    "units": {"session_id": unit_id},
+                    "units": {"user_id": unit_id},
                     "attributes": {"sdk_name": sdk_name},
                 }, timeout=10)
             except requests.RequestException as exc:
