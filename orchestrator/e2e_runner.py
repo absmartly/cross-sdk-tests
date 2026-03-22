@@ -96,6 +96,8 @@ class E2ERunner:
         app_id = self.config.get("application_id", os.getenv("ABSMARTLY_E2E_APPLICATION_ID", "1"))
         unit_type = self.config.get("unit_type", os.getenv("ABSMARTLY_E2E_UNIT_TYPE", "34"))
         env_name = self.config.get("environment", os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "production"))
+        owner_id = self.config.get("owner_id", os.getenv("ABSMARTLY_E2E_OWNER_ID", "1"))
+        metric_id = self.config.get("metric_id", os.getenv("ABSMARTLY_E2E_METRIC_ID", "196"))
 
         rc, output = run_abs([
             "experiments", "create",
@@ -105,6 +107,10 @@ class E2ERunner:
             "--unit-type", unit_type,
             "--env", env_name,
             "--percentages", "50,50",
+            "--owner", str(owner_id),
+            "--primary-metric", str(metric_id),
+            "--prediction", "E2E test - no prediction",
+            "--field", "next_steps=E2E test - no next steps",
         ], self.profile)
 
         if rc != 0:
