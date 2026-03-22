@@ -45,13 +45,35 @@ def parse_json_output(output: str) -> Any:
         return json.loads(output)
     except json.JSONDecodeError:
         pass
-    for end_char in (']', '}'):
-        idx = output.rfind(end_char)
-        if idx >= 0:
-            try:
-                return json.loads(output[:idx + 1])
-            except json.JSONDecodeError:
+    for start_char, end_char in (('[', ']'), ('{', '}')):
+        start = output.find(start_char)
+        if start < 0:
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(output)):
+            c = output[i]
+            if escape:
+                escape = False
                 continue
+            if c == '\\':
+                escape = True
+                continue
+            if c == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == start_char:
+                depth += 1
+            elif c == end_char:
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(output[start:i + 1])
+                    except json.JSONDecodeError:
+                        break
     return None
 
 
