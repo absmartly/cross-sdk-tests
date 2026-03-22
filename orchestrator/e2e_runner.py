@@ -125,7 +125,7 @@ class E2ERunner:
         print(f"  {Colors.GREEN}Resources ready{Colors.RESET} app={self.app_id} unit_type={self.unit_type} owner={self.owner_id} metric={self.metric_id}")
 
     def _ensure_application(self) -> None:
-        rc, output = run_abs(["apps", "list"], self.profile)
+        rc, output = run_abs(["apps", "list", "--items", "500"], self.profile)
         if rc == 0:
             data = parse_json_output(output)
             if data:
@@ -146,7 +146,7 @@ class E2ERunner:
         self.log(f"Created application 'e2e-tests' with id={self.app_id}")
 
     def _ensure_unit_type(self) -> None:
-        rc, output = run_abs(["units", "list"], self.profile)
+        rc, output = run_abs(["units", "list", "--items", "500"], self.profile)
         if rc != 0:
             raise RuntimeError(f"Failed to list unit types: {output}")
 
@@ -164,7 +164,7 @@ class E2ERunner:
         raise RuntimeError("Unit type 'user_id' not found")
 
     def _ensure_owner(self) -> None:
-        rc, output = run_abs(["users", "list"], self.profile)
+        rc, output = run_abs(["users", "list", "--items", "500"], self.profile)
         if rc != 0:
             raise RuntimeError(f"Failed to list users: {output}")
 
@@ -182,7 +182,7 @@ class E2ERunner:
         raise RuntimeError("No non-archived users found")
 
     def _ensure_goal(self) -> None:
-        rc, output = run_abs(["goals", "list"], self.profile)
+        rc, output = run_abs(["goals", "list", "--items", "500"], self.profile)
         if rc == 0:
             data = parse_json_output(output)
             if data:
@@ -203,7 +203,7 @@ class E2ERunner:
         self.log(f"Created goal 'purchase' with id={self.goal_id}")
 
     def _ensure_metric(self) -> None:
-        rc, output = run_abs(["metrics", "list"], self.profile)
+        rc, output = run_abs(["metrics", "list", "--items", "500"], self.profile)
         if rc == 0:
             data = parse_json_output(output)
             if data:
