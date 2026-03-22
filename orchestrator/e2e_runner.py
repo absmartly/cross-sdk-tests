@@ -47,6 +47,19 @@ def parse_json_output(output: str) -> Any:
         return None
 
 
+def _extract_id(output: str) -> Optional[str]:
+    data = parse_json_output(output)
+    if data and isinstance(data, dict):
+        for key in ("id", "experiment_id"):
+            if key in data:
+                return str(data[key])
+    import re
+    match = re.search(r"ID:\s*(\d+)", output)
+    if match:
+        return match.group(1)
+    return None
+
+
 class E2ERunner:
     def __init__(self, sdks: Dict[str, str], config: Dict[str, Any]):
         self.sdks = sdks
@@ -119,9 +132,7 @@ class E2ERunner:
         if rc != 0:
             raise RuntimeError(f"Failed to create application 'e2e-tests': {output}")
 
-        data = parse_json_output(output)
-        if data and isinstance(data, dict):
-            self.app_id = str(data.get("id"))
+        self.app_id = _extract_id(output)
         if not self.app_id:
             raise RuntimeError(f"Could not determine application ID from output: {output}")
         self.log(f"Created application 'e2e-tests' with id={self.app_id}")
@@ -178,9 +189,7 @@ class E2ERunner:
         if rc != 0:
             raise RuntimeError(f"Failed to create goal 'e2e_purchase': {output}")
 
-        data = parse_json_output(output)
-        if data and isinstance(data, dict):
-            self.goal_id = str(data.get("id"))
+        self.goal_id = _extract_id(output)
         if not self.goal_id:
             raise RuntimeError(f"Could not determine goal ID from output: {output}")
         self.log(f"Created goal 'e2e_purchase' with id={self.goal_id}")
@@ -201,9 +210,7 @@ class E2ERunner:
         if rc != 0:
             raise RuntimeError(f"Failed to create metric 'e2e_purchase_count': {output}")
 
-        data = parse_json_output(output)
-        if data and isinstance(data, dict):
-            self.metric_id = str(data.get("id"))
+        self.metric_id = _extract_id(output)
         if not self.metric_id:
             raise RuntimeError(f"Could not determine metric ID from output: {output}")
         self.log(f"Created metric 'e2e_purchase_count' with id={self.metric_id}")
@@ -236,11 +243,9 @@ class E2ERunner:
         if rc != 0:
             raise RuntimeError(f"Failed to create experiment: {output}")
 
-        data = parse_json_output(output)
-        if data and isinstance(data, dict):
-            self.experiment_id = data.get("id") or data.get("experiment_id")
-        if data and isinstance(data, list) and len(data) > 0:
-            self.experiment_id = data[0].get("id") or data[0].get("experiment_id")
+        extracted = _extract_id(output)
+        if extracted:
+            self.experiment_id = int(extracted)
 
         if not self.experiment_id:
             self.log(f"Create output: {output}")
