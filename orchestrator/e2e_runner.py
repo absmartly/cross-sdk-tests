@@ -61,6 +61,11 @@ class E2ERunner:
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
         self.skipped_sdks: List[str] = []
+        self.app_id: Optional[str] = None
+        self.unit_type: Optional[str] = None
+        self.owner_id: Optional[str] = None
+        self.metric_id: Optional[str] = None
+        self.goal_id: Optional[str] = None
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -74,6 +79,7 @@ class E2ERunner:
         print()
 
         try:
+            self.ensure_resources()
             self.create_experiment()
             self.start_experiment()
             self.run_sdk_scenarios()
@@ -84,6 +90,124 @@ class E2ERunner:
         finally:
             self.cleanup_experiment()
 
+    def ensure_resources(self) -> None:
+        if self.dry_run:
+            print(f"  {Colors.YELLOW}[dry-run]{Colors.RESET} Skipping resource provisioning")
+            return
+
+        print("Ensuring required resources exist...")
+        self._ensure_application()
+        self._ensure_unit_type()
+        self._ensure_owner()
+        self._ensure_goal()
+        self._ensure_metric()
+        print(f"  {Colors.GREEN}Resources ready{Colors.RESET} app={self.app_id} unit_type={self.unit_type} owner={self.owner_id} metric={self.metric_id}")
+
+    def _ensure_application(self) -> None:
+        rc, output = run_abs(["apps", "list"], self.profile)
+        if rc == 0:
+            data = parse_json_output(output)
+            if data:
+                items = data if isinstance(data, list) else data.get("applications", data.get("items", []))
+                for item in items:
+                    if item.get("name") == "e2e-tests":
+                        self.app_id = str(item["id"])
+                        self.log(f"Found application 'e2e-tests' with id={self.app_id}")
+                        return
+
+        rc, output = run_abs(["apps", "create", "--name", "e2e-tests"], self.profile)
+        if rc != 0:
+            raise RuntimeError(f"Failed to create application 'e2e-tests': {output}")
+
+        data = parse_json_output(output)
+        if data and isinstance(data, dict):
+            self.app_id = str(data.get("id"))
+        if not self.app_id:
+            raise RuntimeError(f"Could not determine application ID from output: {output}")
+        self.log(f"Created application 'e2e-tests' with id={self.app_id}")
+
+    def _ensure_unit_type(self) -> None:
+        rc, output = run_abs(["units", "list"], self.profile)
+        if rc != 0:
+            raise RuntimeError(f"Failed to list unit types: {output}")
+
+        data = parse_json_output(output)
+        if not data:
+            raise RuntimeError(f"Could not parse unit types output: {output}")
+
+        items = data if isinstance(data, list) else data.get("unit_types", data.get("items", []))
+        for item in items:
+            if item.get("name") == "user_id":
+                self.unit_type = str(item["id"])
+                self.log(f"Found unit type 'user_id' with id={self.unit_type}")
+                return
+
+        raise RuntimeError("Unit type 'user_id' not found")
+
+    def _ensure_owner(self) -> None:
+        rc, output = run_abs(["users", "list"], self.profile)
+        if rc != 0:
+            raise RuntimeError(f"Failed to list users: {output}")
+
+        data = parse_json_output(output)
+        if not data:
+            raise RuntimeError(f"Could not parse users output: {output}")
+
+        items = data if isinstance(data, list) else data.get("users", data.get("items", []))
+        for item in items:
+            if not item.get("archived", False):
+                self.owner_id = str(item["id"])
+                self.log(f"Found owner '{item.get('name', item.get('email', 'unknown'))}' with id={self.owner_id}")
+                return
+
+        raise RuntimeError("No non-archived users found")
+
+    def _ensure_goal(self) -> None:
+        rc, output = run_abs(["goals", "list"], self.profile)
+        if rc == 0:
+            data = parse_json_output(output)
+            if data:
+                items = data if isinstance(data, list) else data.get("goals", data.get("items", []))
+                for item in items:
+                    if item.get("name") == "e2e_purchase":
+                        self.goal_id = str(item["id"])
+                        self.log(f"Found goal 'e2e_purchase' with id={self.goal_id}")
+                        return
+
+        rc, output = run_abs(["goals", "create", "--name", "e2e_purchase"], self.profile)
+        if rc != 0:
+            raise RuntimeError(f"Failed to create goal 'e2e_purchase': {output}")
+
+        data = parse_json_output(output)
+        if data and isinstance(data, dict):
+            self.goal_id = str(data.get("id"))
+        if not self.goal_id:
+            raise RuntimeError(f"Could not determine goal ID from output: {output}")
+        self.log(f"Created goal 'e2e_purchase' with id={self.goal_id}")
+
+    def _ensure_metric(self) -> None:
+        rc, output = run_abs(["metrics", "list"], self.profile)
+        if rc == 0:
+            data = parse_json_output(output)
+            if data:
+                items = data if isinstance(data, list) else data.get("metrics", data.get("items", []))
+                for item in items:
+                    if item.get("name") == "e2e_purchase_count":
+                        self.metric_id = str(item["id"])
+                        self.log(f"Found metric 'e2e_purchase_count' with id={self.metric_id}")
+                        return
+
+        rc, output = run_abs(["metrics", "create", "--name", "e2e_purchase_count", "--type", "goal_count"], self.profile)
+        if rc != 0:
+            raise RuntimeError(f"Failed to create metric 'e2e_purchase_count': {output}")
+
+        data = parse_json_output(output)
+        if data and isinstance(data, dict):
+            self.metric_id = str(data.get("id"))
+        if not self.metric_id:
+            raise RuntimeError(f"Could not determine metric ID from output: {output}")
+        self.log(f"Created metric 'e2e_purchase_count' with id={self.metric_id}")
+
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"
         print(f"Creating experiment: {self.experiment_name}")
@@ -93,24 +217,20 @@ class E2ERunner:
             print(f"  {Colors.YELLOW}[dry-run]{Colors.RESET} Skipping experiment creation")
             return
 
-        app_id = self.config.get("application_id", os.getenv("ABSMARTLY_E2E_APPLICATION_ID", "1"))
-        unit_type = self.config.get("unit_type", os.getenv("ABSMARTLY_E2E_UNIT_TYPE", "34"))
         env_name = self.config.get("environment", os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "production"))
-        owner_id = self.config.get("owner_id", os.getenv("ABSMARTLY_E2E_OWNER_ID", "1"))
-        metric_id = self.config.get("metric_id", os.getenv("ABSMARTLY_E2E_METRIC_ID", "196"))
 
         rc, output = run_abs([
             "experiments", "create",
             "--name", self.experiment_name,
             "--variants", "control,treatment",
-            "--application-id", str(app_id),
-            "--unit-type", unit_type,
+            "--application-id", self.app_id,
+            "--unit-type", self.unit_type,
             "--env", env_name,
             "--percentages", "50,50",
-            "--owner", str(owner_id),
-            "--primary-metric", str(metric_id),
-            "--prediction", "E2E test - no prediction",
-            "--field", "next_steps=E2E test - no next steps",
+            "--owner", self.owner_id,
+            "--primary-metric", self.metric_id,
+            "--prediction", "E2E automated test",
+            "--field", "next_steps=E2E automated test",
         ], self.profile)
 
         if rc != 0:
