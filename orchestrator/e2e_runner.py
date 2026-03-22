@@ -105,11 +105,12 @@ class E2ERunner:
                 if item.get("name") == name:
                     return str(item["id"])
         import re
-        for line in output.split('\n'):
+        clean = re.sub(r'\x1b\[[0-9;]*m', '', output)
+        for line in clean.split('\n'):
             if name in line:
-                match = re.search(r'│\s*(\d+)\s*│', line)
-                if match:
-                    return match.group(1)
+                cells = [c.strip() for c in line.split('│') if c.strip()]
+                if len(cells) >= 2 and cells[0].isdigit():
+                    return cells[0]
         return None
 
     def run(self) -> Dict[str, Any]:
