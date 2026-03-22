@@ -31,6 +31,7 @@ elixir-sdk
 # Environment files
 .env
 .env.local
+e2e-config.env
 
 # Results and logs
 /results/
