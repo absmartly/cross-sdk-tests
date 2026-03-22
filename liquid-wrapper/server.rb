@@ -244,6 +244,66 @@ post '/context' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
+  if req_data[:mode] == 'e2e'
+    e2e_endpoint = ENV['ABSMARTLY_E2E_ENDPOINT']
+    e2e_api_key = ENV['ABSMARTLY_E2E_API_KEY']
+    e2e_application = ENV['ABSMARTLY_E2E_APPLICATION']
+    e2e_environment = ENV['ABSMARTLY_E2E_ENVIRONMENT']
+    unless e2e_endpoint && e2e_api_key && e2e_application && e2e_environment
+      content_type :json
+      halt 501, { error: 'e2e mode not configured' }.to_json
+    end
+
+    context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
+    event_collector = EventCollector.new
+
+    client_config = ClientConfig.new
+    client_config.endpoint = e2e_endpoint
+    client_config.api_key = e2e_api_key
+    client_config.application = e2e_application
+    client_config.environment = e2e_environment
+
+    client = Client.create(client_config)
+
+    sdk_config = ABSmartlyConfig.new
+    sdk_config.client = client
+    sdk_config.context_event_logger = event_collector
+
+    sdk = ABSmartly.new(sdk_config)
+
+    context_config = ContextConfig.new
+    context_config.units = req_data[:units].transform_keys(&:to_sym)
+    context_config.publish_delay = -1
+    context_config.refresh_interval = 0
+
+    context = sdk.create_context(context_config)
+    50.times do
+      break if context.ready?
+      sleep 0.1
+    end
+
+    (req_data[:attributes] || {}).each do |name, value|
+      context.set_attribute(name.to_s, value)
+    end
+
+    $contexts[context_id] = {
+      context: context,
+      eventCollector: event_collector,
+      publisher: nil
+    }
+
+    content_type :json
+    return {
+      result: {
+        contextId: context_id,
+        ready: context.ready?,
+        failed: context.failed? || false,
+        finalized: context.closed?
+      },
+      events: event_collector.events
+    }.to_json
+  end
+
   context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
 
   event_collector = EventCollector.new

@@ -149,6 +149,61 @@ def mock_api_context(payload_id):
 @app.route('/context', methods=['POST'])
 def create_context():
     req_data = request.json
+
+    if req_data.get('mode') == 'e2e':
+        e2e_endpoint = os.environ.get('ABSMARTLY_E2E_ENDPOINT')
+        e2e_api_key = os.environ.get('ABSMARTLY_E2E_API_KEY')
+        e2e_application = os.environ.get('ABSMARTLY_E2E_APPLICATION')
+        e2e_environment = os.environ.get('ABSMARTLY_E2E_ENVIRONMENT')
+        if not all([e2e_endpoint, e2e_api_key, e2e_application, e2e_environment]):
+            return jsonify({'error': 'e2e mode not configured'}), 501
+
+        context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+        event_collector = EventCollector()
+
+        client_config = ClientConfig()
+        client_config.endpoint = e2e_endpoint
+        client_config.api_key = e2e_api_key
+        client_config.application = e2e_application
+        client_config.environment = e2e_environment
+
+        http_client_config = DefaultHTTPClientConfig()
+        http_client = DefaultHTTPClient(http_client_config)
+        client = Client(client_config, http_client)
+
+        sdk_config = ABSmartlyConfig()
+        sdk_config.client = client
+        sdk_config.context_event_logger = event_collector
+
+        sdk = ABSmartly(sdk_config)
+
+        context_config = ContextConfig()
+        context_config.units = {k: str(v) for k, v in req_data['units'].items()}
+        context_config.publish_delay = -1
+        context_config.refresh_interval = 0
+
+        context = sdk.create_context(context_config)
+        context.wait_until_ready()
+
+        for name, value in (req_data.get('attributes') or {}).items():
+            context.set_attribute(name, value)
+
+        contexts[context_id] = {
+            'context': context,
+            'eventCollector': event_collector,
+            'publisher': None
+        }
+
+        return jsonify({
+            'result': {
+                'contextId': context_id,
+                'ready': context.is_ready(),
+                'failed': context.is_failed(),
+                'finalized': context.is_closed()
+            },
+            'events': event_collector.events
+        })
+
     context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
     event_collector = EventCollector()

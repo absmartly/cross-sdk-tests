@@ -288,6 +288,75 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
     if ($method === 'POST' && $path === '/context') {
         $body = parseJsonBody($request);
+
+        if (($body['mode'] ?? null) === 'e2e') {
+            $e2eEndpoint = getenv('ABSMARTLY_E2E_ENDPOINT') ?: null;
+            $e2eApiKey = getenv('ABSMARTLY_E2E_API_KEY') ?: null;
+            $e2eApplication = getenv('ABSMARTLY_E2E_APPLICATION') ?: null;
+            $e2eEnvironment = getenv('ABSMARTLY_E2E_ENVIRONMENT') ?: null;
+            if (!$e2eEndpoint || !$e2eApiKey || !$e2eApplication || !$e2eEnvironment) {
+                return jsonResponse(501, ['error' => 'e2e mode not configured']);
+            }
+
+            $contextId = 'ctx-' . time() . '-' . mt_rand();
+            $eventCollector = new EventCollector();
+
+            $clientConfig = new ClientConfig(
+                $e2eEndpoint,
+                $e2eApiKey,
+                $e2eApplication,
+                $e2eEnvironment
+            );
+
+            $reactHttpClient = new ReactHttpClient();
+            $reactHttpClient->timeout = 10000;
+            $client = new Client($clientConfig, $reactHttpClient);
+
+            $sdkConfig = new Config($client);
+            $sdkConfig->setContextDataProvider(new AsyncContextDataProvider($client));
+
+            $sdk = new SDK($sdkConfig);
+
+            $contextConfig = new ContextConfig();
+            $contextConfig->setPublishDelay(-1);
+            $contextConfig->setRefreshInterval(0);
+            $contextConfig->setEventLogger($eventCollector);
+
+            if (isset($body['units'])) {
+                foreach ($body['units'] as $unitType => $uid) {
+                    $contextConfig->setUnit($unitType, (string)$uid);
+                }
+            }
+
+            return $sdk->createContextAsync($contextConfig)->then(
+                function($context) use ($contextId, $eventCollector, $sdk, $body, &$contexts) {
+                    foreach (($body['attributes'] ?? []) as $name => $value) {
+                        $context->setAttribute($name, $value);
+                    }
+
+                    $contexts[$contextId] = [
+                        'context' => $context,
+                        'eventCollector' => $eventCollector,
+                        'publisher' => null,
+                        'sdk' => $sdk
+                    ];
+
+                    return jsonResponse(200, [
+                        'result' => [
+                            'contextId' => $contextId,
+                            'ready' => $context->isReady(),
+                            'failed' => $context->isFailed(),
+                            'finalized' => $context->isClosed()
+                        ],
+                        'events' => $eventCollector->getEvents()
+                    ]);
+                },
+                function($error) {
+                    return jsonResponse(500, ['error' => $error->getMessage()]);
+                }
+            );
+        }
+
         $contextId = 'ctx-' . time() . '-' . mt_rand();
 
         $eventCollector = new EventCollector();
