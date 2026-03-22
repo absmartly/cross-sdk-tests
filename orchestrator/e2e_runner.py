@@ -44,7 +44,15 @@ def parse_json_output(output: str) -> Any:
     try:
         return json.loads(output)
     except json.JSONDecodeError:
-        return None
+        pass
+    for end_char in (']', '}'):
+        idx = output.rfind(end_char)
+        if idx >= 0:
+            try:
+                return json.loads(output[:idx + 1])
+            except json.JSONDecodeError:
+                continue
+    return None
 
 
 def _extract_id(output: str) -> Optional[str]:
