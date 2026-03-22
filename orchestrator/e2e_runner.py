@@ -94,6 +94,24 @@ class E2ERunner:
         if self.verbose:
             print(f"  {Colors.CYAN}[debug]{Colors.RESET} {msg}")
 
+    def _find_resource(self, resource_type: str, name: str) -> Optional[str]:
+        rc, output = run_abs([resource_type, "list", "--items", "500"], self.profile)
+        if rc != 0:
+            return None
+        data = parse_json_output(output)
+        if data:
+            items = data if isinstance(data, list) else data.get(resource_type, data.get("items", []))
+            for item in items:
+                if item.get("name") == name:
+                    return str(item["id"])
+        import re
+        for line in output.split('\n'):
+            if name in line:
+                match = re.search(r'│\s*(\d+)\s*│', line)
+                if match:
+                    return match.group(1)
+        return None
+
     def run(self) -> Dict[str, Any]:
         print(f"\n{Colors.BOLD}E2E Test Run: {self.run_id}{Colors.RESET}")
         print(f"  SDKs: {', '.join(self.sdks.keys())}")
@@ -127,18 +145,18 @@ class E2ERunner:
         print(f"  {Colors.GREEN}Resources ready{Colors.RESET} app={self.app_id} unit_type={self.unit_type} owner={self.owner_id} metric={self.metric_id}")
 
     def _ensure_application(self) -> None:
-        rc, output = run_abs(["apps", "list", "--items", "500"], self.profile)
-        if rc == 0:
-            data = parse_json_output(output)
-            if data:
-                items = data if isinstance(data, list) else data.get("applications", data.get("items", []))
-                for item in items:
-                    if item.get("name") == "e2e-tests":
-                        self.app_id = str(item["id"])
-                        self.log(f"Found application 'e2e-tests' with id={self.app_id}")
-                        return
+        self.app_id = self._find_resource("apps", "e2e-tests")
+        if self.app_id:
+            self.log(f"Found application 'e2e-tests' with id={self.app_id}")
+            return
 
         rc, output = run_abs(["apps", "create", "--name", "e2e-tests"], self.profile)
+        if rc != 0 and "already exists" in output:
+            self.app_id = self._find_resource("apps", "e2e-tests")
+            if self.app_id:
+                self.log(f"Found application 'e2e-tests' with id={self.app_id} (after create conflict)")
+                return
+            raise RuntimeError(f"Application 'e2e-tests' exists but could not find its ID")
         if rc != 0:
             raise RuntimeError(f"Failed to create application 'e2e-tests': {output}")
 
@@ -148,21 +166,10 @@ class E2ERunner:
         self.log(f"Created application 'e2e-tests' with id={self.app_id}")
 
     def _ensure_unit_type(self) -> None:
-        rc, output = run_abs(["units", "list", "--items", "500"], self.profile)
-        if rc != 0:
-            raise RuntimeError(f"Failed to list unit types: {output}")
-
-        data = parse_json_output(output)
-        if not data:
-            raise RuntimeError(f"Could not parse unit types output: {output}")
-
-        items = data if isinstance(data, list) else data.get("unit_types", data.get("items", []))
-        for item in items:
-            if item.get("name") == "user_id":
-                self.unit_type = str(item["id"])
-                self.log(f"Found unit type 'user_id' with id={self.unit_type}")
-                return
-
+        self.unit_type = self._find_resource("units", "user_id")
+        if self.unit_type:
+            self.log(f"Found unit type 'user_id' with id={self.unit_type}")
+            return
         raise RuntimeError("Unit type 'user_id' not found")
 
     def _ensure_owner(self) -> None:
@@ -184,18 +191,16 @@ class E2ERunner:
         raise RuntimeError("No non-archived users found")
 
     def _ensure_goal(self) -> None:
-        rc, output = run_abs(["goals", "list", "--items", "500"], self.profile)
-        if rc == 0:
-            data = parse_json_output(output)
-            if data:
-                items = data if isinstance(data, list) else data.get("goals", data.get("items", []))
-                for item in items:
-                    if item.get("name") == "purchase":
-                        self.goal_id = str(item["id"])
-                        self.log(f"Found goal 'purchase' with id={self.goal_id}")
-                        return
+        self.goal_id = self._find_resource("goals", "purchase")
+        if self.goal_id:
+            self.log(f"Found goal 'purchase' with id={self.goal_id}")
+            return
 
         rc, output = run_abs(["goals", "create", "--name", "purchase"], self.profile)
+        if rc != 0 and "already exists" in output:
+            self.goal_id = self._find_resource("goals", "purchase")
+            if self.goal_id:
+                return
         if rc != 0:
             raise RuntimeError(f"Failed to create goal 'purchase': {output}")
 
