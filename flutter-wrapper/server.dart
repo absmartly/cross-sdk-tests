@@ -384,6 +384,72 @@ Future<void> startServer() async {
       final units = body['units'] as Map<String, dynamic>;
       final options = body['options'] as Map<String, dynamic>? ?? {};
 
+      if (body['mode'] == 'e2e') {
+        final e2eEndpoint = Platform.environment['ABSMARTLY_E2E_ENDPOINT'];
+        final e2eApiKey = Platform.environment['ABSMARTLY_E2E_API_KEY'];
+        final e2eApp = Platform.environment['ABSMARTLY_E2E_APPLICATION'];
+        final e2eEnv = Platform.environment['ABSMARTLY_E2E_ENVIRONMENT'];
+
+        if (e2eEndpoint == null || e2eApiKey == null || e2eApp == null || e2eEnv == null) {
+          return shelf.Response(501,
+            body: jsonEncode({'error': 'e2e mode not configured'}),
+            headers: {'Content-Type': 'application/json'},
+          );
+        }
+
+        final contextId = 'ctx-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+        final eventCollector = EventCollector();
+
+        final clientConfig = ClientConfig.create()
+          .setEndpoint(e2eEndpoint)
+          .setAPIKey(e2eApiKey)
+          .setApplication(e2eApp)
+          .setEnvironment(e2eEnv);
+        final client = Client.create(clientConfig);
+
+        final sdkConfig = ABSmartlyConfig.create()
+          .setClient(client)
+          .setContextEventLogger(eventCollector);
+
+        final e2eSdk = ABSmartly(sdkConfig);
+
+        final unitsMap = Map<String, String>.from(
+          units.map((key, value) => MapEntry(key.toString(), value.toString()))
+        );
+
+        final contextConfig = ContextConfig();
+        contextConfig.setUnits(unitsMap);
+
+        final context = e2eSdk.createContext(contextConfig);
+        await context.waitUntilReady();
+        for (int i = 0; i < 50 && eventCollector.events.isEmpty; i++) {
+          await Future.delayed(Duration(milliseconds: 10));
+        }
+
+        final attributes = body['attributes'] as Map<String, dynamic>?;
+        if (attributes != null) {
+          for (final entry in attributes.entries) {
+            context.setAttribute(entry.key, entry.value);
+          }
+        }
+
+        final dataProvider = CustomDataProvider();
+        contexts[contextId] = ContextStore(context, eventCollector, dataProvider, {}, CustomPublisher(eventCollector));
+
+        return shelf.Response.ok(
+          jsonEncode({
+            'result': {
+              'contextId': contextId,
+              'ready': context.isReady(),
+              'failed': context.isFailed(),
+              'finalized': context.isClosed(),
+            },
+            'events': eventCollector.events,
+          }),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+
       final contextId = 'ctx-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
       final failLoad = body['failLoad'] == true;
 

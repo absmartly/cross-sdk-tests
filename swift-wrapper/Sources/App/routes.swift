@@ -453,9 +453,71 @@ func routes(_ app: VaporApplication) throws {
             let units: [String: AnyCodable]
             let options: ContextOptionsDTO?
             let failLoad: Bool?
+            let mode: String?
+            let attributes: [String: AnyCodable]?
         }
 
         let request = try req.content.decode(CreateContextRequest.self)
+
+        if request.mode == "e2e" {
+            guard let e2eEndpoint = ProcessInfo.processInfo.environment["ABSMARTLY_E2E_ENDPOINT"],
+                  let e2eApiKey = ProcessInfo.processInfo.environment["ABSMARTLY_E2E_API_KEY"],
+                  let e2eApp = ProcessInfo.processInfo.environment["ABSMARTLY_E2E_APPLICATION"],
+                  let e2eEnv = ProcessInfo.processInfo.environment["ABSMARTLY_E2E_ENVIRONMENT"] else {
+                return try HTTPResponse(status: .notImplemented, body: .init(data: JSONSerialization.data(withJSONObject: ["error": "e2e mode not configured"], options: [])))
+            }
+
+            let contextId = "ctx-\(Date().timeIntervalSince1970)-\(UUID().uuidString)"
+            let eventCollector = EventCollector()
+
+            let clientConfig = ClientConfig(
+                apiKey: e2eApiKey,
+                application: e2eApp,
+                endpoint: e2eEndpoint,
+                environment: e2eEnv
+            )
+            let client = try DefaultClient(config: clientConfig)
+            let sdkConfig = ABSmartlyConfig(
+                contextDataProvider: nil,
+                contextPublisher: nil,
+                contextEventLogger: eventCollector,
+                variableParser: nil,
+                scheduler: nil,
+                client: client
+            )
+            let e2eSdk = try ABSmartlySDK(config: sdkConfig)
+
+            var unitsDict: [String: String] = [:]
+            for (key, value) in request.units {
+                unitsDict[key] = "\(value.value)"
+            }
+
+            var configBuilder = ContextConfig()
+            configBuilder.setUnits(units: unitsDict)
+            configBuilder.eventLogger = eventCollector
+
+            let context = e2eSdk.createContext(config: configBuilder)
+            _ = try await context.waitUntilReady().asyncValue()
+
+            if let attributes = request.attributes {
+                for (key, value) in attributes {
+                    context.setAttribute(name: key, value: JSON(value.value))
+                }
+            }
+
+            contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: e2eSdk)
+
+            let result: [String: Any] = [
+                "result": [
+                    "contextId": contextId,
+                    "ready": context.isReady(),
+                    "failed": context.isFailed(),
+                    "finalized": context.isClosed()
+                ],
+                "events": sanitizeForJSON(eventCollector.events)
+            ]
+            return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+        }
         let contextId = "ctx-\(Date().timeIntervalSince1970)-\(UUID().uuidString)"
 
         let eventCollector = EventCollector()
