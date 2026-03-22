@@ -173,6 +173,64 @@ public class WrapperController {
     @PostMapping("/context")
     public ResponseEntity<?> createContext(@RequestBody Map<String, Object> request) {
         try {
+            String mode = (String) request.get("mode");
+            if ("e2e".equals(mode)) {
+                String e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT");
+                String e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY");
+                String e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION");
+                String e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT");
+                if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
+                    return ResponseEntity.status(501).body(Collections.singletonMap("error", "e2e mode not configured"));
+                }
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> e2eUnits = (Map<String, Object>) request.get("units");
+                @SuppressWarnings("unchecked")
+                Map<String, Object> e2eAttrs = (Map<String, Object>) request.get("attributes");
+
+                EventCollector e2eCollector = new EventCollector();
+                ContextConfig e2eContextConfig = ContextConfig.create();
+                if (e2eUnits != null) {
+                    for (Map.Entry<String, Object> entry : e2eUnits.entrySet()) {
+                        e2eContextConfig.setUnit(entry.getKey(), String.valueOf(entry.getValue()));
+                    }
+                }
+
+                ClientConfig e2eClientConfig = ClientConfig.create()
+                    .setEndpoint(e2eEndpoint)
+                    .setAPIKey(e2eApiKey)
+                    .setApplication(e2eApplication)
+                    .setEnvironment(e2eEnvironment);
+                Client e2eClient = Client.create(e2eClientConfig);
+                ABSmartlyConfig e2eSdkConfig = ABSmartlyConfig.create()
+                    .setClient(e2eClient)
+                    .setContextEventLogger(e2eCollector);
+                ABSmartly e2eSdk = ABSmartly.create(e2eSdkConfig);
+                Context e2eContext = e2eSdk.createContext(e2eContextConfig);
+
+                if (e2eAttrs != null) {
+                    for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
+                        e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                    }
+                }
+
+                e2eContext.waitUntilReady();
+
+                String e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                contexts.put(e2eContextId, new ContextWrapper(e2eContext, e2eCollector, null, null));
+
+                Map<String, Object> e2eResult = new HashMap<>();
+                e2eResult.put("contextId", e2eContextId);
+                e2eResult.put("ready", e2eContext.isReady());
+                e2eResult.put("failed", e2eContext.isFailed());
+                e2eResult.put("finalized", e2eContext.isClosed());
+
+                Map<String, Object> e2eResponse = new HashMap<>();
+                e2eResponse.put("result", e2eResult);
+                e2eResponse.put("events", e2eCollector.getEvents());
+                return ResponseEntity.ok(e2eResponse);
+            }
+
             com.absmartly.sdk.json.ContextData contextData = null;
             if (request.containsKey("data")) {
                 contextData = objectMapper.convertValue(

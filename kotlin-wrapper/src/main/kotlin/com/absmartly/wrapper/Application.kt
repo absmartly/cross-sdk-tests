@@ -127,6 +127,62 @@ fun Application.configureRouting() {
         post("/context") {
             try {
                 val request = call.receive<Map<String, Any>>()
+
+                if (request["mode"] == "e2e") {
+                    val e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT")
+                    val e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY")
+                    val e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION")
+                    val e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT")
+                    if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
+                        call.respond(HttpStatusCode.NotImplemented, mapOf("error" to "e2e mode not configured"))
+                        return@post
+                    }
+
+                    @Suppress("UNCHECKED_CAST")
+                    val e2eUnits = request["units"] as? Map<String, Any> ?: emptyMap()
+                    @Suppress("UNCHECKED_CAST")
+                    val e2eAttrs = request["attributes"] as? Map<String, Any>
+
+                    val e2eCollector = EventCollector()
+                    val e2eContextConfig = ContextConfig.create()
+                    for ((key, value) in e2eUnits) {
+                        e2eContextConfig.setUnit(key, value.toString())
+                    }
+
+                    val e2eClientConfig = com.absmartly.sdk.ClientConfig.create()
+                        .setEndpoint(e2eEndpoint)
+                        .setAPIKey(e2eApiKey)
+                        .setApplication(e2eApplication)
+                        .setEnvironment(e2eEnvironment)
+                    val e2eClient = com.absmartly.sdk.Client.create(e2eClientConfig)
+                    val e2eSdkConfig = ABSmartlyConfig.create()
+                        .setClient(e2eClient)
+                        .setContextEventLogger(e2eCollector)
+                    val e2eSdk = ABsmartly.create(e2eSdkConfig)
+                    val e2eContext = e2eSdk.createContext(e2eContextConfig)
+
+                    if (e2eAttrs != null) {
+                        for ((key, value) in e2eAttrs) {
+                            e2eContext.setAttribute(key, value)
+                        }
+                    }
+
+                    e2eContext.waitUntilReady()
+
+                    val e2eContextId = "ctx-${System.currentTimeMillis()}-${UUID.randomUUID()}"
+                    contexts[e2eContextId] = ContextWrapper(e2eContext, e2eCollector, null)
+                    call.respond(mapOf(
+                        "result" to mapOf(
+                            "contextId" to e2eContextId,
+                            "ready" to e2eContext.isReady,
+                            "failed" to e2eContext.isFailed,
+                            "finalized" to e2eContext.isClosed
+                        ),
+                        "events" to e2eCollector.getEvents()
+                    ))
+                    return@post
+                }
+
                 val contextId = "ctx-${System.currentTimeMillis()}-${UUID.randomUUID()}"
 
                 val eventCollector = EventCollector()

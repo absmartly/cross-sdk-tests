@@ -183,11 +183,13 @@ type Response struct {
 }
 
 type CreateContextRequest struct {
-	Data     jsonmodels.ContextData `json:"data"`
-	Endpoint string                 `json:"endpoint"`
-	Units    map[string]interface{} `json:"units"`
-	Options  map[string]interface{} `json:"options"`
-	FailLoad bool                   `json:"failLoad"`
+	Data       jsonmodels.ContextData `json:"data"`
+	Endpoint   string                 `json:"endpoint"`
+	Units      map[string]interface{} `json:"units"`
+	Options    map[string]interface{} `json:"options"`
+	FailLoad   bool                   `json:"failLoad"`
+	Mode       string                 `json:"mode"`
+	Attributes map[string]interface{} `json:"attributes"`
 }
 
 type StorePayloadRequest struct {
@@ -340,6 +342,92 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Mode == "e2e" {
+		e2eEndpoint := os.Getenv("ABSMARTLY_E2E_ENDPOINT")
+		e2eApiKey := os.Getenv("ABSMARTLY_E2E_API_KEY")
+		e2eApplication := os.Getenv("ABSMARTLY_E2E_APPLICATION")
+		e2eEnvironment := os.Getenv("ABSMARTLY_E2E_ENVIRONMENT")
+		if e2eEndpoint == "" || e2eApiKey == "" || e2eApplication == "" || e2eEnvironment == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(501)
+			json.NewEncoder(w).Encode(map[string]string{"error": "e2e mode not configured"})
+			return
+		}
+
+		e2eEventCollector := &EventCollector{events: []Event{}}
+		e2eVariableParser := &CustomVariableParser{}
+
+		e2eClientConfig := sdk.ClientConfig{
+			Endpoint_:    e2eEndpoint,
+			ApiKey_:      e2eApiKey,
+			Application_: e2eApplication,
+			Environment_: e2eEnvironment,
+		}
+		e2eClient := sdk.CreateDefaultClient(e2eClientConfig)
+		e2eAbsmartly := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:              e2eClient,
+			ContextEventLogger_: e2eEventCollector,
+			VariableParser_:     e2eVariableParser,
+		})
+
+		e2eUnits := make(map[string]string)
+		for k, v := range req.Units {
+			switch val := v.(type) {
+			case string:
+				e2eUnits[k] = val
+			case float64:
+				if val == float64(int64(val)) {
+					e2eUnits[k] = fmt.Sprintf("%.0f", val)
+				} else {
+					e2eUnits[k] = fmt.Sprintf("%g", val)
+				}
+			default:
+				e2eUnits[k] = fmt.Sprintf("%v", val)
+			}
+		}
+
+		e2eContextConfig := sdk.ContextConfig{
+			Units_:          e2eUnits,
+			Attributes_:     make(map[string]interface{}),
+			Overrides_:      make(map[string]int),
+			Cassigmnents_:   make(map[string]int),
+			EventLogger_:    e2eEventCollector,
+			PublishDelay_:   int64(-1),
+			RefreshInterval_: int64(-1),
+		}
+
+		e2eContext := e2eAbsmartly.CreateContext(e2eContextConfig)
+
+		for k, v := range req.Attributes {
+			_ = e2eContext.SetAttribute(k, v)
+		}
+
+		e2eContext.WaitUntilReady()
+
+		e2eContextID := fmt.Sprintf("ctx-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
+		e2eCtxData := &ContextData{
+			context:        e2eContext,
+			eventCollector: e2eEventCollector,
+		}
+
+		contextsMu.Lock()
+		contexts[e2eContextID] = e2eCtxData
+		contextsMu.Unlock()
+
+		e2eResponse := Response{
+			Result: CreateContextResponse{
+				ContextID: e2eContextID,
+				Ready:     e2eContext.IsReady(),
+				Failed:    e2eContext.IsFailed(),
+				Finalized: e2eContext.IsClosed(),
+			},
+			Events: e2eEventCollector.SliceFrom(0),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(e2eResponse)
 		return
 	}
 

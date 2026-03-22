@@ -135,6 +135,54 @@ object Server extends IOApp {
     case req @ POST -> Root / "context" =>
       req.as[Json].flatMap { json =>
         val cursor = json.hcursor
+        val mode = cursor.downField("mode").as[String].getOrElse("")
+
+        if (mode == "e2e") {
+          val e2eEndpoint = Option(System.getenv("ABSMARTLY_E2E_ENDPOINT"))
+          val e2eApiKey = Option(System.getenv("ABSMARTLY_E2E_API_KEY"))
+          val e2eApplication = Option(System.getenv("ABSMARTLY_E2E_APPLICATION"))
+          val e2eEnvironment = Option(System.getenv("ABSMARTLY_E2E_ENVIRONMENT"))
+
+          (e2eEndpoint, e2eApiKey, e2eApplication, e2eEnvironment) match {
+            case (Some(endpoint), Some(apiKey), Some(application), Some(environment)) =>
+              val units = parseUnitsMap(cursor.downField("units"))
+              val attrs = cursor.downField("attributes").as[Map[String, Json]].getOrElse(Map.empty)
+
+              IO.fromFuture(IO {
+                val collector = new WrapperEventCollector()
+                val sdkConfig = SDKConfig(
+                  endpoint = endpoint,
+                  apiKey = apiKey,
+                  application = application,
+                  environment = environment,
+                  eventLogger = collector
+                )
+                val sdk = new SDK(sdkConfig)
+                sdk.createContext(units).map { context =>
+                  attrs.foreach { case (name, value) => context.setAttribute(name, value) }
+                  (context, collector)
+                }
+              }).flatMap { case (context, collector) =>
+                val contextId = s"ctx-${contextCounter.getAndIncrement()}"
+                contexts(contextId) = (context, collector)
+                Ok(wrapperResponse(
+                  Json.obj(
+                    "contextId" -> Json.fromString(contextId),
+                    "ready" -> Json.fromBoolean(context.isReady()),
+                    "failed" -> Json.fromBoolean(context.isFailed()),
+                    "finalized" -> Json.fromBoolean(context.isFinalized())
+                  ),
+                  collector.getEvents()
+                ))
+              }.handleErrorWith { err =>
+                InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+              }
+
+            case _ =>
+              NotImplemented(Json.obj("error" -> Json.fromString("e2e mode not configured")))
+          }
+        } else {
+
         val units = parseUnitsMap(cursor.downField("units"))
 
         val options = ContextOptions(
@@ -220,6 +268,7 @@ object Server extends IOApp {
           ))
         }.handleErrorWith { err =>
           InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+        }
         }
       }
 
