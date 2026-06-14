@@ -105,6 +105,13 @@ services:
       dockerfile: cross-sdk-tests/cpp-wrapper/Dockerfile
       target: tester
 
+  typescript-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/typescript-wrapper/Dockerfile
+      target: tester
+
   liquid-unit:
     init: true
     build:
@@ -401,6 +408,19 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
+  typescript-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/typescript-wrapper/Dockerfile
+    ports:
+      - "3021:3000"
+    environment:
+      - SDK_NAME=typescript
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
   orchestrator:
     build:
       context: .
@@ -426,6 +446,7 @@ services:
       - kotlin-sdk
       - angular-sdk
       - cpp-sdk
+      - typescript-sdk
     volumes:
       - ./test_scenarios_complete.json:/test_scenarios_complete.json:ro
       - ./test-results:/results
