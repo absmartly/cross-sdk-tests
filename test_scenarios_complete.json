@@ -14420,7 +14420,7 @@
               "config": null
             }
           ],
-          "audience": "{\"filter\":[{\"in\":[{\"var\":\"region\"},{\"value\":[\"NORTH\",\"SOUTH\",\"EAST\"]}]}]}",
+          "audience": "{\"filter\":[{\"in\":[{\"value\":[\"NORTH\",\"SOUTH\",\"EAST\"]},{\"var\":\"region\"}]}]}",
           "audienceStrict": false,
           "customFieldValues": null
         }
@@ -16553,7 +16553,7 @@
               "config": null
             }
           ],
-          "audience": "{\"filter\": [{\"in\": [{\"var\": \"count\"}, {\"value\": [1, 5, 10, 100]}]}]}",
+          "audience": "{\"filter\": [{\"in\": [{\"value\": [1, 5, 10, 100]}, {\"var\": \"count\"}]}]}",
           "audienceStrict": false,
           "customFieldValues": null
         }
@@ -17197,7 +17197,7 @@
               "config": null
             }
           ],
-          "audience": "{\"filter\":[{\"and\":[{\"in\":[{\"var\":\"country\"},{\"value\":[\"US\",\"CA\",\"MX\"]}]},{\"in\":[{\"var\":\"device\"},{\"value\":[\"mobile\",\"tablet\"]}]}]}]}",
+          "audience": "{\"filter\":[{\"and\":[{\"in\":[{\"value\":[\"US\",\"CA\",\"MX\"]},{\"var\":\"country\"}]},{\"in\":[{\"value\":[\"mobile\",\"tablet\"]},{\"var\":\"device\"}]}]}]}",
           "audienceStrict": false,
           "customFieldValues": null
         }

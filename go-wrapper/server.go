@@ -782,8 +782,8 @@ func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
 
 	var result interface{}
 	for _, attr := range ctxData.context.Attributes_ {
-		if a, ok := attr.(map[string]interface{}); ok && a["name"] == req.Name {
-			result = a["value"]
+		if a, ok := attr.(jsonmodels.Attribute); ok && a.Name == req.Name {
+			result = a.Value
 		}
 	}
 
@@ -1482,8 +1482,8 @@ func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
 
 	attrsMap := make(map[string]interface{})
 	for _, attr := range ctxData.context.Attributes_ {
-		if a, ok := attr.(map[string]interface{}); ok {
-			attrsMap[a["name"].(string)] = a["value"]
+		if a, ok := attr.(jsonmodels.Attribute); ok {
+			attrsMap[a.Name] = a.Value
 		}
 	}
 
