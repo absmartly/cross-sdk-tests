@@ -261,15 +261,17 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
     if ($method === 'PUT' && preg_match('#^/context_payload/([^/]+)$#', $path, $matches)) {
         $payloadId = $matches[1];
-        $body = parseJsonBody($request);
-        $payloadStore[$payloadId] = $body['data'] ?? ['experiments' => []];
+        // Store the payload verbatim (parsed as objects, never reshaped); the
+        // GET handler serves it back as-is for the SDK to fetch.
+        $body = parseJsonBodyPreserveObjects($request);
+        $payloadStore[$payloadId] = $body->data ?? (object)['experiments' => []];
 
         return jsonResponse(200, ['success' => true]);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
         $payloadId = $matches[1];
-        $data = $payloadStore[$payloadId] ?? ['experiments' => []];
+        $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
         return jsonResponse(200, $data);
     }
 
@@ -281,15 +283,19 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             usleep($throttle * 1000);
         }
 
-        $data = $payloadStore[$payloadId] ?? ['experiments' => []];
+        $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
 
         return jsonResponse(200, $data);
     }
 
     if ($method === 'POST' && $path === '/context') {
-        $body = parseJsonBody($request);
+        // Parse the request body ONCE as objects (stdClass), never as an
+        // assoc-array. The envelope fields (mode/units/options/endpoint/
+        // failLoad) tell the wrapper how to build the context; the `data`
+        // field is the collector payload and is passed through untouched.
+        $body = parseJsonBodyPreserveObjects($request);
 
-        if (($body['mode'] ?? null) === 'e2e') {
+        if (($body->mode ?? null) === 'e2e') {
             $e2eEndpoint = getenv('ABSMARTLY_E2E_ENDPOINT') ?: null;
             $e2eApiKey = getenv('ABSMARTLY_E2E_API_KEY') ?: null;
             $e2eApplication = getenv('ABSMARTLY_E2E_APPLICATION') ?: null;
@@ -322,15 +328,15 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $contextConfig->setRefreshInterval(0);
             $contextConfig->setEventLogger($eventCollector);
 
-            if (isset($body['units'])) {
-                foreach ($body['units'] as $unitType => $uid) {
+            if (isset($body->units)) {
+                foreach ((array)$body->units as $unitType => $uid) {
                     $contextConfig->setUnit($unitType, (string)$uid);
                 }
             }
 
             return $sdk->createContextAsync($contextConfig)->then(
                 function($context) use ($contextId, $eventCollector, $sdk, $body, &$contexts) {
-                    foreach (($body['attributes'] ?? []) as $name => $value) {
+                    foreach ((array)($body->attributes ?? []) as $name => $value) {
                         $context->setAttribute($name, $value);
                     }
 
@@ -362,7 +368,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventCollector = new EventCollector();
         $publisher = new CustomPublisher($eventCollector);
 
-        $endpoint = $body['endpoint'] ?? 'http://dummy';
+        $endpoint = $body->endpoint ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
 
         $clientConfig = new ClientConfig(
@@ -379,11 +385,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $sdkConfig = new Config($client);
         $sdkConfig->setContextPublisher($publisher);
 
-        $payloadThrottle = (int)($body['options']['payloadThrottle'] ?? 0);
+        $payloadThrottle = (int)($body->options->payloadThrottle ?? 0);
 
-        $failLoad = (bool)($body['failLoad'] ?? false);
+        $failLoad = (bool)($body->failLoad ?? false);
 
-        if (isset($body['data'])) {
+        if (isset($body->data)) {
             $sdkConfig->setContextDataProvider(new DummyContextDataProvider());
         } elseif ($failLoad) {
             $sdkConfig->setContextDataProvider(new FailingAsyncContextDataProvider());
@@ -399,39 +405,27 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextConfig->setPublishDelay(-1);
         $contextConfig->setRefreshInterval(0);
 
-        if (isset($body['units'])) {
-            foreach ($body['units'] as $unitType => $uid) {
+        if (isset($body->units)) {
+            foreach ((array)$body->units as $unitType => $uid) {
                 $contextConfig->setUnit($unitType, (string)$uid);
             }
         }
 
-        if (isset($body['options']['publishDelay'])) {
-            $contextConfig->setPublishDelay((int)$body['options']['publishDelay']);
+        if (isset($body->options->publishDelay)) {
+            $contextConfig->setPublishDelay((int)$body->options->publishDelay);
         }
-        if (isset($body['options']['refreshPeriod'])) {
-            $contextConfig->setRefreshInterval((int)$body['options']['refreshPeriod']);
+        if (isset($body->options->refreshPeriod)) {
+            $contextConfig->setRefreshInterval((int)$body->options->refreshPeriod);
         }
 
         $contextConfig->setEventLogger($eventCollector);
 
-        if (isset($body['data'])) {
-            $contextData = new ContextData();
-            if (isset($body['data']['experiments'])) {
-                $contextData->experiments = array_map(function($exp) {
-                    if (isset($exp['customFieldValues']) && is_array($exp['customFieldValues'])) {
-                        $customFieldValuesObj = new \stdClass();
-                        foreach ($exp['customFieldValues'] as $field) {
-                            $name = $field['name'];
-                            $customFieldValuesObj->{$name} = $field['value'];
-                            $customFieldValuesObj->{$name . '_type'} = $field['type'];
-                        }
-                        $exp['customFieldValues'] = $customFieldValuesObj;
-                    }
-                    return json_decode(json_encode($exp));
-                }, $body['data']['experiments']);
-            } else {
-                $contextData->experiments = [];
-            }
+        if (isset($body->data)) {
+            // Hand the experiments straight to the SDK — exactly as the SDK's
+            // own collector fetch does (new ContextData($decoded->experiments)).
+            // The wrapper never inspects or reshapes the payload.
+            $experiments = $body->data->experiments ?? [];
+            $contextData = new ContextData($experiments);
             $context = $sdk->createContextWithData($contextConfig, $contextData);
 
             $contexts[$contextId] = [

@@ -184,6 +184,7 @@ class TestOrchestrator:
             }
 
         context_id = None
+        payload_id = None
         failures: List[Dict[str, Any]] = []
 
         for step_index, step in enumerate(steps):
@@ -212,7 +213,19 @@ class TestOrchestrator:
                 continue
 
             try:
-                if action == "createContextWith":
+                # Default: drive context creation through the live fetch path so the
+                # SDK's real ContextDataProvider/Client fetches and deserializes the
+                # payload from the wrapper endpoint (exactly as it would from the
+                # collector). Exactly one scenario keeps the literal createContextWith
+                # API to cover pre-fetched-data construction; its payload is passed
+                # as-is with no reshaping.
+                CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
+                use_create_with = (
+                    action == "createContextWith"
+                    and scenario.get("name") == CREATE_WITH_SCENARIO
+                )
+
+                if use_create_with:
                     response = requests.post(
                         f"{base_url}/context",
                         json={
@@ -226,7 +239,7 @@ class TestOrchestrator:
                     data = response.json()
                     context_id = data["result"]["contextId"]
 
-                elif action == "createContext":
+                elif action in ("createContext", "createContextWith"):
                     import uuid
 
                     payload_id = f"payload-{uuid.uuid4()}"

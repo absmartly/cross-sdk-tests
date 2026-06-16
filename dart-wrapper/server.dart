@@ -923,48 +923,7 @@ void main() async {
       final experimentName = body['experimentName'] as String;
       final fieldName = body['fieldName'] as String;
 
-      final experiments = ctxData.rawData['experiments'] as List<dynamic>?;
-      dynamic result;
-
-      if (experiments != null) {
-        for (final exp in experiments) {
-          if (exp['name'] == experimentName) {
-            final customFieldValues = exp['customFieldValues'] as List<dynamic>?;
-            if (customFieldValues != null) {
-              for (final field in customFieldValues) {
-                if (field['name'] == fieldName) {
-                  final type = field['type'] as String?;
-                  final value = field['value'];
-
-                  switch (type) {
-                    case 'string':
-                    case 'text':
-                      result = value;
-                      break;
-                    case 'number':
-                      result = num.tryParse(value.toString());
-                      break;
-                    case 'boolean':
-                      result = value.toString().toLowerCase() == 'true';
-                      break;
-                    case 'json':
-                      try {
-                        result = jsonDecode(value.toString());
-                      } catch (_) {
-                        result = value;
-                      }
-                      break;
-                    default:
-                      result = value;
-                  }
-                  break;
-                }
-              }
-            }
-            break;
-          }
-        }
-      }
+      final result = ctxData.context.customFieldValue(experimentName, fieldName);
 
       return shelf.Response.ok(
         jsonEncode({'result': result, 'events': []}),
@@ -1011,18 +970,7 @@ void main() async {
     try {
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final keys = <String>{};
-      final experiments = ctxData.rawData['experiments'] as List<dynamic>?;
-      if (experiments != null) {
-        for (final exp in experiments) {
-          final customFieldValues = exp['customFieldValues'] as List<dynamic>?;
-          if (customFieldValues != null) {
-            for (final field in customFieldValues) {
-              keys.add(field['name'] as String);
-            }
-          }
-        }
-      }
+      final keys = ctxData.context.customFieldKeys();
 
       final result = keys.toList()..sort();
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
@@ -1051,24 +999,7 @@ void main() async {
       final fieldName = body['fieldName'] as String;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      dynamic result;
-      final experiments = ctxData.rawData['experiments'] as List<dynamic>?;
-      if (experiments != null) {
-        for (final exp in experiments) {
-          if (exp['name'] == experimentName) {
-            final customFieldValues = exp['customFieldValues'] as List<dynamic>?;
-            if (customFieldValues != null) {
-              for (final field in customFieldValues) {
-                if (field['name'] == fieldName) {
-                  result = field['type'];
-                  break;
-                }
-              }
-            }
-            break;
-          }
-        }
-      }
+      final result = ctxData.context.customFieldValueType(experimentName, fieldName);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
 
@@ -1283,16 +1214,7 @@ void main() async {
     final ctxData = contexts[contextId];
     if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
     try {
-      final keys = <String>{};
-      final experiments = ctxData.rawData['experiments'] as List<dynamic>?;
-      if (experiments != null) {
-        for (final exp in experiments) {
-          final cfv = exp['customFieldValues'] as List<dynamic>?;
-          if (cfv != null) {
-            for (final field in cfv) { keys.add(field['name'] as String); }
-          }
-        }
-      }
+      final keys = ctxData.context.customFieldKeys();
       final result = keys.toList()..sort();
       return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
     } catch (e) {
