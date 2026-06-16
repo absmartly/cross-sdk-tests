@@ -18654,5 +18654,168 @@
         }
       }
     ]
+  },
+  {
+    "name": "202 - Variable Keys - Multiple Keys Across Experiments",
+    "description": "variableKeys() must aggregate all experiments per shared key AND keep distinct keys separate: two experiments define 'button.color' (both must appear in its list), a third defines 'banner.text' (only that one).",
+    "requires": [
+      "variableKeysMap"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_color_one",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"button.color\":\"blue\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 2,
+          "name": "exp_color_two",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 55006150,
+          "seedLo": 47189152,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 705671872,
+          "trafficSeedLo": 212903484,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"button.color\":\"red\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 3,
+          "name": "exp_banner",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 11223344,
+          "seedLo": 55667788,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 99887766,
+          "trafficSeedLo": 44332211,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.text\":\"hello\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "varkeys-multi-key-1"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableKeysMap",
+        "params": {},
+        "expect": {
+          "result": {
+            "button.color": [
+              "exp_color_one",
+              "exp_color_two"
+            ],
+            "banner.text": [
+              "exp_banner"
+            ]
+          },
+          "events": []
+        }
+      }
+    ]
   }
 ]

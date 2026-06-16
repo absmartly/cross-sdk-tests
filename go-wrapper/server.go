@@ -820,8 +820,17 @@ func treatmentHandler(w http.ResponseWriter, r *http.Request) {
 
 	variant, err := ctxData.context.GetTreatment(req.ExperimentName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "not yet ready") {
+			// Not-ready read methods return defaults (treatment -> 0), no error.
+			variant = 0
+		} else {
+			if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
+				errMsg = "Context finalized"
+			}
+			http.Error(w, errMsg, http.StatusBadRequest)
+			return
+		}
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -1158,8 +1167,11 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		if !strings.Contains(err.Error(), "not yet ready") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		keys = map[string]string{}
 	}
 
 	result := make([]string, 0, len(keys))
@@ -1423,8 +1435,12 @@ func experimentsHandler(w http.ResponseWriter, r *http.Request) {
 
 	experiments, err := ctxData.context.GetExperiments()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		if strings.Contains(err.Error(), "not yet ready") {
+			experiments = []string{}
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	response := Response{
@@ -1526,8 +1542,12 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		if strings.Contains(err.Error(), "not yet ready") {
+			keys = map[string]string{}
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
