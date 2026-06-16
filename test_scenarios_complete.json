@@ -16432,7 +16432,7 @@
   },
   {
     "name": "171 - JSON Edge Cases - Null Value Handling",
-    "description": "Comparing null var to null value should match (eq null null is true)",
+    "description": "Comparing a missing/null var to a null value does NOT match: eq(null, null) returns null (not true), so the audience does not match (audienceMismatch true). Non-strict audience still assigns the variant.",
     "contextData": {
       "experiments": [
         {
@@ -16507,7 +16507,7 @@
             {
               "type": "exposure",
               "data": {
-                "audienceMismatch": false
+                "audienceMismatch": true
               }
             }
           ]
