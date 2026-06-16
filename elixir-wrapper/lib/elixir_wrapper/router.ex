@@ -470,20 +470,26 @@ defmodule ElixirWrapper.Router do
 
     context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
 
-    case ABSmartly.Context.start_link_async(sdk_config, context_config) do
-      {:ok, ctx} ->
-        Task.start(fn ->
-          if payload_throttle > 0, do: Process.sleep(payload_throttle)
-          case HTTPoison.get(translated_endpoint <> "/context") do
-            {:ok, %{status_code: 200, body: body}} ->
-              case Jason.decode(body) do
-                {:ok, data} -> ABSmartly.Context.set_data(ctx, data)
-                _ -> :error
-              end
-            _ -> :error
-          end
-        end)
+    # Inject the fetch as the SDK's own data_fetcher so the SDK performs a
+    # SINGLE fetch and emits exactly one `ready` event. (Previously the wrapper
+    # also fetched via Task.start + set_data, causing a duplicate `ready`.)
+    data_fetcher = fn ->
+      if payload_throttle > 0, do: Process.sleep(payload_throttle)
 
+      case HTTPoison.get(translated_endpoint <> "/context") do
+        {:ok, %{status_code: 200, body: body}} ->
+          case Jason.decode(body) do
+            {:ok, data} -> {:ok, data}
+            _ -> {:error, "Invalid JSON response"}
+          end
+
+        _ ->
+          {:error, "Failed to fetch context"}
+      end
+    end
+
+    case ABSmartly.Context.start_link_async(sdk_config, context_config, data_fetcher: data_fetcher) do
+      {:ok, ctx} ->
         if payload_throttle == 0 do
           ABSmartly.Context.wait_until_ready(ctx, 10000)
         end
