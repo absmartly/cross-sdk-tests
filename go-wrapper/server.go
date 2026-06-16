@@ -1171,7 +1171,7 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		keys = map[string]string{}
+		keys = map[string][]string{}
 	}
 
 	result := make([]string, 0, len(keys))
@@ -1543,7 +1543,7 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
 		if strings.Contains(err.Error(), "not yet ready") {
-			keys = map[string]string{}
+			keys = map[string][]string{}
 		} else {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
