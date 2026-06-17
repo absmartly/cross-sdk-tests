@@ -10,6 +10,7 @@ CROSS_ONLY=false
 E2E=false
 SKIP_BUILD=false
 VERBOSE=false
+PROFILE=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -41,6 +42,14 @@ while [[ $# -gt 0 ]]; do
       E2E=true
       shift
       ;;
+    --profile)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --profile requires a value"
+        exit 1
+      fi
+      PROFILE="$2"
+      shift 2
+      ;;
     --skip-build)
       SKIP_BUILD=true
       shift
@@ -58,6 +67,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --unit-only       Only run unit tests"
       echo "  --cross-only      Only run cross-SDK tests (same as run-tests.sh)"
       echo "  --e2e             Also run end-to-end tests after unit+cross-SDK tests"
+      echo "  --profile <name>  ABsmartly CLI profile for --e2e (default: e2e)"
       echo "  --skip-build      Skip building images"
       echo "  -v, --verbose     Show verbose output"
       echo "  -h, --help        Show this help message"
@@ -70,6 +80,7 @@ while [[ $# -gt 0 ]]; do
       echo "  ./run-all-tests.sh --unit-only                  # Only run unit tests"
       echo "  ./run-all-tests.sh --cross-only                 # Only run cross-SDK tests"
       echo "  ./run-all-tests.sh --sdk go,rust --verbose      # Test Go and Rust with verbose output"
+      echo "  ./run-all-tests.sh --e2e --profile test-1       # Also run e2e against the test-1 profile"
       exit 0
       ;;
     *)
@@ -269,6 +280,9 @@ if [ "$E2E" = true ]; then
   E2E_ARGS="--skip-build"
   if [ -n "$SDK_NAMES" ]; then
     E2E_ARGS="$E2E_ARGS --sdk $SDK_NAMES"
+  fi
+  if [ -n "$PROFILE" ]; then
+    E2E_ARGS="$E2E_ARGS --profile $PROFILE"
   fi
   if [ "$VERBOSE" = true ]; then
     E2E_ARGS="$E2E_ARGS --verbose"
