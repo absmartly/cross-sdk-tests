@@ -28,12 +28,7 @@ UNIT_TEST_PARSERS = {
     },
     "java": {
         "framework": "gradle/junit",
-        "patterns": [
-            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?",
-             lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)),
-                        int(m.group(1)) + int(m.group(3) or 0))),
-            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0, None)),
-        ],
+        "custom_parser": "gradle_junit",
     },
     "php": {
         "framework": "phpunit",
@@ -122,12 +117,7 @@ UNIT_TEST_PARSERS = {
     },
     "kotlin": {
         "framework": "gradle/junit",
-        "patterns": [
-            (r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?",
-             lambda m: (int(m.group(1)) - int(m.group(2)), int(m.group(2)),
-                        int(m.group(1)) + int(m.group(3) or 0))),
-            (r"Executed\s+(\d+)\s+tests?\s+in\s+", lambda m: (int(m.group(1)), 0, None)),
-        ],
+        "custom_parser": "gradle_junit",
     },
     "cpp": {
         "framework": "catch2",
@@ -202,6 +192,33 @@ def parse_catch2_junit(output):
     return None, None, None
 
 
+def parse_gradle_junit(output):
+    """Parse Gradle/JUnit test output.
+
+    On failure Gradle prints a summary line ("N tests completed, M failed");
+    on success it prints no summary at all, only per-test lines
+    ("ClassName > testName() PASSED/FAILED/SKIPPED") followed by BUILD SUCCESSFUL.
+    Prefer the summary when present (authoritative); otherwise tally the
+    per-test result lines.
+    """
+    output = strip_ansi(output)
+
+    m = re.search(r"(\d+)\s+tests?\s+completed,\s+(\d+)\s+failed(?:,\s+(\d+)\s+skipped)?", output)
+    if m:
+        completed = int(m.group(1))
+        failed = int(m.group(2))
+        skipped = int(m.group(3) or 0)
+        return completed - failed, failed, completed + skipped
+
+    passed = len(re.findall(r"\bPASSED\s*$", output, re.MULTILINE))
+    failed = len(re.findall(r"\bFAILED\s*$", output, re.MULTILINE))
+    skipped = len(re.findall(r"\bSKIPPED\s*$", output, re.MULTILINE))
+    if passed or failed or skipped:
+        return passed, failed, passed + failed + skipped
+
+    return None, None, None
+
+
 def parse_pytest_summary(output):
     output = strip_ansi(output)
     matches = re.findall(r"=+\s+([\d\w,. ]+)\s+=+\s*$", output, re.MULTILINE)
@@ -262,6 +279,9 @@ def parse_unit_test_output(sdk, output):
 
     if parser.get("custom_parser") == "catch2_junit":
         return parse_catch2_junit(output)
+
+    if parser.get("custom_parser") == "gradle_junit":
+        return parse_gradle_junit(output)
 
     if parser.get("aggregate"):
         passed = 0
