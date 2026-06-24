@@ -5,6 +5,22 @@ cd "$(dirname "$0")"
 
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-csdk}"
 
+# Remove stale, git-ignored build artifacts (js/es/lib/types/dist/...) from the
+# JS-family SDK source dirs before building. These land in the Docker build
+# context and break the in-image `npm run build` (prettier/eslint format:check
+# trips on stale generated files). git clean -dfX only ever deletes files git
+# already ignores, so source is never touched. No-op for non-git or absent dirs.
+clean_js_build_artifacts() {
+  local js_sdks="javascript-sdk typescript-sdk react-sdk vue2-sdk vue3-sdk angular-sdk"
+  for sdk in $js_sdks; do
+    local dir="../$sdk"
+    [ -d "$dir" ] || continue
+    if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$dir" clean -dfX -- js es lib types dist build coverage .nuxt .angular >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 SDK_FILTER=""
 SDK_NAMES=""
 BUILD_ONLY=false
@@ -160,6 +176,7 @@ get_service_names() {
 }
 
 if [ "$SKIP_BUILD" = false ]; then
+  clean_js_build_artifacts
   export COMPOSE_PARALLEL_LIMIT=${COMPOSE_PARALLEL_LIMIT:-3}
 
   # Build heavy SDKs first (JVM/native — need lots of memory) in small batches,

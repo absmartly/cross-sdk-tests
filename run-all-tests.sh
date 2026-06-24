@@ -138,6 +138,22 @@ get_cross_service_names() {
   echo "$services"
 }
 
+# Remove stale, git-ignored build artifacts (js/es/lib/types/dist/...) from the
+# JS-family SDK source dirs before building. These land in the Docker build
+# context and break the in-image `npm run build` (prettier/eslint format:check
+# trips on stale generated files). git clean -dfX only ever deletes files git
+# already ignores, so source is never touched. No-op for non-git or absent dirs.
+clean_js_build_artifacts() {
+  local js_sdks="javascript-sdk typescript-sdk react-sdk vue2-sdk vue3-sdk angular-sdk"
+  for sdk in $js_sdks; do
+    local dir="../$sdk"
+    [ -d "$dir" ] || continue
+    if git -C "$dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      git -C "$dir" clean -dfX -- js es lib types dist build coverage .nuxt .angular >/dev/null 2>&1 || true
+    fi
+  done
+}
+
 if [ ${#TARGET_SDKS[@]} -eq 0 ]; then
   echo "Error: no SDKs selected (all may have been excluded)"
   exit 1
@@ -145,6 +161,7 @@ fi
 
 # Build phase
 if [ "$SKIP_BUILD" = false ]; then
+  clean_js_build_artifacts
   BUILD_SERVICES=""
   if [ "$CROSS_ONLY" = false ]; then
     BUILD_SERVICES="$BUILD_SERVICES $(get_unit_service_names)"
