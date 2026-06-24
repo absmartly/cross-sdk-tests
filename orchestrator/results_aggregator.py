@@ -19,6 +19,17 @@ UNIT_TEST_PARSERS = {
         "framework": "pytest",
         "custom_parser": "pytest",
     },
+    "typescript": {
+        "framework": "vitest",
+        "patterns": [
+            # "Tests  2 failed | 1 skipped | 306 passed (309)"
+            (r"Tests\s+(\d+)\s+failed\s+\|.*?(\d+)\s+passed\s+\((\d+)\)",
+             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
+            # "Tests  1 skipped | 308 passed (309)" or "Tests  309 passed (309)"
+            (r"Tests\s+(?:\d+\s+skipped\s+\|\s+)?(\d+)\s+passed\s+\((\d+)\)",
+             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
+        ],
+    },
     "ruby": {
         "framework": "rspec",
         "patterns": [
