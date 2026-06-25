@@ -14,7 +14,7 @@ fi
 SDK_NAMES=""
 UNITS="${ABSMARTLY_E2E_UNITS:-100}"
 PROFILE="${ABSMARTLY_E2E_PROFILE:-e2e}"
-TIMEOUT_VAL="${ABSMARTLY_E2E_TIMEOUT:-60}"
+TIMEOUT_VAL="${ABSMARTLY_E2E_TIMEOUT:-300}"
 CLEANUP=false
 VERBOSE=false
 SKIP_BUILD=false
@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --sdk <name>       Test specific SDK(s), comma-separated (e.g., --sdk react,vue2)"
       echo "  --units <n>        Number of units per SDK (default: 100)"
       echo "  --profile <name>   ABsmartly CLI profile (default: e2e)"
-      echo "  --timeout <s>      Timeout in seconds for metrics polling (default: 60)"
+      echo "  --timeout <s>      Timeout in seconds for metrics polling (default: 300)"
       echo "  --cleanup          Archive stale e2e experiments and exit"
       echo "  --skip-build       Skip building wrapper containers"
       echo "  -v, --verbose      Show verbose output"

@@ -79,7 +79,7 @@ class E2ERunner:
         self.run_id = generate_run_id()
         self.profile = config.get("profile", "e2e")
         self.units_per_sdk = config.get("units", 100)
-        self.timeout = config.get("timeout", 60)
+        self.timeout = config.get("timeout", 300)
         self.verbose = config.get("verbose", False)
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
