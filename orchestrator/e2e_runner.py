@@ -527,7 +527,15 @@ class E2ERunner:
                     self.log(f"Participants so far: {total_participants}/{total_expected_exposures}")
             time.sleep(5)
 
-        print(f"  {Colors.YELLOW}Note:{Colors.RESET} Server-side metrics not yet available (data was published successfully)")
+        # Metrics never reached the expected total within the timeout. This is a
+        # real failure (events did not land on the backend), not a soft note —
+        # verify_metrics() will see the shortfall and fail the run.
+        final = self._fetch_metrics()
+        final_participants = self._extract_total_participants(final) if final else 0
+        print(
+            f"  {Colors.RED}Metrics incomplete{Colors.RESET}: "
+            f"{final_participants}/{total_expected_exposures} participants after {self.timeout}s"
+        )
 
     def _fetch_metrics(self) -> Optional[Dict[str, Any]]:
         if not self.experiment_id:
@@ -562,6 +570,59 @@ class E2ERunner:
             return total
 
         return 0
+
+    def _extract_total_goals(self, metrics: Any) -> int:
+        """Goal/conversion count from a goal_unique_count metric result.
+
+        Per the metric-results schema, each VariantResult carries `unit_count`
+        (participants) and `count` (the metric numerator — for a
+        goal_unique_count metric this is the number of converting units). Sum
+        `count` across variants, with fallbacks for older field names.
+        """
+        if not metrics:
+            return 0
+
+        metric_list = metrics if isinstance(metrics, list) else [metrics]
+        total = 0
+        for metric in metric_list:
+            if not isinstance(metric, dict):
+                continue
+            for variant in metric.get("variants", []):
+                if not isinstance(variant, dict):
+                    continue
+                for field in ("count", "goal_count", "numerator", "conversion_count"):
+                    val = variant.get(field)
+                    if isinstance(val, (int, float)):
+                        total += int(val)
+                        break
+        return total
+
+    def _fetch_metrics_for_sdk(self, sdk_name: str) -> Optional[Dict[str, Any]]:
+        """Fetch metrics segmented to a single SDK via the sdk_name attribute.
+
+        Each e2e unit is created with attribute {"sdk_name": <sdk>}, so a filter
+        on that attribute gives per-SDK participant/goal counts. Returns None if
+        segmentation is unavailable (older backend / no segment support), in which
+        case the caller falls back to aggregate-only verification.
+        """
+        if not self.experiment_id:
+            return None
+        seg_filter = json.dumps({"attributes": {"sdk_name": sdk_name}})
+        rc, output = run_abs(
+            [
+                "experiments", "metrics", "results", str(self.experiment_id),
+                "--filter", seg_filter,
+            ],
+            self.profile,
+        )
+        if rc != 0:
+            return None
+        data = parse_json_output(output)
+        if data and isinstance(data, list) and data:
+            return data[0]
+        if isinstance(data, dict):
+            return data
+        return None
 
     def verify_metrics(self) -> Dict[str, Any]:
         results: Dict[str, Any] = {
@@ -610,12 +671,68 @@ class E2ERunner:
                 }
                 continue
 
-            results["sdks"][sdk_name] = {
-                "status": "ok",
-                "exposures": {"expected": expected_exposures, "actual": expected_exposures, "pass": True},
-                "goals": {"expected": expected_goals, "actual": expected_goals, "pass": True},
-                "revenue": {"expected": expected_revenue, "actual": expected_revenue, "pass": True},
+            # Try to independently verify THIS SDK against the backend, segmented
+            # by its sdk_name attribute. If segmentation is available, the SDK
+            # passes only when the backend actually recorded its events.
+            sdk_metrics = self._fetch_metrics_for_sdk(sdk_name)
+            if sdk_metrics is not None:
+                actual_exposures = self._extract_total_participants(sdk_metrics)
+                actual_goals = self._extract_total_goals(sdk_metrics)
+                exposures_pass = expected_exposures > 0 and actual_exposures >= expected_exposures
+                goals_pass = actual_goals >= expected_goals
+                sdk_pass = exposures_pass and goals_pass
+                results["sdks"][sdk_name] = {
+                    "status": "ok" if sdk_pass else "fail",
+                    "verified": "per-sdk",
+                    "exposures": {"expected": expected_exposures, "actual": actual_exposures, "pass": exposures_pass},
+                    "goals": {"expected": expected_goals, "actual": actual_goals, "pass": goals_pass},
+                    "revenue": {"expected": expected_revenue, "actual": actual_goals * 10, "pass": goals_pass},
+                }
+                if not sdk_pass:
+                    results["overall_pass"] = False
+            else:
+                # No per-SDK segmentation: record what the SDK sent locally as
+                # informational. Real verification falls to the aggregate check
+                # below, which gates overall_pass.
+                results["sdks"][sdk_name] = {
+                    "status": "sent",
+                    "verified": "aggregate",
+                    "exposures": {"expected": expected_exposures, "actual": expected_exposures, "pass": True},
+                    "goals": {"expected": expected_goals, "actual": expected_goals, "pass": True},
+                    "revenue": {"expected": expected_revenue, "actual": expected_revenue, "pass": True},
+                }
+
+        # Aggregate cross-check against the real backend: the total recorded
+        # participant count must reach the sum of expected exposures across all
+        # active SDKs. This is the authoritative gate when per-SDK segmentation
+        # is unavailable, and catches any SDK whose publish silently failed
+        # (e.g. wrong endpoint / transport bug) even though it issued treatments.
+        if not self.dry_run and self.experiment_id:
+            agg = self._fetch_metrics()
+            total_actual = self._extract_total_participants(agg) if agg else 0
+            total_goals_actual = self._extract_total_goals(agg) if agg else 0
+            total_expected = sum(
+                r["exposures_sent"] for r in self.sdk_results.values()
+                if r.get("status") == "ok"
+            )
+            total_goals_expected = sum(
+                r["goals_sent"] for r in self.sdk_results.values()
+                if r.get("status") == "ok"
+            )
+            agg_pass = (
+                total_expected > 0
+                and total_actual >= total_expected
+                and total_goals_actual >= total_goals_expected
+            )
+            results["aggregate"] = {
+                "expected_participants": total_expected,
+                "actual_participants": total_actual,
+                "expected_goals": total_goals_expected,
+                "actual_goals": total_goals_actual,
+                "pass": agg_pass,
             }
+            if not agg_pass:
+                results["overall_pass"] = False
 
         return results
 
@@ -671,11 +788,11 @@ class E2ERunner:
             rev = sdk_data["revenue"]
 
             total_exp_expected += exp["expected"]
-            total_exp_actual += exp.get("actual", exp["expected"])
+            total_exp_actual += exp.get("actual") or 0
             total_goal_expected += goal["expected"]
-            total_goal_actual += goal.get("actual", goal["expected"])
+            total_goal_actual += goal.get("actual") or 0
             total_rev_expected += rev["expected"]
-            total_rev_actual += rev.get("actual", rev["expected"])
+            total_rev_actual += rev.get("actual") or 0
 
             exp_str = self._format_metric(exp)
             goal_str = self._format_metric(goal)
@@ -692,6 +809,16 @@ class E2ERunner:
         print(f"  {Colors.BOLD}{'TOTAL':<{col_sdk}}{Colors.RESET}{total_exp:<{col_data}}{total_goal:<{col_data}}{total_rev:<{col_data}}")
         print()
 
+        agg = results.get("aggregate")
+        if agg:
+            color = Colors.GREEN if agg["pass"] else Colors.RED
+            label = "PASS" if agg["pass"] else "FAIL"
+            print(
+                f"  {color}Backend participants: "
+                f"{agg['actual_participants']}/{agg['expected_participants']} {label}{Colors.RESET}"
+            )
+            print()
+
         if results.get("overall_pass"):
             print(f"  {Colors.GREEN}PASS{Colors.RESET} All metrics verified")
         else:
@@ -701,10 +828,11 @@ class E2ERunner:
     def _format_metric(self, metric: Dict[str, Any]) -> str:
         actual = metric.get("actual", metric["expected"])
         expected = metric["expected"]
-        passed = metric.get("pass", actual >= expected)
+        passed = metric.get("pass", actual is not None and actual >= expected)
         color = Colors.GREEN if passed else Colors.RED
         label = "PASS" if passed else "FAIL"
-        return f"{color}{actual}/{expected} {label}{Colors.RESET}"
+        shown = "?" if actual is None else actual
+        return f"{color}{shown}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
         if not self.experiment_id or self.dry_run:
