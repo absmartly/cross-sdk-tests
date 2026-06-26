@@ -237,6 +237,11 @@ String translateEndpoint(String endpoint) {
 }
 
 Future<void> startServer() async {
+  // The flutter_test binding installs an HttpOverrides that makes dart:io
+  // HttpClient throw on real network access, which broke the e2e path (the
+  // SDK's real GET/PUT /context to the live collector failed with an empty
+  // Exception). Clear the override so the SDK can make real HTTP requests.
+  HttpOverrides.global = null;
 
   final router = shelf_router.Router();
 
