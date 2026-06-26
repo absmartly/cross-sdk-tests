@@ -32,8 +32,11 @@ class WidgetTestQueue {
   static final WidgetTestQueue instance = WidgetTestQueue._();
 
   final List<WidgetTestRequest> _queue = [];
-  final StreamController<void> _notifier = StreamController<void>.broadcast();
   bool _isShutdown = false;
+
+  // A pending waiter parked in [nextRequest]. Completed the instant an item is
+  // enqueued so the driver never busy-polls and never misses a wakeup.
+  Completer<void>? _waiter;
 
   void enqueue(WidgetTestRequest request) {
     if (_isShutdown) {
@@ -41,14 +44,29 @@ class WidgetTestQueue {
       return;
     }
     _queue.add(request);
-    _notifier.add(null);
+    final waiter = _waiter;
+    if (waiter != null && !waiter.isCompleted) {
+      _waiter = null;
+      waiter.complete();
+    }
   }
-
-  Stream<void> get notifications => _notifier.stream;
 
   WidgetTestRequest? dequeue() {
     if (_queue.isEmpty) return null;
     return _queue.removeAt(0);
+  }
+
+  /// Returns the next request, waiting (without polling) if the queue is empty.
+  /// Race-free: if an item is already queued it returns immediately; otherwise
+  /// it parks a single waiter that [enqueue] completes. Returns null on shutdown.
+  Future<WidgetTestRequest?> nextRequest() async {
+    while (!_isShutdown) {
+      final request = dequeue();
+      if (request != null) return request;
+      final waiter = _waiter ??= Completer<void>();
+      await waiter.future;
+    }
+    return null;
   }
 
   bool get isEmpty => _queue.isEmpty;
@@ -63,11 +81,16 @@ class WidgetTestQueue {
       }
     }
     _queue.clear();
-    _notifier.close();
+    final waiter = _waiter;
+    if (waiter != null && !waiter.isCompleted) {
+      _waiter = null;
+      waiter.complete();
+    }
   }
 
   void reset() {
     _isShutdown = false;
     _queue.clear();
+    _waiter = null;
   }
 }
