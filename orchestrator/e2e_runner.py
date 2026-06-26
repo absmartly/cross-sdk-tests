@@ -637,6 +637,10 @@ class E2ERunner:
         if not self.dry_run and self.experiment_id:
             metrics = self._fetch_metrics()
 
+        # Tracks whether any active SDK could not be verified via per-SDK
+        # segmentation (in which case the aggregate becomes the gate).
+        any_unsegmented = False
+
         for sdk_name, sdk_result in self.sdk_results.items():
             if sdk_result.get("status") == "skipped":
                 results["sdks"][sdk_name] = {
@@ -691,9 +695,11 @@ class E2ERunner:
                 if not sdk_pass:
                     results["overall_pass"] = False
             else:
-                # No per-SDK segmentation: record what the SDK sent locally as
-                # informational. Real verification falls to the aggregate check
-                # below, which gates overall_pass.
+                # No per-SDK segmentation for this SDK: record what it sent
+                # locally as informational, and remember that at least one SDK
+                # was NOT independently verified, so the aggregate cross-check
+                # below becomes the authoritative gate.
+                any_unsegmented = True
                 results["sdks"][sdk_name] = {
                     "status": "sent",
                     "verified": "aggregate",
@@ -702,11 +708,12 @@ class E2ERunner:
                     "revenue": {"expected": expected_revenue, "actual": expected_revenue, "pass": True},
                 }
 
-        # Aggregate cross-check against the real backend: the total recorded
-        # participant count must reach the sum of expected exposures across all
-        # active SDKs. This is the authoritative gate when per-SDK segmentation
-        # is unavailable, and catches any SDK whose publish silently failed
-        # (e.g. wrong endpoint / transport bug) even though it issued treatments.
+        # Aggregate cross-check against the real backend. NOTE: the unsegmented
+        # metrics query is unreliable on this backend (it can report 0 while the
+        # same query segmented per-SDK returns the true counts). So the aggregate
+        # is only the authoritative GATE when some SDK could not be verified
+        # per-SDK (any_unsegmented). When every SDK was verified via segmentation,
+        # the aggregate is recorded for information only and does not fail the run.
         if not self.dry_run and self.experiment_id:
             agg = self._fetch_metrics()
             total_actual = self._extract_total_participants(agg) if agg else 0
@@ -730,8 +737,12 @@ class E2ERunner:
                 "expected_goals": total_goals_expected,
                 "actual_goals": total_goals_actual,
                 "pass": agg_pass,
+                # Only authoritative when some SDK lacked per-SDK verification.
+                "gating": any_unsegmented,
             }
-            if not agg_pass:
+            # The unsegmented aggregate is unreliable on this backend, so only
+            # let it fail the run when at least one SDK was NOT verified per-SDK.
+            if any_unsegmented and not agg_pass:
                 results["overall_pass"] = False
 
         return results
@@ -811,8 +822,14 @@ class E2ERunner:
 
         agg = results.get("aggregate")
         if agg:
-            color = Colors.GREEN if agg["pass"] else Colors.RED
-            label = "PASS" if agg["pass"] else "FAIL"
+            if agg.get("gating"):
+                color = Colors.GREEN if agg["pass"] else Colors.RED
+                label = "PASS" if agg["pass"] else "FAIL"
+            else:
+                # Per-SDK segmentation was the authoritative gate; the unsegmented
+                # aggregate is informational only (unreliable on this backend).
+                color = Colors.YELLOW
+                label = "info (per-SDK segmentation authoritative)"
             print(
                 f"  {color}Backend participants: "
                 f"{agg['actual_participants']}/{agg['expected_participants']} {label}{Colors.RESET}"

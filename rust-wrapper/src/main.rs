@@ -85,6 +85,8 @@ struct ContextData_ {
     context: Mutex<Context>,
     event_collector: Arc<EventCollector>,
     publish_fail: std::sync::atomic::AtomicBool,
+    sdk: Arc<ABsmartly>,
+    is_e2e: bool,
 }
 
 struct AppState {
@@ -338,7 +340,7 @@ async fn create_context_handler(
             .collect();
 
         let sdk = match ABsmartly::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
-            Ok(s) => s,
+            Ok(s) => Arc::new(s),
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -382,6 +384,8 @@ async fn create_context_handler(
             context: Mutex::new(context),
             event_collector: event_collector.clone(),
             publish_fail: std::sync::atomic::AtomicBool::new(false),
+            sdk: sdk.clone(),
+            is_e2e: true,
         });
 
         let mut contexts = state.contexts.write().unwrap();
@@ -438,6 +442,11 @@ async fn create_context_handler(
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
                 publish_fail: std::sync::atomic::AtomicBool::new(false),
+                sdk: Arc::new(
+                    ABsmartly::new("http://dummy", "test-key", "test-app", "test-env")
+                        .expect("Failed to create SDK"),
+                ),
+                is_e2e: false,
             });
 
             {
@@ -569,6 +578,11 @@ async fn create_context_handler(
         context: Mutex::new(context),
         event_collector: event_collector.clone(),
         publish_fail: std::sync::atomic::AtomicBool::new(false),
+        sdk: Arc::new(
+            ABsmartly::new("http://dummy", "test-key", "test-app", "test-env")
+                .expect("Failed to create SDK"),
+        ),
+        is_e2e: false,
     });
 
     let mut contexts = state.contexts.write().unwrap();
@@ -1197,7 +1211,33 @@ async fn publish_handler(
 
     let events_before = ctx_data.event_collector.len();
 
-    {
+    if ctx_data.is_e2e {
+        // E2E mode: drive the SDK's awaitable publish so the HTTP PUT actually
+        // completes before we return (the sync Context::publish is fire-and-forget).
+        let params = {
+            let mut context = ctx_data.context.lock().unwrap();
+            if context.pending() == 0 {
+                None
+            } else {
+                Some(context.get_publish_params())
+            }
+        };
+
+        if let Some(params) = params {
+            // Mirror Context::publish's event logging so the response shape is unchanged.
+            ctx_data.event_collector.push(
+                "publish",
+                Some(serde_json::to_value(&params).unwrap_or_default()),
+            );
+
+            if let Err(e) = ctx_data.sdk.publish(&params).await {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("publish failed: {}", e)})),
+                ));
+            }
+        }
+    } else {
         let mut context = ctx_data.context.lock().unwrap();
         context.publish();
     }
