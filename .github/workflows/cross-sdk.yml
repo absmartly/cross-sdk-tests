@@ -1,0 +1,99 @@
+# Cross-SDK conformance tests.
+#
+# Runs the 202-scenario cross-SDK suite for every SDK wrapper, one independent
+# matrix job per SDK, on every PR (and on demand). Each job checks out this repo
+# plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
+# public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
+# the orchestrator, and drives the suite through the orchestrator container
+# (race-free service discovery over the compose network).
+#
+# Unit tests run in each SDK's own repo CI; this workflow is cross-SDK only.
+# The live-backend e2e suite is intentionally not run here (needs secrets +
+# the abs CLI and mutates real experiments).
+name: Cross-SDK Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: cross-sdk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-sdk:
+    name: ${{ matrix.sdk }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { sdk: javascript, repos: javascript-sdk }
+          - { sdk: typescript, repos: typescript-sdk }
+          - { sdk: python,     repos: python3-sdk }
+          - { sdk: ruby,       repos: ruby-sdk }
+          - { sdk: php,        repos: php-sdk }
+          - { sdk: java,       repos: java-sdk }
+          - { sdk: kotlin,     repos: kotlin-sdk }
+          - { sdk: scala,      repos: scala-sdk }
+          - { sdk: go,         repos: go-sdk }
+          - { sdk: rust,       repos: rust-sdk }
+          - { sdk: swift,      repos: swift-sdk }
+          - { sdk: dotnet,     repos: dotnet-sdk }
+          - { sdk: cpp,        repos: cpp-sdk }
+          - { sdk: elixir,     repos: elixir-sdk }
+          - { sdk: dart,       repos: flutter-sdk }
+          - { sdk: flutter,    repos: flutter-sdk }
+          - { sdk: liquid,     repos: "liquid-sdk ruby-sdk" }
+          - { sdk: react,      repos: "react-sdk javascript-sdk" }
+          - { sdk: vue2,       repos: "vue2-sdk javascript-sdk" }
+          - { sdk: vue3,       repos: "vue3-sdk javascript-sdk" }
+          - { sdk: angular,    repos: "angular-sdk javascript-sdk" }
+    steps:
+      # The wrapper Dockerfiles use build context `..` and COPY sibling
+      # <name>-sdk/ directories, so this repo and the SDK source repos must be
+      # checked out side by side. Put this repo under cross-sdk-tests/.
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+        with:
+          path: cross-sdk-tests
+
+      - name: Checkout SDK source repos
+        run: |
+          for repo in ${{ matrix.repos }}; do
+            echo "::group::Cloning absmartly/$repo (main)"
+            git clone --depth 1 --branch main \
+              "https://github.com/absmartly/$repo.git" "$repo"
+            echo "::endgroup::"
+          done
+
+      - name: Build wrapper + orchestrator
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: docker compose build ${{ matrix.sdk }}-sdk orchestrator
+
+      - name: Run cross-SDK suite
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          docker compose up -d ${{ matrix.sdk }}-sdk
+          docker compose run --rm --no-deps \
+            -e "SDK_SERVICES=${{ matrix.sdk }}" \
+            orchestrator python3 test_runner.py --loose-error-match
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.sdk }}
+          path: cross-sdk-tests/test-results/report.json
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: docker compose down --remove-orphans --volumes || true
