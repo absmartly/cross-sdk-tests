@@ -1,0 +1,5 @@
+services:
+  java-sdk:
+    build:
+      args:
+        SDK_SOURCE_DIR: java-sdk-holdouts
