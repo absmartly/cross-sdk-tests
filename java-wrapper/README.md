@@ -13,21 +13,20 @@ published; `build.gradle` here pins `com.absmartly.sdk:core-api:1.6.3` from
 ### Validating against an unreleased SDK branch
 
 To run the suite against a local, unreleased SDK checkout (e.g. a feature-branch
-worktree such as `~/git/java-sdk-holdouts` for the holdouts feature) without
+worktree) without
 touching the default CI path:
 
-1. Check out the SDK branch as a sibling of `cross-sdk-tests`, e.g.
-   `~/git/java-sdk-holdouts` (or `~/git/java-sdk` on a branch).
+1. Check out the SDK branch as a sibling of `cross-sdk-tests`, e.g. `~/git/java-sdk` on the branch under test.
 2. Build the java-sdk image with the `SDK_SOURCE_DIR` build arg pointed at that
    sibling directory's name, using the provided compose override:
 
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.holdouts-local.yml build java-sdk
-   docker compose -f docker-compose.yml -f docker-compose.holdouts-local.yml up -d java-sdk
+   docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml build java-sdk
+   docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml up -d java-sdk
    ```
 
    `SDK_SOURCE_DIR` defaults to `java-sdk` (the Dockerfile's `ARG`), so the
-   override in `docker-compose.holdouts-local.yml` only changes which sibling
+   override in `docker-compose.local-sdk.yml` only changes which sibling
    directory gets `COPY`'d into the build and `publishToMavenLocal`'d — the
    wrapper's own `build.gradle` dependency version (`core-api:1.6.3`) does not
    need to change, since `mavenLocal()` is checked first and the worktree
