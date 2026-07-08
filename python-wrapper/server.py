@@ -40,8 +40,11 @@ class DeferredContextDataProvider(ContextDataProvider):
                     raw = json.loads(response.read().decode())
                     data = jsons.load(raw, ContextData)
                     future.set_result(data)
-            except Exception:
-                future.set_result(ContextData())
+            except Exception as e:
+                # Surface fetch/parse failures so the SDK's failed-load path
+                # runs (context becomes FAILED, readyError reports the error)
+                # instead of swallowing them into empty-but-ready data.
+                future.set_exception(e)
         threading.Thread(target=fetch, daemon=True).start()
         return future
 
@@ -386,6 +389,11 @@ def treatment(context_id):
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
     events_before = len(collector.events)
+
+    # The python SDK's get_treatment() returns 0 after finalize (context.py:642)
+    # rather than raising, so guard the finalized state explicitly (scenario 189).
+    if context.is_closed():
+        return jsonify({'error': 'Context finalized'}), 400
 
     try:
         variant = context.get_treatment(request.json['experimentName'])

@@ -142,6 +142,24 @@ class DataWrapper
   end
 end
 
+class FailingDataWrapper
+  def initialize(exception = StandardError.new('Context load failed'))
+    @exception = exception
+  end
+
+  def data_future
+    nil
+  end
+
+  def success?
+    false
+  end
+
+  def exception
+    @exception
+  end
+end
+
 class DeferredDataProvider < ContextDataProvider
   def initialize(endpoint, throttle_ms)
     @endpoint = endpoint
@@ -156,7 +174,10 @@ class DeferredDataProvider < ContextDataProvider
       data = JSON.parse(response.body, symbolize_names: false)
       DataWrapper.new(data)
     rescue => e
-      DataWrapper.new({ 'experiments' => [] })
+      # Surface fetch/parse failures so the SDK's failed-load path runs
+      # (context becomes FAILED, readyError reports the error) instead of
+      # swallowing them into an empty-but-ready success wrapper.
+      FailingDataWrapper.new(e)
     end
   end
 end
@@ -243,6 +264,11 @@ end
 post '/context' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
+
+  unless req_data[:units].is_a?(Hash)
+    content_type :json
+    halt 400, { error: 'units required' }.to_json
+  end
 
   if req_data[:mode] == 'e2e'
     e2e_endpoint = ENV['ABSMARTLY_E2E_ENDPOINT']
@@ -355,16 +381,7 @@ post '/context' do
     failing_provider = DeferredDataProvider.new('http://invalid-host:9999/nonexistent', 0)
     class << failing_provider
       def context_data
-        wrapper = DataWrapper.new({ 'experiments' => [] })
-        class << wrapper
-          def success?
-            false
-          end
-          def exception
-            StandardError.new('Context load failed')
-          end
-        end
-        wrapper
+        FailingDataWrapper.new(StandardError.new('Context load failed'))
       end
     end
     failing_sdk_config = ABSmartlyConfig.new
@@ -453,6 +470,10 @@ post '/context/:context_id/treatment' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
+  if context.closed?
+    halt 400, { error: 'Context finalized' }.to_json
+  end
+
   begin
     # Use Liquid template with absmartly_treatment block tag
     # The tag needs context['absmartly'] to be a Drop with treatment method
@@ -516,7 +537,7 @@ post '/context/:context_id/track' do
   begin
     # Validate properties type first (must be nil or Hash)
     props = req_data[:properties]
-    if props && !props.is_a?(Hash)
+    if !props.nil? && !props.is_a?(Hash)
       halt 400, { error: "Goal '#{req_data[:goalName]}' properties must be of type object." }.to_json
     end
 
@@ -688,8 +709,9 @@ post '/context/:context_id/readyError' do
   ctx_data = $contexts[context_id]
   context = ctx_data[:context]
   error = context.respond_to?(:ready_error) ? context.ready_error : nil
+  result = error ? { isError: true, message: error.to_s } : nil
   content_type :json
-  { result: error ? error.to_s : nil, events: [] }.to_json
+  { result: result, events: [] }.to_json
 end
 
 post '/context/:context_id/variableKeysMap' do

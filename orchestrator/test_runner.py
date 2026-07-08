@@ -9,6 +9,15 @@ from typing import Any, Dict, List, Tuple
 import requests
 
 
+# The one scenario that exercises the literal createContextWith API (pre-fetched
+# data construction). Coupled by exact name: run_scenario routes only this
+# scenario through the createContextWith path and every other createContext(With)
+# through live fetch. If this scenario is renamed in test_scenarios_complete.json
+# without updating this constant, that coverage silently reroutes to live-fetch,
+# so main() prints a loud warning at startup when the name is absent.
+CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
+
+
 class Colors:
     GREEN = "\033[92m"
     RED = "\033[91m"
@@ -27,6 +36,15 @@ class TestOrchestrator:
         self.sdks = sdks
         self.results: List[Dict[str, Any]] = []
         self.capabilities: Dict[str, Dict[str, Any]] = {}
+        # SDKs whose /capabilities endpoint errored (unreachable or non-200).
+        # Maps sdk_name -> reason. These are distinct from an SDK that answered
+        # /capabilities but simply lacks a capability (a legitimate skip).
+        self.capabilities_fetch_failed: Dict[str, str] = {}
+        # Per-scenario actual outcome ("pass"/"fail"/"skip"/"error") per SDK,
+        # used for the cross-SDK consistency pass after all SDKs have run.
+        self.scenario_outcomes: Dict[str, Dict[str, str]] = {}
+        self.consistency_failures: Dict[str, List[str]] = {}
+        self.consistency_report: List[Dict[str, Any]] = []
         self.verbose = verbose
         self.allow_wrapper_skip = allow_wrapper_skip
         self.loose_error_match = loose_error_match
@@ -47,17 +65,21 @@ class TestOrchestrator:
                         print(f"  {Colors.GREEN}✓{Colors.RESET} {sdk_name} ready")
                         working_sdks[sdk_name] = base_url
                         service_ready = True
-
-                        try:
-                            caps_response = requests.get(f"{base_url}/capabilities", timeout=1)
-                            if caps_response.status_code == 200:
-                                self.capabilities[sdk_name] = caps_response.json()
-                            else:
-                                self.capabilities[sdk_name] = {"attrsSeq": False}
-                        except Exception:
-                            self.capabilities[sdk_name] = {"attrsSeq": False}
-
+                        self.fetch_capabilities(sdk_name, base_url)
                         break
+
+                    # Non-200 health response: the service is up but not ready
+                    # yet, so keep retrying. Sleep and report just like the
+                    # exception branch below - otherwise a fast 500 would burn
+                    # all 60 retries in milliseconds, silently.
+                    if i == max_retries - 1:
+                        print(
+                            f"  {Colors.RED}✗{Colors.RESET} {sdk_name} failed to start "
+                            f"(last /health status {response.status_code})"
+                        )
+                        failed_sdks.append(sdk_name)
+                    else:
+                        time.sleep(1)
                 except Exception:
                     if i == max_retries - 1:
                         print(f"  {Colors.RED}✗{Colors.RESET} {sdk_name} failed to start")
@@ -74,6 +96,28 @@ class TestOrchestrator:
             print(f"✓  Continuing with {len(working_sdks)} working SDK(s)\n")
 
         return working_sdks, failed_sdks
+
+    def fetch_capabilities(self, sdk_name: str, base_url: str) -> None:
+        try:
+            caps_response = requests.get(f"{base_url}/capabilities", timeout=1)
+            if caps_response.status_code == 200:
+                self.capabilities[sdk_name] = caps_response.json()
+                return
+            reason = f"HTTP {caps_response.status_code}"
+        except Exception as exc:
+            reason = str(exc) or exc.__class__.__name__
+
+        # The endpoint itself errored (unreachable or non-200) rather than
+        # reporting a missing capability. Default caps so `requires:` scenarios
+        # still skip instead of crashing, but record the failure loudly: the
+        # report must not silently attribute those skips to a genuinely
+        # unsupported feature, and this SDK's run must be marked failed.
+        self.capabilities[sdk_name] = {"attrsSeq": False}
+        self.capabilities_fetch_failed[sdk_name] = reason
+        print(
+            f"  {Colors.RED}⚠ CAPABILITIES FETCH FAILED{Colors.RESET} {sdk_name}: {reason} - "
+            f"all `requires:`-gated scenarios will be skipped and this SDK's run marked FAILED"
+        )
 
     def run_scenario(self, scenario: Dict[str, Any]) -> Dict[str, Any]:
         if self.verbose:
@@ -95,17 +139,20 @@ class TestOrchestrator:
                 scenario_results["sdks"][sdk_name] = result
 
                 if result.get("skipped"):
+                    self.record_outcome(scenario["name"], sdk_name, "skip")
                     reason = result.get("reason", "Not supported")
                     if self.verbose:
                         print(f"  {sdk_name:20} {Colors.YELLOW}⊘ SKIP{Colors.RESET} ({reason})")
                     else:
                         print(f"{Colors.YELLOW}SKIP{Colors.RESET}  {scenario['name']}: {reason}")
                 elif result["passed"]:
+                    self.record_outcome(scenario["name"], sdk_name, "pass")
                     if self.verbose:
                         print(f"  {sdk_name:20} {Colors.GREEN}✓ PASS{Colors.RESET}")
                     else:
                         print(f"{Colors.GREEN}PASS{Colors.RESET}  {scenario['name']}")
                 else:
+                    self.record_outcome(scenario["name"], sdk_name, "fail")
                     failure_count = len(result["failures"])
                     if self.verbose:
                         print(f"  {sdk_name:20} {Colors.RED}✗ FAIL{Colors.RESET} ({failure_count} failures)")
@@ -116,6 +163,7 @@ class TestOrchestrator:
                         error_msg = first_failure.get("error", first_failure.get("actual", ""))
                         print(f"{Colors.RED}FAIL{Colors.RESET}  {scenario['name']}: {error_msg}")
             except Exception as exc:
+                self.record_outcome(scenario["name"], sdk_name, "error")
                 if self.verbose:
                     print(f"  {sdk_name:20} {Colors.RED}✗ ERROR{Colors.RESET}: {exc}")
                 else:
@@ -124,6 +172,9 @@ class TestOrchestrator:
 
         self.results.append(scenario_results)
         return scenario_results
+
+    def record_outcome(self, scenario_name: str, sdk_name: str, outcome: str) -> None:
+        self.scenario_outcomes.setdefault(scenario_name, {})[sdk_name] = outcome
 
     def should_skip_wrapper_test(self, sdk_name: str, scenario: Dict[str, Any]) -> Tuple[bool, Any]:
         if not self.allow_wrapper_skip:
@@ -164,10 +215,17 @@ class TestOrchestrator:
             sdk_caps = self.capabilities.get(sdk_name, {})
             missing_caps = [cap for cap in scenario["requires"] if not sdk_caps.get(cap, False)]
             if missing_caps:
+                if sdk_name in self.capabilities_fetch_failed:
+                    reason = (
+                        f"capabilities fetch failed ({self.capabilities_fetch_failed[sdk_name]}); "
+                        f"cannot confirm support for: {', '.join(missing_caps)}"
+                    )
+                else:
+                    reason = f"SDK does not support: {', '.join(missing_caps)}"
                 return {
                     "passed": True,
                     "skipped": True,
-                    "reason": f"SDK does not support: {', '.join(missing_caps)}",
+                    "reason": reason,
                 }
 
         steps = scenario.get("steps", [])
@@ -216,10 +274,9 @@ class TestOrchestrator:
                 # Default: drive context creation through the live fetch path so the
                 # SDK's real ContextDataProvider/Client fetches and deserializes the
                 # payload from the wrapper endpoint (exactly as it would from the
-                # collector). Exactly one scenario keeps the literal createContextWith
-                # API to cover pre-fetched-data construction; its payload is passed
-                # as-is with no reshaping.
-                CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
+                # collector). Exactly one scenario (CREATE_WITH_SCENARIO) keeps
+                # the literal createContextWith API to cover pre-fetched-data
+                # construction; its payload is passed as-is with no reshaping.
                 use_create_with = (
                     action == "createContextWith"
                     and scenario.get("name") == CREATE_WITH_SCENARIO
@@ -405,6 +462,24 @@ class TestOrchestrator:
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
 
+        # validate_step only runs on the success path (raise_for_status did not
+        # raise), so if the scenario expected an error, the call succeeding is
+        # itself a failure. Without this, error scenarios pass vacuously whenever
+        # the SDK returns HTTP 200 instead of the expected failure.
+        if "errorContains" in expected or "error" in expected:
+            expected_error = expected.get("errorContains", expected.get("error"))
+            http_status = actual.get("status", 200) if isinstance(actual, dict) else 200
+            failures.append(
+                {
+                    "step": step_index,
+                    "action": action,
+                    "field": "errorContains" if "errorContains" in expected else "error",
+                    "expected": expected_error,
+                    "actual": f"expected error but call succeeded (got HTTP {http_status})",
+                }
+            )
+            return failures
+
         if "result" in expected:
             actual_result = actual.get("result")
             expected_result = expected["result"]
@@ -479,7 +554,14 @@ class TestOrchestrator:
                 return False
 
             if all(isinstance(x, (str, int, float, bool, type(None))) for x in expected):
-                return sorted(actual) == sorted(expected)
+                # Order-insensitive comparison for scalar lists. A plain
+                # sorted() raises TypeError on mixed types (e.g. [None, 'a']),
+                # so use a total-ordering key that never compares values of
+                # different types directly.
+                def sort_key(x: Any) -> Tuple[bool, str, str]:
+                    return (x is None, str(type(x)), str(x))
+
+                return sorted(actual, key=sort_key) == sorted(expected, key=sort_key)
 
             return all(self.values_match(a, e) for a, e in zip(actual, expected))
 
@@ -508,8 +590,18 @@ class TestOrchestrator:
         actual_words = set(re.findall(r"'[^']+'|\w+", actual_norm))
         filler = {"must", "be", "not", "the", "a", "an", "is", "of"}
         expected_key_words = expected_words - filler
+        # Subset rule: the expected keywords all appear in the actual message.
+        # A single shared *common* token is too weak (it matches unrelated
+        # errors), so require at least 2 matching keywords. When the expected
+        # message has fewer than 2 keywords, still accept it only if that lone
+        # keyword is a quoted identifier (e.g. 'unitType') - a strong, specific
+        # signal - rather than a bare common word.
         if expected_key_words and expected_key_words.issubset(actual_words):
-            return True
+            if len(expected_key_words) >= 2:
+                return True
+            lone_keyword = next(iter(expected_key_words))
+            if lone_keyword.startswith("'") and lone_keyword.endswith("'"):
+                return True
 
         if not self.loose_error_match:
             return False
@@ -521,9 +613,53 @@ class TestOrchestrator:
         match_ratio = len(matches) / len(expected_key_words)
         return match_ratio >= 0.9
 
+    def check_cross_sdk_consistency(self) -> None:
+        """Compare each scenario's actual outcome across the SDKs that ran it.
+
+        Baked expectations catch an SDK that disagrees with the spec, but not
+        two SDKs that agree with each other while both drifting from a third.
+        For every scenario executed (pass/fail, not skipped/errored) by 2+ SDKs,
+        flag any SDK whose outcome differs from the majority. On a tie there is
+        no majority, so every participating SDK is reported as disagreeing.
+        """
+        if len(self.sdks) < 2:
+            return
+
+        from collections import Counter
+
+        for scenario_name, outcomes in self.scenario_outcomes.items():
+            executed = {sdk: o for sdk, o in outcomes.items() if o in ("pass", "fail")}
+            if len(executed) < 2:
+                continue
+            if len(set(executed.values())) <= 1:
+                continue  # all participating SDKs agree
+
+            counts = Counter(executed.values())
+            max_count = counts.most_common(1)[0][1]
+            majority = [outcome for outcome, c in counts.items() if c == max_count]
+            if len(majority) == 1:
+                majority_outcome = majority[0]
+                disagreeing = [sdk for sdk, o in executed.items() if o != majority_outcome]
+            else:
+                majority_outcome = None  # tie: no majority, everyone disagrees
+                disagreeing = list(executed.keys())
+
+            self.consistency_report.append(
+                {
+                    "scenario": scenario_name,
+                    "outcomes": dict(executed),
+                    "majority": majority_outcome,
+                    "disagreeing": disagreeing,
+                }
+            )
+            for sdk in disagreeing:
+                self.consistency_failures.setdefault(sdk, []).append(scenario_name)
+
     def generate_report(self, output_file: str, failed_sdks: List[str] = None) -> int:
         if failed_sdks is None:
             failed_sdks = []
+
+        self.check_cross_sdk_consistency()
 
         total_tests = len(self.results)
         sdk_stats: Dict[str, Dict[str, Any]] = {}
@@ -546,6 +682,13 @@ class TestOrchestrator:
                     failed += 1
 
             tested = total_tests - skipped
+            consistency_failed = self.consistency_failures.get(sdk_name, [])
+            capabilities_failed = sdk_name in self.capabilities_fetch_failed
+            # An SDK that ran zero scenarios (everything skipped) while scenarios
+            # exist has proven nothing - treat it as a failing "NO TESTS RUN"
+            # state rather than a vacuous 100%.
+            no_tests_run = tested == 0 and total_tests > 0
+
             sdk_stats[sdk_name] = {
                 "passed": passed,
                 "failed": failed,
@@ -553,20 +696,45 @@ class TestOrchestrator:
                 "skipped": skipped,
                 "tested": tested,
                 "total": total_tests,
-                "pass_rate": (passed / tested * 100) if tested > 0 else 100.0,
+                "pass_rate": (passed / tested * 100) if tested > 0 else 0.0,
+                "consistency_failed": consistency_failed,
+                "capabilities_failed": capabilities_failed,
+                "capabilities_error": self.capabilities_fetch_failed.get(sdk_name),
+                "no_tests_run": no_tests_run,
             }
 
         for sdk_name in failed_sdks:
+            # A service that never started is a failed run, not a 0/0 pass.
+            # Include tested/skipped so downstream pass checks (which compare
+            # passed == tested) don't KeyError and don't read as vacuously green.
             sdk_stats[sdk_name] = {
                 "passed": 0,
                 "failed": 0,
                 "errors": total_tests,
+                "skipped": 0,
+                "tested": total_tests,
                 "total": total_tests,
                 "pass_rate": 0.0,
+                "consistency_failed": [],
+                "capabilities_failed": False,
+                "capabilities_error": None,
+                "no_tests_run": False,
                 "service_failed": True,
             }
 
+        def sdk_run_failed(stats: Dict[str, Any]) -> bool:
+            return bool(
+                stats.get("service_failed")
+                or stats.get("capabilities_failed")
+                or stats.get("no_tests_run")
+                or stats.get("consistency_failed")
+                or stats["failed"] > 0
+                or stats["errors"] > 0
+            )
+
         report = {"total_scenarios": total_tests, "sdk_stats": sdk_stats, "results": self.results}
+        if self.consistency_report:
+            report["cross_sdk_consistency"] = self.consistency_report
         with open(output_file, "w") as out:
             json.dump(report, out, indent=2)
 
@@ -584,25 +752,83 @@ class TestOrchestrator:
                 print(f"  {sdk_name:20} {status:8} (service failed to start)")
                 continue
 
-            if stats["failed"] == 0 and stats["errors"] == 0:
-                status = f"{Colors.GREEN}✓ PASS{Colors.RESET}"
-            else:
+            if stats.get("capabilities_failed"):
+                status = f"{Colors.RED}✗ CAPS FAIL{Colors.RESET}"
+                print(
+                    f"  {sdk_name:20} {status:8} "
+                    f"(capabilities fetch failed: {stats['capabilities_error']}; "
+                    f"{stats['skipped']} scenarios skipped as a result)"
+                )
+                continue
+
+            if stats.get("no_tests_run"):
+                status = f"{Colors.RED}✗ NO TESTS RUN{Colors.RESET}"
+                print(f"  {sdk_name:20} {status:8} (0/{total_tests} tested, all {stats['skipped']} skipped)")
+                continue
+
+            if sdk_run_failed(stats):
                 status = f"{Colors.RED}✗ FAIL{Colors.RESET}"
+            else:
+                status = f"{Colors.GREEN}✓ PASS{Colors.RESET}"
 
             skipped_info = f", {stats['skipped']} skipped" if stats["skipped"] > 0 else ""
+            consistency_info = (
+                f", {len(stats['consistency_failed'])} cross-SDK disagreement(s)"
+                if stats["consistency_failed"]
+                else ""
+            )
             print(
                 f"  {sdk_name:20} {status:8} "
-                f"({stats['passed']}/{stats['tested']} tested{skipped_info}, {stats['pass_rate']:.1f}%)"
+                f"({stats['passed']}/{stats['tested']} tested{skipped_info}, "
+                f"{stats['pass_rate']:.1f}%{consistency_info})"
             )
 
         print(f"{'=' * 60}")
 
+        # Per-SDK skip counts with reasons, so the report distinguishes genuine
+        # unsupported-capability skips from wrapper pass-through skips (and from
+        # skips caused by a capabilities fetch failure, surfaced above).
+        skip_reasons_by_sdk: Dict[str, Dict[str, int]] = {}
         skipped_scenarios: Dict[str, List[str]] = {}
         for scenario_result in self.results:
             scenario_name = scenario_result["name"]
             for sdk_name, sdk_result in scenario_result["sdks"].items():
                 if sdk_result.get("skipped"):
                     skipped_scenarios.setdefault(scenario_name, []).append(sdk_name)
+                    reason = sdk_result.get("reason", "Not supported")
+                    skip_reasons_by_sdk.setdefault(sdk_name, {})
+                    skip_reasons_by_sdk[sdk_name][reason] = (
+                        skip_reasons_by_sdk[sdk_name].get(reason, 0) + 1
+                    )
+
+        if skip_reasons_by_sdk:
+            print("\nSkip Counts by SDK:")
+            print(f"{'-' * 60}")
+            for sdk_name in sorted(skip_reasons_by_sdk):
+                reasons = skip_reasons_by_sdk[sdk_name]
+                total_skipped = sum(reasons.values())
+                print(f"  {sdk_name}: {total_skipped} skipped")
+                for reason, count in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])):
+                    print(f"    - {count}x {reason}")
+
+        if self.consistency_report:
+            print("\nCross-SDK consistency:")
+            print(f"{'-' * 60}")
+            for entry in self.consistency_report:
+                print(f"  {entry['scenario']}")
+                outcome_str = ", ".join(
+                    f"{sdk}={outcome}" for sdk, outcome in sorted(entry["outcomes"].items())
+                )
+                print(f"    outcomes: {outcome_str}")
+                if entry["majority"] is None:
+                    print(f"    {Colors.RED}no majority (tie){Colors.RESET} - all disagreeing")
+                else:
+                    print(
+                        f"    majority={entry['majority']}, "
+                        f"{Colors.RED}disagreeing: {', '.join(entry['disagreeing'])}{Colors.RESET}"
+                    )
+        elif len(self.sdks) > 1:
+            print(f"\nCross-SDK consistency: {Colors.GREEN}all SDKs agree{Colors.RESET}")
 
         if skipped_scenarios:
             print("\nSkipped Scenarios:")
@@ -613,7 +839,7 @@ class TestOrchestrator:
 
         print(f"\nDetailed report: {output_file}\n")
 
-        all_passed = all(stats["passed"] == stats["tested"] for stats in sdk_stats.values())
+        all_passed = not any(sdk_run_failed(stats) for stats in sdk_stats.values())
         return 0 if all_passed else 1
 
 
@@ -733,6 +959,18 @@ def main() -> None:
         all_scenarios = json.load(src)
 
     scenarios, excluded_empty, invalid = validate_and_filter_scenarios(all_scenarios)
+
+    # CREATE_WITH_SCENARIO is coupled to run_scenario by exact name. If it was
+    # renamed in the scenario file, the createContextWith coverage silently
+    # reroutes to live-fetch; warn loudly so the rename is caught.
+    if not any(s.get("name") == CREATE_WITH_SCENARIO for s in all_scenarios):
+        print(
+            f"{Colors.YELLOW}WARNING{Colors.RESET}: scenario "
+            f"{CREATE_WITH_SCENARIO!r} not found — the createContextWith "
+            f"(pre-fetched data) path is now UNCOVERED; every context is built "
+            f"via live-fetch. Update CREATE_WITH_SCENARIO in test_runner.py if "
+            f"the scenario was renamed."
+        )
 
     print(f"Loaded {len(all_scenarios)} total scenarios")
     print(f"Running {len(scenarios)} executable scenarios")

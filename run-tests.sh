@@ -163,6 +163,23 @@ docker_compose_with_recovery() {
   return 1
 }
 
+# Ensure the `requests` module is importable for the local orchestrator path.
+# Avoids a PEP 668 "externally-managed-environment" failure by only attempting
+# an install when the module is genuinely missing, and hard-failing (rather than
+# silently continuing) if that install does not work.
+ensure_requests() {
+  if python3 -c "import requests" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Python 'requests' not found; attempting to install..."
+  if pip3 install -q requests >/dev/null 2>&1 && python3 -c "import requests" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: the Python 'requests' package is required but could not be installed." >&2
+  echo "       Install it manually (e.g. 'pip3 install --user requests' or in a venv) and re-run." >&2
+  exit 1
+}
+
 check_docker_health
 
 get_service_names() {
@@ -231,9 +248,6 @@ fi
 SDK_CSV=$(IFS=,; echo "${TARGET_SDKS[*]}")
 TARGET_SERVICES=$(get_service_names "$SDK_CSV")
 
-RUN_FALLBACK=false
-FALLBACK_CONTAINERS=()
-
 BATCH_SIZE=${COMPOSE_SERVICE_BATCH:-5}
 echo "Starting services in batches of $BATCH_SIZE:$TARGET_SERVICES"
 
@@ -254,6 +268,10 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
     elif echo "$START_OUTPUT" | grep -q "No such container"; then
       docker compose rm -f "${BATCH[@]}" 2>/dev/null || true
       docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
+    else
+      echo "ERROR: 'docker compose up -d' failed for batch (${BATCH[*]}) with no recoverable cause:" >&2
+      echo "$START_OUTPUT" >&2
+      exit "$START_EXIT"
     fi
   fi
   sleep 2
@@ -284,29 +302,27 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
   fi
 done
 
-RUN_FALLBACK=false
-FALLBACK_CONTAINERS=()
-
 echo "Waiting for services to be ready..."
 
 echo "Running tests..."
 TEST_EXIT_CODE=0
-if [ "$RUN_FALLBACK" = true ]; then
-  SDK_SERVICES=$(IFS=,; echo "${TARGET_SDKS[*]}")
-  docker compose run --no-deps --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator \
-    python3 test_runner.py $VERBOSE_FLAG --loose-error-match || TEST_EXIT_CODE=$?
-elif [ -n "$SDK_NAMES" ]; then
+if [ -n "$SDK_NAMES" ]; then
   # For filtered runs, run locally to avoid orchestrator starting all dependencies
-  pip3 install -q requests 2>/dev/null || true
+  ensure_requests
 
   # Derive SDK URLs from published ports in docker compose.yml
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
   for sdk in "${SDKS[@]}"; do
-    PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
+    PORT=""
+    for _ in $(seq 1 30); do
+      PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
+      [ -n "$PORT" ] && break
+      sleep 1
+    done
     if [ -z "$PORT" ]; then
-      echo "Warning: could not resolve port for ${sdk}-sdk — skipping" >&2
-      continue
+      echo "ERROR: could not resolve published port for ${sdk}-sdk after 30s" >&2
+      exit 1
     fi
     SDK_URLS="$SDK_URLS$sdk:http://localhost:$PORT,"
   done
@@ -324,6 +340,10 @@ sdks = {k: 'http://' + v for k, v in sdks.items()}
 
 orchestrator = TestOrchestrator(sdks, verbose=verbose, loose_error_match=True, allow_wrapper_skip=True)
 working, failed = orchestrator.wait_for_services()
+# Drive only the SDKs that came up, so a down SDK isn't run through every
+# scenario at a 5s timeout each. The failed set is still passed to
+# generate_report() below, so a down SDK fails the run rather than vanishing.
+orchestrator.sdks = working
 
 with open('test_scenarios_complete.json') as f:
     scenarios = [s for s in json.load(f) if 'steps' in s]
@@ -340,10 +360,6 @@ else
   docker compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator \
     python3 test_runner.py $VERBOSE_FLAG --loose-error-match || TEST_EXIT_CODE=$?
 fi
-
-for container in "${FALLBACK_CONTAINERS[@]}"; do
-  docker rm -f "$container" >/dev/null 2>&1 || true
-done
 
 docker compose down --remove-orphans 2>/dev/null || true
 

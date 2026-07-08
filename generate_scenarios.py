@@ -4,6 +4,23 @@ Comprehensive test scenario generator for cross-SDK testing.
 Reconstructed from test_scenarios_complete.json
 
 Generates all 136 test scenarios (131 base + 5 context state).
+
+WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
+============================================================================
+The checked-in test_scenarios_complete.json is the CANONICAL source of truth
+for the cross-SDK suite (202 scenarios). This generator is OUT OF DATE:
+
+  * It emits only 192 scenarios, not the canonical 202.
+  * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
+    argument order in scenario 144, and createContextWith vs createContext in
+    scenarios 26/27/29/31/32.
+
+To avoid clobbering the fixed oracle, this script writes to
+'test_scenarios_generated.json' (NOT the canonical file). Its output must be
+DIFFED against test_scenarios_complete.json and reconciled by hand before it
+could ever replace the canonical file. Do not wire this generator into CI or
+any automated path.
+============================================================================
 """
 
 import json
@@ -10060,40 +10077,22 @@ def generate_all_scenarios():
     return scenarios
 
 
-    with open(ref_path) as f:
-        reference = json.load(f)
-
-    ref_by_name = {s['name']: s for s in reference}
-    gen_by_name = {s['name']: s for s in scenarios}
-
-    result = []
-    seen = set()
-
-    for s in scenarios:
-        name = s['name']
-        if name in seen:
-            continue
-        seen.add(name)
-        if name in ref_by_name and len(ref_by_name[name].get('steps', [])) > len(s.get('steps', [])):
-            result.append(ref_by_name[name])
-        else:
-            result.append(s)
-
-    for s in reference:
-        if s['name'] not in seen:
-            seen.add(s['name'])
-            result.append(s)
-
-    return result
-
-
 def main():
     scenarios = generate_all_scenarios()
 
-    print(f"Generated {len(scenarios)} test scenarios")
-    print("\nWriting to test_scenarios_complete.json...")
+    print("=" * 76)
+    print("WARNING: generate_scenarios.py is STALE and NON-CANONICAL.")
+    print("  The checked-in test_scenarios_complete.json is the canonical oracle")
+    print("  (202 scenarios). This generator emits only 192 and has ~14 drifted")
+    print("  scenarios. Its output is written to test_scenarios_generated.json and")
+    print("  MUST be diffed against test_scenarios_complete.json before use.")
+    print("  Do NOT overwrite the canonical file with this output.")
+    print("=" * 76)
 
-    with open('test_scenarios_complete.json', 'w') as f:
+    print(f"Generated {len(scenarios)} test scenarios")
+    print("\nWriting to test_scenarios_generated.json (NOT the canonical file)...")
+
+    with open('test_scenarios_generated.json', 'w') as f:
         json.dump(scenarios, f, indent=2)
 
     print("Done!")

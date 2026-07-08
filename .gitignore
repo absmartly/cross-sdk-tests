@@ -47,5 +47,12 @@ venv/
 *.swp
 *.backup
 *.backup2
-*/target/
-*/project/target/
+*.bak
+erl_crash.dump
+**/target/
+
+# Compiled Go wrapper binary
+go-wrapper/go-wrapper
+
+# Generated scenarios (diff against canonical test_scenarios_complete.json; never commit)
+test_scenarios_generated.json

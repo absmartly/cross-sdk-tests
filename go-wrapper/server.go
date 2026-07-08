@@ -510,13 +510,13 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(time.Duration(payloadThrottle) * time.Millisecond)
 				resp, err := http.Get(endpoint)
 				if err != nil {
-					done(jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}, nil)
+					done(jsonmodels.ContextData{}, err)
 					return
 				}
 				defer resp.Body.Close()
 				var data jsonmodels.ContextData
 				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-					done(jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}, nil)
+					done(jsonmodels.ContextData{}, err)
 					return
 				}
 				done(data, nil)
@@ -904,20 +904,36 @@ func variableValueHandler(w http.ResponseWriter, r *http.Request) {
 
 	value := req.DefaultValue
 	var varErr error
+	var panicMsg string
 
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Recovered from panic in variableValue: %v", r)
-				value = req.DefaultValue
+				panicMsg = fmt.Sprintf("%v", r)
 			}
 		}()
 		value, varErr = ctxData.context.GetVariableValue(req.Key, req.DefaultValue)
 	}()
 
+	if panicMsg != "" {
+		log.Printf("Recovered from panic in variableValue: %s", panicMsg)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": panicMsg})
+		return
+	}
+
 	if varErr != nil {
-		log.Printf("Error in GetVariableValue: %v", varErr)
-		value = req.DefaultValue
+		// Not-ready read methods return the provided default, no error.
+		// Any other SDK error is a real failure and must be surfaced.
+		if strings.Contains(varErr.Error(), "not yet ready") {
+			value = req.DefaultValue
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": varErr.Error()})
+			return
+		}
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -954,20 +970,36 @@ func peekVariableValueHandler(w http.ResponseWriter, r *http.Request) {
 
 	value := req.DefaultValue
 	var peekErr error
+	var panicMsg string
 
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Recovered from panic in peekVariableValue: %v", r)
-				value = req.DefaultValue
+				panicMsg = fmt.Sprintf("%v", r)
 			}
 		}()
 		value, peekErr = ctxData.context.PeekVariableValue(req.Key, req.DefaultValue)
 	}()
 
+	if panicMsg != "" {
+		log.Printf("Recovered from panic in peekVariableValue: %s", panicMsg)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": panicMsg})
+		return
+	}
+
 	if peekErr != nil {
-		log.Printf("Error in PeekVariableValue: %v", peekErr)
-		value = req.DefaultValue
+		// Not-ready read methods return the provided default, no error.
+		// Any other SDK error is a real failure and must be surfaced.
+		if strings.Contains(peekErr.Error(), "not yet ready") {
+			value = req.DefaultValue
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": peekErr.Error()})
+			return
+		}
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -1521,7 +1553,10 @@ func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
 
 	var result interface{}
 	if ctxData.context.IsFailed() {
-		result = "Context load failed"
+		result = map[string]interface{}{
+			"isError": true,
+			"message": "Context load failed",
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1610,7 +1645,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 		ctxData.publishFail = false
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "publish failed", "code": "PUBLISH_ERROR"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "publish failed"})
 		return
 	}
 

@@ -137,6 +137,10 @@ class DataWrapper
 end
 
 class FailingDataWrapper
+  def initialize(exception = StandardError.new('Context load failed'))
+    @exception = exception
+  end
+
   def data_future
     nil
   end
@@ -146,7 +150,7 @@ class FailingDataWrapper
   end
 
   def exception
-    StandardError.new('Context load failed')
+    @exception
   end
 end
 
@@ -170,7 +174,10 @@ class DeferredDataProvider < ContextDataProvider
       data = JSON.parse(response.body, symbolize_names: false)
       DataWrapper.new(data)
     rescue => e
-      DataWrapper.new({ 'experiments' => [] })
+      # Surface fetch/parse failures so the SDK's failed-load path runs
+      # (context becomes FAILED, readyError reports the error) instead of
+      # swallowing them into empty-but-ready data.
+      FailingDataWrapper.new(e)
     end
   end
 end
@@ -443,9 +450,8 @@ post '/context/:context_id/treatment' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
-  unless context.ready?
-    content_type :json
-    return { result: 0, events: [] }.to_json
+  if context.closed?
+    halt 400, { error: 'Context finalized' }.to_json
   end
 
   begin
@@ -493,6 +499,11 @@ post '/context/:context_id/track' do
 
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
+
+  props = req_data[:properties]
+  if !props.nil? && !props.is_a?(Hash)
+    halt 400, { error: "Goal '#{req_data[:goalName]}' properties must be of type object." }.to_json
+  end
 
   begin
     context.track(req_data[:goalName], req_data[:properties])
@@ -611,10 +622,6 @@ get '/context/:context_id/experiments' do
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
 
   ctx_data = $contexts[context_id]
-  unless ctx_data[:context].ready?
-    content_type :json
-    return { result: [], events: [] }.to_json
-  end
 
   begin
     experiments = ctx_data[:context].experiments
@@ -683,7 +690,7 @@ post '/context/:context_id/readyError' do
 
   begin
     error = context.respond_to?(:ready_error) ? context.ready_error : nil
-    result = error ? error.to_s : nil
+    result = error ? { isError: true, message: error.to_s } : nil
     content_type :json
     { result: result, events: [] }.to_json
   rescue => e
@@ -870,11 +877,6 @@ post '/context/:context_id/variableValue' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
-  unless context.ready?
-    content_type :json
-    return { result: req_data[:defaultValue], events: [] }.to_json
-  end
-
   begin
     result = context.variable_value(req_data[:key], req_data[:defaultValue])
     new_events = collector.events[events_before..-1] || []
@@ -937,11 +939,6 @@ post '/context/:context_id/variableKeys' do
   context = ctx_data[:context]
   collector = ctx_data[:eventCollector]
   events_before = collector.events.length
-
-  unless context.ready?
-    content_type :json
-    return { result: [], events: [] }.to_json
-  end
 
   begin
     keys = context.variable_keys

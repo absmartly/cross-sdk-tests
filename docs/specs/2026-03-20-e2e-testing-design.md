@@ -1,3 +1,7 @@
+> **Historical — describes the original design; see code for current behavior.**
+> Note: the unit type drifted from `session_id` (shown below) to `user_id` in the
+> implemented `orchestrator/e2e_runner.py`.
+
 # E2E Testing Design
 
 End-to-end tests that verify each SDK sends correct data through the ABsmartly pipeline — from SDK event emission to API-queryable metrics.

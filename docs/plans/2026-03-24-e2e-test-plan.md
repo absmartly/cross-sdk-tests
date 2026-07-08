@@ -1,3 +1,5 @@
+> **Historical — describes the original design; see code for current behavior.**
+
 # E2E Test Plan — ABsmartly SDKs
 
 ## Overview

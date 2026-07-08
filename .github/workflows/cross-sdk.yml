@@ -81,13 +81,68 @@ jobs:
           docker compose up -d ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
-            orchestrator python3 test_runner.py --loose-error-match
+            orchestrator python3 test_runner.py
 
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: report-${{ matrix.sdk }}
+          path: cross-sdk-tests/test-results/report.json
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: docker compose down --remove-orphans --volumes || true
+
+  # The matrix job above runs one SDK per job, so test_runner's cross-SDK
+  # consistency check (which requires len(sdks) >= 2 to compare assignments
+  # across SDKs) never fires on the PR gate. This job brings up a small
+  # representative subset together and runs the orchestrator once over all of
+  # them, so the consistency check actually executes. Its failure fails the
+  # workflow like any other required job.
+  cross-sdk-consistency:
+    name: cross-sdk-consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+        with:
+          path: cross-sdk-tests
+
+      - name: Checkout SDK source repos
+        run: |
+          for repo in javascript-sdk python3-sdk go-sdk; do
+            echo "::group::Cloning absmartly/$repo (main)"
+            git clone --depth 1 --branch main \
+              "https://github.com/absmartly/$repo.git" "$repo"
+            echo "::endgroup::"
+          done
+
+      - name: Build wrappers + orchestrator
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: docker compose build javascript-sdk python-sdk go-sdk orchestrator
+
+      - name: Run cross-SDK consistency suite
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          docker compose up -d javascript-sdk python-sdk go-sdk
+          docker compose run --rm --no-deps \
+            -e "SDK_SERVICES=javascript,python,go" \
+            orchestrator python3 test_runner.py
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-cross-sdk-consistency
           path: cross-sdk-tests/test-results/report.json
           if-no-files-found: ignore
 

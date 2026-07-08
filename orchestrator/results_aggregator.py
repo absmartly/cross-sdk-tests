@@ -221,9 +221,15 @@ def parse_gradle_junit(output):
         skipped = int(m.group(3) or 0)
         return completed - failed, failed, completed + skipped
 
-    passed = len(re.findall(r"\bPASSED\s*$", output, re.MULTILINE))
-    failed = len(re.findall(r"\bFAILED\s*$", output, re.MULTILINE))
-    skipped = len(re.findall(r"\bSKIPPED\s*$", output, re.MULTILINE))
+    # No summary line: tally per-test result lines. Gradle prints these as
+    # "ClassName > testName() PASSED" (the status is the last token, preceded by
+    # the test signature), so anchor on the "()" that ends the test name.
+    # Matching a bare "PASSED$" would also count log lines whose text merely ends
+    # in the word PASSED (e.g. a test named "assertLoginPASSED").
+    result_line = r"^.*\)\s+{status}\s*$"
+    passed = len(re.findall(result_line.format(status="PASSED"), output, re.MULTILINE))
+    failed = len(re.findall(result_line.format(status="FAILED"), output, re.MULTILINE))
+    skipped = len(re.findall(result_line.format(status="SKIPPED"), output, re.MULTILINE))
     if passed or failed or skipped:
         return passed, failed, passed + failed + skipped
 
@@ -358,7 +364,28 @@ def load_cross_sdk_report(report_path):
             failed = stats.get("failed", 0) + stats.get("errors", 0)
             tested = stats.get("tested", passed + failed)
             skipped = stats.get("skipped", 0)
-            results[sdk] = {"passed": passed, "failed": failed, "total": tested, "skipped": skipped}
+            # test_runner sets these run-level flags independently of the
+            # passed/failed tallies; an SDK can report 0 failures yet still be a
+            # failed run (service never started, capabilities fetch failed, zero
+            # scenarios executed, or a cross-SDK disagreement). Surface a distinct
+            # status so the table doesn't print PASS where report.json says
+            # FAILED, and force the row to count toward the aggregate exit code.
+            forced_status = None
+            if stats.get("service_failed"):
+                forced_status = "DOWN"
+            elif stats.get("capabilities_failed"):
+                forced_status = "CAPS FAIL"
+            elif stats.get("no_tests_run"):
+                forced_status = "NO TESTS RUN"
+            elif stats.get("consistency_failed"):
+                forced_status = "INCONSISTENT"
+            results[sdk] = {
+                "passed": passed,
+                "failed": failed,
+                "total": tested,
+                "skipped": skipped,
+                "forced_status": forced_status,
+            }
         return results
 
     sdk_results = report.get("sdk_results", report.get("results", {}))
@@ -456,14 +483,31 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             u_passed = unit.get("passed")
             u_failed = unit.get("failed") or 0
             u_total = unit.get("total") or ((u_passed or 0) + u_failed)
-            unit_str = format_result(u_passed, u_failed, u_total)
-            cells.append(colorize_result(unit_str))
-            if u_passed is not None:
+            u_exit = unit.get("exit_code", 0)
+
+            if not unit:
+                # No unit result for this SDK at all - neutral, not a failure.
+                cells.append(colorize_result("N/A"))
+            elif u_passed is None:
+                # Exit code alone can't confirm any test ran. A non-zero exit is
+                # obviously a failure, and a zero exit with no parser match is
+                # not a pass either - flag both as a detected-nothing failure.
                 unit_sdk_total += 1
-                if u_failed == 0:
-                    unit_sdk_pass += 1
-            if u_failed and u_failed > 0:
                 any_failure = True
+                cells.append(f"{RED}NO TESTS DETECTED{RESET}")
+            else:
+                unit_str = format_result(u_passed, u_failed, u_total)
+                unit_sdk_total += 1
+                # A non-zero exit code is a failure even when the parsed summary
+                # reports zero failures (e.g. the runner crashed after printing
+                # its summary).
+                if u_failed > 0 or u_exit != 0:
+                    any_failure = True
+                    if u_failed == 0:
+                        unit_str = unit_str.replace("PASS", "FAIL")
+                else:
+                    unit_sdk_pass += 1
+                cells.append(colorize_result(unit_str))
 
         if has_cross:
             cross = cross_sdk_results.get(sdk, {})
@@ -471,14 +515,23 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             c_failed = cross.get("failed") or 0
             c_total = cross.get("total") or ((c_passed or 0) + c_failed)
             c_skipped = cross.get("skipped") or 0
-            cross_str = format_result(c_passed, c_failed, c_total, c_skipped)
-            cells.append(colorize_result(cross_str))
-            if c_passed is not None:
+            forced_status = cross.get("forced_status")
+            if forced_status:
+                # A run-level failure flag (DOWN / CAPS FAIL / NO TESTS RUN /
+                # INCONSISTENT) overrides the passed/failed tally: the run failed
+                # even if zero individual scenarios reported a failure.
+                cells.append(f"{RED}{forced_status}{RESET}")
                 cross_sdk_total += 1
-                if c_failed == 0:
-                    cross_sdk_pass += 1
-            if c_failed and c_failed > 0:
                 any_failure = True
+            else:
+                cross_str = format_result(c_passed, c_failed, c_total, c_skipped)
+                cells.append(colorize_result(cross_str))
+                if c_passed is not None:
+                    cross_sdk_total += 1
+                    if c_failed == 0:
+                        cross_sdk_pass += 1
+                if c_failed and c_failed > 0:
+                    any_failure = True
 
         print(make_row(cells))
 
@@ -516,10 +569,9 @@ def main():
             output = data.get("output", "")
             exit_code = data.get("exit_code", -1)
             passed, failed, total = parse_unit_test_output(sdk, output)
-            if passed is None and exit_code == 0:
-                passed = 0
-                failed = 0
-                total = 0
+            # Do NOT coerce an unparsed result into 0/0 when the exit code is 0:
+            # that renders as a vacuous "0/0 PASS". Leave passed=None so the
+            # table shows "NO TESTS DETECTED" and counts it as a failure.
             unit_results[sdk] = {
                 "passed": passed,
                 "failed": failed,

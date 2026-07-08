@@ -330,6 +330,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
 
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var eventCollector = new EventCollector();
+        var publishFailFlag = new PublishFailFlag();
 
         var sdk = new ABSdk(
             new DummyHttpClientFactory(),
@@ -343,7 +344,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             new ABSdkConfig
             {
                 ContextEventLogger = eventCollector,
-                ContextPublisher = new CustomPublisher(eventCollector)
+                ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag)
             }
         );
 
@@ -458,7 +459,8 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             Context = context,
             EventCollector = eventCollector,
             Units = new Dictionary<string, object>(),
-            Attributes = new Dictionary<string, object>()
+            Attributes = new Dictionary<string, object>(),
+            PublishFailFlag = publishFailFlag
         };
 
         if (requestJson.ContainsKey("units"))
@@ -577,7 +579,17 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
     try
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
-        var result = data.Units.ContainsKey(request.UnitType) ? data.Units[request.UnitType] : null;
+        // Read from the SDK (matching getUnits), not the wrapper-local shadow dict.
+        object result = null;
+        if (data.Context.Units.TryGetValue(request.UnitType, out var uid))
+        {
+            if (long.TryParse(uid, out var longVal))
+                result = longVal;
+            else if (double.TryParse(uid, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
+                result = dblVal;
+            else
+                result = uid;
+        }
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -647,7 +659,8 @@ app.MapPost("/context/{contextId}/getAttribute", (string contextId, [FromBody] G
     try
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
-        var result = data.Attributes.ContainsKey(request.Name) ? data.Attributes[request.Name] : null;
+        // Read from the SDK (matching getAttributes), not the wrapper-local shadow dict.
+        var result = data.Context.GetAttribute(request.Name);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -1211,7 +1224,7 @@ app.MapPost("/context/{contextId}/readyError", (string contextId) =>
     try
     {
         var error = data.Context.ReadyError;
-        var result = error?.Message;
+        var result = error != null ? new { isError = true, message = error.Message } : null;
         return Results.Ok(new ApiResponse { Result = result, Events = new List<object>() });
     }
     catch (Exception e)
@@ -1259,7 +1272,8 @@ app.MapPost("/context/{contextId}/publishFail", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
-    data.PublishFail = true;
+    if (data.PublishFailFlag != null)
+        data.PublishFailFlag.Fail = true;
     return Results.Ok(new { result = (object?)null, events = Array.Empty<object>() });
 });
 
@@ -1325,10 +1339,11 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
         if (context != null)
         {
             var closeMethod = typeof(Context).GetMethod("CloseAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (closeMethod != null)
+            if (closeMethod == null)
             {
-                await (Task)closeMethod.Invoke(context, null);
+                return Results.Problem("Context.CloseAsync method not found via reflection; cannot finalize", statusCode: 500);
             }
+            await (Task)closeMethod.Invoke(context, null);
         }
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
@@ -1441,16 +1456,30 @@ public class EventCollector : IContextEventLogger
 public class CustomPublisher : IContextPublisher
 {
     private readonly EventCollector _eventCollector;
+    private readonly PublishFailFlag _publishFailFlag;
 
-    public CustomPublisher(EventCollector eventCollector)
+    public CustomPublisher(EventCollector eventCollector, PublishFailFlag publishFailFlag)
     {
         _eventCollector = eventCollector;
+        _publishFailFlag = publishFailFlag;
     }
 
     public Task PublishAsync(IContext context, PublishEvent publishEvent)
     {
+        // When armed via /publishFail, fail this publish so the SDK's failure path
+        // runs (pending events are preserved). One-shot: the next publish succeeds.
+        if (_publishFailFlag != null && _publishFailFlag.Fail)
+        {
+            _publishFailFlag.Fail = false;
+            throw new Exception("publish failed");
+        }
         return Task.CompletedTask;
     }
+}
+
+public class PublishFailFlag
+{
+    public volatile bool Fail;
 }
 
 public class DummyHttpClientFactory : IABSdkHttpClientFactory
@@ -1505,7 +1534,7 @@ public class ContextData
     public EventCollector EventCollector { get; set; }
     public Dictionary<string, object> Units { get; set; }
     public Dictionary<string, object> Attributes { get; set; }
-    public bool PublishFail { get; set; }
+    public PublishFailFlag PublishFailFlag { get; set; }
 }
 
 public class ApiResponse

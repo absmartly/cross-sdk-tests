@@ -424,6 +424,12 @@ Future<void> startServer() async {
 
         final contextConfig = ContextConfig();
         contextConfig.setUnits(unitsMap);
+        // e2e: disable auto-publish timer and auto-refresh so no background
+        // HTTP fires mid-test; tests drive publish/refresh explicitly. A
+        // negative delay fires the Timer immediately, so disabling means a
+        // very large delay, matching the non-e2e path below.
+        contextConfig.setPublishDelay(999999999);
+        contextConfig.setRefreshInterval(0);
 
         final context = e2eSdk.createContext(contextConfig);
         await context.waitUntilReady();
@@ -466,6 +472,9 @@ Future<void> startServer() async {
       ContextData? contextDataForCreation;
       Map<String, dynamic> rawDataForStore = {};
       final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
+      // Set when the endpoint fetch path cannot resolve a payload. The context must
+      // then become FAILED rather than fabricating an empty-but-ready ContextData.
+      bool fetchFailed = false;
 
       if (data != null) {
         final normalizedData = _normalizeContextData(data);
@@ -476,13 +485,14 @@ Future<void> startServer() async {
         // For async context tests, use createContextWith instead.
         // Extract payloadId from endpoint URL and fetch directly from payloadStore.
         final payloadMatch = RegExp(r'/context_payload/([^/]+)$').firstMatch(endpoint);
-        if (payloadMatch != null) {
-          final payloadId = payloadMatch.group(1)!;
-          final storedData = payloadStore[payloadId];
-          contextDataForCreation = storedData ?? ContextData();
-          rawDataForStore = storedData?.toMap() ?? {};
+        final storedData = payloadMatch != null ? payloadStore[payloadMatch.group(1)!] : null;
+        if (storedData != null) {
+          contextDataForCreation = storedData;
+          rawDataForStore = storedData.toMap();
         } else {
-          contextDataForCreation = ContextData();
+          // The payload could not be resolved from the endpoint: this is a genuine
+          // fetch/parse failure. Fail the context so waitForReady reports failure.
+          fetchFailed = true;
         }
       }
 
@@ -522,7 +532,7 @@ Future<void> startServer() async {
       contextConfig.setRefreshInterval(-1);
 
       late Context context;
-      if (failLoad) {
+      if (failLoad || fetchFailed) {
         sdkConfig.setContextDataProvider(FailingContextDataProvider());
         final failingSdk = ABSmartly(sdkConfig);
         context = failingSdk.createContext(contextConfig);
@@ -699,6 +709,15 @@ Future<void> startServer() async {
     try {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
+
+      // The widget path peeks 0 after finalize rather than throwing, so guard the
+      // finalized state explicitly (scenario 189).
+      if (ctxData.context.isClosed()) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': 'Context finalized'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
 
       final widgetRequest = WidgetTestRequest(
         type: WidgetTestRequestType.treatment,

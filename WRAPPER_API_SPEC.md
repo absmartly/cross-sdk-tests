@@ -94,7 +94,7 @@ The wrapper reads credentials from its environment (NOT from the request body):
 
 | Variable | Description |
 |----------|-------------|
-| `ABSMARTLY_E2E_ENDPOINT` | ABsmartly API URL (e.g., `https://test-1.absmartly.com/v1`) |
+| `ABSMARTLY_E2E_ENDPOINT` | ABsmartly collector URL (e.g., `https://test-1.absmartly.io/v1`) |
 | `ABSMARTLY_E2E_API_KEY` | API key |
 | `ABSMARTLY_E2E_APPLICATION` | Application name (default: `e2e-tests`) |
 | `ABSMARTLY_E2E_ENVIRONMENT` | Environment name (default: `production`) |
@@ -104,6 +104,9 @@ The wrapper reads credentials from its environment (NOT from the request body):
 - No mock publishers or payload endpoints
 - Attributes from the request are set on the context
 - Context is waited until ready before returning
+- Wrappers force `publishDelay: -1` and `refreshPeriod: 0` in e2e mode; request
+  options cannot re-enable auto-publish or auto-refresh (the orchestrator
+  publishes explicitly)
 
 **Error: Not Configured**
 
@@ -614,44 +617,6 @@ DELETE /context/{contextId}
 }
 ```
 
-## E2E Mode
-
-When `mode: "e2e"` is set in the `POST /context` request body, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
-
-### Request
-```json
-{
-  "mode": "e2e",
-  "units": {"session_id": "e2e-run123-javascript-0"},
-  "attributes": {"sdk_name": "javascript"}
-}
-```
-
-### Required Environment Variables
-The wrapper reads credentials from its environment (NOT from the request body):
-- `ABSMARTLY_E2E_ENDPOINT` — ABsmartly API URL (e.g., `https://test-1.absmartly.com/v1`)
-- `ABSMARTLY_E2E_API_KEY` — API key
-- `ABSMARTLY_E2E_APPLICATION` — Application name (default: `e2e-tests`)
-- `ABSMARTLY_E2E_ENVIRONMENT` — Environment name (default: `production`)
-
-### Response
-Same shape as normal `createContext`:
-```json
-{"result": {"contextId": "...", "ready": true, "failed": false, "finalized": false}, "events": [...]}
-```
-
-### Error: Not Configured
-If required env vars are missing, returns HTTP 501:
-```json
-{"error": "e2e mode not configured"}
-```
-
-### Behavior
-- Uses the SDK's `DefaultContextPublisher` (real HTTP to ABsmartly)
-- No mock publishers or payload endpoints
-- Attributes from the request are set on the context
-- Context is waited until ready before returning
-
 ## Implementation Notes
 
 ### Event Collection
@@ -713,12 +678,31 @@ If SDK throws error:
 
 ```json
 {
-  "error": "Error message",
-  "code": "ERROR_CODE"
+  "error": "Error message"
 }
 ```
 
 HTTP status code should be 400 for client errors, 500 for server errors.
+The orchestrator tolerates plain-text error bodies from legacy paths, falling
+back to the raw response text when the body is not JSON.
+
+#### Required error semantics
+
+Several scenarios assert specific error behaviors. The orchestrator matches
+error text by keyword subset (strict mode, the CI default), so the message
+must contain the key words shown below. If the underlying SDK does not raise
+these errors natively, the wrapper must implement the check itself:
+
+1. **Operations on a finalized context** — `treatment`, `track`, `attribute`,
+   and `setUnit` on a finalized context must return 400 with a message
+   containing `Context finalized`. (`setOverride`/`setCustomAssignment` remain
+   allowed after finalize.)
+2. **Goal properties type** — `track` with a `properties` value that is
+   present, non-null, and not a JSON object must return 400 with
+   `Goal '<name>' properties must be of type object.`
+3. **Unit UID rules** — `setUnit` with a blank UID must return 400 with
+   `UID must not be blank`; re-setting an already-set unit type to a different
+   value must return 400 with `Unit '<type>' UID already set.`
 
 ### Context Lifecycle
 
@@ -774,6 +758,9 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | GET | /health | Health check |
 | GET | /capabilities | Feature flags (`diagnostics`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
+| PUT | /context_payload/{id} | Store payload for async fetch |
+| GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
+| GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
 | POST | /context | Create context |
 | POST | /context/{id}/setUnit | Set unit |
 | POST | /context/{id}/getUnit | Get unit |
@@ -783,16 +770,95 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | POST | /context/{id}/peek | Peek treatment |
 | POST | /context/{id}/variableValue | Get variable |
 | POST | /context/{id}/peekVariableValue | Peek variable |
+| POST | /context/{id}/variableKeys | List variable keys (array) |
 | POST | /context/{id}/track | Track goal |
 | POST | /context/{id}/override | Set override |
 | POST | /context/{id}/customAssignment | Set custom assignment |
-| POST | /context/{id}/customFieldValue | Get custom field |
+| POST | /context/{id}/setOverride | Set override (alias endpoint) |
+| POST | /context/{id}/setCustomAssignment | Set custom assignment (alias endpoint) |
+| POST | /context/{id}/customFieldValue | Get custom field value |
+| POST | /context/{id}/customFieldKeys | List custom field keys (no argument) |
+| POST | /context/{id}/customFieldValueType | Get custom field value type |
 | GET | /context/{id}/pending | Get pending count |
 | GET | /context/{id}/isFinalized | Check finalized |
+| GET | /context/{id}/isReady | Check ready |
+| GET | /context/{id}/isFailed | Check failed |
+| GET | /context/{id}/experiments | List experiment names |
 | POST | /context/{id}/publish | Publish events |
 | POST | /context/{id}/refresh | Refresh data |
 | POST | /context/{id}/finalize | Finalize context |
 | DELETE | /context/{id} | Delete context |
+
+The `waitForReady` action in scenarios is handled by the orchestrator (it polls
+`GET /context/{id}/isReady`); wrappers do not expose a `waitForReady` endpoint.
+
+## Additional Core Endpoints
+
+Beyond the numbered endpoints above, every wrapper also implements the
+following. Shapes below are the JSON contract as verified against
+`python-wrapper/server.py` and `go-wrapper/server.go`.
+
+### List Variable Keys
+
+```http
+POST /context/{contextId}/variableKeys
+```
+
+**Response:** `{"result": ["button.color", "layout"], "events": []}` — the list
+of variable keys (array only, not the key→experiments map; for that map use the
+`variableKeysMap` capability).
+
+### List Custom Field Keys
+
+```http
+POST /context/{contextId}/customFieldKeys
+```
+
+Takes no argument. **Response:** `{"result": ["country", "owner"], "events": []}`.
+
+### Get Custom Field Value Type
+
+```http
+POST /context/{contextId}/customFieldValueType
+Content-Type: application/json
+
+{"experimentName": "exp_test", "fieldName": "country"}
+```
+
+**Response:** `{"result": "string", "events": []}` — the declared type of the
+custom field (e.g. `string`, `number`, `boolean`, `json`).
+
+### Set Override / Set Custom Assignment (alias endpoints)
+
+```http
+POST /context/{contextId}/setOverride
+POST /context/{contextId}/setCustomAssignment
+Content-Type: application/json
+
+{"experimentName": "exp_test", "variant": 1}
+```
+
+These behave the same as `override` / `customAssignment` above and exist because
+some scenarios reference the setter-style names. **Response:**
+`{"result": null, "events": []}`.
+
+### Check Ready / Failed
+
+```http
+GET /context/{contextId}/isReady
+GET /context/{contextId}/isFailed
+```
+
+**Response:** `{"result": true, "events": []}` — boolean context state.
+
+### List Experiments
+
+```http
+GET /context/{contextId}/experiments
+```
+
+**Response:** `{"result": ["exp_a", "exp_b"], "events": []}` — the experiment
+names present in the current context data.
 
 ## Optional Capability Endpoints
 
@@ -829,7 +895,7 @@ POST /context/{contextId}/variableKeysMap
 Returns the union of all custom field keys across all experiments (no argument).
 
 ```http
-POST /context/{contextId}/customFieldKeysGlobal
+POST /context/{contextId}/globalCustomFieldKeys
 ```
 
 **Response:** `{"result": ["country", "owner", "priority"], "events": []}`
@@ -877,4 +943,6 @@ Makes the next publish call fail, so pending events are preserved.
 POST /context/{contextId}/publishFail
 ```
 
-**Response:** `{"result": null, "events": []}` — publish is attempted and fails silently; pending count stays unchanged.
+**Response:** `{"result": null, "events": []}` — this endpoint arms a failure. The
+next `POST /publish` call fails and its pending events are preserved (pending
+count is unchanged by the failed publish).

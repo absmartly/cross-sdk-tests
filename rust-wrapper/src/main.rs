@@ -732,6 +732,15 @@ async fn treatment_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
+    // The rust SDK's treatment() returns 0 after finalize rather than erroring, so
+    // guard the finalized state explicitly (scenario 189).
+    if ctx_data.context.lock().unwrap().is_finalized() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Context finalized"})),
+        ));
+    }
+
     let (variant, is_ready) = {
         let mut context = ctx_data.context.lock().unwrap();
         let ready = context.is_ready();
@@ -1157,7 +1166,10 @@ async fn ready_error_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let result = {
         let context = ctx_data.context.lock().unwrap();
-        context.ready_error().map(|e| Value::String(e.clone())).unwrap_or(Value::Null)
+        context
+            .ready_error()
+            .map(|e| json!({"isError": true, "message": e.clone()}))
+            .unwrap_or(Value::Null)
     };
     Ok(Json(ApiResponse { result, events: vec![], error: None }))
 }
@@ -1280,7 +1292,37 @@ async fn finalize_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    {
+    if ctx_data.is_e2e {
+        // E2E mode: DefaultContextPublisher's send is fire-and-forget, so finalize()
+        // would return before the HTTP PUT lands and the batch would race verification.
+        // Mirror publish_handler: drive the SDK's awaitable publish for any pending
+        // events, then emit the finalize event so the collector receives the batch
+        // before we respond.
+        let params = {
+            let mut context = ctx_data.context.lock().unwrap();
+            if context.is_finalized() || context.pending() == 0 {
+                None
+            } else {
+                Some(context.get_publish_params())
+            }
+        };
+
+        if let Some(params) = params {
+            ctx_data.event_collector.push(
+                "publish",
+                Some(serde_json::to_value(&params).unwrap_or_default()),
+            );
+
+            if let Err(e) = ctx_data.sdk.publish(&params).await {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": format!("finalize publish failed: {}", e)})),
+                ));
+            }
+        }
+
+        ctx_data.event_collector.push("finalize", None);
+    } else {
         let mut context = ctx_data.context.lock().unwrap();
         context.finalize();
     }

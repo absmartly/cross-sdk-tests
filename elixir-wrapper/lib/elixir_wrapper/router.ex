@@ -119,8 +119,11 @@ defmodule ElixirWrapper.Router do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"unitType" => unit_type, "uid" => uid} = conn.body_params
       uid_str = if is_number(uid), do: to_string(uid), else: uid
-      ABSmartly.Context.set_unit(ctx, unit_type, uid_str)
-      send_action_response(conn, nil, collector, eb)
+
+      case ABSmartly.Context.set_unit(ctx, unit_type, uid_str) do
+        :ok -> send_action_response(conn, nil, collector, eb)
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+      end
     end)
   end
 
@@ -136,8 +139,14 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/attribute" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"name" => name, "value" => value} = conn.body_params
-      ABSmartly.Context.set_attribute(ctx, name, value)
-      send_action_response(conn, nil, collector, eb)
+      # The SDK's set_attribute has no finalized guard, so enforce it here to
+      # match the spec (operations on a finalized context return errors).
+      if ABSmartly.Context.is_finalized?(ctx) do
+        send_error(conn, 400, "ABsmartly Context is finalized.")
+      else
+        ABSmartly.Context.set_attribute(ctx, name, value)
+        send_action_response(conn, nil, collector, eb)
+      end
     end)
   end
 
@@ -152,19 +161,26 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/treatment" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name} = conn.body_params
-      if not ABSmartly.Context.is_ready?(ctx) do
-        send_json(conn, 200, %{result: 0, events: []})
-      else
-        case ABSmartly.Context.treatment(ctx, experiment_name) do
-          {:error, :finalized} ->
-            send_error(conn, 400, "Context finalized")
+      cond do
+        # The SDK returns 0 (not an error) on a finalized context, so enforce
+        # the spec's "finalized => error" here before delegating.
+        ABSmartly.Context.is_finalized?(ctx) ->
+          send_error(conn, 400, "Context finalized")
 
-          {:error, reason} ->
-            send_error(conn, 400, inspect(reason))
+        not ABSmartly.Context.is_ready?(ctx) ->
+          send_json(conn, 200, %{result: 0, events: []})
 
-          result ->
-            send_action_response(conn, result, collector, eb)
-        end
+        true ->
+          case ABSmartly.Context.treatment(ctx, experiment_name) do
+            {:error, :finalized} ->
+              send_error(conn, 400, "Context finalized")
+
+            {:error, reason} ->
+              send_error(conn, 400, error_message(reason))
+
+            result ->
+              send_action_response(conn, result, collector, eb)
+          end
       end
     end)
   end
@@ -212,40 +228,62 @@ defmodule ElixirWrapper.Router do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"goalName" => goal_name} = conn.body_params
       properties = conn.body_params["properties"]
-      ABSmartly.Context.track(ctx, goal_name, properties)
-      send_action_response(conn, nil, collector, eb)
+
+      # The SDK sanitizes non-map properties to nil and tracks anyway, so
+      # enforce the spec's type check here: a present-but-non-object value
+      # (number, string, array) must fail before delegating to the SDK.
+      if not is_nil(properties) and not is_map(properties) do
+        send_error(conn, 400, "Goal '#{goal_name}' properties must be of type object.")
+      else
+        case ABSmartly.Context.track(ctx, goal_name, properties) do
+          :ok -> send_action_response(conn, nil, collector, eb)
+          {:error, reason} -> send_error(conn, 400, error_message(reason))
+        end
+      end
     end)
   end
 
   post "/context/:context_id/override" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name, "variant" => variant} = conn.body_params
-      ABSmartly.Context.set_override(ctx, experiment_name, variant)
-      send_action_response(conn, nil, collector, eb)
+
+      case ABSmartly.Context.set_override(ctx, experiment_name, variant) do
+        :ok -> send_action_response(conn, nil, collector, eb)
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+      end
     end)
   end
 
   post "/context/:context_id/setOverride" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name, "variant" => variant} = conn.body_params
-      ABSmartly.Context.set_override(ctx, experiment_name, variant)
-      send_action_response(conn, nil, collector, eb)
+
+      case ABSmartly.Context.set_override(ctx, experiment_name, variant) do
+        :ok -> send_action_response(conn, nil, collector, eb)
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+      end
     end)
   end
 
   post "/context/:context_id/customAssignment" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name, "variant" => variant} = conn.body_params
-      ABSmartly.Context.set_custom_assignment(ctx, experiment_name, variant)
-      send_action_response(conn, nil, collector, eb)
+
+      case ABSmartly.Context.set_custom_assignment(ctx, experiment_name, variant) do
+        :ok -> send_action_response(conn, nil, collector, eb)
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+      end
     end)
   end
 
   post "/context/:context_id/setCustomAssignment" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"experimentName" => experiment_name, "variant" => variant} = conn.body_params
-      ABSmartly.Context.set_custom_assignment(ctx, experiment_name, variant)
-      send_action_response(conn, nil, collector, eb)
+
+      case ABSmartly.Context.set_custom_assignment(ctx, experiment_name, variant) do
+        :ok -> send_action_response(conn, nil, collector, eb)
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+      end
     end)
   end
 
@@ -325,7 +363,14 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/readyError" do
     with_context_action(conn, fn {ctx, _collector, _eb} ->
-      result = ABSmartly.Context.ready_error(ctx)
+      # Spec shape: {"isError": true, "message": "..."} when failed, else null
+      # (reference: python-wrapper/server.py, flutter-wrapper/server.dart).
+      result =
+        case ABSmartly.Context.ready_error(ctx) do
+          nil -> nil
+          error -> %{isError: true, message: error_message(error)}
+        end
+
       send_json(conn, 200, %{result: result, events: []})
     end)
   end
@@ -354,25 +399,38 @@ defmodule ElixirWrapper.Router do
     context_id = conn.path_params["context_id"]
     should_fail = ContextStore.get_publish_fail(context_id)
 
-    if should_fail do
-      ContextStore.set_publish_fail(context_id, false)
-
-      with_context_action(conn, fn {_ctx, collector, eb} ->
-        EventCollector.push(collector, "error", %{message: "Publish failed"})
-        send_action_response(conn, nil, collector, eb)
-      end)
-    else
-      with_context_action(conn, fn {ctx, collector, eb} ->
-        ABSmartly.Context.publish(ctx)
-        send_action_response(conn, nil, collector, eb)
-      end)
-    end
+    with_context_action(conn, fn {ctx, collector, eb} ->
+      if should_fail do
+        # Simulate a publish failure the way go-wrapper does: report the failure
+        # to the client (500) without invoking the SDK publish. This is required
+        # because the elixir SDK's publish clears pending eagerly (even on HTTP
+        # failure), which would violate scenario 193's "pending preserved after
+        # failed publish" expectation. No synthetic event is fabricated.
+        ContextStore.set_publish_fail(context_id, false)
+        send_error(conn, 500, "Publish failed")
+      else
+        case ABSmartly.Context.publish(ctx) do
+          {:error, reason} -> send_error(conn, 500, error_message(reason))
+          _ -> send_action_response(conn, nil, collector, eb)
+        end
+      end
+    end)
   end
 
   post "/context/:context_id/refresh" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      ABSmartly.Context.refresh(ctx)
-      send_action_response(conn, nil, collector, eb)
+      # Prefer the newData supplied in the request body (works for both sync and
+      # async contexts); fall back to a re-fetch when none is provided.
+      result =
+        case conn.body_params["newData"] do
+          nil -> ABSmartly.Context.refresh(ctx)
+          new_data -> ABSmartly.Context.refresh(ctx, new_data)
+        end
+
+      case result do
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+        _ -> send_action_response(conn, nil, collector, eb)
+      end
     end)
   end
 
@@ -672,6 +730,12 @@ defmodule ElixirWrapper.Router do
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(%{error: message}))
   end
+
+  # Normalize an SDK {:error, reason} reason into a human-readable string.
+  defp error_message(reason) when is_binary(reason), do: reason
+  defp error_message(:finalized), do: "Context finalized"
+  defp error_message(reason) when is_atom(reason), do: to_string(reason)
+  defp error_message(reason), do: inspect(reason)
 
   defp maybe_parse_number(nil), do: nil
   defp maybe_parse_number(str) when is_binary(str) do

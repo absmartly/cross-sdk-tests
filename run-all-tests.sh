@@ -224,6 +224,10 @@ if [ "$CROSS_ONLY" = false ]; then
     kill "$pid" 2>/dev/null || true
     docker compose kill "${sdk}-unit" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
+    # `docker compose run` leaves a stopped ephemeral container behind when the
+    # client is killed mid-run (--rm only fires on a clean exit), so remove any
+    # lingering container for this service explicitly.
+    docker compose rm -f -s "${sdk}-unit" 2>/dev/null || true
     echo "124" > "$UNIT_TMPDIR/${sdk}.exit"
   done
 
@@ -322,10 +326,13 @@ else
   AGGREGATOR_ARGS="$AGGREGATOR_ARGS /dev/null"
 fi
 
-python3 orchestrator/results_aggregator.py $AGGREGATOR_ARGS || true
+AGG_EXIT=0
+python3 orchestrator/results_aggregator.py $AGGREGATOR_ARGS || AGG_EXIT=$?
 
-# Final exit code
-if [ "$UNIT_EXIT_CODE" -ne 0 ] || [ "$CROSS_EXIT_CODE" -ne 0 ] || [ "$E2E_EXIT_CODE" -ne 0 ]; then
+# Final exit code. The aggregator is the only detector of "NO TESTS DETECTED"
+# (a zero-exit run that produced no parseable results), so its verdict must
+# gate the run alongside the unit/cross/e2e phase exit codes.
+if [ "$UNIT_EXIT_CODE" -ne 0 ] || [ "$CROSS_EXIT_CODE" -ne 0 ] || [ "$E2E_EXIT_CODE" -ne 0 ] || [ "$AGG_EXIT" -ne 0 ]; then
   exit 1
 fi
 exit 0

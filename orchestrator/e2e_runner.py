@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -10,6 +11,32 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+
+
+# Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
+# allowance absorbs publish retries; anything above it is treated as an
+# over-publish (duplicate exposures/goals) and fails.
+OVER_PUBLISH_TOLERANCE = 1.05
+
+# Fallback environment when neither config["environment"] nor
+# ABSMARTLY_E2E_ENVIRONMENT is set. Experiment creation and the context poll
+# MUST agree on this name: create places the experiment in this environment and
+# the poll queries the SDK context for the same one, so a mismatch makes the
+# poll never find the experiment and mark every exposure suspect.
+DEFAULT_E2E_ENVIRONMENT = "production"
+
+# Profile names are interpolated into shell pipelines during cleanup, so they
+# must be a strict identifier (no shell metacharacters).
+PROFILE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def validate_profile(profile: str) -> str:
+    if profile and not PROFILE_RE.match(profile):
+        raise ValueError(
+            f"Invalid profile {profile!r}: must match [A-Za-z0-9_-]+ "
+            "(it is interpolated into shell cleanup commands)"
+        )
+    return profile
 
 
 class Colors:
@@ -77,13 +104,19 @@ class E2ERunner:
         self.experiment_id: Optional[int] = None
         self.experiment_name: Optional[str] = None
         self.run_id = generate_run_id()
-        self.profile = config.get("profile", "e2e")
+        self.profile = validate_profile(config.get("profile", "e2e"))
+        # Resolve the ABSmartly environment once so experiment creation and the
+        # context poll agree: config wins, then the env var, then the default.
+        self.environment = config.get("environment") or os.getenv(
+            "ABSMARTLY_E2E_ENVIRONMENT", DEFAULT_E2E_ENVIRONMENT
+        )
         self.units_per_sdk = config.get("units", 100)
         self.timeout = config.get("timeout", 300)
         self.verbose = config.get("verbose", False)
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
         self.skipped_sdks: List[str] = []
+        self.experiment_context_ready = True
         self.app_id: Optional[str] = None
         self.unit_type: Optional[str] = None
         self.owner_id: Optional[str] = None
@@ -240,7 +273,7 @@ class E2ERunner:
             print(f"  {Colors.YELLOW}[dry-run]{Colors.RESET} Skipping experiment creation")
             return
 
-        env_name = self.config.get("environment", os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "production"))
+        env_name = self.environment
 
         create_args = [
             "experiments", "create",
@@ -325,17 +358,26 @@ class E2ERunner:
             raise RuntimeError(f"Failed to start experiment: {output}")
 
         print(f"  {Colors.GREEN}Started{Colors.RESET}")
-        self._wait_for_experiment_in_context()
+        self.experiment_context_ready = self._wait_for_experiment_in_context()
 
-    def _wait_for_experiment_in_context(self) -> None:
+    def _wait_for_experiment_in_context(self) -> bool:
+        """Poll the SDK endpoint until the started experiment is assignable.
+
+        Returns True once the experiment shows up in the context payload. If it
+        never appears within the timeout, returns False after an always-printed
+        warning: every unit published afterwards is assigned against a context
+        that does not yet contain the experiment, so those exposures are suspect
+        and each SDK counts them as context errors (see _run_sdk_scenario).
+        """
         sdk_endpoint = os.getenv("ABSMARTLY_E2E_ENDPOINT", "")
         sdk_key = os.getenv("ABSMARTLY_E2E_API_KEY", "")
         app = os.getenv("ABSMARTLY_E2E_APPLICATION", "e2e-tests")
-        env = os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "prod")
+        env = self.environment
 
         if not sdk_endpoint or not sdk_key:
             self.log("No SDK endpoint configured, skipping context poll")
-            return
+            # Nothing to poll against; assume ready so we don't fabricate errors.
+            return True
 
         for attempt in range(30):
             try:
@@ -350,12 +392,17 @@ class E2ERunner:
                     for exp in data.get("experiments", []):
                         if exp.get("id") == self.experiment_id:
                             self.log(f"Experiment visible in context after {attempt + 1} poll(s)")
-                            return
+                            return True
             except requests.RequestException:
                 pass
             time.sleep(1)
 
-        self.log("Experiment not found in context after 30s, proceeding anyway")
+        print(
+            f"  {Colors.RED}Experiment {self.experiment_id} not visible in SDK "
+            f"context after 30s{Colors.RESET}: exposures may not be recorded; "
+            f"affected units will count as context errors"
+        )
+        return False
 
     def run_sdk_scenarios(self) -> None:
         print(f"\nRunning scenarios across {len(self.sdks)} SDK(s)...")
@@ -383,31 +430,53 @@ class E2ERunner:
                             "exposures_sent": 0,
                             "goals_sent": 0,
                             "revenue_sent": 0,
+                            "planned_exposures": self.units_per_sdk,
+                            "planned_goals": (self.units_per_sdk + 1) // 2,
+                            "context_errors": self.units_per_sdk,
+                            "treatment_errors": 0,
+                            "track_errors": 0,
                         }
 
     def _run_sdk_scenario(self, sdk_name: str, base_url: str) -> Dict[str, Any]:
         exposures_sent = 0
         goals_sent = 0
         revenue_sent = 0
+        # Error counters: any nonzero count fails this SDK. They are kept
+        # separate from the *_sent tallies so a wrapper that (say) 500s on
+        # every /track can't shrink its own expected-goal target to 0 and pass
+        # trivially. Expected is derived from planned units below, not successes.
+        context_errors = 0
+        treatment_errors = 0
+        track_errors = 0
+
+        # Planned volume: one treatment per unit, one track on every other unit.
+        # Verification compares the backend against these planned figures, so a
+        # wrapper that silently drops calls fails rather than lowering the bar.
+        planned_exposures = self.units_per_sdk
+        planned_goals = (self.units_per_sdk + 1) // 2
+
+        def scenario_result(status: str, error: Optional[str] = None) -> Dict[str, Any]:
+            result = {
+                "status": status,
+                "exposures_sent": exposures_sent,
+                "goals_sent": goals_sent,
+                "revenue_sent": revenue_sent,
+                "planned_exposures": planned_exposures,
+                "planned_goals": planned_goals,
+                "context_errors": context_errors,
+                "treatment_errors": treatment_errors,
+                "track_errors": track_errors,
+            }
+            if error is not None:
+                result["error"] = error
+            return result
 
         try:
             health_resp = requests.get(f"{base_url}/health", timeout=5)
             if health_resp.status_code != 200:
-                return {
-                    "status": "error",
-                    "error": "Health check failed",
-                    "exposures_sent": 0,
-                    "goals_sent": 0,
-                    "revenue_sent": 0,
-                }
+                return scenario_result("error", "Health check failed")
         except requests.RequestException as exc:
-            return {
-                "status": "error",
-                "error": f"Service unreachable: {exc}",
-                "exposures_sent": 0,
-                "goals_sent": 0,
-                "revenue_sent": 0,
-            }
+            return scenario_result("error", f"Service unreachable: {exc}")
 
         for i in range(self.units_per_sdk):
             unit_id = f"e2e-{self.run_id}-{sdk_name}-{i}"
@@ -420,27 +489,31 @@ class E2ERunner:
                 }, timeout=10)
             except requests.RequestException as exc:
                 self.log(f"{sdk_name} unit {i}: context creation failed: {exc}")
+                context_errors += 1
                 continue
 
             if ctx_resp.status_code == 501:
                 print(f"  {Colors.YELLOW}SKIP{Colors.RESET} {sdk_name} (e2e mode not supported)")
                 self.skipped_sdks.append(sdk_name)
-                return {
-                    "status": "skipped",
-                    "exposures_sent": 0,
-                    "goals_sent": 0,
-                    "revenue_sent": 0,
-                }
+                return scenario_result("skipped")
 
             if ctx_resp.status_code != 200:
                 self.log(f"{sdk_name} unit {i}: context creation returned {ctx_resp.status_code}")
+                context_errors += 1
                 continue
 
             ctx_data = ctx_resp.json()
             context_id = ctx_data.get("result", {}).get("contextId")
             if not context_id:
                 self.log(f"{sdk_name} unit {i}: no contextId in response")
+                context_errors += 1
                 continue
+
+            # If the experiment never became visible in the SDK context, the
+            # assignment this unit gets does not include it. Count it so the SDK
+            # fails loudly instead of silently recording bogus exposures.
+            if not self.experiment_context_ready:
+                context_errors += 1
 
             try:
                 treat_resp = requests.post(
@@ -450,8 +523,12 @@ class E2ERunner:
                 )
                 if treat_resp.status_code == 200:
                     exposures_sent += 1
+                else:
+                    self.log(f"{sdk_name} unit {i}: treatment returned {treat_resp.status_code}")
+                    treatment_errors += 1
             except requests.RequestException as exc:
                 self.log(f"{sdk_name} unit {i}: treatment failed: {exc}")
+                treatment_errors += 1
 
             if i % 2 == 0:
                 try:
@@ -463,19 +540,27 @@ class E2ERunner:
                     if track_resp.status_code == 200:
                         goals_sent += 1
                         revenue_sent += 10
+                    else:
+                        self.log(f"{sdk_name} unit {i}: track returned {track_resp.status_code}")
+                        track_errors += 1
                 except requests.RequestException as exc:
                     self.log(f"{sdk_name} unit {i}: track failed: {exc}")
+                    track_errors += 1
 
             self._publish_with_retry(base_url, context_id, sdk_name, i)
 
-        print(f"  {Colors.GREEN}Done{Colors.RESET} {sdk_name}: {exposures_sent} exposures, {goals_sent} goals, {revenue_sent} revenue")
+        errors_note = ""
+        if context_errors or treatment_errors or track_errors:
+            errors_note = (
+                f" {Colors.RED}[errors ctx={context_errors} "
+                f"treat={treatment_errors} track={track_errors}]{Colors.RESET}"
+            )
+        print(
+            f"  {Colors.GREEN}Done{Colors.RESET} {sdk_name}: "
+            f"{exposures_sent} exposures, {goals_sent} goals, {revenue_sent} revenue{errors_note}"
+        )
 
-        return {
-            "status": "ok",
-            "exposures_sent": exposures_sent,
-            "goals_sent": goals_sent,
-            "revenue_sent": revenue_sent,
-        }
+        return scenario_result("ok")
 
     def _publish_with_retry(self, base_url: str, context_id: str, sdk_name: str, unit_index: int) -> bool:
         for attempt in range(3):
@@ -597,6 +682,48 @@ class E2ERunner:
                         break
         return total
 
+    def _extract_total_revenue(self, metrics: Any) -> Optional[float]:
+        """Revenue/value figure from a metric result, if the backend reports one.
+
+        The e2e metric is a goal_unique_count, which usually carries no monetary
+        value, so this returns None in the common case and the caller derives
+        revenue from goal count instead (labelled "derived"). If a
+        revenue/value/sum field is ever present, it is summed across variants so
+        revenue can be verified rather than assumed.
+        """
+        if not metrics:
+            return None
+
+        metric_list = metrics if isinstance(metrics, list) else [metrics]
+        total = 0.0
+        found = False
+        for metric in metric_list:
+            if not isinstance(metric, dict):
+                continue
+            for variant in metric.get("variants", []):
+                if not isinstance(variant, dict):
+                    continue
+                for field in ("revenue", "value", "value_sum", "sum", "total_value"):
+                    val = variant.get(field)
+                    if isinstance(val, (int, float)):
+                        total += float(val)
+                        found = True
+                        break
+        return total if found else None
+
+    def _within_tolerance(self, expected: int, actual: Optional[int]) -> bool:
+        """Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE.
+
+        Equality-with-tolerance (not actual >= expected) so a duplicate/over-
+        publish is caught as a failure instead of silently passing. When nothing
+        was planned, the backend must also show nothing.
+        """
+        if actual is None:
+            return False
+        if expected <= 0:
+            return actual == 0
+        return expected <= actual <= int(expected * OVER_PUBLISH_TOLERANCE)
+
     def _fetch_metrics_for_sdk(self, sdk_name: str) -> Optional[Dict[str, Any]]:
         """Fetch metrics segmented to a single SDK via the sdk_name attribute.
 
@@ -616,12 +743,28 @@ class E2ERunner:
             self.profile,
         )
         if rc != 0:
+            # Always surface segmentation failures (not just under --verbose):
+            # a silent None here is what let fabricated per-SDK passes through.
+            # `output` already carries the CLI stderr (see run_abs).
+            print(
+                f"  {Colors.RED}Segmentation query failed for {sdk_name}"
+                f"{Colors.RESET} (abs rc={rc}): {output}"
+            )
             return None
         data = parse_json_output(output)
-        if data and isinstance(data, list) and data:
+        if data is None:
+            print(
+                f"  {Colors.RED}Segmentation output for {sdk_name} could not be "
+                f"parsed{Colors.RESET}: {output[:300]}"
+            )
+            return None
+        if isinstance(data, list) and data:
             return data[0]
         if isinstance(data, dict):
             return data
+        # Parsed but empty (e.g. []): the backend has no segment support or no
+        # rows for this SDK. Treat as "unavailable" so the caller falls back to
+        # the aggregate gate rather than fabricating a pass.
         return None
 
     def verify_metrics(self) -> Dict[str, Any]:
@@ -633,16 +776,12 @@ class E2ERunner:
             "overall_pass": True,
         }
 
-        metrics = None
-        if not self.dry_run and self.experiment_id:
-            metrics = self._fetch_metrics()
-
-        # Tracks whether any active SDK could not be verified via per-SDK
-        # segmentation (in which case the aggregate becomes the gate).
-        any_unsegmented = False
-
+        # Partition SDKs. skipped/error rows are terminal; only "ok" SDKs get
+        # verified against the backend.
+        active: Dict[str, Dict[str, Any]] = {}
         for sdk_name, sdk_result in self.sdk_results.items():
-            if sdk_result.get("status") == "skipped":
+            status = sdk_result.get("status")
+            if status == "skipped":
                 results["sdks"][sdk_name] = {
                     "status": "skipped",
                     "exposures": {"expected": 0, "actual": 0, "pass": True},
@@ -651,10 +790,11 @@ class E2ERunner:
                 }
                 continue
 
-            if sdk_result.get("status") == "error":
+            if status == "error":
                 results["sdks"][sdk_name] = {
                     "status": "error",
                     "error": sdk_result.get("error"),
+                    "errors": self._error_counts(sdk_result),
                     "exposures": {"expected": 0, "actual": 0, "pass": False},
                     "goals": {"expected": 0, "actual": 0, "pass": False},
                     "revenue": {"expected": 0, "actual": 0, "pass": False},
@@ -662,90 +802,201 @@ class E2ERunner:
                 results["overall_pass"] = False
                 continue
 
-            expected_exposures = sdk_result["exposures_sent"]
-            expected_goals = sdk_result["goals_sent"]
-            expected_revenue = sdk_result["revenue_sent"]
-
             if self.dry_run:
                 results["sdks"][sdk_name] = {
                     "status": "dry_run",
-                    "exposures": {"expected": expected_exposures, "actual": 0, "pass": True},
-                    "goals": {"expected": expected_goals, "actual": 0, "pass": True},
-                    "revenue": {"expected": expected_revenue, "actual": 0, "pass": True},
+                    "exposures": {"expected": sdk_result["planned_exposures"], "actual": 0, "pass": True},
+                    "goals": {"expected": sdk_result["planned_goals"], "actual": 0, "pass": True},
+                    "revenue": {"expected": sdk_result["planned_goals"] * 10, "actual": 0, "pass": True},
                 }
                 continue
 
-            # Try to independently verify THIS SDK against the backend, segmented
-            # by its sdk_name attribute. If segmentation is available, the SDK
-            # passes only when the backend actually recorded its events.
-            sdk_metrics = self._fetch_metrics_for_sdk(sdk_name)
-            if sdk_metrics is not None:
-                actual_exposures = self._extract_total_participants(sdk_metrics)
-                actual_goals = self._extract_total_goals(sdk_metrics)
-                exposures_pass = expected_exposures > 0 and actual_exposures >= expected_exposures
-                goals_pass = actual_goals >= expected_goals
-                sdk_pass = exposures_pass and goals_pass
+            active[sdk_name] = sdk_result
+
+        if not self.dry_run and self.experiment_id:
+            self._verify_active_sdks(results, active)
+
+        # An all-skipped (or otherwise all-inactive) run verifies nothing: every
+        # wrapper returning 501 when the e2e env is unset yields skipped rows
+        # that each carry pass:True, so without this guard overall_pass stays
+        # True and the run exits 0 with zero coverage. If SDKs were under test
+        # but none are active, fail loudly.
+        if not self.dry_run and self.sdk_results and not active:
+            results["overall_pass"] = False
+            n = len(self.sdk_results)
+            n_skipped = sum(1 for r in self.sdk_results.values() if r.get("status") == "skipped")
+            n_errored = sum(1 for r in self.sdk_results.values() if r.get("status") == "error")
+            results["skip_reason"] = (
+                f"all {n} SDK(s) skipped/errored "
+                f"({n_skipped} skipped, {n_errored} errored) — nothing verified"
+            )
+            print(
+                f"  {Colors.RED}No active SDKs{Colors.RESET}: nothing was "
+                f"verified against the backend; failing the run"
+            )
+
+        return results
+
+    def _error_counts(self, sdk_result: Dict[str, Any]) -> Dict[str, int]:
+        return {
+            "context": sdk_result.get("context_errors", 0),
+            "treatment": sdk_result.get("treatment_errors", 0),
+            "track": sdk_result.get("track_errors", 0),
+        }
+
+    def _verify_active_sdks(self, results: Dict[str, Any], active: Dict[str, Dict[str, Any]]) -> None:
+        # Aggregate backend numbers: both a cross-check and the reference for
+        # detecting a backend that ignores the segmentation --filter.
+        agg = self._fetch_metrics()
+        agg_participants = self._extract_total_participants(agg) if agg else 0
+        agg_goals = self._extract_total_goals(agg) if agg else 0
+
+        # First pass: pull per-SDK segmented actuals. None => not independently
+        # verifiable (segmentation unavailable / query failed / empty). Each
+        # tuple is (participants, goals, revenue-or-None); revenue is only set
+        # when the backend actually reports a monetary figure.
+        segmented: Dict[str, Optional[Tuple[int, int, Optional[float]]]] = {}
+        for sdk_name in active:
+            m = self._fetch_metrics_for_sdk(sdk_name)
+            if m is None:
+                segmented[sdk_name] = None
+            else:
+                segmented[sdk_name] = (
+                    self._extract_total_participants(m),
+                    self._extract_total_goals(m),
+                    self._extract_total_revenue(m),
+                )
+
+        # Filter-trust sanity checks. If the backend ignores --filter, every SDK
+        # comes back with the aggregate total and per-SDK "verification" passes
+        # everyone. Detect that and fall back to the aggregate gate.
+        seg_values = [v for v in segmented.values() if v is not None]
+        segmentation_trustworthy = True
+        seg_warning: Optional[str] = None
+        if len(seg_values) >= 2:
+            exp_actuals = [v[0] for v in seg_values]
+            # If the backend ignores --filter, every segmented query returns the
+            # unsegmented aggregate, so all SDKs report an identical participant
+            # count equal to the aggregate total. Planned volumes are identical
+            # across SDKs here, so we cannot rely on expected variance to detect
+            # this — key off the actuals collapsing onto the aggregate instead.
+            if (
+                len(set(exp_actuals)) == 1
+                and agg_participants > 0
+                and exp_actuals[0] == agg_participants
+            ):
+                segmentation_trustworthy = False
+                seg_warning = (
+                    "every SDK returned the same participant count equal to the "
+                    f"aggregate total ({agg_participants}) — the backend appears "
+                    "to ignore the segmentation filter"
+                )
+            elif sum(exp_actuals) > int(agg_participants * OVER_PUBLISH_TOLERANCE) and agg_participants > 0:
+                segmentation_trustworthy = False
+                seg_warning = (
+                    f"sum of per-SDK participants ({sum(exp_actuals)}) exceeds the "
+                    f"aggregate total ({agg_participants}) beyond tolerance — "
+                    "segmentation is double-counting or the filter is ignored"
+                )
+        if seg_warning:
+            print(f"  {Colors.RED}Segmentation unreliable{Colors.RESET}: {seg_warning}")
+
+        # Second pass: finalize each active SDK.
+        any_unverified = False
+        for sdk_name, sdk_result in active.items():
+            expected_exposures = sdk_result["planned_exposures"]
+            expected_goals = sdk_result["planned_goals"]
+            expected_revenue = expected_goals * 10
+            errors = self._error_counts(sdk_result)
+            has_errors = any(errors.values())
+
+            seg = segmented.get(sdk_name)
+            if segmentation_trustworthy and seg is not None:
+                actual_exposures, actual_goals, actual_revenue = seg
+                exposures_pass = self._within_tolerance(expected_exposures, actual_exposures)
+                goals_pass = self._within_tolerance(expected_goals, actual_goals)
+
+                # Verify revenue against the backend when it reports a real
+                # figure; otherwise derive it from the goal count (10/goal) and
+                # label it derived so the report doesn't imply it was verified.
+                if actual_revenue is not None:
+                    revenue_actual = actual_revenue
+                    revenue_pass = self._within_tolerance(expected_revenue, int(round(actual_revenue)))
+                    revenue_derived = False
+                else:
+                    revenue_actual = actual_goals * 10
+                    revenue_pass = goals_pass
+                    revenue_derived = True
+
+                sdk_pass = exposures_pass and goals_pass and revenue_pass and not has_errors
+
+                note = None
+                if actual_exposures > int(expected_exposures * OVER_PUBLISH_TOLERANCE):
+                    note = f"over-published exposures ({actual_exposures} > {expected_exposures})"
+                elif actual_goals > int(expected_goals * OVER_PUBLISH_TOLERANCE):
+                    note = f"over-published goals ({actual_goals} > {expected_goals})"
+                elif has_errors:
+                    note = (
+                        f"wrapper errors ctx={errors['context']} "
+                        f"treat={errors['treatment']} track={errors['track']}"
+                    )
+
                 results["sdks"][sdk_name] = {
                     "status": "ok" if sdk_pass else "fail",
                     "verified": "per-sdk",
+                    "errors": errors,
+                    "note": note,
                     "exposures": {"expected": expected_exposures, "actual": actual_exposures, "pass": exposures_pass},
                     "goals": {"expected": expected_goals, "actual": actual_goals, "pass": goals_pass},
-                    "revenue": {"expected": expected_revenue, "actual": actual_goals * 10, "pass": goals_pass},
+                    "revenue": {"expected": expected_revenue, "actual": revenue_actual, "pass": revenue_pass, "derived": revenue_derived},
                 }
                 if not sdk_pass:
                     results["overall_pass"] = False
             else:
-                # No per-SDK segmentation for this SDK: record what it sent
-                # locally as informational, and remember that at least one SDK
-                # was NOT independently verified, so the aggregate cross-check
-                # below becomes the authoritative gate.
-                any_unsegmented = True
+                # Not independently verifiable. Do NOT fabricate a pass: record
+                # the SDK as unverified with unknown actuals and let the
+                # aggregate cross-check below act as the gate. Wrapper errors
+                # still fail the SDK outright.
+                any_unverified = True
                 results["sdks"][sdk_name] = {
-                    "status": "sent",
+                    "status": "fail" if has_errors else "unverified",
                     "verified": "aggregate",
-                    "exposures": {"expected": expected_exposures, "actual": expected_exposures, "pass": True},
-                    "goals": {"expected": expected_goals, "actual": expected_goals, "pass": True},
-                    "revenue": {"expected": expected_revenue, "actual": expected_revenue, "pass": True},
+                    "errors": errors,
+                    "note": (
+                        f"wrapper errors ctx={errors['context']} "
+                        f"treat={errors['treatment']} track={errors['track']}"
+                        if has_errors else None
+                    ),
+                    "exposures": {"expected": expected_exposures, "actual": None, "pass": False, "unverified": True},
+                    "goals": {"expected": expected_goals, "actual": None, "pass": False, "unverified": True},
+                    "revenue": {"expected": expected_revenue, "actual": None, "pass": False, "unverified": True, "derived": True},
                 }
+                if has_errors:
+                    results["overall_pass"] = False
 
-        # Aggregate cross-check against the real backend. NOTE: the unsegmented
-        # metrics query is unreliable on this backend (it can report 0 while the
-        # same query segmented per-SDK returns the true counts). So the aggregate
-        # is only the authoritative GATE when some SDK could not be verified
-        # per-SDK (any_unsegmented). When every SDK was verified via segmentation,
-        # the aggregate is recorded for information only and does not fail the run.
-        if not self.dry_run and self.experiment_id:
-            agg = self._fetch_metrics()
-            total_actual = self._extract_total_participants(agg) if agg else 0
-            total_goals_actual = self._extract_total_goals(agg) if agg else 0
-            total_expected = sum(
-                r["exposures_sent"] for r in self.sdk_results.values()
-                if r.get("status") == "ok"
-            )
-            total_goals_expected = sum(
-                r["goals_sent"] for r in self.sdk_results.values()
-                if r.get("status") == "ok"
-            )
-            agg_pass = (
-                total_expected > 0
-                and total_actual >= total_expected
-                and total_goals_actual >= total_goals_expected
-            )
-            results["aggregate"] = {
-                "expected_participants": total_expected,
-                "actual_participants": total_actual,
-                "expected_goals": total_goals_expected,
-                "actual_goals": total_goals_actual,
-                "pass": agg_pass,
-                # Only authoritative when some SDK lacked per-SDK verification.
-                "gating": any_unsegmented,
-            }
-            # The unsegmented aggregate is unreliable on this backend, so only
-            # let it fail the run when at least one SDK was NOT verified per-SDK.
-            if any_unsegmented and not agg_pass:
-                results["overall_pass"] = False
-
-        return results
+        # Aggregate cross-check. Expected is derived from PLANNED units (not
+        # successes) so a wrapper that dropped calls fails rather than shrinking
+        # its own target. The unsegmented aggregate query is unreliable on this
+        # backend (can report 0 while per-SDK segmentation returns real counts),
+        # so it only GATES when at least one SDK could not be verified per-SDK.
+        total_expected = sum(r["planned_exposures"] for r in active.values())
+        total_goals_expected = sum(r["planned_goals"] for r in active.values())
+        agg_gates = any_unverified
+        agg_pass = (
+            total_expected > 0
+            and self._within_tolerance(total_expected, agg_participants)
+            and self._within_tolerance(total_goals_expected, agg_goals)
+        )
+        results["aggregate"] = {
+            "expected_participants": total_expected,
+            "actual_participants": agg_participants,
+            "expected_goals": total_goals_expected,
+            "actual_goals": agg_goals,
+            "pass": agg_pass,
+            "gating": agg_gates,
+        }
+        if agg_gates and not agg_pass:
+            results["overall_pass"] = False
 
     def print_report(self, results: Dict[str, Any]) -> None:
         sdks = results.get("sdks", {})
@@ -773,6 +1024,9 @@ class E2ERunner:
         total_goal_actual = 0
         total_rev_expected = 0
         total_rev_actual = 0
+        # Set when at least one verified row was excluded from the actual totals
+        # because it was unverified — the TOTAL actual is then a lower bound.
+        total_partially_unverified = False
 
         for sdk_name, sdk_data in sdks.items():
             if sdk_data.get("status") == "skipped":
@@ -785,7 +1039,7 @@ class E2ERunner:
                 continue
 
             if sdk_data.get("status") == "error":
-                error_msg = sdk_data.get("error", "error")[:18]
+                error_msg = (sdk_data.get("error") or "error")[:18]
                 print(
                     f"  {sdk_name:<{col_sdk}}"
                     f"{Colors.RED}{'ERR: ' + error_msg:<{col_data}}{Colors.RESET}"
@@ -799,11 +1053,16 @@ class E2ERunner:
             rev = sdk_data["revenue"]
 
             total_exp_expected += exp["expected"]
-            total_exp_actual += exp.get("actual") or 0
             total_goal_expected += goal["expected"]
-            total_goal_actual += goal.get("actual") or 0
             total_rev_expected += rev["expected"]
-            total_rev_actual += rev.get("actual") or 0
+            # Only sum actuals we actually verified. Unverified rows carry no
+            # trustworthy actual, so excluding them keeps the TOTAL honest.
+            if exp.get("unverified") or exp.get("actual") is None:
+                total_partially_unverified = True
+            else:
+                total_exp_actual += exp.get("actual") or 0
+                total_goal_actual += goal.get("actual") or 0
+                total_rev_actual += rev.get("actual") or 0
 
             exp_str = self._format_metric(exp)
             goal_str = self._format_metric(goal)
@@ -811,13 +1070,19 @@ class E2ERunner:
 
             print(f"  {sdk_name:<{col_sdk}}{exp_str:<{col_data}}{goal_str:<{col_data}}{rev_str:<{col_data}}")
 
+            note = sdk_data.get("note")
+            if note:
+                print(f"  {Colors.YELLOW}  ↳ {note}{Colors.RESET}")
+
         print(f"  {separator}")
 
-        total_exp = self._format_metric({"expected": total_exp_expected, "actual": total_exp_actual, "pass": total_exp_actual >= total_exp_expected})
-        total_goal = self._format_metric({"expected": total_goal_expected, "actual": total_goal_actual, "pass": total_goal_actual >= total_goal_expected})
-        total_rev = self._format_metric({"expected": total_rev_expected, "actual": total_rev_actual, "pass": total_rev_actual >= total_rev_expected})
+        total_exp = self._format_total(total_exp_expected, total_exp_actual, total_partially_unverified)
+        total_goal = self._format_total(total_goal_expected, total_goal_actual, total_partially_unverified)
+        total_rev = self._format_total(total_rev_expected, total_rev_actual, total_partially_unverified)
 
         print(f"  {Colors.BOLD}{'TOTAL':<{col_sdk}}{Colors.RESET}{total_exp:<{col_data}}{total_goal:<{col_data}}{total_rev:<{col_data}}")
+        if total_partially_unverified:
+            print(f"  {Colors.YELLOW}(TOTAL actual excludes unverified SDKs — lower bound){Colors.RESET}")
         print()
 
         agg = results.get("aggregate")
@@ -843,13 +1108,29 @@ class E2ERunner:
         print()
 
     def _format_metric(self, metric: Dict[str, Any]) -> str:
-        actual = metric.get("actual", metric["expected"])
+        # Unverified rows are neither PASS nor FAIL: the backend never gave us a
+        # trustworthy actual, so render them distinctly instead of as a green ✓.
+        if metric.get("unverified") or metric.get("actual") is None:
+            return f"{Colors.YELLOW}?/{metric['expected']} UNVERIFIED{Colors.RESET}"
+        actual = metric["actual"]
         expected = metric["expected"]
-        passed = metric.get("pass", actual is not None and actual >= expected)
+        passed = metric.get("pass", False)
         color = Colors.GREEN if passed else Colors.RED
         label = "PASS" if passed else "FAIL"
-        shown = "?" if actual is None else actual
-        return f"{color}{shown}/{expected} {label}{Colors.RESET}"
+        if metric.get("derived"):
+            label += " (derived)"
+        return f"{color}{actual}/{expected} {label}{Colors.RESET}"
+
+    def _format_total(self, expected: int, actual: int, partial: bool) -> str:
+        # With unverified SDKs excluded, `actual` is a lower bound, so an equality
+        # gate would be misleading; require only actual >= expected here and flag
+        # the caveat separately.
+        passed = actual >= expected if partial else self._within_tolerance(expected, actual)
+        color = Colors.YELLOW if partial else (Colors.GREEN if passed else Colors.RED)
+        label = "PASS" if passed else "FAIL"
+        if partial:
+            label += "*"
+        return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
         if not self.experiment_id or self.dry_run:
@@ -858,34 +1139,62 @@ class E2ERunner:
         print(f"Cleaning up experiment {self.experiment_id}...")
         profile_flag = f"--profile {self.profile}" if self.profile else ""
         exp_id = self.experiment_id
-        rc = subprocess.run(
-            f"echo {exp_id} | abs experiments stop {profile_flag} | abs experiments archive {profile_flag}",
-            shell=True, capture_output=True, text=True,
-        ).returncode
-        if rc == 0:
+        # `pipefail` so a failing `abs experiments stop` (masked otherwise by the
+        # archive stage's exit code) is reported. self.profile is validated as a
+        # strict identifier at startup, so interpolation here is safe.
+        result = subprocess.run(
+            ["bash", "-o", "pipefail", "-c",
+             f"echo {exp_id} | abs experiments stop {profile_flag} | abs experiments archive {profile_flag}"],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
             print(f"  {Colors.GREEN}Archived{Colors.RESET}")
         else:
-            self.log(f"Cleanup failed (rc={rc})")
+            print(
+                f"  {Colors.RED}Cleanup failed{Colors.RESET} (rc={result.returncode}): "
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
 
 
 def cleanup_stale_experiments(profile: str, verbose: bool = False) -> None:
     print("Cleaning up stale e2e experiments...")
+    profile = validate_profile(profile)
     profile_flag = f"--profile {profile}" if profile else ""
-    result = subprocess.run(
-        f"abs experiments list --search e2e- --state running,ready {profile_flag} | abs experiments stop {profile_flag} | abs experiments archive {profile_flag}",
-        shell=True, capture_output=True, text=True,
+
+    def run_pipeline(pipeline: str) -> subprocess.CompletedProcess:
+        # `pipefail` so a failing `abs experiments stop` mid-pipeline is not
+        # masked by the exit code of the final `archive` stage. profile is
+        # validated above, so it is safe to interpolate into the command.
+        return subprocess.run(
+            ["bash", "-o", "pipefail", "-c", pipeline],
+            capture_output=True, text=True,
+        )
+
+    result = run_pipeline(
+        f"abs experiments list --search e2e- --state running,ready {profile_flag} "
+        f"| abs experiments stop {profile_flag} | abs experiments archive {profile_flag}"
     )
-    if result.stdout.strip():
+    if result.returncode != 0:
+        print(
+            f"  {Colors.RED}Cleanup pipeline failed{Colors.RESET} "
+            f"(rc={result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+        )
+    elif result.stdout.strip():
         archived = result.stdout.strip().count("archived")
         print(f"  {Colors.GREEN}Archived {archived} experiment(s){Colors.RESET}")
     else:
         print("  No stale experiments found")
 
-    result = subprocess.run(
-        f"abs experiments list --search e2e- --state stopped {profile_flag} | abs experiments archive {profile_flag}",
-        shell=True, capture_output=True, text=True,
+    result = run_pipeline(
+        f"abs experiments list --search e2e- --state stopped {profile_flag} "
+        f"| abs experiments archive {profile_flag}"
     )
-    if result.stdout.strip():
+    if result.returncode != 0:
+        print(
+            f"  {Colors.RED}Stopped-cleanup pipeline failed{Colors.RESET} "
+            f"(rc={result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+        )
+    elif result.stdout.strip():
         archived = result.stdout.strip().count("archived")
         print(f"  {Colors.GREEN}Archived {archived} stopped experiment(s){Colors.RESET}")
     print()
@@ -896,9 +1205,16 @@ def discover_sdks() -> Dict[str, str]:
     if sdk_urls_override:
         sdks = {}
         for entry in sdk_urls_override.split(","):
-            if "=" in entry:
-                name, url = entry.split("=", 1)
-                sdks[name.strip()] = url.strip()
+            entry = entry.strip()
+            if not entry:
+                continue
+            if "=" not in entry:
+                raise ValueError(
+                    f"Malformed SDK_URLS_OVERRIDE entry {entry!r}: expected "
+                    "'name=url' (comma-separated)"
+                )
+            name, url = entry.split("=", 1)
+            sdks[name.strip()] = url.strip()
         if sdks:
             return sdks
 
@@ -922,8 +1238,8 @@ def main() -> None:
                         default=os.getenv("ABSMARTLY_E2E_PROFILE", "e2e"),
                         help="ABsmartly CLI profile (default: e2e)")
     parser.add_argument("--timeout", type=int,
-                        default=int(os.getenv("ABSMARTLY_E2E_TIMEOUT", "60")),
-                        help="Timeout in seconds for metrics polling (default: 60)")
+                        default=int(os.getenv("ABSMARTLY_E2E_TIMEOUT", "300")),
+                        help="Timeout in seconds for metrics polling (default: 300)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run without creating real experiments")
     parser.add_argument("--cleanup", action="store_true",

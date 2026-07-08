@@ -1,302 +1,194 @@
 # Cross-SDK Testing Infrastructure
 
-## Overview
+Conformance testing for every ABsmartly SDK. Each SDK is wrapped in a small HTTP
+service exposing a uniform API, and a single Python orchestrator drives all of
+them through the same set of scenarios, asserting that they return identical
+results and emit identical events. This is how we know the SDKs behave the same
+across languages.
 
-This directory contains the unified testing infrastructure for validating all ABsmartly SDKs against canonical expected results.
+## What's here
 
-## What's Included
+- **21 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+  directory:
 
-### 1. test_scenarios.json
-**33 test scenarios** covering:
-- ✅ Context creation and lifecycle (1 scenario)
-- ✅ Unit management (1 scenario)
-- ✅ Attribute management (1 scenario)
-- ✅ Treatment assignment (5 scenarios)
-- ✅ Peek operations (1 scenario)
-- ✅ Override handling (1 scenario)
-- ✅ Custom assignment (1 scenario)
-- ✅ Full-on variants (1 scenario)
-- ✅ Traffic split filtering (1 scenario)
-- ✅ Unknown experiments (1 scenario)
-- ✅ Goal tracking (3 scenarios)
-- ✅ Custom fields (2 scenarios)
-- ✅ Publishing (2 scenarios)
-- ✅ Finalization (1 scenario)
-- ✅ Audience matching (3 scenarios)
-- ✅ Variable access (3 scenarios)
-- ✅ **Cache invalidation (6 scenarios)** - Critical!
+  `javascript`, `typescript`, `react`, `angular`, `vue2`, `vue3`, `python`,
+  `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
+  `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-Each scenario includes:
-- Input: contextData, units, parameters
-- Sequence of actions: createContext → treatment → track → publish
-- **Expected results**: exact return values
-- **Expected events**: exact event structure and data
+- **202 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+  `contextData` payload plus a list of `steps` (an action and its expected
+  result/events). Scenarios with no executable steps are skipped by the
+  orchestrator.
 
-### 2. WRAPPER_API_SPEC.md
-Complete API specification for wrapper services:
-- 20 endpoints with request/response formats
-- EventCollector implementation pattern
-- Context storage pattern
-- Event return pattern
-- Error handling
-- Testing instructions with curl commands
+- **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
+  over HTTP and validates responses against the expected results baked into the
+  scenarios (the JavaScript SDK is the canonical reference).
 
-### 3. CROSS_SDK_TESTING.md (parent directory)
-Complete testing infrastructure design:
-- Architecture diagrams
-- Docker setup
-- Orchestrator implementation
-- Validation logic
-- Test execution flow
+- **A live-backend e2e runner** (`orchestrator/e2e_runner.py`) that drives the
+  wrappers against a real ABsmartly environment and verifies data arrives.
 
-## Test Scenario Format
+The wrapper API is specified in [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
+
+## Requirements
+
+- Docker and Docker Compose
+- Python 3 with the `requests` package (the scripts install it if missing)
+- The SDK source repositories checked out as siblings of this directory. The
+  wrapper Dockerfiles use build context `..` and `COPY` sibling `<name>-sdk/`
+  directories, so e.g. `../javascript-sdk`, `../python3-sdk`, `../go-sdk` must
+  exist next to `cross-sdk-tests/`. See `setup-sdks.sh` and
+  [WRAPPER_REPOS.md](WRAPPER_REPOS.md).
+
+## Quickstart
+
+All commands run from this directory. The scripts build the needed Docker
+images, start the containers, drive the orchestrator, and tear down.
+
+```bash
+# Build and test every SDK
+./run-tests.sh
+
+# Test one or more SDKs (comma-separated)
+./run-tests.sh --sdk react,vue2
+
+# Skip the (slow) image build and just run
+./run-tests.sh --skip-build
+
+# Only build images, don't run
+./run-tests.sh --build-only
+```
+
+`run-tests.sh` is the everyday entry point (filtered/local runs). Two more
+scripts cover wider matrices:
+
+- **`./run-all-tests.sh`** — the full matrix: unit tests, cross-SDK tests, and
+  optionally e2e, with `--sdk`, `--exclude`, `--unit-only`, `--cross-only`, and
+  `--e2e` filters.
+- **`./verify_sdk.sh <sdk> [<sdk2> ...]`** — verify a single SDK by bringing its
+  container up and driving the orchestrator directly. Use this to confirm a
+  result: it avoids a port-resolution race that can make filtered `run-tests.sh`
+  runs report stale numbers.
+
+Results are written to `test-results/report.json`.
+
+### Running the orchestrator directly
+
+`test_runner.py` requires the `SDK_SERVICES` environment variable — a
+comma-separated list of SDK names. It resolves each to `http://<name>-sdk:3000`
+on the compose network, so it is meant to run inside the orchestrator container:
+
+```bash
+docker compose up -d javascript-sdk
+docker compose run --rm --no-deps \
+  -e SDK_SERVICES=javascript \
+  orchestrator python3 test_runner.py
+```
+
+`test_runner.py` matches error strings strictly by default (CI runs it this way).
+Pass `--loose-error-match` to relax error-message comparison when iterating
+locally on a wrapper whose error text does not yet match.
+
+## E2E mode (live collector)
+
+The e2e suite creates a real experiment on a test ABsmartly environment, has
+each SDK send real exposures and goals, polls the metrics API, and verifies the
+counts. It is separate from the cross-SDK suite and mutates real experiments, so
+it needs credentials and the `abs` CLI.
+
+1. Copy the example config and fill in real values:
+
+   ```bash
+   cp e2e-config.env.example e2e-config.env
+   ```
+
+2. Set `ABSMARTLY_E2E_ENDPOINT` to the **collector** endpoint. This is a
+   `*.absmartly.io` host (e.g. `https://test-1.absmartly.io/v1`), **not**
+   `*.absmartly.com` — the `.com` host is the management API and will not accept
+   collector traffic. Fill in `ABSMARTLY_E2E_API_KEY` and adjust the application/
+   environment/unit count as needed.
+
+3. Run:
+
+   ```bash
+   ./run-e2e-tests.sh                          # all SDKs
+   ./run-e2e-tests.sh --sdk javascript,python  # specific SDKs
+   ./run-e2e-tests.sh --cleanup                # archive stale e2e experiments
+   ```
+
+Wrappers enter this path when a `POST /context` request sets `mode: "e2e"`; they
+read credentials from their environment, not the request body. See the E2E Mode
+section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
+
+## Continuous integration
+
+`.github/workflows/cross-sdk.yml` runs the full 202-scenario suite for all 21
+SDKs on every pull request (and on demand), one independent matrix job per SDK.
+Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
+from, builds just that wrapper plus the orchestrator, and drives the suite over
+the compose network. The live-backend e2e suite is intentionally excluded from
+CI — it needs secrets and the `abs` CLI and mutates real experiments.
+
+A separate `cross-sdk-consistency` job brings up javascript, python, and go
+together and runs the orchestrator once over all three, so the cross-SDK
+assignment-consistency check (which needs at least two SDKs to compare
+assignments) actually executes on every PR — the per-SDK matrix jobs run one SDK
+each and never trigger it.
+
+## Repository layout
+
+```
+cross-sdk-tests/
+├── README.md                     # this file
+├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
+├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
+├── test_scenarios_complete.json  # 202 scenarios
+├── generate_scenarios.py         # regenerates scenarios; output
+│                                 #   test_scenarios_generated.json must be
+│                                 #   diffed against the canonical file above
+│                                 #   (the generated file is gitignored)
+├── run-tests.sh                  # everyday entry point (filtered/local)
+├── run-all-tests.sh              # full matrix (unit + cross-SDK + e2e)
+├── run-e2e-tests.sh              # live-collector e2e (needs e2e-config.env)
+├── verify_sdk.sh                 # single-SDK verification via orchestrator
+├── setup-sdks.sh                 # clone/link sibling SDK source repos
+├── e2e-config.env.example        # template for e2e credentials
+├── docker-compose.yml            # wrapper + orchestrator service definitions
+├── orchestrator/
+│   ├── test_runner.py            # cross-SDK orchestrator
+│   ├── e2e_runner.py             # live-backend e2e orchestrator
+│   └── results_aggregator.py     # merges per-SDK reports into report.json
+├── <sdk>-wrapper/                # one HTTP wrapper per SDK (21 total)
+├── docs/                         # historical design docs (see banners)
+└── test-results/                 # report.json output (generated)
+```
+
+## Scenario format
 
 ```json
 {
-  "name": "Descriptive test name",
-  "description": "What this validates",
+  "name": "04 - Treatment - Queue Exposure",
+  "description": "treatment() should queue an exposure event",
   "contextData": {
-    "experiments": [...]
+    "experiments": [
+      { "id": 1, "name": "exp_test", "iteration": 1, "unitType": "session_id", "seedHi": 0, "seedLo": 0, "split": [0.5, 0.5], "trafficSeedHi": 0, "trafficSeedLo": 0, "trafficSplit": [0, 1], "fullOnVariant": 0, "applications": [], "variants": [{ "config": null }, { "config": null }], "audienceStrict": false, "audience": null }
+    ]
   },
   "steps": [
     {
-      "action": "createContext|treatment|track|publish|...",
-      "params": {...},
-      "expect": {
-        "result": <expected value>,
-        "events": [
-          {
-            "type": "exposure|goal|publish|...",
-            "data": {
-              "field1": "expected value",
-              "field2": 123
-            }
-          }
-        ]
-      }
+      "action": "createContext",
+      "params": { "units": { "session_id": "test123" }, "options": { "publishDelay": -1 } },
+      "expect": { "result": { "ready": true, "failed": false }, "events": [{ "type": "ready" }] }
+    },
+    {
+      "action": "treatment",
+      "params": { "experimentName": "exp_test" },
+      "expect": { "result": 1, "events": [{ "type": "exposure" }] }
     }
   ]
 }
 ```
 
-## Test Categories
-
-### Core Functionality (19 scenarios)
-1. Context creation with data
-2. Unit management (set, get)
-3. Attribute management (set, get, last value)
-4. Treatment assignment with exposure
-5. Treatment only queues exposure once
-6. Peek without exposure
-7. Override variant
-8. Custom assignment
-9. Full-on variant (100% traffic)
-10. Traffic split filtering (not eligible)
-11. Unknown experiment (base variant)
-12-16. Custom fields (string, number, boolean, JSON parsing)
-17-18. Publishing (with events, empty queue)
-19. Finalization
-
-### Advanced Features (11 scenarios)
-20. Audience match (non-strict)
-21. Audience mismatch (non-strict)
-22. Audience mismatch (strict mode → variant 0)
-23. Variable access with exposure
-24. Variable default value
-25. Variable peek without exposure
-
-### Cache Invalidation (6 scenarios) - CRITICAL!
-26. Experiment stopped → cache cleared, new exposure
-27. Experiment started → cache cleared, new exposure
-28. FullOnVariant changed → cache cleared, new exposure
-29. TrafficSplit changed → cache cleared, new exposure
-30. Iteration changed → cache cleared, new exposure
-31. ID changed → cache cleared, new exposure
-32. No changes → cache retained, NO new exposure
-33. Override set → cache retained, NO new exposure
-
-## Running Tests
-
-### Prerequisites
-
-```bash
-cd cross-sdk-tests
-```
-
-### Build Containers
-
-```bash
-docker-compose up --build
-```
-
-### Run Tests
-
-```bash
-docker-compose run orchestrator python test_runner.py
-```
-
-### Expected Output
-
-```
-=== Running: 01 - Context Creation - Ready with Data ===
-    Context should be ready immediately when created with data
-  Testing javascript... ✓ PASS
-  Testing python... ✓ PASS
-  Testing java... ✓ PASS
-  Testing ruby... ✓ PASS
-
-=== Running: 26 - Cache Invalidation - Experiment Stopped ===
-    Cache should be cleared when experiment stops
-  Testing javascript... ✓ PASS
-  Testing python... ✓ PASS
-  Testing java... ✗ FAIL (1 failure)
-  Testing ruby... ✓ PASS
-
-...
-
-============================================================
-                       TEST SUMMARY
-============================================================
-
-Total Scenarios: 33
-
-SDK Results:
-------------------------------------------------------------
-  javascript           ✓ PASS   (33/33 passed, 100.0%)
-  python               ✓ PASS   (33/33 passed, 100.0%)
-  java                 ✗ FAIL   (32/33 passed, 97.0%)
-  ruby                 ✓ PASS   (33/33 passed, 100.0%)
-============================================================
-
-Detailed report: /results/report.json
-```
-
-## Next Steps
-
-### To Add More Scenarios
-
-1. Examine `javascript-sdk/src/__tests__/context.test.js`
-2. Identify test case to replicate
-3. Create scenario in `test_scenarios.json`:
-   - Define contextData
-   - Define action sequence
-   - **Generate expected results from JavaScript SDK**
-4. Run tests to validate
-
-### To Generate Expected Results
-
-Use JavaScript SDK to generate canonical expected results:
-
-```javascript
-const absmartly = require('@absmartly/javascript-sdk');
-
-const eventCollector = {
-  events: [],
-  handleEvent(context, eventName, data) {
-    this.events.push({
-      type: eventName,
-      data: JSON.parse(JSON.stringify(data)),
-      timestamp: Date.now()
-    });
-  }
-};
-
-const sdk = new absmartly.SDK({
-  endpoint: 'http://dummy',
-  apiKey: 'dummy',
-  application: 'test',
-  environment: 'test',
-  eventLogger: eventCollector.handleEvent.bind(eventCollector)
-});
-
-const context = sdk.createContextWith(
-  { units: { session_id: "test123" } },
-  { experiments: [...] },
-  { publishDelay: -1 }
-);
-
-console.log('Result:', context.treatment('exp_test'));
-console.log('Events:', eventCollector.events);
-```
-
-Copy the output as expected results in the scenario.
-
-### To Implement Wrapper Service
-
-1. Follow pattern in `WRAPPER_API_SPEC.md`
-2. Implement all 20 endpoints
-3. Use EventCollector to capture events
-4. Return events with each response
-5. Test locally with curl before Docker
-6. Add to docker-compose.yml
-
-## Current Status
-
-**Scenarios Created:** 33
-**Wrapper Services Implemented:** 0
-**Next:** Implement JavaScript wrapper service first
-
-## File Structure
-
-```
-cross-sdk-tests/
-├── README.md (this file)
-├── WRAPPER_API_SPEC.md
-├── test_scenarios.json (33 scenarios)
-├── orchestrator/
-│   ├── test_runner.py (to be created)
-│   └── requirements.txt (to be created)
-├── javascript-wrapper/
-│   ├── Dockerfile (to be created)
-│   ├── server.js (to be created)
-│   └── package.json (to be created)
-└── docker-compose.yml (to be created)
-```
-
-## Key Design Decisions
-
-1. **Synchronous event return**: Events in same HTTP response (no WebSockets)
-2. **Canonical validation**: Each SDK tested against hardcoded expected results (not cross-comparison)
-3. **Stateful contexts**: Each context stored by ID, maintains state across requests
-4. **Independent SDKs**: Each SDK container is completely isolated
-5. **Test-driven**: Scenarios define expected behavior, SDKs must match exactly
-
-## Critical Test Areas
-
-### Cache Invalidation (Scenarios 26-33)
-**Most common SDK bug!** These scenarios validate that:
-- Cache is cleared when experiments change (6 scenarios)
-- Cache is retained when nothing changes (2 scenarios)
-- Each scenario expects a **new exposure event** or **no event** (cache hit)
-
-### Event Ordering
-All event types must be generated in correct order:
-1. `ready` - on context initialization
-2. `error` - on failures
-3. `exposure` - on treatment() or variableValue()
-4. `goal` - on track()
-5. `publish` - on publish() or finalize()
-6. `refresh` - on refresh()
-7. `finalize` - on finalize()
-
-### Property Filtering
-Goal properties must filter non-numeric values (scenario 09).
-
-## Validation Criteria
-
-Each SDK must:
-- ✅ Pass all 33 scenarios (100%)
-- ✅ Return exact result values
-- ✅ Generate exact event types
-- ✅ Include expected event data fields
-- ✅ Handle cache invalidation correctly
-- ✅ Filter non-numeric goal properties
-- ✅ Support all API methods
-
-## Benefits
-
-- **Confidence**: Know all SDKs behave identically
-- **Regression Detection**: Catch bugs before release
-- **Cross-Language Validation**: Verify deterministic behavior
-- **Release Gate**: Automated pass/fail for CI/CD
-- **Documentation**: Scenarios serve as behavior specification
+Each SDK must return the exact result values and emit the expected event types
+and data. Cache-invalidation scenarios are a particular focus: the cache must be
+cleared (producing a new exposure) when an experiment changes, and retained (no
+new exposure) when nothing changes.

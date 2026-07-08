@@ -5,7 +5,6 @@ import com.absmartly.sdk.ABsmartly
 import com.absmartly.sdk.ContextConfig
 import com.absmartly.sdk.ContextData
 import com.absmartly.sdk.ContextEventLogger
-import com.absmartly.sdk.ContextOptions
 import com.absmartly.sdk.PublishEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.*
@@ -145,6 +144,8 @@ fun Application.configureRouting() {
 
                     val e2eCollector = EventCollector()
                     val e2eContextConfig = ContextConfig.create()
+                        .setPublishDelay(-1)
+                        .setRefreshInterval(0)
                     for ((key, value) in e2eUnits) {
                         e2eContextConfig.setUnit(key, value.toString())
                     }
@@ -210,14 +211,23 @@ fun Application.configureRouting() {
                 val isAsync = request.containsKey("endpoint") && !request.containsKey("data")
                 val deferReady = isAsync && payloadThrottle > 0
 
+                val failLoad = request["failLoad"] == true
+                var loadFailure: RuntimeException? = null
+
                 val contextData = if (request.containsKey("data")) {
                     objectMapper.convertValue(request["data"], ContextData::class.java)
                 } else if (isAsync && !deferReady) {
                     val endpoint = request["endpoint"] as String
                     val payloadIdMatch = Regex("context_payload/([^/]+)").find(endpoint)
-                    if (payloadIdMatch != null) {
-                        payloadStore[payloadIdMatch.groupValues[1]] ?: ContextData()
+                    val storedData = if (payloadIdMatch != null) {
+                        payloadStore[payloadIdMatch.groupValues[1]]
                     } else {
+                        null
+                    }
+                    if (storedData != null) {
+                        storedData
+                    } else {
+                        loadFailure = RuntimeException("Context load failed")
                         ContextData()
                     }
                 } else {
@@ -232,14 +242,13 @@ fun Application.configureRouting() {
                 val dataProvider: DummyContextDataProvider?
                 val context: com.absmartly.sdk.Context
 
-                val failLoad = request["failLoad"] == true
-
-                if (failLoad) {
+                if (failLoad || loadFailure != null) {
                     dataProvider = null
+                    val failure = loadFailure ?: RuntimeException("Context load failed")
                     val failingProvider = object : com.absmartly.sdk.ContextDataProvider {
                         override fun getContextData(): java.util.concurrent.CompletableFuture<ContextData> {
                             val f = java.util.concurrent.CompletableFuture<ContextData>()
-                            f.completeExceptionally(RuntimeException("Context load failed"))
+                            f.completeExceptionally(failure)
                             return f
                         }
                     }
@@ -252,25 +261,38 @@ fun Application.configureRouting() {
                     Thread.sleep(50)
                 } else if (deferReady) {
                     dataProvider = null
-                    val oldOptions = ContextOptions(
-                        publishDelay = publishDelay,
-                        refreshPeriod = refreshPeriod
-                    )
-                    val ctx = com.absmartly.sdk.Context(contextData, unitMap, oldOptions, eventCollector, startReady = false)
+                    val dataFuture = java.util.concurrent.CompletableFuture<ContextData>()
+                    val deferredProvider = object : com.absmartly.sdk.ContextDataProvider {
+                        override fun getContextData(): java.util.concurrent.CompletableFuture<ContextData> = dataFuture
+                    }
+                    val sdkConfig = ABSmartlyConfig.create()
+                        .setContextDataProvider(deferredProvider)
+                        .setContextPublisher(noOpPublisher)
+                        .setContextEventLogger(eventCollector)
+                    val sdk = ABsmartly.create(sdkConfig)
+                    context = sdk.createContext(contextConfig)
                     val endpoint = request["endpoint"] as String
                     Thread {
                         try {
                             Thread.sleep(payloadThrottle)
                             val payloadIdMatch = Regex("context_payload/([^/]+)").find(endpoint)
                             val asyncData = if (payloadIdMatch != null) {
-                                payloadStore[payloadIdMatch.groupValues[1]] ?: ContextData()
+                                payloadStore[payloadIdMatch.groupValues[1]]
                             } else {
-                                ContextData()
+                                null
                             }
-                            ctx.setDataAndReady(asyncData)
-                        } catch (_: Exception) {}
+                            if (asyncData != null) {
+                                dataFuture.complete(asyncData)
+                            } else {
+                                dataFuture.completeExceptionally(RuntimeException("Context load failed"))
+                            }
+                        } catch (e: Exception) {
+                            if (e is InterruptedException) {
+                                Thread.currentThread().interrupt()
+                            }
+                            dataFuture.completeExceptionally(e)
+                        }
                     }.start()
-                    context = ctx
                 } else {
                     dataProvider = DummyContextDataProvider()
                     val sdkConfig = ABSmartlyConfig.create()
@@ -392,6 +414,12 @@ fun Application.configureRouting() {
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
+            // The kotlin SDK's getTreatment returns 0 (not an error) after
+            // close(); scenario 189 requires an error once finalized.
+            if (wrapper.context.isClosed) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Context finalized"))
+                return@post
+            }
             try {
                 val request = call.receive<Map<String, Any>>()
                 val eventsBefore = wrapper.eventCollector.getEvents().size
@@ -725,7 +753,7 @@ fun Application.configureRouting() {
             )
             try {
                 val error = wrapper.context.readyError()
-                val result = error?.message
+                val result = error?.let { mapOf("isError" to true, "message" to (it.message ?: it.toString())) }
                 call.respond(mapOf("result" to result, "events" to emptyList<Any>()))
             } catch (e: Exception) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Unknown error")))
@@ -778,12 +806,15 @@ fun Application.configureRouting() {
             )
             try {
                 val eventsBefore = wrapper.eventCollector.getEvents().size
-                wrapper.context.publish()
+                // Await the SDK publish so the collector PUT completes before we
+                // respond; otherwise e2e publish races the collector verification.
+                wrapper.context.publish().join()
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {
                 e.printStackTrace()
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Unknown error")))
+                val cause = e.cause ?: e
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (cause.message ?: "Unknown error")))
             }
         }
 

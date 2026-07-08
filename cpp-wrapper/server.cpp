@@ -113,8 +113,11 @@ static json make_response(const json& result, const std::vector<Event>& events) 
 }
 
 static json make_error_response(const std::string& error,
-                                const std::string& code) {
-    return json{{"error", error}, {"code", code}};
+                                [[maybe_unused]] const std::string& code) {
+    // Match the other 20 wrappers: error bodies carry only `error`. The `code`
+    // argument is retained at call sites for readability but is not emitted (the
+    // orchestrator only ever reads the `error` field).
+    return json{{"error", error}};
 }
 
 static std::string uid_to_string(const json& val) {
@@ -306,6 +309,10 @@ int main() {
                      auto e2e_sdk = absmartly::SDK::create(std::move(e2e_sdk_config));
 
                      absmartly::ContextConfig e2e_ctx_config;
+                     // Never auto-publish or auto-refresh in e2e mode; the test
+                     // drives publishing explicitly.
+                     e2e_ctx_config.publish_delay = -1;
+                     e2e_ctx_config.refresh_period = 0;
                      std::map<std::string, json> e2e_original_units;
                      if (body.contains("units") && body["units"].is_object()) {
                          for (auto& [key, val] : body["units"].items()) {
@@ -388,17 +395,21 @@ int main() {
 
                          std::thread([promise, endpoint, payload_throttle]() {
                              std::this_thread::sleep_for(std::chrono::milliseconds(payload_throttle));
-                             absmartly::ContextData deferred_data;
                              auto payload_pos = endpoint.find("/context_payload/");
                              if (payload_pos != std::string::npos) {
                                  std::string payload_id = endpoint.substr(payload_pos + 17);
                                  std::lock_guard<std::mutex> plock(payloads_mu);
                                  auto it = payload_store.find(payload_id);
                                  if (it != payload_store.end()) {
-                                     deferred_data = it->second;
+                                     promise->set_value(it->second);
+                                     return;
                                  }
                              }
-                             promise->set_value(std::move(deferred_data));
+                             // Payload not found: fail the context instead of
+                             // fabricating a ready, empty ContextData. A missing
+                             // payload is a load failure, not an empty success.
+                             promise->set_exception(std::make_exception_ptr(
+                                 std::runtime_error("Context load failed: payload not found")));
                          }).detach();
                      } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
                          auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
@@ -680,6 +691,17 @@ int main() {
                  std::string experiment_name = body.value("experimentName", "");
                  size_t events_before = entry->collector->size();
 
+                 // The cpp SDK's treatment() has no finalize guard
+                 // (context.cpp:244) and would return the default variant, so
+                 // enforce the spec's "finalized => error" here (scenario 189).
+                 if (entry->context->is_finalized()) {
+                     res.status = 400;
+                     res.set_content(
+                         make_error_response("Context finalized", "TREATMENT_ERROR").dump(),
+                         "application/json");
+                     return;
+                 }
+
                  try {
                      int variant = entry->context->treatment(experiment_name);
                      auto new_events = entry->collector->get_new_events(events_before);
@@ -849,6 +871,22 @@ int main() {
                  json properties = json();
                  if (body.contains("properties")) {
                      properties = body["properties"];
+                 }
+
+                 // The SDK coerces non-object properties to null and tracks
+                 // anyway, so enforce the spec's type check here: a present
+                 // properties value that is not an object (number, string,
+                 // array) must fail (scenarios 37/38/39).
+                 if (body.contains("properties") && !properties.is_null() &&
+                     !properties.is_object()) {
+                     res.status = 400;
+                     res.set_content(
+                         make_error_response(
+                             "Goal '" + goal_name + "' properties must be of type object.",
+                             "TRACK_ERROR")
+                             .dump(),
+                         "application/json");
+                     return;
                  }
 
                  size_t events_before = entry->collector->size();
@@ -1247,7 +1285,7 @@ int main() {
                      return;
                  }
                  auto error = entry->context->ready_error();
-                 json result = error.empty() ? json(nullptr) : json(error);
+                 json result = error.empty() ? json(nullptr) : json{{"isError", true}, {"message", error}};
                  res.set_content(make_response(result, {}).dump(), "application/json");
              });
 

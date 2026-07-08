@@ -334,6 +334,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 }
             }
 
+            // e2e must never auto-publish or auto-refresh: re-assert the invariant
+            // last so no request-body option can re-enable it (the non-e2e path
+            // below intentionally honors publishDelay/refreshPeriod options).
+            $contextConfig->setPublishDelay(-1);
+            $contextConfig->setRefreshInterval(0);
+
             return $sdk->createContextAsync($contextConfig)->then(
                 function($context) use ($contextId, $eventCollector, $sdk, $body, &$contexts) {
                     foreach ((array)($body->attributes ?? []) as $name => $value) {
@@ -639,6 +645,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $body = parseJsonBody($request);
 
+        if ($context->isClosed()) {
+            return jsonResponse(400, ['error' => 'Context finalized']);
+        }
+
         if (!$context->isReady()) {
             return jsonResponse(200, ['result' => 0, 'events' => []]);
         }
@@ -739,6 +749,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
+
+        $bodyObj = parseJsonBodyPreserveObjects($request);
+        $rawProps = (is_object($bodyObj) && property_exists($bodyObj, 'properties')) ? $bodyObj->properties : null;
+        if ($rawProps !== null && !is_object($rawProps)) {
+            return jsonResponse(400, ['error' => "Goal '{$body['goalName']}' properties must be of type object."]);
+        }
 
         try {
             $properties = isset($body['properties']) ? (object)$body['properties'] : null;

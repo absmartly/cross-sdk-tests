@@ -4,6 +4,7 @@ import com.absmartly.sdk.ContextDataProvider;
 import com.absmartly.sdk.json.ContextData;
 import java8.util.concurrent.CompletableFuture;
 
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.Executors;
@@ -37,10 +38,10 @@ public class DeferredContextDataProvider implements ContextDataProvider {
                     ContextData data = objectMapper.readValue(conn.getInputStream(), ContextData.class);
                     future.complete(data);
                 } else {
-                    future.complete(new ContextData());
+                    future.completeExceptionally(new IOException("HTTP " + status));
                 }
             } catch (Exception e) {
-                future.complete(new ContextData());
+                future.completeExceptionally(e);
             } finally {
                 scheduler.shutdown();
             }

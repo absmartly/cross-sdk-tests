@@ -202,7 +202,7 @@ class DeferredDataProvider implements ContextDataProvider {
         final raw = jsonDecode(body) as Map<String, dynamic>;
         completer.complete(ContextData.fromMap(raw));
       } catch (e) {
-        completer.complete(ContextData());
+        completer.completeError(Exception('Failed to fetch context: $e'));
       }
     });
     return completer;
@@ -446,6 +446,13 @@ void main() async {
 
         final contextConfig = ContextConfig();
         contextConfig.setUnits(unitsMap);
+        // e2e: disable auto-publish timer and auto-refresh so no background
+        // HTTP fires mid-test; tests drive publish/refresh explicitly.
+        // Dart's Timer has no negative-delay guard (a negative Duration fires
+        // immediately), so disabling means a very large delay, matching the
+        // non-e2e path below.
+        contextConfig.setPublishDelay(999999999);
+        contextConfig.setRefreshInterval(0);
 
         final context = e2eSdk.createContext(contextConfig);
         await context.waitUntilReady();
@@ -703,6 +710,15 @@ void main() async {
     try {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
+
+      // The dart SDK's getTreatment() returns 0 after finalize (context.dart:235)
+      // rather than throwing, so guard the finalized state explicitly (scenario 189).
+      if (ctxData.context.isClosed()) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': 'Context finalized'}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
 
       final variant = ctxData.context.getTreatment(body['experimentName'] as String);
 
@@ -1192,7 +1208,7 @@ void main() async {
     if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
     try {
       final error = ctxData.context.readyError();
-      final result = error != null ? error.toString() : null;
+      final result = error != null ? {'isError': true, 'message': error.toString()} : null;
       return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
     } catch (e) {
       return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});

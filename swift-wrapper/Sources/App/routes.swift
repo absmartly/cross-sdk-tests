@@ -277,7 +277,7 @@ class DeferredContextDataProvider: ContextDataProvider {
         return Promise { seal in
             DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(self.throttleMs)) {
                 guard let url = URL(string: self.endpoint) else {
-                    seal.fulfill(ContextData(experiments: []))
+                    seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid context data endpoint: \(self.endpoint)"]))
                     return
                 }
                 let task = URLSession.shared.dataTask(with: url) { data, _, error in
@@ -287,10 +287,11 @@ class DeferredContextDataProvider: ContextDataProvider {
                             let contextData = try decoder.decode(ContextData.self, from: data)
                             seal.fulfill(contextData)
                         } catch {
-                            seal.fulfill(ContextData(experiments: []))
+                            seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse context data: \(error.localizedDescription)"]))
                         }
                     } else {
-                        seal.fulfill(ContextData(experiments: []))
+                        let message = error?.localizedDescription ?? "Failed to fetch context data"
+                        seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: message]))
                     }
                 }
                 task.resume()
@@ -495,6 +496,13 @@ func routes(_ app: VaporApplication) throws {
             var configBuilder = ContextConfig()
             configBuilder.setUnits(units: unitsDict)
             configBuilder.eventLogger = eventCollector
+            // Force no background timers in e2e mode: publishDelay < 0 disables
+            // auto-publish and refreshInterval <= 0 disables auto-refresh, so no
+            // timer fires HTTP mid-test (matches go/dotnet e2e wrappers). The
+            // ContextConfig default publishDelay is 0.1s, which would otherwise
+            // auto-flush.
+            configBuilder.publishDelay = -1
+            configBuilder.refreshInterval = 0
 
             let context = e2eSdk.createContext(config: configBuilder)
             _ = try await context.waitUntilReady().asyncValue()
@@ -711,6 +719,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(SetUnitRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
+        // The swift SDK's setUnit() silently no-ops on a finalized context, so
+        // enforce the spec's "finalized => error" here (scenario 149).
+        if storage.context.isFinalized() {
+            let errorResult: [String: Any] = ["error": "Context finalized"]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
+
         let existingUID = storage.context.getUnit(unitType: request.unitType)
         let newUID = "\(request.uid.value)"
         if let existing = existingUID, existing != newUID {
@@ -778,6 +793,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(AttributeRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
+        // The swift SDK's setAttribute() silently no-ops on a finalized context,
+        // so enforce the spec's "finalized => error" here (scenarios 148, 188).
+        if storage.context.isFinalized() {
+            let errorResult: [String: Any] = ["error": "Context finalized"]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
+
         storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
@@ -830,6 +852,19 @@ func routes(_ app: VaporApplication) throws {
         }
 
         let request = try req.content.decode(TreatmentRequest.self)
+
+        // The swift SDK's getTreatment() guards neither a finalized nor a
+        // not-ready context (unlike python's, which returns 0 internally). So:
+        //  - finalized  => spec requires an error (scenario 189)
+        //  - not ready  => spec requires result 0 with NO events (scenario 201).
+        //                  Calling getTreatment here would queue a spurious
+        //                  exposure, so short-circuit to the SDK's would-be
+        //                  default (0) without invoking it.
+        // A ready, non-finalized context is delegated straight to the SDK.
+        if storage.context.isFinalized() {
+            let errorResult: [String: Any] = ["error": "Context finalized"]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         if !storage.context.isReady() {
             let result: [String: Any] = ["result": 0, "events": [Any]()]
@@ -951,6 +986,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(TrackRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
+        // The swift SDK's track() silently no-ops on a finalized context, so
+        // enforce the spec's "finalized => error" here (scenario 147).
+        if storage.context.isFinalized() {
+            let errorResult: [String: Any] = ["error": "Context finalized"]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
+
         var props: [String: JSON]? = nil
         if let properties = request.properties {
             if let dict = properties.value as? [String: Any] {
@@ -960,10 +1002,8 @@ func routes(_ app: VaporApplication) throws {
                 }
                 props = propsDict
             } else if !(properties.value is NSNull) {
-                let result: [String: Any] = [
-                    "error": "Goal '\(request.goalName)' properties must be of type object."
-                ]
-                return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
+                let errorResult: [String: Any] = ["error": "Goal '\(request.goalName)' properties must be of type object."]
+                return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
             }
         }
 
@@ -1228,7 +1268,7 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.notFound, reason: "Context not found")
         }
         let error = storage.context.readyError()
-        let result: Any = error?.localizedDescription ?? NSNull()
+        let result: Any = error.map { ["isError": true, "message": $0.localizedDescription] as [String: Any] } ?? NSNull()
         let response: [String: Any] = ["result": result, "events": [] as [Any]]
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
     }

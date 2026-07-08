@@ -172,7 +172,8 @@ app.post('/context', async (req, res) => {
       });
 
       const contextConfig = { units: req.body.units || {} };
-      const context = e2eSdk.createContext(contextConfig);
+      const e2eOptions = { ...(req.body.options || {}), publishDelay: -1, refreshPeriod: 0 };
+      const context = e2eSdk.createContext(contextConfig, e2eOptions);
       await context.ready();
 
       if (req.body.attributes) {
@@ -230,12 +231,12 @@ app.post('/context', async (req, res) => {
       try { await context.ready(); } catch (e) {}
       await new Promise(r => setTimeout(r, 50));
     } else if (payloadThrottle > 0 && endpoint) {
-      const deferredData = new Promise((resolve) => {
+      const deferredData = new Promise((resolve, reject) => {
         setTimeout(() => {
           fetch(endpoint)
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error('payload fetch HTTP ' + r.status); return r.json(); })
             .then(resolve)
-            .catch(() => resolve({ experiments: [] }));
+            .catch(reject);
         }, payloadThrottle);
       });
       context = sdk.createContextWith(
@@ -550,7 +551,7 @@ app.post('/context/:contextId/readyError', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
   const error = data.context.readyError();
-  res.json({ result: error ? error.message || String(error) : null, events: [] });
+  res.json({ result: error ? { isError: true, message: error.message || String(error) } : null, events: [] });
 });
 
 app.post('/context/:contextId/variableKeysMap', (req, res) => {

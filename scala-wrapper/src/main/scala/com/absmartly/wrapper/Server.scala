@@ -355,10 +355,17 @@ object Server extends IOApp {
           json.hcursor.downField("experimentName").as[String] match {
             case Right(experimentName) =>
               try {
-                val prevCount = collector.getEvents().length
-                val variant = context.treatment(experimentName)
-                val newEvents = collector.getEventsSince(prevCount)
-                Ok(wrapperResponse(Json.fromInt(variant), newEvents))
+                // The scala SDK's treatment() returns 0 on a finalized context
+                // (Context.scala:196) instead of failing, so enforce the spec's
+                // "finalized => error" here before delegating (scenario 189).
+                if (context.isFinalized()) {
+                  BadRequest(Json.obj("error" -> Json.fromString("Context finalized")))
+                } else {
+                  val prevCount = collector.getEvents().length
+                  val variant = context.treatment(experimentName)
+                  val newEvents = collector.getEventsSince(prevCount)
+                  Ok(wrapperResponse(Json.fromInt(variant), newEvents))
+                }
               } catch {
                 case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
               }
@@ -432,11 +439,20 @@ object Server extends IOApp {
           cursor.downField("goalName").as[String] match {
             case Right(goalName) =>
               try {
-                val properties = cursor.downField("properties").as[Map[String, Json]].toOption
-                val prevCount = collector.getEvents().length
-                context.track(goalName, properties)
-                val newEvents = collector.getEventsSince(prevCount)
-                Ok(wrapperResponse(Json.Null, newEvents))
+                // The SDK decodes non-object properties to None and tracks
+                // anyway, so enforce the spec's type check here: a present
+                // properties value that is not a JSON object (number, string,
+                // array) must fail (scenarios 37/38/39).
+                cursor.downField("properties").focus match {
+                  case Some(js) if !js.isNull && !js.isObject =>
+                    BadRequest(Json.obj("error" -> Json.fromString(s"Goal '$goalName' properties must be of type object.")))
+                  case _ =>
+                    val properties = cursor.downField("properties").as[Map[String, Json]].toOption
+                    val prevCount = collector.getEvents().length
+                    context.track(goalName, properties)
+                    val newEvents = collector.getEventsSince(prevCount)
+                    Ok(wrapperResponse(Json.Null, newEvents))
+                }
               } catch {
                 case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
               }
@@ -596,7 +612,7 @@ object Server extends IOApp {
       withContext(contextId) { case (context, _) =>
         try {
           val error = context.readyError()
-          val result = error.map(e => Json.fromString(e.getMessage)).getOrElse(Json.Null)
+          val result = error.map(e => Json.obj("isError" -> Json.True, "message" -> Json.fromString(e.getMessage))).getOrElse(Json.Null)
           Ok(wrapperResponse(result, List.empty))
         } catch {
           case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
@@ -647,16 +663,24 @@ object Server extends IOApp {
 
     case req @ POST -> Root / "context" / contextId / "refresh" =>
       withContext(contextId) { case (context, collector) =>
-        IO {
-          try {
-            val prevCount = collector.getEvents().length
-            context.refresh()
-            val newEvents = collector.getEventsSince(prevCount)
-            Ok(wrapperResponse(Json.Null, newEvents))
-          } catch {
-            case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+        req.as[Json].flatMap { json =>
+          // Apply the request's newData to the context so refresh operates on the
+          // updated payload (not the stale one the context was created with).
+          val newData = json.hcursor.downField("newData").as[ContextData].toOption
+          IO {
+            try {
+              val prevCount = collector.getEvents().length
+              newData match {
+                case Some(data) => context.refresh(data)
+                case None       => context.refresh()
               }
-        }.flatten
+              val newEvents = collector.getEventsSince(prevCount)
+              Ok(wrapperResponse(Json.Null, newEvents))
+            } catch {
+              case e: Exception => BadRequest(Json.obj("error" -> Json.fromString(e.getMessage)))
+            }
+          }.flatten
+        }
       }
 
     case POST -> Root / "context" / contextId / "finalize" =>

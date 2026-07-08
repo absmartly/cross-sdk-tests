@@ -190,6 +190,10 @@ public class WrapperController {
 
                 EventCollector e2eCollector = new EventCollector();
                 ContextConfig e2eContextConfig = ContextConfig.create();
+                // Never auto-publish or auto-refresh in e2e mode; the test drives
+                // publishing explicitly (SDK default publishDelay is 100ms).
+                e2eContextConfig.setPublishDelay(-1);
+                e2eContextConfig.setRefreshInterval(0);
                 if (e2eUnits != null) {
                     for (Map.Entry<String, Object> entry : e2eUnits.entrySet()) {
                         e2eContextConfig.setUnit(entry.getKey(), String.valueOf(entry.getValue()));
@@ -553,6 +557,13 @@ public class WrapperController {
         if (data == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
+        }
+
+        // The java SDK's getTreatment returns 0 (not an error) after close();
+        // scenario 189 requires an error once the context is finalized.
+        if (data.getContext().isClosed()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", "Context finalized"));
         }
 
         try {
@@ -1171,7 +1182,9 @@ public class WrapperController {
         }
         try {
             Throwable error = data.getContext().readyError();
-            String result = error != null ? error.getMessage() : null;
+            Map<String, Object> result = error != null
+                ? Map.of("isError", true, "message", error.getMessage() != null ? error.getMessage() : error.toString())
+                : null;
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
             response.put("events", Collections.emptyList());

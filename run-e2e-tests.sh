@@ -165,6 +165,23 @@ docker_compose_with_recovery() {
   return 1
 }
 
+# Ensure the `requests` module is importable for the e2e runner. Avoids a
+# PEP 668 "externally-managed-environment" failure by only attempting an install
+# when the module is genuinely missing, and hard-failing (rather than silently
+# continuing) if that install does not work.
+ensure_requests() {
+  if python3 -c "import requests" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Python 'requests' not found; attempting to install..."
+  if pip3 install -q requests >/dev/null 2>&1 && python3 -c "import requests" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: the Python 'requests' package is required but could not be installed." >&2
+  echo "       Install it manually (e.g. 'pip3 install --user requests' or in a venv) and re-run." >&2
+  exit 1
+}
+
 get_service_names() {
   local sdk_list="$1"
   local services=""
@@ -178,7 +195,7 @@ get_service_names() {
 check_docker_health
 
 if [ "$CLEANUP" = true ]; then
-  pip3 install -q requests 2>/dev/null || true
+  ensure_requests
   VERBOSE_OPT=""
   [ "$VERBOSE" = true ] && VERBOSE_OPT="--verbose"
   SDK_SERVICES="placeholder" python3 orchestrator/e2e_runner.py --cleanup --profile "$PROFILE" $VERBOSE_OPT || true
@@ -258,6 +275,10 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
     elif echo "$START_OUTPUT" | grep -q "No such container"; then
       docker compose rm -f "${BATCH[@]}" 2>/dev/null || true
       docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
+    else
+      echo "ERROR: 'docker compose up -d' failed for batch (${BATCH[*]}) with no recoverable cause:" >&2
+      echo "$START_OUTPUT" >&2
+      exit "$START_EXIT"
     fi
   fi
   sleep 2
@@ -288,14 +309,19 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
   fi
 done
 
-pip3 install -q requests 2>/dev/null || true
+ensure_requests
 
 SDK_URLS=""
 for sdk in "${TARGET_SDKS[@]}"; do
-  PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
+  PORT=""
+  for _ in $(seq 1 30); do
+    PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
+    [ -n "$PORT" ] && break
+    sleep 1
+  done
   if [ -z "$PORT" ]; then
-    echo "Warning: could not resolve port for ${sdk}-sdk — skipping" >&2
-    continue
+    echo "ERROR: could not resolve published port for ${sdk}-sdk after 30s" >&2
+    exit 1
   fi
   SDK_URLS="${SDK_URLS}${sdk}=http://localhost:${PORT},"
 done
