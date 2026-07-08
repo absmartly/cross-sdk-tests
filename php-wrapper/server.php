@@ -540,6 +540,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $body = parseJsonBody($request);
 
+        // The PHP SDK's setUnit() has no finalized guard, so enforce it here to
+        // match the spec (operations on a finalized context return errors).
+        if ($context->isClosed()) {
+            return jsonResponse(400, ['error' => 'ABsmartly Context is finalized.']);
+        }
+
         try {
             $context->setUnit($body['unitType'], (string)$body['uid']);
 
@@ -598,6 +604,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
+
+        // The PHP SDK's setAttribute() has no finalized guard, so enforce it here
+        // to match the spec (operations on a finalized context return errors).
+        if ($context->isClosed()) {
+            return jsonResponse(400, ['error' => 'ABsmartly Context is finalized.']);
+        }
 
         try {
             $context->setAttribute($body['name'], $body['value']);

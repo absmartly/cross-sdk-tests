@@ -275,6 +275,10 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
   const experimentName = req.body.experimentName;
 
+  if (context.isFinalized()) {
+    return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
+  }
+
   if (!context.isReady()) {
     return res.json({ result: 0, events: [] });
   }

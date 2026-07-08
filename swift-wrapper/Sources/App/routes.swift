@@ -726,8 +726,17 @@ func routes(_ app: VaporApplication) throws {
             return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
         }
 
-        let existingUID = storage.context.getUnit(unitType: request.unitType)
         let newUID = "\(request.uid.value)"
+
+        // The swift SDK's setUnit() silently no-ops (Logger.error only) on a
+        // blank UID, so enforce the spec's "blank => error" here (scenario 34).
+        // Trim to match the SDK's own whitespace handling.
+        if newUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let errorResult: [String: Any] = ["error": "Unit '\(request.unitType)' UID must not be blank."]
+            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
+
+        let existingUID = storage.context.getUnit(unitType: request.unitType)
         if let existing = existingUID, existing != newUID {
             let errorResult: [String: Any] = ["error": "Unit '\(request.unitType)' UID already set."]
             return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
