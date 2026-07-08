@@ -559,14 +559,6 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
     }
     catch (Exception ex)
     {
-        if (TranslateErrorMessage(ex.Message) == "Context finalized")
-        {
-            return Results.Ok(new ApiResponse
-            {
-                Result = null,
-                Events = new List<object>()
-            });
-        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
