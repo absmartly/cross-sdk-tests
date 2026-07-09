@@ -483,7 +483,9 @@ class TestOrchestrator:
         if "result" in expected:
             actual_result = actual.get("result")
             expected_result = expected["result"]
-            if not self.values_match(actual_result, expected_result):
+            if not self.values_match(
+                actual_result, expected_result, ordered=expected.get("orderedResult", False)
+            ):
                 failures.append(
                     {
                         "step": step_index,
@@ -540,12 +542,12 @@ class TestOrchestrator:
 
         return failures
 
-    def values_match(self, actual: Any, expected: Any) -> bool:
+    def values_match(self, actual: Any, expected: Any, ordered: bool = False) -> bool:
         if isinstance(expected, dict) and isinstance(actual, dict):
             for key, expected_value in expected.items():
                 if key not in actual:
                     return False
-                if not self.values_match(actual[key], expected_value):
+                if not self.values_match(actual[key], expected_value, ordered):
                     return False
             return True
 
@@ -553,17 +555,28 @@ class TestOrchestrator:
             if len(expected) != len(actual):
                 return False
 
-            if all(isinstance(x, (str, int, float, bool, type(None))) for x in expected):
+            if not ordered and all(
+                isinstance(x, (str, int, float, bool, type(None))) for x in expected
+            ):
                 # Order-insensitive comparison for scalar lists. A plain
                 # sorted() raises TypeError on mixed types (e.g. [None, 'a']),
                 # so use a total-ordering key that never compares values of
-                # different types directly.
+                # different types directly. Scenarios where order IS the payload
+                # (e.g. UTF-8 byte sequences, ordered JSON arrays) set
+                # orderedResult:true so they fall through to positional zip.
                 def sort_key(x: Any) -> Tuple[bool, str, str]:
                     return (x is None, str(type(x)), str(x))
 
                 return sorted(actual, key=sort_key) == sorted(expected, key=sort_key)
 
-            return all(self.values_match(a, e) for a, e in zip(actual, expected))
+            return all(self.values_match(a, e, ordered) for a, e in zip(actual, expected))
+
+        # Reject bool/int type confusion: in Python True == 1 and False == 0,
+        # so an integer variant serialized as JSON true/false (or vice versa)
+        # would otherwise pass. bool is a subclass of int, so isinstance is the
+        # correct discriminator.
+        if isinstance(actual, bool) != isinstance(expected, bool):
+            return False
 
         return actual == expected
 
