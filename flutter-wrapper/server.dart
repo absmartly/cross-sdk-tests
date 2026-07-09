@@ -631,12 +631,6 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
@@ -662,12 +656,6 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
         body: jsonEncode({'error': translateErrorMessage(e.toString())}),
         headers: {'Content-Type': 'application/json'},
