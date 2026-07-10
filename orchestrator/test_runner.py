@@ -567,7 +567,12 @@ class TestOrchestrator:
                 def sort_key(x: Any) -> Tuple[bool, str, str]:
                     return (x is None, str(type(x)), str(x))
 
-                return sorted(actual, key=sort_key) == sorted(expected, key=sort_key)
+                # Compare the keyed representations, not the raw sorted values:
+                # sort_key encodes str(type(x)), so this distinguishes bool from
+                # int the same way the terminal-comparison guard below does
+                # (Python's list == would treat [1,0] and [True,False] as equal).
+                return [sort_key(x) for x in sorted(actual, key=sort_key)] == \
+                    [sort_key(x) for x in sorted(expected, key=sort_key)]
 
             return all(self.values_match(a, e, ordered) for a, e in zip(actual, expected))
 
