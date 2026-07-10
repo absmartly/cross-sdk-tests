@@ -564,13 +564,22 @@ class TestOrchestrator:
                 # different types directly. Scenarios where order IS the payload
                 # (e.g. UTF-8 byte sequences, ordered JSON arrays) set
                 # orderedResult:true so they fall through to positional zip.
-                def sort_key(x: Any) -> Tuple[bool, str, str]:
+                def sort_key(x: Any) -> Tuple[bool, str, Any]:
+                    # bool must stay distinct from int/float (Python treats
+                    # True == 1), but int and float of equal value must compare
+                    # equal here to agree with the terminal `actual == expected`
+                    # and the ordered/positional paths (both treat 1 == 1.0).
+                    if isinstance(x, bool):
+                        return (x is None, "bool", x)
+                    if isinstance(x, (int, float)):
+                        return (x is None, "number", x)
                     return (x is None, str(type(x)), str(x))
 
                 # Compare the keyed representations, not the raw sorted values:
-                # sort_key encodes str(type(x)), so this distinguishes bool from
-                # int the same way the terminal-comparison guard below does
-                # (Python's list == would treat [1,0] and [True,False] as equal).
+                # sort_key buckets bool separately from numbers, so this
+                # distinguishes bool from int the same way the terminal-comparison
+                # guard below does (Python's list == would treat [1,0] and
+                # [True,False] as equal) while keeping int/float value-equal.
                 return [sort_key(x) for x in sorted(actual, key=sort_key)] == \
                     [sort_key(x) for x in sorted(expected, key=sort_key)]
 
@@ -600,8 +609,11 @@ class TestOrchestrator:
         if actual_norm == expected_norm:
             return True
 
-        # Allow equivalent error wording where one message contains the other.
-        if expected_norm and (expected_norm in actual_norm or actual_norm in expected_norm):
+        # Allow a verbose SDK error that CONTAINS the expected phrase. Only the
+        # forward direction is safe: a short actual message that merely happens
+        # to be a substring of a specific expected phrase must NOT pass (it would
+        # bypass the keyword-subset rule below), so reverse containment is out.
+        if expected_norm and expected_norm in actual_norm:
             return True
 
         expected_words = set(re.findall(r"'[^']+'|\w+", expected_norm))

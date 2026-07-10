@@ -202,10 +202,10 @@ class EventCollector: ContextEventLogger {
             return array.map { jsonToAny($0) }
         } else if let string = json.string {
             return string
-        } else if let number = json.number {
-            return number
         } else if let bool = json.bool {
             return bool
+        } else if let number = json.number {
+            return number
         } else if json.null != nil {
             return NSNull()
         }
@@ -1535,10 +1535,10 @@ func jsonToAnyHelper(_ json: JSON) -> Any {
         return sanitizeForJSON(array.map { jsonToAnyHelper($0) })
     } else if let string = json.string {
         return string
-    } else if let number = json.number {
-        return number
     } else if let bool = json.bool {
         return bool
+    } else if let number = json.number {
+        return number
     } else if json.null != nil {
         return NSNull()
     }
