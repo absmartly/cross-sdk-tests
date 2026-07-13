@@ -6,5 +6,5 @@ data class ContextWrapper(
     val context: Context,
     val eventCollector: EventCollector,
     val dataProvider: DummyContextDataProvider?,
-    var publishFail: Boolean = false
+    val publisher: CustomPublisher? = null
 )

@@ -5,7 +5,6 @@ import com.absmartly.sdk.ABsmartly
 import com.absmartly.sdk.ContextConfig
 import com.absmartly.sdk.ContextData
 import com.absmartly.sdk.ContextEventLogger
-import com.absmartly.sdk.PublishEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
@@ -234,10 +233,7 @@ fun Application.configureRouting() {
                     ContextData()
                 }
 
-                val noOpPublisher = object : com.absmartly.sdk.ContextPublisher {
-                    override fun publish(context: com.absmartly.sdk.Context, event: PublishEvent) =
-                        java.util.concurrent.CompletableFuture.completedFuture<Void>(null)
-                }
+                val customPublisher = CustomPublisher()
 
                 val dataProvider: DummyContextDataProvider?
                 val context: com.absmartly.sdk.Context
@@ -254,7 +250,7 @@ fun Application.configureRouting() {
                     }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(failingProvider)
-                        .setContextPublisher(noOpPublisher)
+                        .setContextPublisher(customPublisher)
                         .setContextEventLogger(eventCollector)
                     val failingSdk = ABsmartly.create(sdkConfig)
                     context = failingSdk.createContext(contextConfig)
@@ -267,7 +263,7 @@ fun Application.configureRouting() {
                     }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(deferredProvider)
-                        .setContextPublisher(noOpPublisher)
+                        .setContextPublisher(customPublisher)
                         .setContextEventLogger(eventCollector)
                     val sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContext(contextConfig)
@@ -297,12 +293,12 @@ fun Application.configureRouting() {
                     dataProvider = DummyContextDataProvider()
                     val sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(dataProvider)
-                        .setContextPublisher(noOpPublisher)
+                        .setContextPublisher(customPublisher)
                     val sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContextWith(contextConfig, contextData)
                 }
 
-                val wrapper = ContextWrapper(context, eventCollector, dataProvider)
+                val wrapper = ContextWrapper(context, eventCollector, dataProvider, customPublisher)
                 contexts[contextId] = wrapper
 
                 call.respond(mapOf(
@@ -795,7 +791,7 @@ fun Application.configureRouting() {
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            wrapper.publishFail = true
+            wrapper.publisher?.setShouldFail(true)
             call.respond(mapOf("result" to null, "events" to emptyList<Any>()))
         }
 
