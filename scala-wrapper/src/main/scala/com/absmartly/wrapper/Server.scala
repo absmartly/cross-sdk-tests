@@ -649,6 +649,7 @@ object Server extends IOApp {
     case POST -> Root / "context" / contextId / "publish" =>
       withContext(contextId) { case (context, collector) =>
         if (publishFailFlags.getOrElse(contextId, false)) {
+          publishFailFlags.remove(contextId)
           InternalServerError(Json.obj("error" -> Json.fromString("publish failed")))
         } else {
           val prevCount = collector.getEvents().length
