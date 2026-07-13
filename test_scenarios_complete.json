@@ -17968,6 +17968,13 @@
         }
       },
       {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "error": "Publish failed"
+        }
+      },
+      {
         "action": "pending",
         "params": {},
         "expect": {
@@ -18550,6 +18557,9 @@
         "action": "readyError",
         "params": {},
         "expect": {
+          "result": {
+            "isError": true
+          },
           "events": []
         }
       }
