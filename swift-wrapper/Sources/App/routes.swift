@@ -215,7 +215,23 @@ class EventCollector: ContextEventLogger {
 }
 
 class CustomPublisher: ContextPublisher {
+    private let lock = NSLock()
+    private var shouldFail: Bool = false
+
+    func setShouldFail(_ value: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        shouldFail = value
+    }
+
     func publish(event: PublishEvent) -> Promise<Void> {
+        lock.lock()
+        let failNow = shouldFail
+        if failNow { shouldFail = false }
+        lock.unlock()
+        if failNow {
+            return Promise(error: NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Publish failed"]))
+        }
         return Promise.value(())
     }
 }
@@ -304,12 +320,13 @@ class ContextStorage {
     let context: Context
     let eventCollector: EventCollector
     let sdk: ABSmartlySDK
-    var publishFail: Bool = false
+    let publisher: CustomPublisher?
 
-    init(context: Context, eventCollector: EventCollector, sdk: ABSmartlySDK) {
+    init(context: Context, eventCollector: EventCollector, sdk: ABSmartlySDK, publisher: CustomPublisher? = nil) {
         self.context = context
         self.eventCollector = eventCollector
         self.sdk = sdk
+        self.publisher = publisher
     }
 }
 
@@ -319,7 +336,7 @@ class ContextManager {
     private let lock = NSLock()
     private let maxContexts = 50
 
-    func store(contextId: String, context: Context, collector: EventCollector, sdk: ABSmartlySDK) {
+    func store(contextId: String, context: Context, collector: EventCollector, sdk: ABSmartlySDK, publisher: CustomPublisher? = nil) {
         var toEvict: [ContextStorage] = []
 
         lock.lock()
@@ -329,7 +346,7 @@ class ContextManager {
                 toEvict.append(oldStorage)
             }
         }
-        contexts[contextId] = ContextStorage(context: context, eventCollector: collector, sdk: sdk)
+        contexts[contextId] = ContextStorage(context: context, eventCollector: collector, sdk: sdk, publisher: publisher)
         contextOrder.append(contextId)
         lock.unlock()
 
@@ -690,7 +707,7 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.badRequest, reason: "Either data or endpoint must be provided")
         }
 
-        contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: sdk)
+        contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: sdk, publisher: customPublisher)
 
         let result: [String: Any] = [
             "result": [
@@ -1307,7 +1324,7 @@ func routes(_ app: VaporApplication) throws {
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
         }
-        storage.publishFail = true
+        storage.publisher?.setShouldFail(true)
         let response: [String: Any] = ["result": NSNull(), "events": [] as [Any]]
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
     }
@@ -1324,7 +1341,13 @@ func routes(_ app: VaporApplication) throws {
         let pendingBefore = storage.context.getPendingCount()
         req.logger.info("[DEBUG PUBLISH] pendingBefore=\(pendingBefore), eventsBefore=\(eventsBefore)")
 
-        try await storage.context.publish().value
+        do {
+            try await storage.context.publish().value
+        } catch {
+            req.logger.warning("[DEBUG PUBLISH] publish failed: \(error.localizedDescription)")
+            let errorResult: [String: Any] = ["error": "Publish failed: \(error.localizedDescription)"]
+            return try HTTPResponse(status: .internalServerError, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
+        }
 
         req.logger.info("[DEBUG PUBLISH] After await, total events=\(storage.eventCollector.events.count)")
 

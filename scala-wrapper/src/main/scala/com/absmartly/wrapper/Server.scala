@@ -219,7 +219,7 @@ object Server extends IOApp {
                         context.setData(data)
                       } catch {
                         case e: Exception =>
-                          context.setDataFailed()
+                          context.setDataFailed(Some(new RuntimeException("Context load failed")))
                       }
                     }
                     (context, collector)
@@ -241,7 +241,7 @@ object Server extends IOApp {
                   val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector))
                   if (failLoad) {
                     val context = new Context(sdk, None, units, options, collector)
-                    context.setDataFailed()
+                    context.setDataFailed(Some(new RuntimeException("Context load failed")))
                     collector.logEvent("error", Json.obj("message" -> Json.fromString("Context load failed")))
                     Thread.sleep(50)
                     (context, collector)
