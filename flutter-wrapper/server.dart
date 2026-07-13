@@ -529,7 +529,9 @@ Future<void> startServer() async {
       contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
       // Flutter wrapper uses createContextWith payload injection in this test harness.
       // Disable auto-refresh to avoid background refresh noise without a real provider.
-      contextConfig.setRefreshInterval(-1);
+      // A negative interval fires the refresh Timer immediately (risking a spurious
+      // refresh against an empty provider), so use 0 to disable, matching the e2e path.
+      contextConfig.setRefreshInterval(0);
 
       late Context context;
       if (failLoad || fetchFailed) {
