@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-import sys
 import os
 import json
 import re
@@ -470,10 +469,7 @@ def track(context_id):
         if properties is not None and not isinstance(properties, dict):
             return jsonify({'error': f"Goal '{goal_name}' properties must be of type object."}), 400
 
-        pending_before = context.get_pending_count()
         context.track(goal_name, properties)
-        pending_after = context.get_pending_count()
-        print(f"DEBUG track: pending before={pending_before}, after={pending_after}", file=sys.stderr)
         new_events = collector.events[events_before:]
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
@@ -626,7 +622,6 @@ def pending(context_id):
 
     ctx_data = contexts[context_id]
     count = ctx_data['context'].get_pending_count()
-    print(f"DEBUG pending: count={count}", file=sys.stderr)
     return jsonify({'result': count, 'events': []})
 
 @app.route('/context/<context_id>/isFinalized', methods=['GET'])
