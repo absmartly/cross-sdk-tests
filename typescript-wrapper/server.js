@@ -106,6 +106,15 @@ app.put('/context_payload/:payloadId', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/context_payload/:payloadId', (req, res) => {
+  const throttle = parseInt(req.query.throttle || '0');
+  const data = payloadStore[req.params.payloadId] || { experiments: [] };
+
+  setTimeout(() => {
+    res.json(data);
+  }, throttle);
+});
+
 // Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
 app.get('/context_payload/:payloadId/context', (req, res) => {
   const data = payloadStore[req.params.payloadId] || { experiments: [] };
