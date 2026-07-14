@@ -1339,17 +1339,13 @@ func routes(_ app: VaporApplication) throws {
 
         // Get pending count before publish to know if we should expect a publish event
         let pendingBefore = storage.context.getPendingCount()
-        req.logger.info("[DEBUG PUBLISH] pendingBefore=\(pendingBefore), eventsBefore=\(eventsBefore)")
 
         do {
             try await storage.context.publish().value
         } catch {
-            req.logger.warning("[DEBUG PUBLISH] publish failed: \(error.localizedDescription)")
             let errorResult: [String: Any] = ["error": "Publish failed: \(error.localizedDescription)"]
             return try HTTPResponse(status: .internalServerError, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
         }
-
-        req.logger.info("[DEBUG PUBLISH] After await, total events=\(storage.eventCollector.events.count)")
 
         // Poll for the publish event to appear (PromiseKit callback timing issue)
         var pollCount = 0
@@ -1357,22 +1353,13 @@ func routes(_ app: VaporApplication) throws {
         while pendingBefore > 0 && pollCount < maxPolls {
             let currentEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
             if currentEvents.contains(where: { ($0["type"] as? String) == "publish" }) {
-                req.logger.info("[DEBUG PUBLISH] Found publish event after \(pollCount) polls")
                 break
             }
             try await Task.sleep(nanoseconds: 10_000_000) // 10ms
             pollCount += 1
         }
 
-        if pollCount == maxPolls {
-            req.logger.warning("[DEBUG PUBLISH] Timeout waiting for publish event! Final events=\(storage.eventCollector.events.count)")
-            for (i, evt) in storage.eventCollector.events.enumerated() {
-                req.logger.info("[DEBUG PUBLISH]   Event \(i): \(evt["type"] ?? "unknown")")
-            }
-        }
-
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
-        req.logger.info("[DEBUG PUBLISH] Returning \(newEvents.count) new events")
         let result: [String: Any] = [
             "result": NSNull(),
             "events": sanitizeForJSON(newEvents)
