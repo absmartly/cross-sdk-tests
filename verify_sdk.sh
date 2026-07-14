@@ -39,7 +39,7 @@ sys.path.insert(0, 'orchestrator')
 from test_runner import TestOrchestrator
 pairs = [p for p in os.environ['SDK_URLS'].split(';') if p]
 sdks = dict(p.split('=', 1) for p in pairs)
-o = TestOrchestrator(sdks, verbose=False, loose_error_match=True, allow_wrapper_skip=True)
+o = TestOrchestrator(sdks, verbose=False, allow_wrapper_skip=True)
 working, failed = o.wait_for_services()
 # Drive only the SDKs that actually came up, so a down SDK isn't run through
 # every scenario at a 5s timeout each. The failed set is still handed to

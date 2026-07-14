@@ -338,7 +338,7 @@ verbose = os.environ.get('VERBOSE', 'false') == 'true'
 sdks = dict(item.split(':http://') for item in sdk_urls.split(','))
 sdks = {k: 'http://' + v for k, v in sdks.items()}
 
-orchestrator = TestOrchestrator(sdks, verbose=verbose, loose_error_match=True, allow_wrapper_skip=True)
+orchestrator = TestOrchestrator(sdks, verbose=verbose, allow_wrapper_skip=True)
 working, failed = orchestrator.wait_for_services()
 # Drive only the SDKs that came up, so a down SDK isn't run through every
 # scenario at a 5s timeout each. The failed set is still passed to
@@ -358,7 +358,7 @@ sys.exit(exit_code)
 else
   SDK_SERVICES=$(IFS=,; echo "${TARGET_SDKS[*]}")
   docker compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator \
-    python3 test_runner.py $VERBOSE_FLAG --loose-error-match || TEST_EXIT_CODE=$?
+    python3 test_runner.py $VERBOSE_FLAG || TEST_EXIT_CODE=$?
 fi
 
 docker compose down --remove-orphans 2>/dev/null || true
