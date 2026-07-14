@@ -5,7 +5,6 @@ import re
 import time
 import uuid
 import base64
-import hashlib
 from concurrent.futures import Future
 
 from sdk.absmartly import ABSmartly
@@ -19,6 +18,7 @@ from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
+from sdk.internal.hashing import hash_unit
 import jsons
 import threading
 import urllib.request
@@ -839,8 +839,7 @@ def diagnostic():
 
         if op == 'hashUnit':
             text = '' if value is None else str(value)
-            digest = hashlib.md5(text.encode('utf-8')).digest()
-            result = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
+            result = hash_unit(text)
         elif op == 'base64UrlNoPadding':
             text = '' if value is None else str(value)
             result = base64.urlsafe_b64encode(text.encode('utf-8')).decode('ascii').rstrip('=')
