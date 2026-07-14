@@ -16,7 +16,6 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -77,10 +76,7 @@ fun Application.configureRouting() {
                 val text = value?.toString() ?: ""
 
                 val result: Any = when (op) {
-                    "hashUnit" -> {
-                        val md5 = MessageDigest.getInstance("MD5").digest(text.toByteArray(StandardCharsets.UTF_8))
-                        Base64.getUrlEncoder().withoutPadding().encodeToString(md5)
-                    }
+                    "hashUnit" -> String(com.absmartly.sdk.Hashing.hashUnit(text), StandardCharsets.US_ASCII)
                     "base64UrlNoPadding" ->
                         Base64.getUrlEncoder().withoutPadding().encodeToString(text.toByteArray(StandardCharsets.UTF_8))
                     "utf8Bytes" -> text.toByteArray(StandardCharsets.UTF_8).map { it.toInt() and 0xff }
