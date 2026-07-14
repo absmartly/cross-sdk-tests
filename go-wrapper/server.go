@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/md5"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -243,8 +242,12 @@ func diagnosticHandler(w http.ResponseWriter, r *http.Request) {
 	var result interface{}
 	switch req.Operation {
 	case "hashUnit":
-		sum := md5.Sum([]byte(fmt.Sprint(req.Value)))
-		result = base64.RawURLEncoding.EncodeToString(sum[:])
+		hashed := sdk.HashUnit(fmt.Sprint(req.Value))
+		hashedBytes := make([]byte, len(hashed))
+		for i, b := range hashed {
+			hashedBytes[i] = byte(b)
+		}
+		result = string(hashedBytes)
 	case "base64UrlNoPadding":
 		result = base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprint(req.Value)))
 	case "utf8Bytes":

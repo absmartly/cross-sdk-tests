@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -109,8 +108,7 @@ app.MapPost("/diagnostic", async (HttpContext httpContext) =>
 
         object? result = op switch
         {
-            "hashUnit" => Convert.ToBase64String(MD5.HashData(Encoding.UTF8.GetBytes(text)))
-                .Replace('+', '-').Replace('/', '_').TrimEnd('='),
+            "hashUnit" => ABSmartly.Internal.Hashing.Md5.Hash(text),
             "base64UrlNoPadding" => Convert.ToBase64String(Encoding.UTF8.GetBytes(text))
                 .Replace('+', '-').Replace('/', '_').TrimEnd('='),
             "utf8Bytes" => Encoding.UTF8.GetBytes(text).Select(b => (int)b).ToArray(),
