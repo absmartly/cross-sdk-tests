@@ -1341,7 +1341,7 @@ func routes(_ app: VaporApplication) throws {
         let pendingBefore = storage.context.getPendingCount()
 
         do {
-            try await storage.context.publish().value
+            try await storage.context.publish().asyncValue()
         } catch {
             let errorResult: [String: Any] = ["error": "Publish failed: \(error.localizedDescription)"]
             return try HTTPResponse(status: .internalServerError, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
