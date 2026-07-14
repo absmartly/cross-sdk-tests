@@ -1350,6 +1350,7 @@ int main() {
                  }
 
                  if (entry->publishFail) {
+                     entry->publishFail = false;
                      res.status = 500;
                      res.set_content(
                          make_error_response("publish failed", "PUBLISH_ERROR").dump(),

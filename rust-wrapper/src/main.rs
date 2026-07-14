@@ -1218,6 +1218,7 @@ async fn publish_handler(
     let ctx_data = get_context(&state, &context_id)?;
 
     if ctx_data.publish_fail.load(std::sync::atomic::Ordering::Relaxed) {
+        ctx_data.publish_fail.store(false, std::sync::atomic::Ordering::Relaxed);
         return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "publish failed"}))));
     }
 

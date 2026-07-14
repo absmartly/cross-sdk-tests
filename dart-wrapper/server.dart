@@ -135,13 +135,19 @@ class EventCollector implements ContextEventLogger {
 
 class CustomPublisher implements ContextPublisher {
   final EventCollector eventCollector;
+  bool shouldFail = false;
 
   CustomPublisher(this.eventCollector);
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
     final completer = Completer<void>();
-    completer.complete();
+    if (shouldFail) {
+      shouldFail = false;
+      completer.completeError(Exception('publish failed'));
+    } else {
+      completer.complete();
+    }
     return completer;
   }
 }
@@ -238,9 +244,9 @@ class ContextStore {
   final EventCollector eventCollector;
   final CustomDataProvider dataProvider;
   final Map<String, dynamic> rawData;
-  bool publishFail = false;
+  final CustomPublisher publisher;
 
-  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData);
+  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.publisher);
 }
 
 final Map<String, ContextStore> contexts = {};
@@ -464,7 +470,7 @@ void main() async {
           }
         }
 
-        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {});
+        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {}, CustomPublisher(eventCollector));
 
         return shelf.Response.ok(
           jsonEncode({
@@ -549,7 +555,7 @@ void main() async {
         }
       }
 
-      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {});
+      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {}, publisher);
 
       return shelf.Response.ok(
         jsonEncode({
@@ -1229,7 +1235,7 @@ void main() async {
   router.post('/context/<contextId>/publishFail', (shelf.Request request, String contextId) async {
     final ctxData = contexts[contextId];
     if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
-    ctxData.publishFail = true;
+    ctxData.publisher.shouldFail = true;
     return shelf.Response.ok(jsonEncode({'result': null, 'events': []}), headers: {'Content-Type': 'application/json'});
   });
 
@@ -1237,14 +1243,6 @@ void main() async {
     final ctxData = contexts[contextId];
     if (ctxData == null) {
       return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
-    }
-
-    if (ctxData.publishFail) {
-      ctxData.publishFail = false;
-      return shelf.Response.internalServerError(
-        body: jsonEncode({'error': 'publish failed', 'code': 'PUBLISH_ERROR'}),
-        headers: {'Content-Type': 'application/json'},
-      );
     }
 
     try {
