@@ -1288,7 +1288,7 @@ app.MapPost("/context/{contextId}/publish", async (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message);
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
