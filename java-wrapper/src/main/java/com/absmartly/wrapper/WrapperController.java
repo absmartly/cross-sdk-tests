@@ -570,14 +570,7 @@ public class WrapperController {
             int eventsBefore = data.getEventCollector().getEvents().size();
 
             String experimentName = (String) request.get("experimentName");
-            int variant;
-
-            try {
-                variant = data.getContext().getTreatment(experimentName);
-            } catch (ArrayIndexOutOfBoundsException e) {
-                variant = -1;
-                System.err.println("Warning: ArrayIndexOutOfBoundsException in getTreatment, assuming variant=-1");
-            }
+            int variant = data.getContext().getTreatment(experimentName);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             List<Map<String, Object>> exposureEvents = new ArrayList<>();
@@ -652,13 +645,7 @@ public class WrapperController {
             String key = (String) request.get("key");
             Object defaultValue = request.get("defaultValue");
 
-            Object result;
-            try {
-                result = data.getContext().getVariableValue(key, defaultValue);
-            } catch (ArrayIndexOutOfBoundsException e) {
-                System.err.println("Warning: ArrayIndexOutOfBoundsException in getVariableValue, returning default");
-                result = defaultValue;
-            }
+            Object result = data.getContext().getVariableValue(key, defaultValue);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -693,13 +680,7 @@ public class WrapperController {
             String key = (String) request.get("key");
             Object defaultValue = request.get("defaultValue");
 
-            Object result;
-            try {
-                result = data.getContext().peekVariableValue(key, defaultValue);
-            } catch (ArrayIndexOutOfBoundsException e) {
-                System.err.println("Warning: ArrayIndexOutOfBoundsException in peekVariableValue, returning default");
-                result = defaultValue;
-            }
+            Object result = data.getContext().peekVariableValue(key, defaultValue);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 

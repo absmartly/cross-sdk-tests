@@ -403,7 +403,9 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         IContext context;
         if (failLoad)
         {
-            var failedContext = new FailedContext(contextConfig, eventCollector);
+            var failedContext = (Context)sdk.CreateContextWith(contextConfig, null);
+            var setDataFailedMethod = typeof(Context).GetMethod("SetDataFailed", BindingFlags.NonPublic | BindingFlags.Instance);
+            setDataFailedMethod.Invoke(failedContext, new object[] { new Exception("Context load failed") });
             context = failedContext;
         }
         else if (contextData != null && payloadThrottle > 0)
@@ -680,21 +682,9 @@ app.MapPost("/context/{contextId}/treatment", async (string contextId, HttpConte
 
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        int variant;
-        try
-        {
-            Console.WriteLine($"DEBUG getTreatment: experiment={experimentName}");
-            variant = data.Context.GetTreatment(experimentName);
-            Console.WriteLine($"DEBUG getTreatment result: variant={variant}");
-        }
-        catch (IndexOutOfRangeException)
-        {
-            Console.WriteLine("Warning: IndexOutOfRangeException in GetTreatment, assuming variant=-1");
-            variant = -1;
-        }
+        var variant = data.Context.GetTreatment(experimentName);
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
-        Console.WriteLine($"DEBUG getTreatment events: count={newEvents.Count}");
 
         return Results.Ok(new ApiResponse
         {
@@ -765,16 +755,7 @@ app.MapPost("/context/{contextId}/variableValue", async (string contextId, HttpC
 
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        object value;
-        try
-        {
-            value = data.Context.GetVariableValue(key, defaultValue);
-        }
-        catch (IndexOutOfRangeException)
-        {
-            Console.WriteLine("Warning: IndexOutOfRangeException in GetVariableValue, returning default");
-            value = defaultValue;
-        }
+        var value = data.Context.GetVariableValue(key, defaultValue);
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -823,16 +804,7 @@ app.MapPost("/context/{contextId}/peekVariableValue", async (string contextId, H
 
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        object value;
-        try
-        {
-            value = data.Context.PeekVariableValue(key, defaultValue);
-        }
-        catch (IndexOutOfRangeException)
-        {
-            Console.WriteLine("Warning: IndexOutOfRangeException in PeekVariableValue, returning default");
-            value = defaultValue;
-        }
+        var value = data.Context.PeekVariableValue(key, defaultValue);
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -1732,54 +1704,3 @@ public class LazyContext : IContext
     }
 }
 
-public class FailedContext : IContext
-{
-    private readonly Dictionary<string, string> _units;
-    private readonly Exception _error = new Exception("Context load failed");
-
-    public FailedContext(ContextConfig config, EventCollector eventCollector)
-    {
-        _units = new Dictionary<string, string>(config.Units);
-        eventCollector.HandleEvent(this, EventType.Error, _error);
-    }
-
-    public int PendingCount => 0;
-    public bool IsReady() => false;
-    public bool IsFailed() => true;
-    public Exception ReadyError => _error;
-    public bool IsClosed() => false;
-    public bool IsClosing() => false;
-    public bool IsFinalized => false;
-    public bool IsFinalizing => false;
-    public string[] Experiments => Array.Empty<string>();
-    public string[] GetExperiments() => Experiments;
-    public ABSmartly.Models.ContextData GetContextData() => null;
-    public void SetAttribute(string name, object value) { }
-    public void SetAttributes(Dictionary<string, object> attributes) { }
-    public void SetCustomAssignment(string experimentName, int variant) { }
-    public int? GetCustomAssignment(string experimentName) => null;
-    public void SetCustomAssignments(Dictionary<string, int> customAssignments) { }
-    public void SetOverride(string experimentName, int variant) { }
-    public int? GetOverride(string experimentName) => null;
-    public void SetOverrides(Dictionary<string, int> overrides) { }
-    public int GetTreatment(string experimentName) => 0;
-    public int PeekTreatment(string experimentName) => 0;
-    public void SetUnit(string unitType, string uid) { }
-    public void SetUnits(Dictionary<string, string> units) { }
-    public Dictionary<string, string> Units => _units;
-    public Dictionary<string, string> GetUnits() => _units;
-    public object GetAttribute(string name) => null;
-    public Dictionary<string, object> Attributes => new Dictionary<string, object>();
-    public Dictionary<string, object> GetAttributes() => Attributes;
-    public Dictionary<string, string> GetVariableKeys() => new Dictionary<string, string>();
-    public Dictionary<string, List<string>> VariableKeys => new Dictionary<string, List<string>>();
-    public Dictionary<string, List<string>> GetVariableExperimentKeys() => VariableKeys;
-    public object GetVariableValue(string key, object defaultValue) => defaultValue;
-    public object PeekVariableValue(string key, object defaultValue) => defaultValue;
-    public void Publish() { }
-    public Task PublishAsync() => Task.CompletedTask;
-    public void Refresh() { }
-    public Task RefreshAsync() => Task.CompletedTask;
-    public void Track(string goalName, Dictionary<string, object> properties) { }
-    public void Close() { }
-}
