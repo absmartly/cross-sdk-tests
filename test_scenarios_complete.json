@@ -17805,6 +17805,14 @@
         }
       },
       {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
         "action": "pending",
         "params": {},
         "expect": {
