@@ -947,6 +947,74 @@ POST /context/{contextId}/publishFail
 next `POST /publish` call fails and its pending events are preserved (pending
 count is unchanged by the failed publish).
 
+#### Two valid implementation patterns
+
+Wrappers implement the "arm the next publish to fail" behavior with one of two
+mechanisms. Both satisfy the observable contract above (the `/publish` call
+returns an error status and the context's pending count is left unchanged), so
+no current scenario distinguishes them. The choice is dictated by what the
+underlying SDK's real publish path does with pending state, not by convenience.
+
+**Pattern A — HTTP-layer flag (`go`, `rust`, `cpp`, `scala`).** The wrapper
+stores an armed boolean keyed by context id. The `/publishFail` handler sets it;
+the `/publish` handler checks it *before* calling the SDK, and when armed it
+clears the flag and returns a synthetic `500` **without ever invoking the SDK's
+publish method**. Pending events are trivially preserved because the SDK is
+never touched.
+
+**Pattern B — SDK-publisher-level (`kotlin`, `swift`, `dart`, `flutter`,
+`javascript`, `typescript`, `react`, `vue2`, `vue3`, `angular`, `python`, `php`,
+`ruby`, `liquid`).** The wrapper registers a custom `ContextPublisher` /
+`CustomPublisher` with the SDK at context-creation time. The `/publishFail`
+handler flips a `shouldFail` flag on that publisher instance; the `/publish`
+handler calls the SDK's real `publish()` as usual, the SDK invokes the injected
+publisher, and the publisher returns/throws a failure from **inside the real
+SDK-invoked publish path**. This exercises the SDK's own publish-failure
+handling (error propagation, and — where the SDK supports it — restoration of
+pending events).
+
+#### Tradeoff
+
+Pattern B is more faithful: it drives the SDK's actual publish-failure code
+path, so a future scenario asserting "pending events survive a *real*
+SDK-level publish failure" would genuinely test the SDK. Pattern A short-circuits
+above the SDK, so such a scenario would pass trivially without exercising the
+SDK's failure handling at all.
+
+However, Pattern A is **not merely a shortcut** for `go`, `rust`, and `cpp`:
+their `Context.publish()`/`Flush()` implementations drain pending events
+(zero the pending count and clear the exposure/goal buffers) *before* invoking
+the publisher, and do **not** restore them if the publisher fails (rust's
+`publish()` is infallible and returns `()`; go and cpp discard the drained
+buffers). Routing `publishFail` through an injected failing publisher in those
+three SDKs would therefore report the failure but leave pending at `0`,
+violating the "pending events preserved" contract. For these SDKs the
+HTTP-layer flag is the only mechanism that satisfies the contract without
+changing SDK source. (`go` and `scala` do register a real `ContextPublisher`
+with the SDK — a no-op one — but deliberately bypass it for `publishFail`.)
+
+`scala` is the exception within Pattern A: its `_flush()` restores exposures and
+goals on publisher failure (`prependAll`) and re-checks pending, so it *could*
+faithfully move to Pattern B. It is left on Pattern A only because arming a
+per-context failure would require threading a per-context publisher instance
+through its several context-creation paths (which currently share one immutable
+no-op publisher) — a broader change than the risk budget for this
+documentation task allowed. See below.
+
+#### Unification investigation
+
+Unifying the four Pattern-A wrappers onto Pattern B was investigated and
+**intentionally not done**:
+
+- `go`, `rust`, `cpp` — **not feasible without SDK source changes.** The SDKs
+  drain pending state before calling the publisher and never restore it on
+  failure, so an injected failing publisher cannot preserve pending events.
+- `scala` — **feasible but not clearly low-risk.** The SDK restores pending on
+  publisher failure, but the wrapper shares a single immutable no-op publisher
+  across all contexts; per-context arming would require reworking
+  `makeSdkConfig` and every context-creation site, with verification gated on a
+  slow full `sbt` build. Deferred as a possible future follow-up.
+
 ### Capability: `holdouts`
 
 No new endpoint — this capability gates correct handling of the `holdouts[]`
