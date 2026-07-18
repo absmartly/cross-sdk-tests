@@ -492,6 +492,18 @@ class E2ERunner:
                 context_errors += 1
                 continue
 
+            # A 501 here is legitimately a skip, not a failure. Across every
+            # wrapper, 501 is emitted from exactly one place: the /context guard
+            # that returns {"error": "e2e mode not configured"} when the
+            # ABSMARTLY_E2E_* env vars are absent — i.e. this build/environment
+            # cannot run the live e2e path at all. It is returned before any SDK
+            # work happens, so it means "capability unavailable here", not
+            # "operation failed". A genuine runtime error inside the e2e path
+            # surfaces as 500 (or a RequestException) and is counted as a
+            # context_error below, so it can never be mis-hidden as a 501 skip.
+            # Skipping is also not a silent pass: the all-inactive guard in
+            # verify_metrics() fails the run if *every* SDK skips, so a run that
+            # verifies nothing still exits non-zero.
             if ctx_resp.status_code == 501:
                 print(f"  {Colors.YELLOW}SKIP{Colors.RESET} {sdk_name} (e2e mode not supported)")
                 self.skipped_sdks.append(sdk_name)

@@ -581,10 +581,34 @@ def main():
 
     cross_sdk_results = load_cross_sdk_report(cross_sdk_report) if has_cross else {}
 
+    # A per-row "N/A" in the cross column is legitimate: the report exists and
+    # lists other SDKs, but not this particular one. What is NOT legitimate is
+    # the report yielding zero SDKs when the cross-SDK phase was requested
+    # (has_cross): the file is absent, empty, or has no sdk_stats/results body.
+    # Any of those means the orchestrator never produced a usable report — it
+    # crashed, timed out, or exited before generate_report() ran. Without this
+    # guard every SDK renders "N/A", cross_sdk_total stays 0, and the aggregator
+    # exits 0, silently reporting a non-run as a clean run. has_cross is only
+    # true when a real report path (not /dev/null) was requested, so an empty
+    # result here is unambiguously a failure. Fail loudly instead.
+    cross_report_missing = has_cross and not cross_sdk_results
+
     all_sdks = sorted(set(list(unit_results.keys()) + list(cross_sdk_results.keys())))
     if not all_sdks:
         all_sdks = discover_all_sdks()
     any_failure = print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has_cross)
+
+    if cross_report_missing:
+        reason = (
+            "was not produced" if not os.path.exists(cross_sdk_report)
+            else "produced no SDK results"
+        )
+        print(
+            f"\n{RED}Cross-SDK report missing{RESET}: {cross_sdk_report} {reason} "
+            f"by the cross-SDK phase — the orchestrator did not finish. Failing "
+            f"the run rather than rendering every SDK as N/A."
+        )
+        any_failure = True
 
     sys.exit(1 if any_failure else 0)
 
