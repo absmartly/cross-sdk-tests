@@ -153,7 +153,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/javascript-wrapper/Dockerfile
     ports:
-      - "3001:3000"
+      - "3000"
     environment:
       - SDK_NAME=javascript
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -166,7 +166,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/python-wrapper/Dockerfile
     ports:
-      - "3002:3000"
+      - "3000"
     environment:
       - SDK_NAME=python
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -179,7 +179,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/ruby-wrapper/Dockerfile
     ports:
-      - "3003:3000"
+      - "3000"
     environment:
       - SDK_NAME=ruby
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -192,7 +192,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/java-wrapper/Dockerfile
     ports:
-      - "3004:3000"
+      - "3000"
     environment:
       - SDK_NAME=java
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -205,7 +205,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/php-wrapper/Dockerfile
     ports:
-      - "3005:3000"
+      - "3000"
     environment:
       - SDK_NAME=php
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -218,7 +218,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/go-wrapper/Dockerfile
     ports:
-      - "3006:3000"
+      - "3000"
     environment:
       - SDK_NAME=go
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -231,7 +231,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/liquid-wrapper/Dockerfile
     ports:
-      - "3007:3000"
+      - "3000"
     environment:
       - SDK_NAME=liquid
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -244,7 +244,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/dart-wrapper/Dockerfile
     ports:
-      - "3011:3000"
+      - "3000"
     environment:
       - SDK_NAME=dart
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -257,7 +257,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/flutter-wrapper/Dockerfile
     ports:
-      - "3008:3000"
+      - "3000"
     environment:
       - SDK_NAME=flutter
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -270,7 +270,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/swift-wrapper/Dockerfile
     ports:
-      - "3010:3000"
+      - "3000"
     environment:
       - SDK_NAME=swift
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -283,7 +283,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/dotnet-wrapper/Dockerfile
     ports:
-      - "3009:3000"
+      - "3000"
     environment:
       - SDK_NAME=dotnet
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -296,7 +296,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/react-wrapper/Dockerfile
     ports:
-      - "3012:3000"
+      - "3000"
     environment:
       - SDK_NAME=react
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -309,7 +309,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/vue2-wrapper/Dockerfile
     ports:
-      - "3013:3000"
+      - "3000"
     environment:
       - SDK_NAME=vue2
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -322,7 +322,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/vue3-wrapper/Dockerfile
     ports:
-      - "3014:3000"
+      - "3000"
     environment:
       - SDK_NAME=vue3
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -335,7 +335,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/rust-wrapper/Dockerfile
     ports:
-      - "3015:3000"
+      - "3000"
     environment:
       - SDK_NAME=rust
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -348,7 +348,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/elixir-wrapper/Dockerfile
     ports:
-      - "3016:3000"
+      - "3000"
     environment:
       - SDK_NAME=elixir
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -361,7 +361,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/scala-wrapper/Dockerfile
     ports:
-      - "3017:3000"
+      - "3000"
     environment:
       - SDK_NAME=scala
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -374,7 +374,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/kotlin-wrapper/Dockerfile
     ports:
-      - "3018:3000"
+      - "3000"
     environment:
       - SDK_NAME=kotlin
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -387,7 +387,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/angular-wrapper/Dockerfile
     ports:
-      - "3019:3000"
+      - "3000"
     environment:
       - SDK_NAME=angular
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -400,7 +400,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/cpp-wrapper/Dockerfile
     ports:
-      - "3020:3000"
+      - "3000"
     environment:
       - SDK_NAME=cpp
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
@@ -413,7 +413,7 @@ services:
       context: ..
       dockerfile: cross-sdk-tests/typescript-wrapper/Dockerfile
     ports:
-      - "3021:3000"
+      - "3000"
     environment:
       - SDK_NAME=typescript
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
