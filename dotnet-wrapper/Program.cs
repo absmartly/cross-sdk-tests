@@ -127,7 +127,7 @@ app.MapPost("/diagnostic", async (HttpContext httpContext) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 500);
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -155,7 +155,7 @@ app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext 
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 500);
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -177,7 +177,7 @@ app.MapGet("/context_payload/{payloadId}", (string payloadId, [FromQuery] int th
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message, statusCode: 500);
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
@@ -1303,7 +1303,7 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
             var closeMethod = typeof(Context).GetMethod("CloseAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             if (closeMethod == null)
             {
-                return Results.Problem("Context.CloseAsync method not found via reflection; cannot finalize", statusCode: 500);
+                return Results.Json(new { error = "Context.CloseAsync method not found via reflection; cannot finalize" }, statusCode: 500);
             }
             await (Task)closeMethod.Invoke(context, null);
         }
@@ -1318,7 +1318,7 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message);
+        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
 
