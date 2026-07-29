@@ -955,16 +955,16 @@ returns an error status and the context's pending count is left unchanged), so
 no current scenario distinguishes them. The choice is dictated by what the
 underlying SDK's real publish path does with pending state, not by convenience.
 
-**Pattern A — HTTP-layer flag (`go`, `rust`, `cpp`, `scala`).** The wrapper
-stores an armed boolean keyed by context id. The `/publishFail` handler sets it;
-the `/publish` handler checks it *before* calling the SDK, and when armed it
-clears the flag and returns a synthetic `500` **without ever invoking the SDK's
-publish method**. Pending events are trivially preserved because the SDK is
-never touched.
+**Pattern A — HTTP-layer flag (`go`, `rust`, `cpp`, `scala`, `elixir`).** The
+wrapper stores an armed boolean keyed by context id. The `/publishFail` handler
+sets it; the `/publish` handler checks it *before* calling the SDK, and when
+armed it clears the flag and returns a synthetic `500` **without ever invoking
+the SDK's publish method**. Pending events are trivially preserved because the
+SDK is never touched.
 
 **Pattern B — SDK-publisher-level (`kotlin`, `swift`, `dart`, `flutter`,
 `javascript`, `typescript`, `react`, `vue2`, `vue3`, `angular`, `python`, `php`,
-`ruby`, `liquid`).** The wrapper registers a custom `ContextPublisher` /
+`ruby`, `liquid`, `java`, `dotnet`).** The wrapper registers a custom `ContextPublisher` /
 `CustomPublisher` with the SDK at context-creation time. The `/publishFail`
 handler flips a `shouldFail` flag on that publisher instance; the `/publish`
 handler calls the SDK's real `publish()` as usual, the SDK invokes the injected
@@ -993,6 +993,15 @@ HTTP-layer flag is the only mechanism that satisfies the contract without
 changing SDK source. (`go` and `scala` do register a real `ContextPublisher`
 with the SDK — a no-op one — but deliberately bypass it for `publishFail`.)
 
+`elixir` is on Pattern A for the same class of reason as `go`/`rust`/`cpp`,
+though its SDK fails the contract twice over. `do_publish/1` clears
+`exposures`/`goals` and zeroes the counts *before* handing the event map to the
+publisher, and then discards the publisher's outcome — a `{:error, reason}` is
+only logged, and `publish/1` returns `{:ok, new_state}` either way. So an
+injected failing publisher would both lose pending events and be invisible to
+the wrapper, which could not return a `500` at all. The wrapper's `/publish`
+handler documents this inline.
+
 `scala` is the exception within Pattern A: its `_flush()` restores exposures and
 goals on publisher failure (`prependAll`) and re-checks pending, so it *could*
 faithfully move to Pattern B. It is left on Pattern A only because arming a
@@ -1003,12 +1012,15 @@ documentation task allowed. See below.
 
 #### Unification investigation
 
-Unifying the four Pattern-A wrappers onto Pattern B was investigated and
+Unifying the Pattern-A wrappers onto Pattern B was investigated and
 **intentionally not done**:
 
 - `go`, `rust`, `cpp` — **not feasible without SDK source changes.** The SDKs
   drain pending state before calling the publisher and never restore it on
   failure, so an injected failing publisher cannot preserve pending events.
+- `elixir` — **not feasible without SDK source changes.** `do_publish/1` clears
+  pending before invoking the publisher and swallows its error, so the failure
+  would be neither preserved nor observable.
 - `scala` — **feasible but not clearly low-risk.** The SDK restores pending on
   publisher failure, but the wrapper shares a single immutable no-op publisher
   across all contexts; per-context arming would require reworking
