@@ -437,12 +437,10 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	contextID := fmt.Sprintf("ctx-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
 
 	eventCollector := &EventCollector{events: []Event{}}
-	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 	customVariableParser := &CustomVariableParser{}
 
 	config := sdk.ABSmartlyConfig{
 		Client_:               nil,
-		ContextPublisher_:  customPublisher,
 		ContextEventLogger_:  eventCollector,
 		ContextDataProvider_:  nil,
 		VariableParser_:      customVariableParser,
@@ -528,7 +526,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			deferredProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
 				ContextDataProvider_:  deferredProvider,
-				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
 				VariableParser_:      customVariableParser,
 				AudienceDeserializer_:nil,
@@ -544,7 +541,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			client := sdk.CreateDefaultClient(clientConfig)
 			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:               client,
-				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
 				VariableParser_:      customVariableParser,
 				AudienceDeserializer_:nil,
@@ -561,7 +557,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		failingProvider := &deferredContextDataProvider{dataFuture: dataFuture}
 		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
 			ContextDataProvider_:  failingProvider,
-			ContextPublisher_:  customPublisher,
 			ContextEventLogger_:  eventCollector,
 			VariableParser_:      customVariableParser,
 			AudienceDeserializer_:nil,
@@ -1206,7 +1201,7 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		keys = map[string][]string{}
+		keys = map[string]string{}
 	}
 
 	result := make([]string, 0, len(keys))
@@ -1581,7 +1576,7 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
 		if strings.Contains(err.Error(), "not yet ready") {
-			keys = map[string][]string{}
+			keys = map[string]string{}
 		} else {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
