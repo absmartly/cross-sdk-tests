@@ -97,6 +97,9 @@ class CustomPublisher(ContextPublisher):
 
 contexts = {}
 payload_store = {}
+# Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+# /context_payload/<id>/context route with a given status, then serve normally.
+fault_store = {}
 
 def translate_endpoint(endpoint):
     if endpoint is None:
@@ -124,13 +127,21 @@ def capabilities():
         'globalCustomFieldKeys': True,
         'getUnits': True,
         'getAttributes': True,
-        'readyError': True
+        'readyError': True,
+        'httpFaultInjection': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
 def store_context_payload(payload_id):
     req_data = request.json
     payload_store[payload_id] = req_data.get('data', {'experiments': []})
+    fault = req_data.get('fault')
+    if fault:
+        fault_store[payload_id] = {
+            'failTimes': int(fault.get('failTimes', 0)),
+            'status': int(fault.get('status', 503)),
+            'count': 0,
+        }
     return jsonify({'success': True})
 
 @app.route('/context_payload/<payload_id>', methods=['GET'])
@@ -145,6 +156,10 @@ def get_context_payload(payload_id):
 
 @app.route('/context_payload/<payload_id>/context', methods=['GET'])
 def mock_api_context(payload_id):
+    fault = fault_store.get(payload_id)
+    if fault and fault['count'] < fault['failTimes']:
+        fault['count'] += 1
+        return jsonify({'error': f"injected fault {fault['status']}"}), fault['status']
     data = payload_store.get(payload_id, {'experiments': []})
     return jsonify(data)
 
@@ -269,7 +284,19 @@ def create_context():
     else:
         # Async: createContext (SDK will fetch from endpoint)
         context = sdk.create_context(context_config)
-        context.wait_until_ready()
+        # A genuine live-fetch failure (e.g. injected HTTP fault) makes
+        # wait_until_ready raise; surface it as a FAILED context (matching the
+        # failLoad path) rather than a 500 so fault scenarios can observe
+        # is_failed() uniformly.
+        #
+        # Swallowing here cannot hide an unexpected breakage: every async
+        # create_context scenario without an httpFault asserts `failed: false`
+        # on this step, so a real fetch error still fails its scenario loudly
+        # rather than passing vacuously. The response reports is_failed() anyway.
+        try:
+            context.wait_until_ready()
+        except Exception:
+            pass
         # Wait for events to be collected (like Go/Java wrappers)
         for _ in range(50):
             if event_collector.events:

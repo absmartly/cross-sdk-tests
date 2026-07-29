@@ -300,14 +300,24 @@ class TestOrchestrator:
                     import uuid
 
                     payload_id = f"payload-{uuid.uuid4()}"
+                    payload_body = {"data": scenario["contextData"]}
+                    # Optional HTTP fault injection: fail the first N SDK fetches
+                    # of this payload with the given status so the SDK's real
+                    # retry/bail logic runs over the live-fetch path (68-70).
+                    if "httpFault" in scenario:
+                        payload_body["fault"] = scenario["httpFault"]
                     payload_response = requests.put(
                         f"{base_url}/context_payload/{payload_id}",
-                        json={"data": scenario["contextData"]},
+                        json=payload_body,
                         timeout=5,
                     )
                     payload_response.raise_for_status()
 
                     endpoint = f"{base_url}/context_payload/{payload_id}"
+                    # Fault scenarios drive the SDK through real retry/backoff
+                    # loops (up to 5 retries with per-SDK backoff), which can take
+                    # several seconds; give the createContext call more headroom.
+                    create_timeout = 30 if "httpFault" in scenario else 5
                     response = requests.post(
                         f"{base_url}/context",
                         json={
@@ -315,7 +325,7 @@ class TestOrchestrator:
                             "units": params["units"],
                             "options": params.get("options", {}),
                         },
-                        timeout=5,
+                        timeout=create_timeout,
                     )
                     response.raise_for_status()
                     data = response.json()

@@ -173,7 +173,17 @@ var (
 	contextsMu   sync.RWMutex
 	payloadStore = make(map[string]jsonmodels.ContextData)
 	payloadMu    sync.RWMutex
+	// Per-payload HTTP fault injection: fail the first N fetches of the
+	// SDK-facing /context_payload/{id}/context route, then serve normally.
+	faultStore = make(map[string]*faultState)
+	faultMu    sync.Mutex
 )
+
+type faultState struct {
+	FailTimes int
+	Status    int
+	Count     int
+}
 
 type Response struct {
 	Result interface{} `json:"result"`
@@ -192,7 +202,11 @@ type CreateContextRequest struct {
 }
 
 type StorePayloadRequest struct {
-	Data jsonmodels.ContextData `json:"data"`
+	Data  jsonmodels.ContextData `json:"data"`
+	Fault *struct {
+		FailTimes int `json:"failTimes"`
+		Status    int `json:"status"`
+	} `json:"fault"`
 }
 
 type StorePayloadResponse struct {
@@ -226,6 +240,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"getUnits":     true,
 		"getAttributes": true,
 		"readyError":   true,
+		"httpFaultInjection": true,
 	})
 }
 
@@ -295,6 +310,16 @@ func storePayloadHandler(w http.ResponseWriter, r *http.Request) {
 	payloadStore[payloadID] = req.Data
 	payloadMu.Unlock()
 
+	if req.Fault != nil {
+		status := req.Fault.Status
+		if status == 0 {
+			status = 503
+		}
+		faultMu.Lock()
+		faultStore[payloadID] = &faultState{FailTimes: req.Fault.FailTimes, Status: status}
+		faultMu.Unlock()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
@@ -328,6 +353,18 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
+
+	faultMu.Lock()
+	if fault, ok := faultStore[payloadID]; ok && fault.Count < fault.FailTimes {
+		fault.Count++
+		status := fault.Status
+		faultMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("injected fault %d", status)})
+		return
+	}
+	faultMu.Unlock()
 
 	payloadMu.RLock()
 	data, exists := payloadStore[payloadID]

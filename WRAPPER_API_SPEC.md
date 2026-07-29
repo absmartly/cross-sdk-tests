@@ -990,8 +990,10 @@ buffers). Routing `publishFail` through an injected failing publisher in those
 three SDKs would therefore report the failure but leave pending at `0`,
 violating the "pending events preserved" contract. For these SDKs the
 HTTP-layer flag is the only mechanism that satisfies the contract without
-changing SDK source. (`go` and `scala` do register a real `ContextPublisher`
-with the SDK — a no-op one — but deliberately bypass it for `publishFail`.)
+changing SDK source. (`scala` does register a real `ContextPublisher` with the
+SDK — a no-op one — but deliberately bypasses it for `publishFail`. `go` used to
+as well, until the go-sdk removed `ContextPublisher` from `ABSmartlyConfig`
+entirely; Pattern B is now not merely unfaithful there but unavailable.)
 
 `elixir` is on Pattern A for the same class of reason as `go`/`rust`/`cpp`,
 though its SDK fails the contract twice over. `do_publish/1` clears

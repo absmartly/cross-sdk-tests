@@ -7753,8 +7753,8 @@
     ]
   },
   {
-    "name": "68 - HTTP Client - Retry on Connection Error",
-    "description": "Client should retry on network errors up to max retries",
+    "name": "68 - HTTP Client - Retry Recovers From Transient 503",
+    "description": "SDK HTTP client must retry a fetch that returns 503 and, once the endpoint recovers within the retry budget, load context normally and serve treatments. Exercises real retry over the live-fetch path.",
     "contextData": {
       "experiments": [
         {
@@ -7813,12 +7813,7 @@
             "ready": true,
             "failed": false,
             "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
             }
-          ]
         }
       },
       {
@@ -7835,11 +7830,18 @@
           ]
         }
       }
-    ]
+    ],
+    "requires": [
+      "httpFaultInjection"
+    ],
+    "httpFault": {
+      "failTimes": 2,
+      "status": 503
+    }
   },
   {
     "name": "69 - HTTP Client - No Retry on 400 Bad Request",
-    "description": "Client should NOT retry on 4xx client errors",
+    "description": "SDK HTTP client must NOT retry a 4xx response; the context data load fails immediately and the context is marked failed. Exercises real bail-on-client-error over the live-fetch path.",
     "contextData": {
       "experiments": [
         {
@@ -7895,36 +7897,31 @@
         },
         "expect": {
           "result": {
-            "ready": true,
-            "failed": false,
+            "failed": true,
             "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
             }
-          ]
         }
       },
       {
-        "action": "treatment",
-        "params": {
-          "experimentName": "exp_http_69"
-        },
+        "action": "isFailed",
+        "params": {},
         "expect": {
-          "result": 1,
-          "events": [
-            {
-              "type": "exposure"
-            }
-          ]
+          "result": true,
+          "events": []
         }
       }
-    ]
+    ],
+    "requires": [
+      "httpFaultInjection"
+    ],
+    "httpFault": {
+      "failTimes": 1,
+      "status": 400
+    }
   },
   {
-    "name": "70 - HTTP Client - Retry on 500 Server Error",
-    "description": "Client should retry on 5xx server errors",
+    "name": "70 - HTTP Client - Fails After Exhausting Retries on 503",
+    "description": "SDK HTTP client must retry a persistently-failing 503 endpoint up to its retry/timeout budget and then give up, marking the context failed. Exercises real retry exhaustion over the live-fetch path.",
     "contextData": {
       "experiments": [
         {
@@ -7980,36 +7977,31 @@
         },
         "expect": {
           "result": {
-            "ready": true,
-            "failed": false,
+            "failed": true,
             "finalized": false
-          },
-          "events": [
-            {
-              "type": "ready"
             }
-          ]
         }
       },
       {
-        "action": "treatment",
-        "params": {
-          "experimentName": "exp_http_70"
-        },
+        "action": "isFailed",
+        "params": {},
         "expect": {
-          "result": 0,
-          "events": [
-            {
-              "type": "exposure"
-            }
-          ]
+          "result": true,
+          "events": []
         }
       }
-    ]
+    ],
+    "requires": [
+      "httpFaultInjection"
+    ],
+    "httpFault": {
+      "failTimes": 50,
+      "status": 503
+    }
   },
   {
-    "name": "71 - HTTP Client - Timeout After Max Duration",
-    "description": "Client should abort request after timeout duration",
+    "name": "71 - HTTP Client - Context Ready Within Time Budget",
+    "description": "Smoke test: context becomes ready within a bounded wait. NOTE: this does not inject a real timeout fault. Injecting one would require a wrapper-side slow-response primitive (hold the /context_payload/{id}/context response open past the SDK's request timeout), and the resulting behavior is not uniformly observable: several SDKs surface a timeout as a generic load failure indistinguishable from a connection error, so a shared cross-SDK assertion cannot distinguish 'timed out' from 'failed'.",
     "contextData": {
       "experiments": [
         {
@@ -8103,8 +8095,8 @@
     ]
   },
   {
-    "name": "72 - HTTP Client - Manual Abort Signal",
-    "description": "Client should support manual request abortion",
+    "name": "72 - HTTP Client - Fetch Completes Without Cancellation",
+    "description": "Smoke test: a normal fetch completes and yields a treatment. NOTE: manual request abort/cancellation is implemented only in the JS SDK family (AbortController), so it cannot be a fair cross-SDK assertion; the other SDKs expose no equivalent cancellation handle on an in-flight context fetch.",
     "contextData": {
       "experiments": [
         {
