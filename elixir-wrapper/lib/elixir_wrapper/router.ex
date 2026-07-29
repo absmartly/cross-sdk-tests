@@ -31,7 +31,8 @@ defmodule ElixirWrapper.Router do
       globalCustomFieldKeys: true,
       getUnits: true,
       getAttributes: true,
-      readyError: true
+      readyError: true,
+      httpFaultInjection: true
     })
   end
 
@@ -96,6 +97,19 @@ defmodule ElixirWrapper.Router do
     case conn.body_params do
       %{"data" => data} ->
         ContextStore.store_payload(payload_id, data)
+
+        case conn.body_params["fault"] do
+          %{} = fault ->
+            ContextStore.set_fault(
+              payload_id,
+              to_int(fault["failTimes"], 0),
+              to_int(fault["status"], 503)
+            )
+
+          _ ->
+            :ok
+        end
+
         send_json(conn, 200, %{success: true})
 
       _ ->
@@ -106,12 +120,18 @@ defmodule ElixirWrapper.Router do
   get "/context_payload/:payload_id/context" do
     payload_id = conn.path_params["payload_id"]
 
-    case ContextStore.get_payload(payload_id) do
-      {:ok, data} ->
-        send_json(conn, 200, data)
+    case ContextStore.take_fault(payload_id) do
+      {:fault, status} ->
+        send_error(conn, status, "injected fault #{status}")
 
-      {:error, _} ->
-        send_error(conn, 404, "Payload not found")
+      :ok ->
+        case ContextStore.get_payload(payload_id) do
+          {:ok, data} ->
+            send_json(conn, 200, data)
+
+          {:error, _} ->
+            send_error(conn, 404, "Payload not found")
+        end
     end
   end
 
@@ -730,6 +750,17 @@ defmodule ElixirWrapper.Router do
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(%{error: message}))
   end
+
+  # Coerce a JSON-supplied fault field to an integer, tolerating both numeric
+  # and string forms; falls back to the given default when absent or unparsable.
+  defp to_int(value, _default) when is_integer(value), do: value
+  defp to_int(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, _} -> int
+      :error -> default
+    end
+  end
+  defp to_int(_value, default), do: default
 
   # Normalize an SDK {:error, reason} reason into a human-readable string.
   defp error_message(reason) when is_binary(reason), do: reason

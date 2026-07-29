@@ -119,6 +119,7 @@ app.get('/capabilities', (req, res) => {
     getAttributes: true,
     readyError: true,
     httpFaultInjection: true,
+    httpRetryOnServerError: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',

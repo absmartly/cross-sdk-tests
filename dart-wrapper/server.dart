@@ -251,6 +251,17 @@ class ContextStore {
 
 final Map<String, ContextStore> contexts = {};
 final Map<String, ContextData> payloadStore = {};
+// Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+// /context_payload/<id>/context route with a given status, then serve normally.
+// Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+class _FaultState {
+  final int failTimes;
+  final int status;
+  int count = 0;
+  _FaultState(this.failTimes, this.status);
+}
+
+final Map<String, _FaultState> faultStore = {};
 
 Map<String, dynamic> _normalizeContextData(Map<String, dynamic> data) {
   final result = Map<String, dynamic>.from(data);
@@ -302,6 +313,8 @@ void main() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'httpFaultInjection': true,
+        'httpRetryOnServerError': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );
@@ -363,6 +376,14 @@ void main() async {
       final contextData = ContextData.fromMap(normalizedData);
       payloadStore[payloadId] = contextData;
 
+      final fault = body['fault'] as Map<String, dynamic>?;
+      if (fault != null) {
+        faultStore[payloadId] = _FaultState(
+          (fault['failTimes'] as num?)?.toInt() ?? 0,
+          (fault['status'] as num?)?.toInt() ?? 503,
+        );
+      }
+
       return shelf.Response.ok(
         jsonEncode({'success': true}),
         headers: {'Content-Type': 'application/json'},
@@ -398,6 +419,15 @@ void main() async {
   });
 
   router.get('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    final fault = faultStore[payloadId];
+    if (fault != null && fault.count < fault.failTimes) {
+      fault.count++;
+      return shelf.Response(
+        fault.status,
+        body: jsonEncode({'error': 'injected fault ${fault.status}'}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    }
     final data = payloadStore[payloadId] ?? ContextData();
     return shelf.Response.ok(
       jsonEncode(data.toMap()),

@@ -201,6 +201,10 @@ end
 
 $contexts = {}
 $payload_store = {}
+# Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+# /context_payload/:id/context route with a given status, then serve normally.
+# Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+$fault_store = {}
 
 get '/health' do
   content_type :json
@@ -220,7 +224,8 @@ get '/capabilities' do
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true
+    readyError: true,
+    httpFaultInjection: true
   }.to_json
 end
 
@@ -229,6 +234,14 @@ put '/context_payload/:payload_id' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   $payload_store[params['payload_id']] = req_data[:data] || { experiments: [] }
+
+  if req_data[:fault]
+    $fault_store[params['payload_id']] = {
+      fail_times: (req_data[:fault][:failTimes] || 0).to_i,
+      status: (req_data[:fault][:status] || 503).to_i,
+      count: 0
+    }
+  end
 
   content_type :json
   { success: true }.to_json
@@ -245,6 +258,12 @@ get '/context_payload/:payload_id' do
 end
 
 get '/context_payload/:payload_id/context' do
+  fault = $fault_store[params['payload_id']]
+  if fault && fault[:count] < fault[:fail_times]
+    fault[:count] += 1
+    content_type :json
+    halt fault[:status], { error: "injected fault #{fault[:status]}" }.to_json
+  end
   data = $payload_store[params['payload_id']] || { experiments: [] }
   content_type :json
   data.to_json

@@ -241,6 +241,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"getAttributes": true,
 		"readyError":   true,
 		"httpFaultInjection": true,
+		"httpRetryOnServerError": true,
 	})
 }
 

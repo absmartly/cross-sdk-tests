@@ -88,7 +88,8 @@ app.get('/capabilities', (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
-    httpFaultInjection: true
+    httpFaultInjection: true,
+    httpRetryOnServerError: true
   });
 });
 

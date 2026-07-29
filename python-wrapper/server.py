@@ -128,7 +128,8 @@ def capabilities():
         'getUnits': True,
         'getAttributes': True,
         'readyError': True,
-        'httpFaultInjection': True
+        'httpFaultInjection': True,
+        'httpRetryOnServerError': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])

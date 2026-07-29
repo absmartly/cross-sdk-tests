@@ -7754,7 +7754,7 @@
   },
   {
     "name": "68 - HTTP Client - Retry Recovers From Transient 503",
-    "description": "SDK HTTP client must retry a fetch that returns 503 and, once the endpoint recovers within the retry budget, load context normally and serve treatments. Exercises real retry over the live-fetch path.",
+  "description": "SDK HTTP client must retry a fetch that returns 503 and, once the endpoint recovers within the retry budget, load context normally and serve treatments. Exercises real retry over the live-fetch path. Gated on httpRetryOnServerError: some SDKs deliberately do not retry 5xx *responses* (ruby-sdk configures faraday-retry, whose retry_statuses defaults to empty, so it retries only on transport exceptions; elixir-sdk implements 5xx retry in its HTTP client but its async context path does not route through it). Those SDKs skip rather than silently asserting a retry that never happens.",
     "contextData": {
       "experiments": [
         {
@@ -7832,7 +7832,8 @@
       }
     ],
     "requires": [
-      "httpFaultInjection"
+   "httpFaultInjection",
+   "httpRetryOnServerError"
     ],
     "httpFault": {
       "failTimes": 2,

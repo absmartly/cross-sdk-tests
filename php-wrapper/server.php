@@ -159,6 +159,10 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 
 $contexts = [];
 $payloadStore = [];
+// Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+// /context_payload/{id}/context route with a given status, then serve normally.
+// Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+$faultStore = [];
 
 function jsonResponse(int $status, $data): Response
 {
@@ -203,7 +207,7 @@ function translateEndpoint(string $endpoint): string
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
 }
 
-$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore) {
+$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore, &$faultStore) {
     $method = $request->getMethod();
     $path = $request->getUri()->getPath();
 
@@ -223,7 +227,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'globalCustomFieldKeys' => true,
             'getUnits' => true,
             'getAttributes' => true,
-            'readyError' => true
+            'readyError' => true,
+            'httpFaultInjection' => true
         ]);
     }
 
@@ -266,11 +271,24 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBodyPreserveObjects($request);
         $payloadStore[$payloadId] = $body->data ?? (object)['experiments' => []];
 
+        if (isset($body->fault)) {
+            $faultStore[$payloadId] = [
+                'failTimes' => (int)($body->fault->failTimes ?? 0),
+                'status' => (int)($body->fault->status ?? 503),
+                'count' => 0,
+            ];
+        }
+
         return jsonResponse(200, ['success' => true]);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
         $payloadId = $matches[1];
+        if (isset($faultStore[$payloadId]) && $faultStore[$payloadId]['count'] < $faultStore[$payloadId]['failTimes']) {
+            $faultStore[$payloadId]['count']++;
+            $status = $faultStore[$payloadId]['status'];
+            return jsonResponse($status, ['error' => "injected fault {$status}"]);
+        }
         $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
         return jsonResponse(200, $data);
     }
@@ -520,8 +538,53 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                         'events' => $eventCollector->getEvents()
                     ]);
                 },
-                function($error) {
-                    return jsonResponse(500, ['error' => $error->getMessage()]);
+                function($error) use ($contextId, $eventCollector, $publisher, $client, &$contexts) {
+                    // A genuine live-fetch failure (e.g. an injected HTTP fault)
+                    // rejects this promise. Surface it as a FAILED context rather
+                    // than an HTTP 500, matching the failLoad path and every other
+                    // wrapper, so fault scenarios can observe isFailed() uniformly
+                    // and later steps resolve the context id instead of 404ing.
+                    //
+                    // The context is failed through the SDK's own code path (the
+                    // same FailingAsyncContextDataProvider used by failLoad), not
+                    // by fabricating a failed:true response: Context::setDataFailed
+                    // is private, so the only faithful way to reach that state is
+                    // to let the SDK's own load path fail.
+                    //
+                    // This cannot mask an unexpected breakage: every async
+                    // createContext scenario without an httpFault asserts
+                    // failed:false on this step, so a real error still fails loudly.
+                    $failConfig = new Config($client);
+                    $failConfig->setContextPublisher($publisher);
+                    $failConfig->setContextDataProvider(new FailingAsyncContextDataProvider());
+                    $failSdk = new SDK($failConfig);
+
+                    $failContextConfig = new ContextConfig();
+                    $failContextConfig->setPublishDelay(-1);
+                    $failContextConfig->setRefreshInterval(0);
+
+                    $result = $failSdk->createContextPending($failContextConfig);
+
+                    return $result['promise']->then(
+                        function($ctx) use ($contextId, $eventCollector, $publisher, $failSdk, &$contexts) {
+                            $contexts[$contextId] = [
+                                'context' => $ctx,
+                                'eventCollector' => $eventCollector,
+                                'publisher' => $publisher,
+                                'sdk' => $failSdk
+                            ];
+
+                            return jsonResponse(200, [
+                                'result' => [
+                                    'contextId' => $contextId,
+                                    'ready' => $ctx->isReady(),
+                                    'failed' => $ctx->isFailed(),
+                                    'finalized' => $ctx->isClosed()
+                                ],
+                                'events' => $eventCollector->getEvents()
+                            ]);
+                        }
+                    );
                 }
             );
         }

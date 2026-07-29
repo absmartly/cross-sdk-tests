@@ -37,6 +37,25 @@ defmodule ElixirWrapper.ContextStore do
     GenServer.call(__MODULE__, {:get_payload, payload_id})
   end
 
+  @doc """
+  Arm per-payload HTTP fault injection: the next `fail_times` calls to
+  `take_fault/1` for this payload report the given status. Used to drive the
+  SDK's real retry/bail logic over the live-fetch path (scenarios 68-70).
+  """
+  def set_fault(payload_id, fail_times, status) do
+    GenServer.call(__MODULE__, {:set_fault, payload_id, fail_times, status})
+  end
+
+  @doc """
+  Consume one fault for this payload. Returns `{:fault, status}` while the
+  armed count has not been exhausted, `:ok` once it has (or was never armed).
+  The increment happens inside the GenServer so concurrent SDK retries cannot
+  race and over-consume the budget.
+  """
+  def take_fault(payload_id) do
+    GenServer.call(__MODULE__, {:take_fault, payload_id})
+  end
+
   @impl true
   def init(:ok) do
     contexts = :ets.new(:contexts, [:set, :private])
@@ -85,6 +104,22 @@ defmodule ElixirWrapper.ContextStore do
     case :ets.lookup(state.payloads, payload_id) do
       [{^payload_id, data}] -> {:reply, {:ok, data}, state}
       [] -> {:reply, {:error, :not_found}, state}
+    end
+  end
+
+  def handle_call({:set_fault, payload_id, fail_times, status}, _from, state) do
+    :ets.insert(state.flags, {{:fault, payload_id}, {fail_times, status, 0}})
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:take_fault, payload_id}, _from, state) do
+    case :ets.lookup(state.flags, {:fault, payload_id}) do
+      [{key, {fail_times, status, count}}] when count < fail_times ->
+        :ets.insert(state.flags, {key, {fail_times, status, count + 1}})
+        {:reply, {:fault, status}, state}
+
+      _ ->
+        {:reply, :ok, state}
     end
   end
 end
