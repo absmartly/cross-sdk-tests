@@ -49,6 +49,10 @@ class CustomPublisher extends absmartly.ContextPublisher {
 
 const contexts = new Map();
 const payloadStore = {};
+// Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+// /context_payload/:id/context route with a given status, then serve normally.
+// Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+const faultStore = {};
 
 function normalizeAsyncEndpoint(endpoint) {
   if (!endpoint) return endpoint;
@@ -84,6 +88,7 @@ app.get('/capabilities', (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    httpFaultInjection: true,
     passThroughOperations: [
       'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
@@ -99,6 +104,13 @@ app.get('/capabilities', (req, res) => {
 
 app.put('/context_payload/:payloadId', (req, res) => {
   payloadStore[req.params.payloadId] = req.body.data || { experiments: [] };
+  if (req.body.fault) {
+    faultStore[req.params.payloadId] = {
+      failTimes: parseInt(req.body.fault.failTimes || 0),
+      status: parseInt(req.body.fault.status || 503),
+      count: 0
+    };
+  }
   res.json({ success: true });
 });
 
@@ -112,6 +124,11 @@ app.get('/context_payload/:payloadId', (req, res) => {
 });
 
 app.get('/context_payload/:payloadId/context', (req, res) => {
+  const fault = faultStore[req.params.payloadId];
+  if (fault && fault.count < fault.failTimes) {
+    fault.count += 1;
+    return res.status(fault.status).json({ error: `injected fault ${fault.status}` });
+  }
   const data = payloadStore[req.params.payloadId] || { experiments: [] };
   res.json(data);
 });
@@ -220,7 +237,15 @@ app.post('/context', async (req, res) => {
         { units },
         { publishDelay: -1, refreshPeriod: 0, ...options }
       );
-      await context.ready();
+      // A genuine live-fetch failure (e.g. injected HTTP fault) rejects ready();
+      // surface it as a FAILED context (matching the failLoad path) rather than a
+      // 500, so fault scenarios can observe context.isFailed() uniformly.
+      //
+      // Swallowing here cannot hide an unexpected breakage: every async
+      // createContext scenario without an httpFault asserts `failed: false` on
+      // this step, so a real fetch error still fails its scenario loudly rather
+      // than passing vacuously. The response below reports isFailed() either way.
+      try { await context.ready(); } catch (e) {}
     }
 
     contexts.set(contextId, { context, eventCollector, sdk, customPublisher });
