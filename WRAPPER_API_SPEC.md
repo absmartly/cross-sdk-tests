@@ -946,3 +946,18 @@ POST /context/{contextId}/publishFail
 **Response:** `{"result": null, "events": []}` — this endpoint arms a failure. The
 next `POST /publish` call fails and its pending events are preserved (pending
 count is unchanged by the failed publish).
+
+### Capability: `holdouts`
+
+No new endpoint — this capability gates correct handling of the `holdouts[]`
+wire field on existing endpoints (`treatment`, `variableValue`, `publish`,
+etc.), not an endpoint of its own. A unit held out by a covered holdout must
+get the control value with no exposure of its own, plus one ordinary exposure
+for the holdout; see the underlying SDK's holdout resolution semantics.
+
+Wrappers must advertise `holdouts` truthfully and dynamically, based on
+whether the SDK version they are built against actually implements holdout
+resolution (e.g. via reflection on the SDK's `Experiment`/`holdoutIds` field,
+or any equivalent runtime probe) — not as a static flag. A wrapper that always
+reports `true` regardless of the underlying SDK will fail scenarios 203-208
+the moment it is built against an SDK version that predates holdouts.

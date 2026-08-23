@@ -20,6 +20,16 @@ across languages.
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
 
+  Some scenarios only apply to SDKs that support a given feature. These carry
+  a `requires: ["<capability>"]` field; the orchestrator fetches each wrapper's
+  `/capabilities` and SKIPs (not fails) any scenario whose capability the SDK
+  doesn't advertise, printing the reason and counting it separately in the
+  summary. Scenarios 203-208 (holdouts) require the `holdouts` capability this
+  way — an SDK without holdout support skips them cleanly instead of failing
+  CI, and gets them for free the moment its wrapper starts advertising
+  `holdouts`. Scenario 209 (holdout wire-format inertness) is deliberately
+  ungated: it must pass on every SDK, holdout-aware or not.
+
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
   scenarios (the JavaScript SDK is the canonical reference).

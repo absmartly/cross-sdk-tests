@@ -67,7 +67,23 @@ public class WrapperController {
         response.put("getUnits", true);
         response.put("getAttributes", true);
         response.put("readyError", true);
+        response.put("holdouts", HOLDOUTS_SUPPORTED);
         return response;
+    }
+
+    // Detected once via reflection rather than hardcoded: the wrapper's compiled
+    // code never references Experiment.holdoutIds directly, so the same jar
+    // works against both the pre-holdouts and post-holdouts core-api and
+    // reports the capability truthfully for whichever one it was built against.
+    private static final boolean HOLDOUTS_SUPPORTED = detectHoldoutsSupport();
+
+    private static boolean detectHoldoutsSupport() {
+        try {
+            com.absmartly.sdk.json.Experiment.class.getField("holdoutIds");
+            return true;
+        } catch (NoSuchFieldException e) {
+            return false;
+        }
     }
 
     @PostMapping("/diagnostic")
