@@ -240,143 +240,113 @@ final class HoldoutSelfTest {
     /** Check A - mirrors scenario 203: held-out unit suppresses the covered experiment. */
     private static boolean checkHeldOutSuppression(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
-        int before = exposures.size();
-        int treatment = context.getTreatment("chk_a_covered");
-        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
-
-        if (treatment != 0) {
-            System.out.println("[holdouts probe] check A (mirrors 203) FAILED: expected control "
-                + "treatment (0) for held-out unit, got " + treatment);
-            return false;
-        }
-        if (newExposures.size() != 1 || !isExposure(newExposures.get(0), 411, "chk_a_holdout")) {
-            System.out.println("[holdouts probe] check A (mirrors 203) FAILED: expected exactly 1 "
-                + "exposure for the holdout itself (id=411), got " + newExposures);
-            return false;
-        }
-        return true;
+        return verifyTreatmentAndExposures("A (mirrors 203)", context, exposures, "chk_a_covered", 0,
+            new ExpectedExposure(411, "chk_a_holdout", 0));
     }
 
     /** Check B - mirrors scenario 204: not-held-out unit assigns normally and exposes the holdout. */
     private static boolean checkNotHeldOutAssignsNormally(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
-        int before = exposures.size();
-        int treatment = context.getTreatment("chk_b_covered");
-        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
-
-        if (treatment != 0) {
-            System.out.println("[holdouts probe] check B (mirrors 204) FAILED: expected normal "
-                + "assignment (0) for not-held-out unit, got " + treatment);
-            return false;
-        }
-        boolean hasExperimentExposure = containsExposure(newExposures, 312, "chk_b_covered");
-        boolean hasNonzeroHoldoutExposure = newExposures.stream().anyMatch(e ->
-            Integer.valueOf(412).equals(e.get("id")) && "chk_b_holdout".equals(e.get("name"))
-                && !Integer.valueOf(0).equals(e.get("variant")));
-        if (newExposures.size() != 2 || !hasExperimentExposure || !hasNonzeroHoldoutExposure) {
-            System.out.println("[holdouts probe] check B (mirrors 204) FAILED: expected the covered "
-                + "experiment's own exposure (id=312) plus a nonzero-variant holdout exposure "
-                + "(id=412), got " + newExposures);
-            return false;
-        }
-        return true;
+        return verifyTreatmentAndExposures("B (mirrors 204)", context, exposures, "chk_b_covered", 0,
+            new ExpectedExposure(312, "chk_b_covered", 0),
+            new ExpectedExposure(412, "chk_b_holdout", 1));
     }
 
     /** Check C - mirrors scenario 205: union of two holdouts, held out via the higher-id one only. */
     private static boolean checkUnionOfTwoHoldouts(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
-        int before = exposures.size();
-        int treatment = context.getTreatment("chk_c_union");
-        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
-
-        if (treatment != 0) {
-            System.out.println("[holdouts probe] check C (mirrors 205) FAILED: expected control "
-                + "treatment (0) via union suppression, got " + treatment);
-            return false;
-        }
-        boolean hasLow = containsExposure(newExposures, 413, "chk_c_holdout_low");
-        boolean hasHigh = containsExposure(newExposures, 414, "chk_c_holdout_high");
-        if (newExposures.size() != 2 || !hasLow || !hasHigh
-            || containsExposure(newExposures, 313, "chk_c_union")) {
-            System.out.println("[holdouts probe] check C (mirrors 205) FAILED: expected independent "
-                + "exposures for both holdouts (id=413 and id=414) and none for the covered "
-                + "experiment, got " + newExposures);
-            return false;
-        }
-        return true;
+        return verifyTreatmentAndExposures("C (mirrors 205)", context, exposures, "chk_c_union", 0,
+            new ExpectedExposure(413, "chk_c_holdout_low", 1),
+            new ExpectedExposure(414, "chk_c_holdout_high", 0));
     }
 
     /** Check D - mirrors scenario 206: holdout coverage never leaks to an uncovered sibling. */
     private static boolean checkCoverageOptInPerExperiment(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
-        int before = exposures.size();
-        int coveredTreatment = context.getTreatment("chk_d_covered");
-        List<Map<String, Object>> coveredExposures = exposures.subList(before, exposures.size());
-        if (coveredTreatment != 0 || coveredExposures.size() != 1
-            || !isExposure(coveredExposures.get(0), 415, "chk_d_holdout")) {
-            System.out.println("[holdouts probe] check D (mirrors 206) FAILED: covered sibling expected "
-                + "control treatment (0) with a sole holdout exposure (id=415), got treatment="
-                + coveredTreatment + " exposures=" + coveredExposures);
+        if (!verifyTreatmentAndExposures("D (mirrors 206, covered)", context, exposures, "chk_d_covered", 0,
+                new ExpectedExposure(415, "chk_d_holdout", 0))) {
             return false;
         }
-
-        before = exposures.size();
-        int siblingTreatment = context.getTreatment("chk_d_uncovered_sibling");
-        List<Map<String, Object>> siblingExposures = exposures.subList(before, exposures.size());
-        if (siblingExposures.size() != 1 || !isExposure(siblingExposures.get(0), 315, "chk_d_uncovered_sibling")) {
-            System.out.println("[holdouts probe] check D (mirrors 206) FAILED: uncovered sibling "
-                + "(no holdoutIds) expected its own ordinary exposure (id=315), unaffected by the "
-                + "holdout covering its sibling, got treatment=" + siblingTreatment
-                + " exposures=" + siblingExposures);
-            return false;
-        }
-        return true;
+        // The uncovered sibling has no holdoutIds, so it must assign and expose exactly as it
+        // would with no holdout in the payload at all - variant 1, unaffected by the holdout
+        // covering its sibling.
+        return verifyTreatmentAndExposures("D (mirrors 206, uncovered sibling)", context, exposures,
+            "chk_d_uncovered_sibling", 1,
+            new ExpectedExposure(315, "chk_d_uncovered_sibling", 1));
     }
 
     /** Check E - mirrors scenario 207: a dangling holdoutId is ignored, a valid one still applies. */
     private static boolean checkDanglingIdIgnoredValidApplies(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
-        int before = exposures.size();
-        int treatment = context.getTreatment("chk_e_dangling_plus_valid");
-        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
-
-        if (treatment != 0 || newExposures.size() != 1 || !isExposure(newExposures.get(0), 416, "chk_e_holdout")) {
-            System.out.println("[holdouts probe] check E (mirrors 207) FAILED: expected the dangling "
-                + "id (999) to be silently ignored while the valid id (416) still suppresses "
-                + "(control treatment, sole holdout exposure), got treatment=" + treatment
-                + " exposures=" + newExposures);
-            return false;
-        }
-        return true;
+        return verifyTreatmentAndExposures("E (mirrors 207)", context, exposures,
+            "chk_e_dangling_plus_valid", 0,
+            new ExpectedExposure(416, "chk_e_holdout", 0));
     }
 
     /** Check F - mirrors scenario 208: a holdout suppresses a full-on experiment too. */
     private static boolean checkSuppressesFullOnExperiment(com.absmartly.sdk.Context context,
             List<Map<String, Object>> exposures) {
+        return verifyTreatmentAndExposures("F (mirrors 208)", context, exposures, "chk_f_fullon", 0,
+            new ExpectedExposure(417, "chk_f_holdout", 0));
+    }
+
+    /**
+     * Shared check body for every A-F check: calls getTreatment(experimentName) exactly once,
+     * then requires BOTH the returned treatment AND the exact ordered id/name/variant sequence of
+     * exposure events appended by that single call to match what the mirrored scenario
+     * (203-208 in test_scenarios_complete.json) pins byte-for-byte. Order matters (e.g. check B's
+     * experiment-exposure-then-holdout-exposure order, check C's low-id-then-high-id order) and so
+     * does every variant (e.g. check C's variants are what prove suppression came through the
+     * HIGHER-id holdout, not just "some" holdout) - a check that only compared id/name/count could
+     * pass against an SDK that resolves the right ids with the wrong variants or the wrong order.
+     */
+    private static boolean verifyTreatmentAndExposures(String checkLabel, com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures, String experimentName, int expectedTreatment,
+            ExpectedExposure... expectedSequence) {
         int before = exposures.size();
-        int treatment = context.getTreatment("chk_f_fullon");
+        int treatment = context.getTreatment(experimentName);
         List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
 
-        if (treatment != 0 || newExposures.size() != 1 || !isExposure(newExposures.get(0), 417, "chk_f_holdout")) {
-            System.out.println("[holdouts probe] check F (mirrors 208) FAILED: expected the holdout to "
-                + "suppress the full-on experiment (fullOnVariant=2) down to control (0) with a sole "
-                + "holdout exposure (id=417), got treatment=" + treatment + " exposures=" + newExposures);
+        if (treatment != expectedTreatment || !matchesSequence(newExposures, expectedSequence)) {
+            System.out.println("[holdouts probe] check " + checkLabel + " FAILED: expected treatment="
+                + expectedTreatment + " with exposure sequence " + java.util.Arrays.toString(expectedSequence)
+                + ", got treatment=" + treatment + " exposures=" + newExposures);
             return false;
         }
         return true;
     }
 
-    private static boolean isExposure(Map<String, Object> exposure, int id, String name) {
-        return Integer.valueOf(id).equals(exposure.get("id")) && name.equals(exposure.get("name"));
-    }
-
-    private static boolean containsExposure(List<Map<String, Object>> exposures, int id, String name) {
-        for (Map<String, Object> exposure : exposures) {
-            if (isExposure(exposure, id, name)) {
-                return true;
+    private static boolean matchesSequence(List<Map<String, Object>> actual, ExpectedExposure[] expected) {
+        if (actual.size() != expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i++) {
+            Map<String, Object> exposure = actual.get(i);
+            ExpectedExposure exp = expected[i];
+            if (!Integer.valueOf(exp.id).equals(exposure.get("id")) || !exp.name.equals(exposure.get("name"))
+                || !Integer.valueOf(exp.variant).equals(exposure.get("variant"))) {
+                return false;
             }
         }
-        return false;
+        return true;
+    }
+
+    /** One pinned position in an expected ordered exposure sequence: id, name, and variant. */
+    private static final class ExpectedExposure {
+        final int id;
+        final String name;
+        final int variant;
+
+        ExpectedExposure(int id, String name, int variant) {
+            this.id = id;
+            this.name = name;
+            this.variant = variant;
+        }
+
+        @Override
+        public String toString() {
+            return "{id=" + id + ", name=" + name + ", variant=" + variant + "}";
+        }
     }
 
     /**
