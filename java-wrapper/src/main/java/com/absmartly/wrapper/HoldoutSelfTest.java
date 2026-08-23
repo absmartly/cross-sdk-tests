@@ -12,42 +12,13 @@ import com.absmartly.sdk.json.Exposure;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Behavioral self-test battery for the `holdouts` capability.
- *
- * A capability flag that is merely "the wire model has a holdoutIds field" is not proof the
- * underlying SDK implements holdout SEMANTICS: a build can carry the field, deserialize it
- * without error, and still resolve treatments/exposures as if holdouts did not exist - or worse,
- * implement a shape that satisfies the field's presence while disagreeing with the current
- * contract on what gets exposed. Either way the wrapper would advertise holdouts:true and fail
- * every scenario that depends on suppression.
- *
- * A single case is not enough either: an SDK could implement exactly the "held-out arm suppresses
- * the covered experiment" shape (scenario 203) and still get every other semantic the capability
- * enables wrong - not resuming normal assignment outside the held-out arm (204), consulting only
- * holdouts[0] instead of the full union (205), leaking suppression onto uncovered siblings (206),
- * erroring instead of tolerating a dangling holdoutId (207), or failing to suppress a full-on
- * experiment (208). So this battery mirrors ALL SIX of those scenarios, each pinned to the same
- * deterministic uids/seeds the orchestrator fixtures (test_scenarios_complete.json) use, and only
- * advertises the capability if every one of them passes; the first failing check is logged and the
- * rest are skipped, since one confirmed semantic gap is already enough to report false.
- *
- * All six checks share ONE in-memory context/contextData (one createContextWith call) rather than
- * one context per check, to keep the probe lean - each check uses a dedicated (unitType, uid) pair
- * and dedicated experiment/holdout ids so the checks cannot interfere with each other's
- * assignments, and each check inspects only the exposure events its own getTreatment() call(s)
- * appended.
- *
- * The fixture's holdout entries (and the covered experiments' holdoutIds) are still assembled via
- * reflection (rather than compile-time field references) purely so this same wrapper source
- * compiles against both pre-holdout and holdout-aware core-api releases; reflection here is only
- * ever used to ASSEMBLE the input, never to decide any verdict - every verdict always comes from
- * observing real getTreatment()/exposure output of the linked SDK.
+ * Behavioral self-test for all holdout semantics covered by scenarios 203-208. Reflection is used
+ * only to build fixtures so this wrapper still compiles against pre-holdout core-api releases;
+ * verdicts always come from observed treatments and exposures.
  */
 final class HoldoutSelfTest {
     private HoldoutSelfTest() {}
@@ -67,22 +38,9 @@ final class HoldoutSelfTest {
     private static final String[] TWO_VARIANTS = {"A", "B"};
     private static final String[] THREE_VARIANTS = {"A", "B", "C"};
 
-    // Lazily computed and memoized via double-checked locking (see run()) rather than a static
-    // initializer: startup must never depend on - or be able to be killed by - this probe.
     private static volatile Boolean cachedResult;
 
-    /**
-     * Returns whether the linked core-api demonstrably implements holdout suppression semantics,
-     * running the behavioral battery on the first call and caching the result for every call
-     * after that. Deliberately NOT run from a static initializer: an incompatible core-api build
-     * can throw a LinkageError, NoClassDefFoundError or ExceptionInInitializerError while probing
-     * unfamiliar SDK internals, and for a static initializer any of those would abort class
-     * loading and take the whole service down with it - the opposite of fail-closed. Running
-     * lazily on first use (the first /capabilities call, or any other caller) means a startup
-     * that never touches this class is never at risk, and double-checked locking on
-     * `cachedResult` guarantees the (potentially slow, context-creating) battery runs exactly once
-     * even if multiple requests race to be first.
-     */
+    /** Runs the probe lazily and exactly once so probe failures cannot prevent startup. */
     static boolean run() {
         Boolean result = cachedResult;
         if (result == null) {
@@ -97,21 +55,11 @@ final class HoldoutSelfTest {
         return result;
     }
 
-    /**
-     * The single fail-closed boundary for the entire probe: catches Throwable, not just
-     * Exception, because the SDK build under probe is unknown/untrusted at this point and its
-     * failure modes are not limited to checked exceptions (LinkageError, NoClassDefFoundError,
-     * OutOfMemoryError from a pathological reflective call, AssertionError, etc. are all
-     * plausible). Any Throwable here means the SDK cannot be trusted to honor the holdout
-     * contract, so the capability is reported false rather than letting the Throwable propagate
-     * and potentially crash whatever caller (e.g. a /capabilities request) triggered the first
-     * run. This is the ONLY place in the probe that swallows Throwable; everything it calls is
-     * free to keep throwing checked/unchecked exceptions normally.
-     */
     private static boolean runSafely() {
         try {
             return runBattery();
         } catch (Throwable t) {
+            // Incompatible SDKs can fail with linkage errors; the capability must fail closed.
             System.out.println("[holdouts probe] behavioral self-test FAILED with throwable: " + t);
             return false;
         }
@@ -188,15 +136,11 @@ final class HoldoutSelfTest {
         Array.set(holdoutsArray, 6, holdoutF);
         holdoutsField.set(contextData, holdoutsArray);
 
-        List<Map<String, Object>> exposures = new CopyOnWriteArrayList<>();
+        List<ProbeExposure> exposures = new CopyOnWriteArrayList<>();
         ContextEventLogger logger = (context, type, data) -> {
             if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure) {
                 Exposure exposure = (Exposure) data;
-                Map<String, Object> record = new HashMap<>();
-                record.put("id", exposure.id);
-                record.put("name", exposure.name);
-                record.put("variant", exposure.variant);
-                exposures.add(record);
+                exposures.add(new ProbeExposure(exposure.id, exposure.name, exposure.variant));
             }
         };
 
@@ -222,12 +166,20 @@ final class HoldoutSelfTest {
         }
 
         try {
-            if (!checkHeldOutSuppression(context, exposures)) return false;
-            if (!checkNotHeldOutAssignsNormally(context, exposures)) return false;
-            if (!checkUnionOfTwoHoldouts(context, exposures)) return false;
+            if (!verifyTreatmentAndExposures("A (mirrors 203)", context, exposures, "chk_a_covered", 0,
+                    new ProbeExposure(411, "chk_a_holdout", 0))) return false;
+            if (!verifyTreatmentAndExposures("B (mirrors 204)", context, exposures, "chk_b_covered", 0,
+                    new ProbeExposure(312, "chk_b_covered", 0),
+                    new ProbeExposure(412, "chk_b_holdout", 1))) return false;
+            if (!verifyTreatmentAndExposures("C (mirrors 205)", context, exposures, "chk_c_union", 0,
+                    new ProbeExposure(413, "chk_c_holdout_low", 1),
+                    new ProbeExposure(414, "chk_c_holdout_high", 0))) return false;
             if (!checkCoverageOptInPerExperiment(context, exposures)) return false;
-            if (!checkDanglingIdIgnoredValidApplies(context, exposures)) return false;
-            if (!checkSuppressesFullOnExperiment(context, exposures)) return false;
+            if (!verifyTreatmentAndExposures("E (mirrors 207)", context, exposures,
+                    "chk_e_dangling_plus_valid", 0,
+                    new ProbeExposure(416, "chk_e_holdout", 0))) return false;
+            if (!verifyTreatmentAndExposures("F (mirrors 208)", context, exposures, "chk_f_fullon", 0,
+                    new ProbeExposure(417, "chk_f_holdout", 0))) return false;
         } finally {
             context.close();
         }
@@ -237,34 +189,11 @@ final class HoldoutSelfTest {
         return true;
     }
 
-    /** Check A - mirrors scenario 203: held-out unit suppresses the covered experiment. */
-    private static boolean checkHeldOutSuppression(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
-        return verifyTreatmentAndExposures("A (mirrors 203)", context, exposures, "chk_a_covered", 0,
-            new ExpectedExposure(411, "chk_a_holdout", 0));
-    }
-
-    /** Check B - mirrors scenario 204: not-held-out unit assigns normally and exposes the holdout. */
-    private static boolean checkNotHeldOutAssignsNormally(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
-        return verifyTreatmentAndExposures("B (mirrors 204)", context, exposures, "chk_b_covered", 0,
-            new ExpectedExposure(312, "chk_b_covered", 0),
-            new ExpectedExposure(412, "chk_b_holdout", 1));
-    }
-
-    /** Check C - mirrors scenario 205: union of two holdouts, held out via the higher-id one only. */
-    private static boolean checkUnionOfTwoHoldouts(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
-        return verifyTreatmentAndExposures("C (mirrors 205)", context, exposures, "chk_c_union", 0,
-            new ExpectedExposure(413, "chk_c_holdout_low", 1),
-            new ExpectedExposure(414, "chk_c_holdout_high", 0));
-    }
-
     /** Check D - mirrors scenario 206: holdout coverage never leaks to an uncovered sibling. */
     private static boolean checkCoverageOptInPerExperiment(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
+            List<ProbeExposure> exposures) {
         if (!verifyTreatmentAndExposures("D (mirrors 206, covered)", context, exposures, "chk_d_covered", 0,
-                new ExpectedExposure(415, "chk_d_holdout", 0))) {
+                new ProbeExposure(415, "chk_d_holdout", 0))) {
             return false;
         }
         // The uncovered sibling has no holdoutIds, so it must assign and expose exactly as it
@@ -272,22 +201,7 @@ final class HoldoutSelfTest {
         // covering its sibling.
         return verifyTreatmentAndExposures("D (mirrors 206, uncovered sibling)", context, exposures,
             "chk_d_uncovered_sibling", 1,
-            new ExpectedExposure(315, "chk_d_uncovered_sibling", 1));
-    }
-
-    /** Check E - mirrors scenario 207: a dangling holdoutId is ignored, a valid one still applies. */
-    private static boolean checkDanglingIdIgnoredValidApplies(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
-        return verifyTreatmentAndExposures("E (mirrors 207)", context, exposures,
-            "chk_e_dangling_plus_valid", 0,
-            new ExpectedExposure(416, "chk_e_holdout", 0));
-    }
-
-    /** Check F - mirrors scenario 208: a holdout suppresses a full-on experiment too. */
-    private static boolean checkSuppressesFullOnExperiment(com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures) {
-        return verifyTreatmentAndExposures("F (mirrors 208)", context, exposures, "chk_f_fullon", 0,
-            new ExpectedExposure(417, "chk_f_holdout", 0));
+            new ProbeExposure(315, "chk_d_uncovered_sibling", 1));
     }
 
     /**
@@ -301,11 +215,11 @@ final class HoldoutSelfTest {
      * pass against an SDK that resolves the right ids with the wrong variants or the wrong order.
      */
     private static boolean verifyTreatmentAndExposures(String checkLabel, com.absmartly.sdk.Context context,
-            List<Map<String, Object>> exposures, String experimentName, int expectedTreatment,
-            ExpectedExposure... expectedSequence) {
+            List<ProbeExposure> exposures, String experimentName, int expectedTreatment,
+            ProbeExposure... expectedSequence) {
         int before = exposures.size();
         int treatment = context.getTreatment(experimentName);
-        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+        List<ProbeExposure> newExposures = exposures.subList(before, exposures.size());
 
         if (treatment != expectedTreatment || !matchesSequence(newExposures, expectedSequence)) {
             System.out.println("[holdouts probe] check " + checkLabel + " FAILED: expected treatment="
@@ -316,28 +230,27 @@ final class HoldoutSelfTest {
         return true;
     }
 
-    private static boolean matchesSequence(List<Map<String, Object>> actual, ExpectedExposure[] expected) {
+    private static boolean matchesSequence(List<ProbeExposure> actual, ProbeExposure[] expected) {
         if (actual.size() != expected.length) {
             return false;
         }
         for (int i = 0; i < expected.length; i++) {
-            Map<String, Object> exposure = actual.get(i);
-            ExpectedExposure exp = expected[i];
-            if (!Integer.valueOf(exp.id).equals(exposure.get("id")) || !exp.name.equals(exposure.get("name"))
-                || !Integer.valueOf(exp.variant).equals(exposure.get("variant"))) {
+            ProbeExposure exposure = actual.get(i);
+            ProbeExposure exp = expected[i];
+            if (exp.id != exposure.id || !exp.name.equals(exposure.name) || exp.variant != exposure.variant) {
                 return false;
             }
         }
         return true;
     }
 
-    /** One pinned position in an expected ordered exposure sequence: id, name, and variant. */
-    private static final class ExpectedExposure {
+    /** One position in an actual or expected ordered exposure sequence. */
+    private static final class ProbeExposure {
         final int id;
         final String name;
         final int variant;
 
-        ExpectedExposure(int id, String name, int variant) {
+        ProbeExposure(int id, String name, int variant) {
             this.id = id;
             this.name = name;
             this.variant = variant;

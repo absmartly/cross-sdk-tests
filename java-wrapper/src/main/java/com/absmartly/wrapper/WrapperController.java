@@ -67,8 +67,6 @@ public class WrapperController {
         response.put("getUnits", true);
         response.put("getAttributes", true);
         response.put("readyError", true);
-        // Lazy on first call (see HoldoutSelfTest.run()), not a static flag computed at class-init
-        // time: startup must never be able to depend on - or be killed by - this probe.
         response.put("holdouts", HoldoutSelfTest.run());
         return response;
     }
