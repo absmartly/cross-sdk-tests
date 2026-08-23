@@ -18,60 +18,175 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Behavioral self-test for the `holdouts` capability.
+ * Behavioral self-test battery for the `holdouts` capability.
  *
  * A capability flag that is merely "the wire model has a holdoutIds field" is not proof the
  * underlying SDK implements holdout SEMANTICS: a build can carry the field, deserialize it
  * without error, and still resolve treatments/exposures as if holdouts did not exist - or worse,
  * implement a shape that satisfies the field's presence while disagreeing with the current
  * contract on what gets exposed. Either way the wrapper would advertise holdouts:true and fail
- * every scenario that depends on suppression. The only way to know the SDK actually implements
- * the contract is to exercise it: construct a minimal in-memory context around a single holdout
- * that is guaranteed (by construction of the unit id relative to the holdout's split/seed) to
- * hold out the covered experiment's unit, then check the two externally-observable invariants of
- * holdout suppression -
- *   1. the covered experiment's treatment resolves to the control variant (0), and
- *   2. evaluating it produces exactly one exposure - for the holdout itself, not the covered
- *      experiment - so a suppressed assignment never masquerades as an ordinary one.
- * Only a pass on both counts justifies advertising the capability; any exception, missing field,
- * or observable mismatch means the SDK cannot be trusted to honor the contract and the
- * capability is reported false.
+ * every scenario that depends on suppression.
  *
- * The fixture's holdout entry is built via reflection (rather than a compile-time field
- * reference) purely so this same wrapper source compiles against both pre-holdout and
- * holdout-aware core-api releases; reflection here is only ever used to ASSEMBLE the input, never
- * to decide the verdict - the verdict always comes from observing real getTreatment()/exposure
- * output of the linked SDK.
+ * A single case is not enough either: an SDK could implement exactly the "held-out arm suppresses
+ * the covered experiment" shape (scenario 203) and still get every other semantic the capability
+ * enables wrong - not resuming normal assignment outside the held-out arm (204), consulting only
+ * holdouts[0] instead of the full union (205), leaking suppression onto uncovered siblings (206),
+ * erroring instead of tolerating a dangling holdoutId (207), or failing to suppress a full-on
+ * experiment (208). So this battery mirrors ALL SIX of those scenarios, each pinned to the same
+ * deterministic uids/seeds the orchestrator fixtures (test_scenarios_complete.json) use, and only
+ * advertises the capability if every one of them passes; the first failing check is logged and the
+ * rest are skipped, since one confirmed semantic gap is already enough to report false.
+ *
+ * All six checks share ONE in-memory context/contextData (one createContextWith call) rather than
+ * one context per check, to keep the probe lean - each check uses a dedicated (unitType, uid) pair
+ * and dedicated experiment/holdout ids so the checks cannot interfere with each other's
+ * assignments, and each check inspects only the exposure events its own getTreatment() call(s)
+ * appended.
+ *
+ * The fixture's holdout entries (and the covered experiments' holdoutIds) are still assembled via
+ * reflection (rather than compile-time field references) purely so this same wrapper source
+ * compiles against both pre-holdout and holdout-aware core-api releases; reflection here is only
+ * ever used to ASSEMBLE the input, never to decide any verdict - every verdict always comes from
+ * observing real getTreatment()/exposure output of the linked SDK.
  */
 final class HoldoutSelfTest {
     private HoldoutSelfTest() {}
 
-    private static final String EXPERIMENT_NAME = "__holdout_self_test_experiment";
-    private static final String HOLDOUT_NAME = "__holdout_self_test_holdout";
-    private static final int EXPERIMENT_ID = 1;
-    private static final int HOLDOUT_ID = 11;
-    private static final String UNIT_TYPE = "session_id";
-    // Same unit id used by the orchestrator's scenario 203 fixture: relative to the holdout's
-    // seed/split below it lands in the holdout's variant 0 (the held-out arm).
-    private static final String UNIT_ID = "e791e240fcd3df7d238cfc285f475e8152fcc0ec";
+    private static final String HELD_OUT_UNIT_TYPE = "session_id";
+    // Same unit id used by the orchestrator's scenario 203/205/206/207/208 fixtures: relative to
+    // a holdout with seedHi=13/seedLo=111/split=[0.1,0.9] it lands in variant 0 (held out).
+    private static final String HELD_OUT_UID = "e791e240fcd3df7d238cfc285f475e8152fcc0ec";
 
+    private static final String NOT_HELD_OUT_UNIT_TYPE = "session_id_b";
+    // Same unit id used by the orchestrator's scenario 204 fixture: relative to the same
+    // seedHi/seedLo/split it lands OUTSIDE the holdout's held-out arm (variant 1).
+    private static final String NOT_HELD_OUT_UID = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3";
+
+    private static final double[] EXPERIMENT_SPLIT = {0.5, 0.5};
+    private static final double[] HOLDOUT_SPLIT = {0.1, 0.9};
+    private static final String[] TWO_VARIANTS = {"A", "B"};
+    private static final String[] THREE_VARIANTS = {"A", "B", "C"};
+
+    // Lazily computed and memoized via double-checked locking (see run()) rather than a static
+    // initializer: startup must never depend on - or be able to be killed by - this probe.
+    private static volatile Boolean cachedResult;
+
+    /**
+     * Returns whether the linked core-api demonstrably implements holdout suppression semantics,
+     * running the behavioral battery on the first call and caching the result for every call
+     * after that. Deliberately NOT run from a static initializer: an incompatible core-api build
+     * can throw a LinkageError, NoClassDefFoundError or ExceptionInInitializerError while probing
+     * unfamiliar SDK internals, and for a static initializer any of those would abort class
+     * loading and take the whole service down with it - the opposite of fail-closed. Running
+     * lazily on first use (the first /capabilities call, or any other caller) means a startup
+     * that never touches this class is never at risk, and double-checked locking on
+     * `cachedResult` guarantees the (potentially slow, context-creating) battery runs exactly once
+     * even if multiple requests race to be first.
+     */
     static boolean run() {
+        Boolean result = cachedResult;
+        if (result == null) {
+            synchronized (HoldoutSelfTest.class) {
+                result = cachedResult;
+                if (result == null) {
+                    result = runSafely();
+                    cachedResult = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * The single fail-closed boundary for the entire probe: catches Throwable, not just
+     * Exception, because the SDK build under probe is unknown/untrusted at this point and its
+     * failure modes are not limited to checked exceptions (LinkageError, NoClassDefFoundError,
+     * OutOfMemoryError from a pathological reflective call, AssertionError, etc. are all
+     * plausible). Any Throwable here means the SDK cannot be trusted to honor the holdout
+     * contract, so the capability is reported false rather than letting the Throwable propagate
+     * and potentially crash whatever caller (e.g. a /capabilities request) triggered the first
+     * run. This is the ONLY place in the probe that swallows Throwable; everything it calls is
+     * free to keep throwing checked/unchecked exceptions normally.
+     */
+    private static boolean runSafely() {
         try {
-            return runUnsafe();
-        } catch (Exception e) {
-            System.out.println("[holdouts probe] behavioral self-test FAILED with exception: " + e);
+            return runBattery();
+        } catch (Throwable t) {
+            System.out.println("[holdouts probe] behavioral self-test FAILED with throwable: " + t);
             return false;
         }
     }
 
-    private static boolean runUnsafe() throws Exception {
-        ContextData contextData = buildFixture();
-        if (contextData == null) {
+    private static boolean runBattery() throws Exception {
+        Field holdoutIdsField = findField(Experiment.class, "holdoutIds");
+        Field holdoutsField = findField(ContextData.class, "holdouts");
+        if (holdoutIdsField == null || holdoutsField == null) {
             System.out.println("[holdouts probe] behavioral self-test FAILED: linked core-api has no "
                 + "holdout wire model (Experiment.holdoutIds / ContextData.holdouts absent) - cannot "
                 + "even construct the fixture, so holdout semantics cannot be present either");
             return false;
         }
+        Class<?> holdoutElementType = holdoutsField.getType().getComponentType();
+
+        // --- Check A fixture (mirrors scenario 203) ---
+        Experiment expA = buildExperiment(311, "chk_a_covered", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, new int[] {411}, holdoutIdsField);
+        Object holdoutA = buildHoldoutEntry(holdoutElementType, 411, "chk_a_holdout", HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check B fixture (mirrors scenario 204) ---
+        Experiment expB = buildExperiment(312, "chk_b_covered", NOT_HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, new int[] {412}, holdoutIdsField);
+        Object holdoutB = buildHoldoutEntry(holdoutElementType, 412, "chk_b_holdout", NOT_HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check C fixture (mirrors scenario 205: union, held out via the HIGHER id only) ---
+        Experiment expC = buildExperiment(313, "chk_c_union", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, new int[] {413, 414}, holdoutIdsField);
+        Object holdoutCLow = buildHoldoutEntry(holdoutElementType, 413, "chk_c_holdout_low", HELD_OUT_UNIT_TYPE,
+            1, 222, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+        Object holdoutCHigh = buildHoldoutEntry(holdoutElementType, 414, "chk_c_holdout_high", HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check D fixture (mirrors scenario 206: coverage is opt-in per experiment) ---
+        Experiment expDCovered = buildExperiment(314, "chk_d_covered", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, new int[] {415}, holdoutIdsField);
+        Experiment expDSibling = buildExperiment(315, "chk_d_uncovered_sibling", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, null, holdoutIdsField);
+        Object holdoutD = buildHoldoutEntry(holdoutElementType, 415, "chk_d_holdout", HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check E fixture (mirrors scenario 207: dangling id ignored, valid id still applies) ---
+        Experiment expE = buildExperiment(316, "chk_e_dangling_plus_valid", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 0, TWO_VARIANTS, new int[] {999, 416}, holdoutIdsField);
+        Object holdoutE = buildHoldoutEntry(holdoutElementType, 416, "chk_e_holdout", HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check F fixture (mirrors scenario 208: suppresses a full-on experiment) ---
+        Experiment expF = buildExperiment(317, "chk_f_fullon", HELD_OUT_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 2, THREE_VARIANTS, new int[] {417}, holdoutIdsField);
+        Object holdoutF = buildHoldoutEntry(holdoutElementType, 417, "chk_f_holdout", HELD_OUT_UNIT_TYPE,
+            13, 111, HOLDOUT_SPLIT, "full_on", TWO_VARIANTS);
+
+        if (holdoutA == null || holdoutB == null || holdoutCLow == null || holdoutCHigh == null
+            || holdoutD == null || holdoutE == null || holdoutF == null) {
+            System.out.println("[holdouts probe] behavioral self-test FAILED: linked core-api's holdout "
+                + "entry type is missing one of the fields (id/seedHi/seedLo/split) the variant "
+                + "assigner requires - cannot construct the fixture");
+            return false;
+        }
+
+        ContextData contextData = new ContextData();
+        contextData.experiments = new Experiment[] {expA, expB, expC, expDCovered, expDSibling, expE, expF};
+        Object holdoutsArray = Array.newInstance(holdoutElementType, 7);
+        Array.set(holdoutsArray, 0, holdoutA);
+        Array.set(holdoutsArray, 1, holdoutB);
+        Array.set(holdoutsArray, 2, holdoutCLow);
+        Array.set(holdoutsArray, 3, holdoutCHigh);
+        Array.set(holdoutsArray, 4, holdoutD);
+        Array.set(holdoutsArray, 5, holdoutE);
+        Array.set(holdoutsArray, 6, holdoutF);
+        holdoutsField.set(contextData, holdoutsArray);
 
         List<Map<String, Object>> exposures = new CopyOnWriteArrayList<>();
         ContextEventLogger logger = (context, type, data) -> {
@@ -86,7 +201,8 @@ final class HoldoutSelfTest {
         };
 
         ContextConfig contextConfig = ContextConfig.create()
-            .setUnit(UNIT_TYPE, UNIT_ID)
+            .setUnit(HELD_OUT_UNIT_TYPE, HELD_OUT_UID)
+            .setUnit(NOT_HELD_OUT_UNIT_TYPE, NOT_HELD_OUT_UID)
             .setPublishDelay(-1)
             .setRefreshInterval(0);
 
@@ -105,93 +221,208 @@ final class HoldoutSelfTest {
             return false;
         }
 
-        int treatment = context.getTreatment(EXPERIMENT_NAME);
-        context.close();
-
-        // Invariant 1: the held-out unit gets the control value for the covered experiment.
-        if (treatment != 0) {
-            System.out.println("[holdouts probe] behavioral self-test FAILED: expected control "
-                + "treatment (0) for held-out unit, got " + treatment);
-            return false;
+        try {
+            if (!checkHeldOutSuppression(context, exposures)) return false;
+            if (!checkNotHeldOutAssignsNormally(context, exposures)) return false;
+            if (!checkUnionOfTwoHoldouts(context, exposures)) return false;
+            if (!checkCoverageOptInPerExperiment(context, exposures)) return false;
+            if (!checkDanglingIdIgnoredValidApplies(context, exposures)) return false;
+            if (!checkSuppressesFullOnExperiment(context, exposures)) return false;
+        } finally {
+            context.close();
         }
 
-        // Invariant 2: exactly one exposure fired, for the holdout itself - never one for the
-        // covered experiment, which must be suppressed rather than exposed.
-        if (exposures.size() != 1) {
-            System.out.println("[holdouts probe] behavioral self-test FAILED: expected exactly 1 "
-                + "exposure (the holdout's), got " + exposures.size() + ": " + exposures);
-            return false;
-        }
-        Map<String, Object> onlyExposure = exposures.get(0);
-        boolean isHoldoutExposure = Integer.valueOf(HOLDOUT_ID).equals(onlyExposure.get("id"))
-            && HOLDOUT_NAME.equals(onlyExposure.get("name"));
-        if (!isHoldoutExposure) {
-            System.out.println("[holdouts probe] behavioral self-test FAILED: sole exposure was not "
-                + "the holdout's own - covered experiment was not suppressed: " + onlyExposure);
-            return false;
-        }
-
-        System.out.println("[holdouts probe] behavioral self-test PASSED: held-out unit suppressed "
-            + "to control with exactly one ordinary holdout exposure");
+        System.out.println("[holdouts probe] behavioral self-test PASSED: all 6 checks mirroring "
+            + "scenarios 203-208 passed");
         return true;
     }
 
+    /** Check A - mirrors scenario 203: held-out unit suppresses the covered experiment. */
+    private static boolean checkHeldOutSuppression(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int treatment = context.getTreatment("chk_a_covered");
+        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+
+        if (treatment != 0) {
+            System.out.println("[holdouts probe] check A (mirrors 203) FAILED: expected control "
+                + "treatment (0) for held-out unit, got " + treatment);
+            return false;
+        }
+        if (newExposures.size() != 1 || !isExposure(newExposures.get(0), 411, "chk_a_holdout")) {
+            System.out.println("[holdouts probe] check A (mirrors 203) FAILED: expected exactly 1 "
+                + "exposure for the holdout itself (id=411), got " + newExposures);
+            return false;
+        }
+        return true;
+    }
+
+    /** Check B - mirrors scenario 204: not-held-out unit assigns normally and exposes the holdout. */
+    private static boolean checkNotHeldOutAssignsNormally(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int treatment = context.getTreatment("chk_b_covered");
+        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+
+        if (treatment != 0) {
+            System.out.println("[holdouts probe] check B (mirrors 204) FAILED: expected normal "
+                + "assignment (0) for not-held-out unit, got " + treatment);
+            return false;
+        }
+        boolean hasExperimentExposure = containsExposure(newExposures, 312, "chk_b_covered");
+        boolean hasNonzeroHoldoutExposure = newExposures.stream().anyMatch(e ->
+            Integer.valueOf(412).equals(e.get("id")) && "chk_b_holdout".equals(e.get("name"))
+                && !Integer.valueOf(0).equals(e.get("variant")));
+        if (newExposures.size() != 2 || !hasExperimentExposure || !hasNonzeroHoldoutExposure) {
+            System.out.println("[holdouts probe] check B (mirrors 204) FAILED: expected the covered "
+                + "experiment's own exposure (id=312) plus a nonzero-variant holdout exposure "
+                + "(id=412), got " + newExposures);
+            return false;
+        }
+        return true;
+    }
+
+    /** Check C - mirrors scenario 205: union of two holdouts, held out via the higher-id one only. */
+    private static boolean checkUnionOfTwoHoldouts(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int treatment = context.getTreatment("chk_c_union");
+        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+
+        if (treatment != 0) {
+            System.out.println("[holdouts probe] check C (mirrors 205) FAILED: expected control "
+                + "treatment (0) via union suppression, got " + treatment);
+            return false;
+        }
+        boolean hasLow = containsExposure(newExposures, 413, "chk_c_holdout_low");
+        boolean hasHigh = containsExposure(newExposures, 414, "chk_c_holdout_high");
+        if (newExposures.size() != 2 || !hasLow || !hasHigh
+            || containsExposure(newExposures, 313, "chk_c_union")) {
+            System.out.println("[holdouts probe] check C (mirrors 205) FAILED: expected independent "
+                + "exposures for both holdouts (id=413 and id=414) and none for the covered "
+                + "experiment, got " + newExposures);
+            return false;
+        }
+        return true;
+    }
+
+    /** Check D - mirrors scenario 206: holdout coverage never leaks to an uncovered sibling. */
+    private static boolean checkCoverageOptInPerExperiment(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int coveredTreatment = context.getTreatment("chk_d_covered");
+        List<Map<String, Object>> coveredExposures = exposures.subList(before, exposures.size());
+        if (coveredTreatment != 0 || coveredExposures.size() != 1
+            || !isExposure(coveredExposures.get(0), 415, "chk_d_holdout")) {
+            System.out.println("[holdouts probe] check D (mirrors 206) FAILED: covered sibling expected "
+                + "control treatment (0) with a sole holdout exposure (id=415), got treatment="
+                + coveredTreatment + " exposures=" + coveredExposures);
+            return false;
+        }
+
+        before = exposures.size();
+        int siblingTreatment = context.getTreatment("chk_d_uncovered_sibling");
+        List<Map<String, Object>> siblingExposures = exposures.subList(before, exposures.size());
+        if (siblingExposures.size() != 1 || !isExposure(siblingExposures.get(0), 315, "chk_d_uncovered_sibling")) {
+            System.out.println("[holdouts probe] check D (mirrors 206) FAILED: uncovered sibling "
+                + "(no holdoutIds) expected its own ordinary exposure (id=315), unaffected by the "
+                + "holdout covering its sibling, got treatment=" + siblingTreatment
+                + " exposures=" + siblingExposures);
+            return false;
+        }
+        return true;
+    }
+
+    /** Check E - mirrors scenario 207: a dangling holdoutId is ignored, a valid one still applies. */
+    private static boolean checkDanglingIdIgnoredValidApplies(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int treatment = context.getTreatment("chk_e_dangling_plus_valid");
+        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+
+        if (treatment != 0 || newExposures.size() != 1 || !isExposure(newExposures.get(0), 416, "chk_e_holdout")) {
+            System.out.println("[holdouts probe] check E (mirrors 207) FAILED: expected the dangling "
+                + "id (999) to be silently ignored while the valid id (416) still suppresses "
+                + "(control treatment, sole holdout exposure), got treatment=" + treatment
+                + " exposures=" + newExposures);
+            return false;
+        }
+        return true;
+    }
+
+    /** Check F - mirrors scenario 208: a holdout suppresses a full-on experiment too. */
+    private static boolean checkSuppressesFullOnExperiment(com.absmartly.sdk.Context context,
+            List<Map<String, Object>> exposures) {
+        int before = exposures.size();
+        int treatment = context.getTreatment("chk_f_fullon");
+        List<Map<String, Object>> newExposures = exposures.subList(before, exposures.size());
+
+        if (treatment != 0 || newExposures.size() != 1 || !isExposure(newExposures.get(0), 417, "chk_f_holdout")) {
+            System.out.println("[holdouts probe] check F (mirrors 208) FAILED: expected the holdout to "
+                + "suppress the full-on experiment (fullOnVariant=2) down to control (0) with a sole "
+                + "holdout exposure (id=417), got treatment=" + treatment + " exposures=" + newExposures);
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isExposure(Map<String, Object> exposure, int id, String name) {
+        return Integer.valueOf(id).equals(exposure.get("id")) && name.equals(exposure.get("name"));
+    }
+
+    private static boolean containsExposure(List<Map<String, Object>> exposures, int id, String name) {
+        for (Map<String, Object> exposure : exposures) {
+            if (isExposure(exposure, id, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
-     * Builds the scenario-203-shaped fixture: one covered experiment referencing one holdout that
-     * suppresses it. The covered Experiment's holdoutIds field and the ContextData's holdouts
-     * field are both looked up reflectively, since neither exists on a pre-holdout core-api - a
-     * missing field there means the wire model itself carries no holdout support, so the fixture
-     * cannot be built and the probe fails closed (returns null, treated as unsupported).
+     * Builds one covered experiment. holdoutIds is set via reflection (see class javadoc); every
+     * other field is a direct compile-time reference since these have existed on Experiment since
+     * before holdout support.
      */
-    private static ContextData buildFixture() throws Exception {
-        Field holdoutIdsField = findField(Experiment.class, "holdoutIds");
-        Field holdoutsField = findField(ContextData.class, "holdouts");
-        if (holdoutIdsField == null || holdoutsField == null) {
-            return null;
-        }
-
-        Class<?> holdoutElementType = holdoutsField.getType().getComponentType();
-        Object holdout = buildHoldoutEntry(holdoutElementType);
-        if (holdout == null) {
-            return null;
-        }
-
+    private static Experiment buildExperiment(int id, String name, String unitType, int seedHi, int seedLo,
+            double[] split, int fullOnVariant, String[] variantNames, int[] holdoutIds, Field holdoutIdsField)
+            throws Exception {
         Experiment experiment = new Experiment();
-        experiment.id = EXPERIMENT_ID;
-        experiment.name = EXPERIMENT_NAME;
+        experiment.id = id;
+        experiment.name = name;
         experiment.iteration = 1;
-        experiment.unitType = UNIT_TYPE;
-        experiment.seedHi = 100;
-        experiment.seedLo = 200;
-        experiment.split = new double[] {0.5, 0.5};
+        experiment.unitType = unitType;
+        experiment.seedHi = seedHi;
+        experiment.seedLo = seedLo;
+        experiment.split = split;
         experiment.trafficSeedHi = 1;
         experiment.trafficSeedLo = 2;
         experiment.trafficSplit = new double[] {0, 1};
-        experiment.fullOnVariant = 0;
+        experiment.fullOnVariant = fullOnVariant;
         experiment.applications = new ExperimentApplication[] {new ExperimentApplication("website")};
-        experiment.variants = new ExperimentVariant[] {
-            new ExperimentVariant("A", null),
-            new ExperimentVariant("B", null)
-        };
-        holdoutIdsField.set(experiment, new int[] {HOLDOUT_ID});
-
-        ContextData data = new ContextData();
-        data.experiments = new Experiment[] {experiment};
-        Object holdoutsArray = Array.newInstance(holdoutElementType, 1);
-        Array.set(holdoutsArray, 0, holdout);
-        holdoutsField.set(data, holdoutsArray);
-        return data;
+        ExperimentVariant[] variants = new ExperimentVariant[variantNames.length];
+        for (int i = 0; i < variantNames.length; i++) {
+            variants[i] = new ExperimentVariant(variantNames[i], null);
+        }
+        experiment.variants = variants;
+        if (holdoutIds != null) {
+            holdoutIdsField.set(experiment, holdoutIds);
+        }
+        return experiment;
     }
 
     /**
      * Constructs one holdout entry of whatever type ContextData.holdouts actually holds on the
      * linked core-api. Every holdout wire shape this SDK has ever shipped carries at minimum
      * id/seedHi/seedLo/split (the fields the variant assigner needs); anything else (name,
-     * iteration, unitType, applications, variants, a holdoutType discriminator, ...) is set
-     * opportunistically when present so the fixture matches the live wire shape as closely as
-     * possible, but their absence does not fail fixture construction.
+     * iteration, unitType, trafficSeedHi/Lo/Split, fullOnVariant, applications, variants, a
+     * holdoutType discriminator, ...) is set opportunistically when present so the fixture
+     * matches the live wire shape as closely as possible, but their absence does not fail fixture
+     * construction. Returns null if id/seedHi/seedLo/split are unavailable - the caller treats
+     * that as "cannot build the fixture" and fails the probe closed.
      */
-    private static Object buildHoldoutEntry(Class<?> holdoutType) throws Exception {
+    private static Object buildHoldoutEntry(Class<?> holdoutType, int id, String name, String unitType,
+            int seedHi, int seedLo, double[] split, String holdoutTypeName, String[] variantNames) throws Exception {
         Object holdout = holdoutType.getDeclaredConstructor().newInstance();
 
         Field idField = findField(holdoutType, "id");
@@ -201,24 +432,25 @@ final class HoldoutSelfTest {
         if (idField == null || seedHiField == null || seedLoField == null || splitField == null) {
             return null;
         }
-        idField.set(holdout, HOLDOUT_ID);
-        seedHiField.set(holdout, 13);
-        seedLoField.set(holdout, 111);
-        splitField.set(holdout, new double[] {0.1, 0.9});
+        idField.set(holdout, id);
+        seedHiField.set(holdout, seedHi);
+        seedLoField.set(holdout, seedLo);
+        splitField.set(holdout, split);
 
-        setIfPresent(holdout, "name", HOLDOUT_NAME);
+        setIfPresent(holdout, "name", name);
         setIfPresent(holdout, "iteration", 1);
-        setIfPresent(holdout, "unitType", UNIT_TYPE);
+        setIfPresent(holdout, "unitType", unitType);
         setIfPresent(holdout, "trafficSeedHi", 0);
         setIfPresent(holdout, "trafficSeedLo", 0);
         setIfPresent(holdout, "trafficSplit", new double[] {0, 1});
         setIfPresent(holdout, "fullOnVariant", 0);
         setIfPresent(holdout, "applications", new ExperimentApplication[0]);
-        setIfPresent(holdout, "variants", new ExperimentVariant[] {
-            new ExperimentVariant("A", null),
-            new ExperimentVariant("B", null)
-        });
-        setIfPresent(holdout, "holdoutType", "full");
+        ExperimentVariant[] variants = new ExperimentVariant[variantNames.length];
+        for (int i = 0; i < variantNames.length; i++) {
+            variants[i] = new ExperimentVariant(variantNames[i], null);
+        }
+        setIfPresent(holdout, "variants", variants);
+        setIfPresent(holdout, "holdoutType", holdoutTypeName);
 
         return holdout;
     }

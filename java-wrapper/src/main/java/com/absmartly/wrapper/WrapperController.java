@@ -67,17 +67,11 @@ public class WrapperController {
         response.put("getUnits", true);
         response.put("getAttributes", true);
         response.put("readyError", true);
-        response.put("holdouts", HOLDOUTS_SUPPORTED);
+        // Lazy on first call (see HoldoutSelfTest.run()), not a static flag computed at class-init
+        // time: startup must never be able to depend on - or be killed by - this probe.
+        response.put("holdouts", HoldoutSelfTest.run());
         return response;
     }
-
-    // Computed once via a behavioral self-test (HoldoutSelfTest) rather than a static flag or a
-    // reflective field probe: the wrapper's compiled code never references holdout types
-    // directly, so the same jar works against both the pre-holdouts and post-holdouts core-api,
-    // and the capability is only reported true if the linked core-api demonstrably implements
-    // holdout suppression semantics - not merely because it parses/tolerates the wire fields.
-    // See HoldoutSelfTest for what is probed and why a field/symbol probe is insufficient.
-    private static final boolean HOLDOUTS_SUPPORTED = HoldoutSelfTest.run();
 
     @PostMapping("/diagnostic")
     public ResponseEntity<?> diagnostic(@RequestBody Map<String, Object> request) {

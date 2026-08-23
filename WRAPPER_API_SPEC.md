@@ -965,14 +965,39 @@ and still fail to implement suppression semantics correctly (or at all), which
 would make the wrapper advertise `holdouts: true` while failing every scenario
 that depends on suppression.
 
-The recommended approach is a BEHAVIORAL self-check run once at startup (or
-lazily and cached): construct a minimal in-memory context around a single
-holdout guaranteed to hold out a covered experiment's unit, evaluate the
-experiment's treatment, and verify both observable invariants hold - the
-covered experiment resolves to the control variant with no exposure of its
-own, and exactly one exposure fires, for the holdout itself. Only advertise
-`holdouts: true` if that behavioral check passes; any exception or mismatch
-means `false`. A wrapper that always reports `true` regardless of the
-underlying SDK, or that infers the capability from field/symbol presence
-alone, will fail scenarios 203-208 the moment it is built against an SDK
-version that has the wire fields but not the semantics.
+The capability means the SDK passes a full behavioral battery mirroring
+**every** semantic scenarios 203-208 exercise, not just one of them: a probe
+that only checks the 203 shape (held-out unit suppresses its covered
+experiment) can pass while the SDK still gets 204-208 wrong - resuming normal
+assignment outside the held-out arm, union-of-multiple-holdouts coverage,
+per-experiment opt-in (no leaking onto uncovered siblings), tolerance of a
+dangling holdout id, and suppression of full-on experiments. Wrapper probes
+must cover the semantics the capability enables, not just one representative
+case - a single-case probe is a false-positive risk in the same way a
+field/symbol check is.
+
+The recommended approach is a BEHAVIORAL self-check run once (lazily, on
+first use, and cached — never from a static initializer or other code path
+that startup depends on; see below) that mirrors each scenario the capability
+covers: construct a minimal in-memory context and, for each of the 203-208
+semantics, evaluate the relevant experiment's treatment and verify its
+observable invariants - e.g. a held-out experiment resolves to the control
+variant with no exposure of its own while exactly one exposure fires for the
+holdout itself; a not-held-out unit assigns normally and the holdout exposes
+its own nonzero variant; coverage by two holdouts suppresses via either one;
+an uncovered sibling is unaffected; a dangling id is ignored while a valid
+id still applies; a full-on experiment is suppressed like any other. Only
+advertise `holdouts: true` if every check in the battery passes; any
+exception, Throwable, or mismatch in any single check means `false` (log
+which check failed). A wrapper that always reports `true` regardless of the
+underlying SDK, that infers the capability from field/symbol presence alone,
+or that only exercises one of the six semantics, will fail scenarios 204-208
+(or all of 203-208, for a plain field probe) the moment it is built against
+an SDK version that does not fully implement the contract.
+
+The self-check must not be able to bring the service down: catch `Throwable`
+(not just `Exception`) around the entire probe, since an incompatible SDK
+build can throw errors outside the checked-exception hierarchy (e.g.
+`LinkageError`, `NoClassDefFoundError`), and run it lazily rather than from a
+static initializer, so a failure during the probe can never abort class
+loading or otherwise block startup - only the capability it reports.
