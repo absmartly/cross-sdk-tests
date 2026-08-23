@@ -957,7 +957,22 @@ for the holdout; see the underlying SDK's holdout resolution semantics.
 
 Wrappers must advertise `holdouts` truthfully and dynamically, based on
 whether the SDK version they are built against actually implements holdout
-resolution (e.g. via reflection on the SDK's `Experiment`/`holdoutIds` field,
-or any equivalent runtime probe) — not as a static flag. A wrapper that always
-reports `true` regardless of the underlying SDK will fail scenarios 203-208
-the moment it is built against an SDK version that predates holdouts.
+resolution — not as a static flag, and not merely because the SDK
+parses/tolerates the `holdoutIds`/`holdouts` wire fields. A wire-model marker
+(e.g. an `Experiment.holdoutIds` field existing) is necessary but not
+sufficient: an SDK build can carry the field, deserialize it without error,
+and still fail to implement suppression semantics correctly (or at all), which
+would make the wrapper advertise `holdouts: true` while failing every scenario
+that depends on suppression.
+
+The recommended approach is a BEHAVIORAL self-check run once at startup (or
+lazily and cached): construct a minimal in-memory context around a single
+holdout guaranteed to hold out a covered experiment's unit, evaluate the
+experiment's treatment, and verify both observable invariants hold - the
+covered experiment resolves to the control variant with no exposure of its
+own, and exactly one exposure fires, for the holdout itself. Only advertise
+`holdouts: true` if that behavioral check passes; any exception or mismatch
+means `false`. A wrapper that always reports `true` regardless of the
+underlying SDK, or that infers the capability from field/symbol presence
+alone, will fail scenarios 203-208 the moment it is built against an SDK
+version that has the wire fields but not the semantics.

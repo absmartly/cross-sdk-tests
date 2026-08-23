@@ -71,20 +71,13 @@ public class WrapperController {
         return response;
     }
 
-    // Detected once via reflection rather than hardcoded: the wrapper's compiled
-    // code never references Experiment.holdoutIds directly, so the same jar
-    // works against both the pre-holdouts and post-holdouts core-api and
-    // reports the capability truthfully for whichever one it was built against.
-    private static final boolean HOLDOUTS_SUPPORTED = detectHoldoutsSupport();
-
-    private static boolean detectHoldoutsSupport() {
-        try {
-            com.absmartly.sdk.json.Experiment.class.getField("holdoutIds");
-            return true;
-        } catch (NoSuchFieldException e) {
-            return false;
-        }
-    }
+    // Computed once via a behavioral self-test (HoldoutSelfTest) rather than a static flag or a
+    // reflective field probe: the wrapper's compiled code never references holdout types
+    // directly, so the same jar works against both the pre-holdouts and post-holdouts core-api,
+    // and the capability is only reported true if the linked core-api demonstrably implements
+    // holdout suppression semantics - not merely because it parses/tolerates the wire fields.
+    // See HoldoutSelfTest for what is probed and why a field/symbol probe is insufficient.
+    private static final boolean HOLDOUTS_SUPPORTED = HoldoutSelfTest.run();
 
     @PostMapping("/diagnostic")
     public ResponseEntity<?> diagnostic(@RequestBody Map<String, Object> request) {
