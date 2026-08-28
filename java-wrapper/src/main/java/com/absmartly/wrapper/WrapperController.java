@@ -29,6 +29,9 @@ public class WrapperController {
         Map<String, Object> response = new HashMap<>();
         response.put("asyncContext", false);
         response.put("attrsSeq", false);
+        // Arm-aware holdout resolution (split.length-derived arity, 3-arm variant==1 rule);
+        // see core-api:1.6.3 Context.isHeldOutBy. Not yet implemented by other wrappers.
+        response.put("holdout_arms", true);
         return response;
     }
 
