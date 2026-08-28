@@ -9718,7 +9718,7 @@
   },
   {
     "name": "132 - Holdout - Unit Inside Holdout Assigns Control Variant",
-    "description": "Unit whose hash falls inside the holdout bucket is assigned variant 0 and the exposure carries heldOut=true",
+    "description": "Unit whose hash falls inside the holdout bucket is assigned variant 0; the experiment fires no exposure of its own and only the holdout's own exposure fires",
     "contextData": {
       "experiments": [
         {
@@ -9819,7 +9819,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": "exp_holdout_in",
+                "name": null,
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -9827,9 +9827,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": true,
-                "holdoutId": 1
+                "audienceMismatch": false
               }
             }
           ]
@@ -9839,7 +9837,7 @@
   },
   {
     "name": "133 - Holdout - Unit Outside Holdout Assigns Normally",
-    "description": "Unit whose hash falls outside the holdout bucket is assigned normally with heldOut=false",
+    "description": "Unit whose hash falls outside the holdout bucket is assigned normally; both the experiment's own exposure and the holdout's own exposure fire",
     "contextData": {
       "experiments": [
         {
@@ -9948,9 +9946,22 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": false,
-                "holdoutId": 0
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": null,
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
               }
             }
           ]
@@ -9960,7 +9971,7 @@
   },
   {
     "name": "134 - Holdout - Override Takes Precedence Over Holdout",
-    "description": "An explicit override wins over holdout membership entirely",
+    "description": "An explicit override wins over holdout membership for the experiment's own assignment; the override path still evaluates coverage, so the holdout's own exposure fires alongside it",
     "contextData": {
       "experiments": [
         {
@@ -10080,9 +10091,22 @@
                 "overridden": true,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": false,
-                "holdoutId": 0
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": null,
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
               }
             }
           ]
@@ -10092,7 +10116,7 @@
   },
   {
     "name": "135 - Holdout - Holdout Takes Precedence Over Custom Assignment",
-    "description": "Holdout membership wins over an explicit custom assignment",
+    "description": "Holdout membership forces control and suppresses the experiment's own exposure even with a custom assignment on file; only the holdout's own exposure fires",
     "contextData": {
       "experiments": [
         {
@@ -10204,7 +10228,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": "exp_holdout_custom",
+                "name": null,
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -10212,9 +10236,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": true,
-                "holdoutId": 1
+                "audienceMismatch": false
               }
             }
           ]
@@ -10224,7 +10246,7 @@
   },
   {
     "name": "136 - Holdout - Independent Holdouts Across Experiments",
-    "description": "Same unit is held out for one experiment's holdout but not another's, using independent seeds",
+    "description": "Same unit is held out for one experiment's holdout but not another's, using independent seeds; the held-out experiment fires no exposure of its own while the non-held-out one does",
     "contextData": {
       "experiments": [
         {
@@ -10378,7 +10400,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": "exp_multi_holdout_a",
+                "name": null,
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -10386,9 +10408,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": true,
-                "holdoutId": 1
+                "audienceMismatch": false
               }
             }
           ]
@@ -10414,9 +10434,22 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": false,
-                "holdoutId": 0
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 2,
+                "name": null,
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
               }
             }
           ]
@@ -10426,7 +10459,7 @@
   },
   {
     "name": "137 - Holdout - Consistent Membership Across Shared Holdout",
-    "description": "Same unit and same shared holdout definition produce consistent holdout membership across different experiments",
+    "description": "Same unit and same shared holdout definition produce consistent holdout membership across different experiments; the shared holdout's own exposure fires once on first evaluation and neither covered experiment fires its own exposure",
     "contextData": {
       "experiments": [
         {
@@ -10571,7 +10604,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": "exp_shared_a",
+                "name": null,
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -10579,9 +10612,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": true,
-                "holdoutId": 1
+                "audienceMismatch": false
               }
             }
           ]
@@ -10594,25 +10625,7 @@
         },
         "expect": {
           "result": 0,
-          "events": [
-            {
-              "type": "exposure",
-              "data": {
-                "id": 2,
-                "name": "exp_shared_b",
-                "unit": "session_id",
-                "variant": 0,
-                "assigned": true,
-                "eligible": true,
-                "overridden": false,
-                "fullOn": false,
-                "custom": false,
-                "audienceMismatch": false,
-                "heldOut": true,
-                "holdoutId": 1
-              }
-            }
-          ]
+          "events": []
         }
       }
     ]
@@ -10728,9 +10741,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": false,
-                "holdoutId": 0
+                "audienceMismatch": false
               }
             }
           ]
@@ -10835,9 +10846,7 @@
                 "overridden": false,
                 "fullOn": false,
                 "custom": false,
-                "audienceMismatch": false,
-                "heldOut": false,
-                "holdoutId": 0
+                "audienceMismatch": false
               }
             }
           ]
