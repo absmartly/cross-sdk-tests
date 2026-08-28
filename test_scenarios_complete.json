@@ -20165,6 +20165,9 @@
   {
     "name": "210 - Holdout - Unit Outside Holdout Assigns Normally",
     "description": "Unit whose hash falls outside the holdout bucket is assigned normally; both the experiment's own exposure and the holdout's own exposure fire",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -20299,6 +20302,9 @@
   {
     "name": "211 - Holdout - Override Takes Precedence Over Holdout",
     "description": "An explicit override wins over holdout membership for the experiment's own assignment; the override path still evaluates coverage, so the holdout's own exposure fires alongside it",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -20444,6 +20450,9 @@
   {
     "name": "212 - Holdout - Holdout Takes Precedence Over Custom Assignment",
     "description": "Holdout membership forces control and suppresses the experiment's own exposure even with a custom assignment on file; only the holdout's own exposure fires",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -20574,6 +20583,9 @@
   {
     "name": "213 - Holdout - Independent Holdouts Across Experiments",
     "description": "Same unit is held out for one experiment's holdout but not another's, using independent seeds; the held-out experiment fires no exposure of its own while the non-held-out one does",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -20787,6 +20799,9 @@
   {
     "name": "214 - Holdout - Consistent Membership Across Shared Holdout",
     "description": "Same unit and same shared holdout definition produce consistent holdout membership across different experiments; the shared holdout's own exposure fires once on first evaluation and neither covered experiment fires its own exposure",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -20960,6 +20975,9 @@
   {
     "name": "215 - Holdout - Backwards Compatible Context Without Holdouts Key",
     "description": "Context data with no top-level holdouts key behaves identically to pre-holdout payloads",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -21065,6 +21083,9 @@
   {
     "name": "216 - Holdout - Cache Invalidation On Holdout Definition Change",
     "description": "Changing a referenced holdout's seed/split on refresh invalidates the cached assignment and produces a new exposure",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
@@ -22546,6 +22567,9 @@
   {
     "name": "224 - Holdout - Unknown HoldoutId Is Ignored",
     "description": "An experiment referencing a holdoutId with no matching top-level definition falls through to normal assignment",
+    "requires": [
+      "holdouts"
+    ],
     "contextData": {
       "experiments": [
         {
