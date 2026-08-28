@@ -11925,7 +11925,7 @@
   },
   {
     "name": "146 - Holdout Arms - Union Two-Arm Holds Out While Applicable Three-Arm Does Not (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
-    "description": "A covered experiment is suppressed if EITHER applicable holdout holds it out, even when a 3-arm holdout's own arm (variant 2, normal traffic) would not have held it out on its own; both holdouts still emit their own independent exposure with their own variant.",
+    "description": "A covered experiment is suppressed if EITHER applicable holdout holds it out, even when a 3-arm holdout's own arm (variant 2, normal traffic) would not have held it out on its own; both holdouts still emit their own independent exposure with their own variant. A second experiment covered only by the non-suppressing 3-arm holdout takes its normal assignment path and emits its own exposure, proving that holdout 22's arm is not itself suppressing.",
     "requires": [
       "holdout_arms"
     ],
@@ -11969,6 +11969,46 @@
           "customFieldValues": null,
           "holdoutIds": [
             11,
+            22
+          ]
+        },
+        {
+          "id": 2,
+          "name": "exp_only_three_arm_normal_path",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 100,
+          "seedLo": 200,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0.0,
+            1.0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
             22
           ]
         }
@@ -12060,12 +12100,38 @@
             }
           ]
         }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_only_three_arm_normal_path"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 2,
+                "name": "exp_only_three_arm_normal_path",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
       }
     ]
   },
   {
     "name": "147 - Holdout Arms - Union Three-Arm Variant 1 Holds Out While Applicable Two-Arm Does Not (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
-    "description": "Union, the other direction: a 3-arm holdout's variant 1 holds a non-full-on covered experiment out even when an applicable 2-arm holdout alone would not have; both holdouts still emit their own independent exposure with their own variant.",
+    "description": "Union, the other direction: a 3-arm holdout's variant 1 holds a non-full-on covered experiment out even when an applicable 2-arm holdout alone would not have; both holdouts still emit their own independent exposure with their own variant. A second experiment covered only by the non-suppressing 2-arm holdout takes its normal assignment path and emits its own exposure, proving that holdout 11's arm is not itself suppressing.",
     "requires": [
       "holdout_arms"
     ],
@@ -12110,6 +12176,46 @@
           "holdoutIds": [
             11,
             22
+          ]
+        },
+        {
+          "id": 2,
+          "name": "exp_only_two_arm_normal_path",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 100,
+          "seedLo": 200,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0.0,
+            1.0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            11
           ]
         }
       ],
@@ -12188,6 +12294,32 @@
               "data": {
                 "id": 22,
                 "name": null,
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_only_two_arm_normal_path"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 2,
+                "name": "exp_only_two_arm_normal_path",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
