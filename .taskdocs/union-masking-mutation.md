@@ -36,6 +36,6 @@ After recording this output, both files were reverted to their correct expectati
 live `java` SDK (`POST /context/{id}/treatment`) before the mutation and matched again after
 restoring.
 
-The full suite was re-run after restoring and reproduced the exact pre-existing baseline: 87 pass /
+The full suite was re-run after restoring and reproduced the exact pre-existing baseline: 88 pass /
 8 fail (scenarios 08, 17, 19, 43, 44, 66, 130, 140 — all pre-existing, none touched), with
 132-139 and 141-147 all passing.

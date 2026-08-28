@@ -16,7 +16,9 @@ To run the suite against a local, unreleased SDK checkout (e.g. a feature-branch
 worktree) without
 touching the default CI path:
 
-1. Check out the SDK branch as a sibling of `cross-sdk-tests`, e.g. `~/git/java-sdk` on the branch under test.
+1. Check out the SDK branch as a sibling of `cross-sdk-tests`, naming the directory
+   `java-sdk-holdouts` so it matches the `SDK_SOURCE_DIR` committed in
+   `docker-compose.local-sdk.yml`.
 2. Build the java-sdk image with the `SDK_SOURCE_DIR` build arg pointed at that
    sibling directory's name, using the provided compose override:
 
