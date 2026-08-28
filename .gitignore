@@ -8,6 +8,10 @@
 # IDE files
 .idea/
 .vscode/
+.classpath
+.project
+.settings/
+.gradle/
 
 # Build artifacts
 node_modules/
