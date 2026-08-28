@@ -29,7 +29,7 @@ across languages.
   CI, and gets them for free the moment its wrapper starts advertising
   `holdouts`. Scenario 209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 217-223
-  require the `holdout_arms` capability and are skipped by SDKs that have not
+  require the `holdouts` capability and are skipped by SDKs that have not
   yet implemented three-arm holdout logic.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper

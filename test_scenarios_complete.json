@@ -21312,7 +21312,7 @@
     "name": "217 - Holdout Arms - Three-Arm Variant 0 Holds Out Full-On And Non-Full-On (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "A 3-arm holdout's variant 0 forces control for every covered experiment, full-on or not, identically to a 2-arm holdout's variant 0; the holdout's own exposure fires once at variant 0 and neither covered experiment emits its own exposure.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -21481,7 +21481,7 @@
     "name": "218 - Holdout Arms - Three-Arm Variant 1 Holds Out Non-Full-On, Assigns Full-On Normally (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "A 3-arm holdout's variant 1 forces control only for a covered experiment with fullOnVariant==0; a covered full-on experiment (fullOnVariant!=0) takes its normal assignment path and is assigned its own fullOnVariant with fullOn=true, not suppressed.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -21666,7 +21666,7 @@
     "name": "219 - Holdout Arms - Three-Arm Variant 2 Evaluates Both Experiments Normally (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "A 3-arm holdout's variant 2 (normal traffic) evaluates every covered experiment exactly as if uncovered, full-on or not; the holdout's own exposure fires once at variant 2.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -21866,7 +21866,7 @@
     "name": "220 - Holdout Arms - Three-Arm Variant 1 Defers To Normal Path For Audience Mismatch (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "A full-on experiment covered by a 3-arm holdout's variant 1 is not short-circuited to its fullOnVariant: audienceStrict is evaluated first, so an audience mismatch still forces control (not suppression) with assigned=false and audienceMismatch=true; the experiment's own exposure fires because it was evaluated and rejected by audience, not held out.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -22011,7 +22011,7 @@
     "name": "221 - Holdout Arms - Three-Arm Variant 2 Audience Mismatch Matches Variant 1 Verdict (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "The same full-on/audience-mismatch experiment, covered instead by the 3-arm holdout's variant 2 (normal traffic), yields the identical verdict as scenario 144's variant 1: control, assigned=false, audienceMismatch=true. This pins that arm 1 defers to the normal assignment path instead of short-circuiting to the full-on variant.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -22156,7 +22156,7 @@
     "name": "222 - Holdout Arms - Union Two-Arm Holds Out While Applicable Three-Arm Does Not (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "A covered experiment is suppressed if EITHER applicable holdout holds it out, even when a 3-arm holdout's own arm (variant 2, normal traffic) would not have held it out on its own; both holdouts still emit their own independent exposure with their own variant. A second experiment covered only by the non-suppressing 3-arm holdout takes its normal assignment path and emits its own exposure, proving that holdout 22's arm is not itself suppressing.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
@@ -22362,7 +22362,7 @@
     "name": "223 - Holdout Arms - Union Three-Arm Variant 1 Holds Out While Applicable Two-Arm Does Not (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
     "description": "Union, the other direction: a 3-arm holdout's variant 1 holds a non-full-on covered experiment out even when an applicable 2-arm holdout alone would not have; both holdouts still emit their own independent exposure with their own variant. A second experiment covered only by the non-suppressing 2-arm holdout takes its normal assignment path and emits its own exposure, proving that holdout 11's arm is not itself suppressing.",
     "requires": [
-      "holdout_arms"
+      "holdouts"
     ],
     "contextData": {
       "experiments": [
