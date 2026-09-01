@@ -1001,3 +1001,10 @@ build can throw errors outside the checked-exception hierarchy (e.g.
 `LinkageError`, `NoClassDefFoundError`), and run it lazily rather than from a
 static initializer, so a failure during the probe can never abort class
 loading or otherwise block startup - only the capability it reports.
+
+### Capability: `holdout_arms`
+
+This capability gates three-arm holdout semantics separately from the two-arm
+behavior covered by `holdouts`. Wrappers must advertise it only when the linked
+SDK interprets all three arms correctly; wrappers that support only two-arm
+holdouts omit it or return `false` so scenarios 214-220 are skipped.
