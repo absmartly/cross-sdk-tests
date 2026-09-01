@@ -8391,7 +8391,7 @@
         "action": "diagnostic",
         "params": {
           "operation": "hashUnit",
-          "value": "special characters a\u00e7b\u2193c"
+          "value": "special characters açb↓c"
         },
         "expect": {
           "result": "4PIrO7lKtTxOcj2eMYlG7A",
@@ -8483,7 +8483,7 @@
         "action": "diagnostic",
         "params": {
           "operation": "hashUnit",
-          "value": "special characters a\u00e7b\u2193c"
+          "value": "special characters açb↓c"
         },
         "expect": {
           "result": "4PIrO7lKtTxOcj2eMYlG7A",
@@ -11018,7 +11018,7 @@
         "action": "diagnostic",
         "params": {
           "operation": "utf8Bytes",
-          "value": "a\u00e7b\u2193c"
+          "value": "açb↓c"
         },
         "expect": {
           "result": [
@@ -11130,7 +11130,7 @@
         "action": "diagnostic",
         "params": {
           "operation": "base64UrlNoPadding",
-          "value": "special characters a\u00e7b\u2193c"
+          "value": "special characters açb↓c"
         },
         "expect": {
           "result": "c3BlY2lhbCBjaGFyYWN0ZXJzIGHDp2LihpNj",
@@ -17994,7 +17994,7 @@
   },
   {
     "name": "194 - Variable Keys - Returns Experiment List Per Key",
-    "description": "variableKeys() map must include all experiments that define each key \u2014 two experiments sharing a key both appear in the list",
+    "description": "variableKeys() map must include all experiments that define each key — two experiments sharing a key both appear in the list",
     "requires": [
       "variableKeysMap"
     ],
@@ -19911,7 +19911,7 @@
           "audience": null,
           "audienceStrict": false,
           "customFieldValues": null,
-          "holdoutType": "full_on"
+          "holdoutType": "full"
         }
       ]
     },
@@ -22308,6 +22308,175 @@
               }
             }
           ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "222 - Holdout Arms - Three-Arm Arity Derived From Split Without holdoutType (uid e791e240fcd3df7d238cfc285f475e8152fcc0ec)",
+    "description": "Identical to the three-arm variant 0 scenario, but the holdout definition omits the holdoutType field entirely. An SDK must derive the holdout's arm count from its split length alone, so suppression of both the full-on and non-full-on covered experiments is unchanged. Pins that holdoutType is not required on the wire.",
+    "requires": [
+      "holdout_arms"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_three_arm_0_non_fullon",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 100,
+          "seedLo": 200,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0.0,
+            1.0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            21
+          ]
+        },
+        {
+          "id": 2,
+          "name": "exp_three_arm_0_fullon",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 100,
+          "seedLo": 200,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0.0,
+            1.0
+          ],
+          "fullOnVariant": 2,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            21
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 21,
+          "seedHi": 0,
+          "seedLo": 1,
+          "split": [
+            0.3,
+            0.3,
+            0.4
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_three_arm_0_non_fullon"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 21,
+                "name": null,
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_three_arm_0_fullon"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
         }
       }
     ]
