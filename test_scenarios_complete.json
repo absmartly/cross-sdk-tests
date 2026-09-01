@@ -22480,5 +22480,475 @@
         }
       }
     ]
+  },
+  {
+    "name": "223 - Holdout - Reseed Invalidates Unexposed Cached Assignment",
+    "description": "A peek caches a covered experiment result without exposing it; refreshing the same holdout id and iteration with a different seed invalidates that entry, and the next treatment reflects the recomputed holdout arm and publishes only that arm's exposure.",
+    "requires": [
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_holdout_reseed_unexposed",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            11
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 11,
+          "name": "holdout_reseed_unexposed",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 1,
+          "seedLo": 222,
+          "split": [
+            0.1,
+            0.9
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_holdout_reseed_unexposed"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_holdout_reseed_unexposed"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 1,
+                "name": "exp_holdout_reseed_unexposed",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3603515,
+                "seedLo": 233373850,
+                "split": [
+                  0.5,
+                  0.5
+                ],
+                "trafficSeedHi": 449867249,
+                "trafficSeedLo": 455443629,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "holdoutIds": [
+                  11
+                ]
+              }
+            ],
+            "holdouts": [
+              {
+                "id": 11,
+                "name": "holdout_reseed_unexposed",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 13,
+                "seedLo": 111,
+                "split": [
+                  0.1,
+                  0.9
+                ]
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_holdout_reseed_unexposed"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_holdout_reseed_unexposed"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 11,
+                "name": "holdout_reseed_unexposed",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 11,
+                    "name": "holdout_reseed_unexposed",
+                    "variant": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "224 - Holdout - Reseed Does Not Contradict Exposed Assignment",
+    "description": "After a covered experiment has exposed its non-holdout assignment, refreshing the same holdout id and iteration with a different seed recomputes the result but emits no contradictory holdout exposure; publishing retains only the original experiment exposure.",
+    "requires": [
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_holdout_reseed_exposed",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            11
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 11,
+          "name": "holdout_reseed_exposed",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 1,
+          "seedLo": 222,
+          "split": [
+            0.1,
+            0.9
+          ]
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_holdout_reseed_exposed"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_holdout_reseed_exposed"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_holdout_reseed_exposed",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 1,
+                "name": "exp_holdout_reseed_exposed",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3603515,
+                "seedLo": 233373850,
+                "split": [
+                  0.5,
+                  0.5
+                ],
+                "trafficSeedHi": 449867249,
+                "trafficSeedLo": 455443629,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "holdoutIds": [
+                  11
+                ]
+              }
+            ],
+            "holdouts": [
+              {
+                "id": 11,
+                "name": "holdout_reseed_exposed",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 13,
+                "seedLo": 111,
+                "split": [
+                  0.1,
+                  0.9
+                ]
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_holdout_reseed_exposed"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_holdout_reseed_exposed"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 1,
+                    "name": "exp_holdout_reseed_exposed",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
   }
 ]
