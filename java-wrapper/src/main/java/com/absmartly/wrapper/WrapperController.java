@@ -1,8 +1,8 @@
 package com.absmartly.wrapper;
 
 import com.absmartly.sdk.*;
-import com.absmartly.sdk.deprecated.ABSmartly;
-import com.absmartly.sdk.deprecated.ABSmartlyConfig;
+import com.absmartly.sdk.ABSmartly;
+import com.absmartly.sdk.ABSmartlyConfig;
 import com.absmartly.sdk.internal.hashing.Hashing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
@@ -276,7 +276,7 @@ public class WrapperController {
                 contextDataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(contextDataProvider)
-                    .setContextPublisher(publisher)
+                    .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContextWith(contextConfig, contextData);
@@ -289,7 +289,7 @@ public class WrapperController {
                     DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(translatedEndpoint, payloadThrottle);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(deferredProvider)
-                        .setContextPublisher(publisher)
+                        .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
@@ -302,7 +302,7 @@ public class WrapperController {
                     Client client = Client.create(clientConfig);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
-                        .setContextPublisher(publisher)
+                        .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
@@ -328,7 +328,7 @@ public class WrapperController {
                 };
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(failingProvider)
-                    .setContextPublisher(publisher)
+                    .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
@@ -339,7 +339,7 @@ public class WrapperController {
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                     .setContextDataProvider(dataProvider)
-                    .setContextPublisher(publisher)
+                    .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);

@@ -1,11 +1,11 @@
 package com.absmartly.wrapper;
 
 import com.absmartly.sdk.Context;
-import com.absmartly.sdk.ContextPublisher;
+import com.absmartly.sdk.ContextEventHandler;
 import com.absmartly.sdk.json.PublishEvent;
 import java8.util.concurrent.CompletableFuture;
 
-public class CustomPublisher implements ContextPublisher {
+public class CustomPublisher implements ContextEventHandler {
     private final EventCollector eventCollector;
     private volatile boolean shouldFail;
 
