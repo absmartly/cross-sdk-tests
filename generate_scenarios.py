@@ -3,18 +3,16 @@
 Comprehensive test scenario generator for cross-SDK testing.
 Reconstructed from test_scenarios_complete.json
 
-Generates all 136 test scenarios (131 base + 5 context state).
-
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 The checked-in test_scenarios_complete.json is the CANONICAL source of truth
-for the cross-SDK suite (209 scenarios). This generator is OUT OF DATE:
+for the cross-SDK suite (222 scenarios). This generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 209.
+  * It emits only 192 scenarios, not the canonical 222.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
-  * It does not emit the Holdouts scenario group (203-209) at all.
+  * It does not emit the Holdouts scenario group (203-222) at all.
 
 To avoid clobbering the fixed oracle, this script writes to
 'test_scenarios_generated.json' (NOT the canonical file). Its output must be

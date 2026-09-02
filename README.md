@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **221 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **222 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -30,7 +30,10 @@ across languages.
   `holdouts`. Scenario 209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 214-220
   require the `holdout_arms` capability and are skipped by SDKs that have not
-  yet implemented three-arm holdout logic. Scenario 221 requires `holdouts`.
+  yet implemented three-arm holdout logic. Scenario 221 requires `holdouts`, and
+  scenario 222 requires `holdout_arms`: it repeats the three-arm variant 0 case
+  with `holdoutType` omitted, pinning that arity comes from the holdout's own
+  split length rather than a type string on the wire.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -133,7 +136,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 221-scenario suite for all 21
+`.github/workflows/cross-sdk.yml` runs the full 222-scenario suite for all 21
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -153,7 +156,7 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 221 scenarios
+├── test_scenarios_complete.json  # 222 scenarios
 ├── generate_scenarios.py         # regenerates scenarios; output
 │                                 #   test_scenarios_generated.json must be
 │                                 #   diffed against the canonical file above
