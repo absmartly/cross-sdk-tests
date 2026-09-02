@@ -1,9 +1,9 @@
 package com.absmartly.wrapper;
 
+import com.absmartly.sdk.ABSmartly;
+import com.absmartly.sdk.ABSmartlyConfig;
 import com.absmartly.sdk.ContextConfig;
 import com.absmartly.sdk.ContextEventLogger;
-import com.absmartly.sdk.deprecated.ABSmartly;
-import com.absmartly.sdk.deprecated.ABSmartlyConfig;
 import com.absmartly.sdk.json.ContextData;
 import com.absmartly.sdk.json.Experiment;
 import com.absmartly.sdk.json.ExperimentApplication;
@@ -152,7 +152,7 @@ final class HoldoutSelfTest {
 
         ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
             .setContextDataProvider(new DummyContextDataProvider())
-            .setContextPublisher((context, event) -> java8.util.concurrent.CompletableFuture.completedFuture(null))
+            .setContextEventHandler((context, event) -> java8.util.concurrent.CompletableFuture.completedFuture(null))
             .setContextEventLogger(logger);
 
         ABSmartly sdk = ABSmartly.create(sdkConfig);
