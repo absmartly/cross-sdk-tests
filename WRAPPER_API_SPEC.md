@@ -966,15 +966,16 @@ would make the wrapper advertise `holdouts: true` while failing every scenario
 that depends on suppression.
 
 The capability means the SDK passes a full behavioral battery mirroring
-**every** semantic scenarios 203-208 exercise, not just one of them: a probe
-that only checks the 203 shape (held-out unit suppresses its covered
-experiment) can pass while the SDK still gets 204-208 wrong - resuming normal
-assignment outside the held-out arm, union-of-multiple-holdouts coverage,
-per-experiment opt-in (no leaking onto uncovered siblings), tolerance of a
-dangling holdout id, and suppression of full-on experiments. Wrapper probes
-must cover the semantics the capability enables, not just one representative
-case - a single-case probe is a false-positive risk in the same way a
-field/symbol check is.
+**every** semantic scenarios 203-208 and 221 exercise, not just one of them: a
+probe that only checks the 203 shape (held-out unit suppresses its covered
+experiment) can pass while the SDK still gets 204-208/221 wrong - resuming
+normal assignment outside the held-out arm, union-of-multiple-holdouts
+coverage, per-experiment opt-in (no leaking onto uncovered siblings),
+tolerance of a dangling holdout id, suppression of full-on experiments, and
+publishing the holdout's own exposure once a unit installed after the first
+evaluation makes it resolvable. Wrapper probes must cover the semantics the
+capability enables, not just one representative case - a single-case probe is
+a false-positive risk in the same way a field/symbol check is.
 
 The recommended approach is a BEHAVIORAL self-check run once (lazily, on
 first use, and cached — never from a static initializer or other code path
@@ -991,9 +992,27 @@ advertise `holdouts: true` if every check in the battery passes; any
 exception, Throwable, or mismatch in any single check means `false` (log
 which check failed). A wrapper that always reports `true` regardless of the
 underlying SDK, that infers the capability from field/symbol presence alone,
-or that only exercises one of the six semantics, will fail scenarios 204-208
-(or all of 203-208, for a plain field probe) the moment it is built against
-an SDK version that does not fully implement the contract.
+or that only exercises one of the six 203-208 semantics, will fail scenarios
+204-208 (or all of 203-208, for a plain field probe) the moment it is built
+against an SDK version that does not fully implement the contract.
+
+The battery must also cover the 221 semantic: a covered full-on experiment
+can resolve (via `peek`) before its unit type is installed, because a
+full-on assignment never reads the uid, while the holdout covering it cannot
+be evaluated without that uid and so cannot yet decide suppression or publish
+its own exposure. `setUnit` installing that unit type and a subsequent
+`treatment` call must then publish the holdout's exposure that was
+unavailable during the first evaluation, exactly once, alongside the
+experiment's own exposure - not lose it, and not duplicate or contradict it.
+An SDK that gets 203-208's checks right can still fail this one: caching the
+first evaluation's "holdout not yet resolvable" decision and never
+revisiting it once the unit arrives passes every 203-208-shaped check while
+silently dropping the exposure 221 requires. This is implemented as a
+same-context extension of the 203-208 battery (peek pre-unit, `setUnit`,
+treatment post-unit) rather than a separate capability, matching the existing
+one-probe-one-flag pattern: 221's guarantee is a corollary of the same
+suppression/exposure machinery `holdouts` already gates, not an independent
+capability an SDK could plausibly ship without the rest of `holdouts`.
 
 The self-check must not be able to bring the service down: catch `Throwable`
 (not just `Exception`) around the entire probe, since an incompatible SDK
@@ -1005,6 +1024,39 @@ loading or otherwise block startup - only the capability it reports.
 ### Capability: `holdout_arms`
 
 This capability gates three-arm holdout semantics separately from the two-arm
-behavior covered by `holdouts`. Wrappers must advertise it only when the linked
-SDK interprets all three arms correctly; wrappers that support only two-arm
-holdouts omit it or return `false` so scenarios 214-220 are skipped.
+behavior covered by `holdouts`. Wrappers must advertise it only when the
+linked SDK interprets all three arms correctly, verified by a BEHAVIORAL
+probe of the same shape as `holdouts`' - not a field/symbol check, and not a
+static `true`: a three-arm split being merely accepted on the wire says
+nothing about whether arm 1 correctly holds out only non-full-on covered
+experiments while deferring full-on ones to their normal assignment path.
+Wrappers that support only two-arm holdouts, or whose three-arm probe fails,
+report `false` so scenarios 214-220 and 222 are skipped.
+
+`holdout_arms` must be **structurally** tied to `holdouts`, not merely
+consistent with it by two probes that happen to agree: three-arm support
+cannot exist without the two-arm foundation `holdouts` verifies (a 3-arm
+holdout's variant 0 is identical to a 2-arm holdout's variant 0; variant 2
+is the same "defer to normal path" as a 2-arm holdout's variant 1), so the
+`holdout_arms` probe must short-circuit to `false` - without even attempting
+its own fixture - whenever the `holdouts` battery has not passed. A wrapper
+that runs two independent probes and reports `holdout_arms` only when both
+happen to pass has NOT satisfied this requirement: independent probes can
+diverge (e.g. a `holdout_arms`-only regression that never touches the
+203-208 fixtures), silently reporting `holdout_arms: true` with
+`holdouts: false` and running scenarios 214-220/222 against an SDK that
+cannot express two-arm suppression at all.
+
+The probe must exercise real three-arm semantics, mirroring what scenarios
+214-216 assert, not just "a 3-element split was accepted": a 3-arm holdout's
+variant 0 holds out every covered experiment, full-on or not, identically to
+a 2-arm holdout's variant 0; variant 1 holds out only a non-full-on covered
+experiment (`fullOnVariant == 0`) while a full-on covered experiment
+(`fullOnVariant != 0`) takes its normal assignment path and is assigned its
+own `fullOnVariant` with its own exposure, not suppressed; variant 2 (normal
+traffic) evaluates every covered experiment, full-on or not, exactly as if
+uncovered. Each check must verify both the resulting treatment and the exact
+exposure sequence published (which experiments/holdouts fire, in what order,
+at what variant) - a check that only compares treatments could pass against
+an SDK that assigns the right variant while getting exposure suppression or
+ordering wrong.

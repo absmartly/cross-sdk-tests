@@ -6,8 +6,6 @@ import com.absmartly.sdk.ContextConfig;
 import com.absmartly.sdk.ContextEventLogger;
 import com.absmartly.sdk.json.ContextData;
 import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.ExperimentApplication;
-import com.absmartly.sdk.json.ExperimentVariant;
 import com.absmartly.sdk.json.Exposure;
 
 import java.lang.reflect.Array;
@@ -15,10 +13,16 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static com.absmartly.wrapper.HoldoutProbeSupport.ProbeExposure;
+import static com.absmartly.wrapper.HoldoutProbeSupport.buildExperiment;
+import static com.absmartly.wrapper.HoldoutProbeSupport.buildHoldoutEntry;
+import static com.absmartly.wrapper.HoldoutProbeSupport.findField;
+import static com.absmartly.wrapper.HoldoutProbeSupport.verifyTreatmentAndExposures;
+
 /**
- * Behavioral self-test for all holdout semantics covered by scenarios 203-208. Reflection is used
- * only to build fixtures so this wrapper still compiles against pre-holdout core-api releases;
- * verdicts always come from observed treatments and exposures.
+ * Behavioral self-test for all holdout semantics covered by scenarios 203-208 and 221. Reflection
+ * is used only to build fixtures so this wrapper still compiles against pre-holdout core-api
+ * releases; verdicts always come from observed treatments and exposures.
  */
 final class HoldoutSelfTest {
     private HoldoutSelfTest() {}
@@ -32,6 +36,14 @@ final class HoldoutSelfTest {
     // Same unit id used by the orchestrator's scenario 204 fixture: relative to the same
     // seedHi/seedLo/split it lands OUTSIDE the holdout's held-out arm (variant 1).
     private static final String NOT_HELD_OUT_UID = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3";
+
+    // A third unit type, deliberately NOT installed on the shared context at creation, for check
+    // G (mirrors scenario 221): the covered experiment must be resolvable before this unit type
+    // exists (full-on experiments never read the uid), and the holdout's own exposure must still
+    // publish, exactly once, once setUnit installs it and the experiment is resolved again. Reuses
+    // HELD_OUT_UID/seedHi=1/seedLo=222 (see holdoutG below), the same combination scenario 205/219
+    // /220 use for a not-held-out (variant 1) 2-arm outcome.
+    private static final String LATE_UNIT_TYPE = "user_id";
 
     private static final double[] EXPERIMENT_SPLIT = {0.5, 0.5};
     private static final double[] HOLDOUT_SPLIT = {0.1, 0.9};
@@ -114,10 +126,18 @@ final class HoldoutSelfTest {
         Experiment expF = buildExperiment(317, "chk_f_fullon", HELD_OUT_UNIT_TYPE, 100, 200,
             EXPERIMENT_SPLIT, 2, THREE_VARIANTS, new int[] {417}, holdoutIdsField);
         Object holdoutF = buildHoldoutEntry(holdoutElementType, 417, "chk_f_holdout", HELD_OUT_UNIT_TYPE,
-            13, 111, HOLDOUT_SPLIT, "full_on", TWO_VARIANTS);
+            13, 111, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
+
+        // --- Check G fixture (mirrors scenario 221: late-unit lost-exposure) ---
+        // fullOnVariant != 0 so the experiment resolves without ever reading LATE_UNIT_TYPE's
+        // uid; the holdout is covered but cannot be evaluated until setUnit runs.
+        Experiment expG = buildExperiment(318, "chk_g_late_unit", LATE_UNIT_TYPE, 100, 200,
+            EXPERIMENT_SPLIT, 2, THREE_VARIANTS, new int[] {418}, holdoutIdsField);
+        Object holdoutG = buildHoldoutEntry(holdoutElementType, 418, "chk_g_holdout", LATE_UNIT_TYPE,
+            1, 222, HOLDOUT_SPLIT, "full", TWO_VARIANTS);
 
         if (holdoutA == null || holdoutB == null || holdoutCLow == null || holdoutCHigh == null
-            || holdoutD == null || holdoutE == null || holdoutF == null) {
+            || holdoutD == null || holdoutE == null || holdoutF == null || holdoutG == null) {
             System.out.println("[holdouts probe] behavioral self-test FAILED: linked core-api's holdout "
                 + "entry type is missing one of the fields (id/seedHi/seedLo/split) the variant "
                 + "assigner requires - cannot construct the fixture");
@@ -125,8 +145,10 @@ final class HoldoutSelfTest {
         }
 
         ContextData contextData = new ContextData();
-        contextData.experiments = new Experiment[] {expA, expB, expC, expDCovered, expDSibling, expE, expF};
-        Object holdoutsArray = Array.newInstance(holdoutElementType, 7);
+        contextData.experiments = new Experiment[] {
+            expA, expB, expC, expDCovered, expDSibling, expE, expF, expG
+        };
+        Object holdoutsArray = Array.newInstance(holdoutElementType, 8);
         Array.set(holdoutsArray, 0, holdoutA);
         Array.set(holdoutsArray, 1, holdoutB);
         Array.set(holdoutsArray, 2, holdoutCLow);
@@ -134,6 +156,7 @@ final class HoldoutSelfTest {
         Array.set(holdoutsArray, 4, holdoutD);
         Array.set(holdoutsArray, 5, holdoutE);
         Array.set(holdoutsArray, 6, holdoutF);
+        Array.set(holdoutsArray, 7, holdoutG);
         holdoutsField.set(contextData, holdoutsArray);
 
         List<ProbeExposure> exposures = new CopyOnWriteArrayList<>();
@@ -144,6 +167,7 @@ final class HoldoutSelfTest {
             }
         };
 
+        // LATE_UNIT_TYPE is deliberately absent here - see check G below.
         ContextConfig contextConfig = ContextConfig.create()
             .setUnit(HELD_OUT_UNIT_TYPE, HELD_OUT_UID)
             .setUnit(NOT_HELD_OUT_UNIT_TYPE, NOT_HELD_OUT_UID)
@@ -165,191 +189,73 @@ final class HoldoutSelfTest {
             return false;
         }
 
+        String prefix = "[holdouts probe]";
         try {
-            if (!verifyTreatmentAndExposures("A (mirrors 203)", context, exposures, "chk_a_covered", 0,
+            if (!verifyTreatmentAndExposures(prefix, "A (mirrors 203)", context, exposures, "chk_a_covered", 0,
                     new ProbeExposure(411, "chk_a_holdout", 0))) return false;
-            if (!verifyTreatmentAndExposures("B (mirrors 204)", context, exposures, "chk_b_covered", 0,
+            if (!verifyTreatmentAndExposures(prefix, "B (mirrors 204)", context, exposures, "chk_b_covered", 0,
                     new ProbeExposure(312, "chk_b_covered", 0),
                     new ProbeExposure(412, "chk_b_holdout", 1))) return false;
-            if (!verifyTreatmentAndExposures("C (mirrors 205)", context, exposures, "chk_c_union", 0,
+            if (!verifyTreatmentAndExposures(prefix, "C (mirrors 205)", context, exposures, "chk_c_union", 0,
                     new ProbeExposure(413, "chk_c_holdout_low", 1),
                     new ProbeExposure(414, "chk_c_holdout_high", 0))) return false;
-            if (!checkCoverageOptInPerExperiment(context, exposures)) return false;
-            if (!verifyTreatmentAndExposures("E (mirrors 207)", context, exposures,
+            if (!checkCoverageOptInPerExperiment(prefix, context, exposures)) return false;
+            if (!verifyTreatmentAndExposures(prefix, "E (mirrors 207)", context, exposures,
                     "chk_e_dangling_plus_valid", 0,
                     new ProbeExposure(416, "chk_e_holdout", 0))) return false;
-            if (!verifyTreatmentAndExposures("F (mirrors 208)", context, exposures, "chk_f_fullon", 0,
+            if (!verifyTreatmentAndExposures(prefix, "F (mirrors 208)", context, exposures, "chk_f_fullon", 0,
                     new ProbeExposure(417, "chk_f_holdout", 0))) return false;
+            if (!checkLateUnitPublishesHoldoutExposure(prefix, context, exposures)) return false;
         } finally {
             context.close();
         }
 
-        System.out.println("[holdouts probe] behavioral self-test PASSED: all 6 checks mirroring "
-            + "scenarios 203-208 passed");
+        System.out.println("[holdouts probe] behavioral self-test PASSED: all 7 checks mirroring "
+            + "scenarios 203-208 and 221 passed");
         return true;
     }
 
     /** Check D - mirrors scenario 206: holdout coverage never leaks to an uncovered sibling. */
-    private static boolean checkCoverageOptInPerExperiment(com.absmartly.sdk.Context context,
+    private static boolean checkCoverageOptInPerExperiment(String prefix, com.absmartly.sdk.Context context,
             List<ProbeExposure> exposures) {
-        if (!verifyTreatmentAndExposures("D (mirrors 206, covered)", context, exposures, "chk_d_covered", 0,
-                new ProbeExposure(415, "chk_d_holdout", 0))) {
+        if (!verifyTreatmentAndExposures(prefix, "D (mirrors 206, covered)", context, exposures,
+                "chk_d_covered", 0, new ProbeExposure(415, "chk_d_holdout", 0))) {
             return false;
         }
         // The uncovered sibling has no holdoutIds, so it must assign and expose exactly as it
         // would with no holdout in the payload at all - variant 1, unaffected by the holdout
         // covering its sibling.
-        return verifyTreatmentAndExposures("D (mirrors 206, uncovered sibling)", context, exposures,
+        return verifyTreatmentAndExposures(prefix, "D (mirrors 206, uncovered sibling)", context, exposures,
             "chk_d_uncovered_sibling", 1,
             new ProbeExposure(315, "chk_d_uncovered_sibling", 1));
     }
 
     /**
-     * Shared check body for every A-F check: calls getTreatment(experimentName) exactly once,
-     * then requires BOTH the returned treatment AND the exact ordered id/name/variant sequence of
-     * exposure events appended by that single call to match what the mirrored scenario
-     * (203-208 in test_scenarios_complete.json) pins byte-for-byte. Order matters (e.g. check B's
-     * experiment-exposure-then-holdout-exposure order, check C's low-id-then-high-id order) and so
-     * does every variant (e.g. check C's variants are what prove suppression came through the
-     * HIGHER-id holdout, not just "some" holdout) - a check that only compared id/name/count could
-     * pass against an SDK that resolves the right ids with the wrong variants or the wrong order.
+     * Check G - mirrors scenario 221: peek resolves the full-on covered experiment before its
+     * unit type is installed (full-on experiments never read the uid, so this succeeds and must
+     * not itself expose anything); setUnit then installs it; a second resolution - via
+     * getTreatment, which does expose - must publish BOTH the experiment's own exposure and the
+     * holdout's own exposure exactly once each. This is what distinguishes the capability from a
+     * probe that only exercises checks A-F: an SDK that resolves a covered full-on experiment
+     * correctly before its unit exists, but pins that decision so the holdout's own exposure is
+     * silently lost once the unit later arrives, passes A-F yet fails this check and 221.
      */
-    private static boolean verifyTreatmentAndExposures(String checkLabel, com.absmartly.sdk.Context context,
-            List<ProbeExposure> exposures, String experimentName, int expectedTreatment,
-            ProbeExposure... expectedSequence) {
+    private static boolean checkLateUnitPublishesHoldoutExposure(String prefix, com.absmartly.sdk.Context context,
+            List<ProbeExposure> exposures) {
         int before = exposures.size();
-        int treatment = context.getTreatment(experimentName);
-        List<ProbeExposure> newExposures = exposures.subList(before, exposures.size());
-
-        if (treatment != expectedTreatment || !matchesSequence(newExposures, expectedSequence)) {
-            System.out.println("[holdouts probe] check " + checkLabel + " FAILED: expected treatment="
-                + expectedTreatment + " with exposure sequence " + java.util.Arrays.toString(expectedSequence)
-                + ", got treatment=" + treatment + " exposures=" + newExposures);
+        int peeked = context.peekTreatment("chk_g_late_unit");
+        List<ProbeExposure> peekExposures = exposures.subList(before, exposures.size());
+        if (peeked != 2 || !peekExposures.isEmpty()) {
+            System.out.println(prefix + " check G (mirrors 221, pre-unit peek) FAILED: expected "
+                + "treatment=2 with no exposures, got treatment=" + peeked + " exposures=" + peekExposures);
             return false;
         }
-        return true;
-    }
 
-    private static boolean matchesSequence(List<ProbeExposure> actual, ProbeExposure[] expected) {
-        if (actual.size() != expected.length) {
-            return false;
-        }
-        for (int i = 0; i < expected.length; i++) {
-            ProbeExposure exposure = actual.get(i);
-            ProbeExposure exp = expected[i];
-            if (exp.id != exposure.id || !exp.name.equals(exposure.name) || exp.variant != exposure.variant) {
-                return false;
-            }
-        }
-        return true;
-    }
+        context.setUnit(LATE_UNIT_TYPE, HELD_OUT_UID);
 
-    /** One position in an actual or expected ordered exposure sequence. */
-    private static final class ProbeExposure {
-        final int id;
-        final String name;
-        final int variant;
-
-        ProbeExposure(int id, String name, int variant) {
-            this.id = id;
-            this.name = name;
-            this.variant = variant;
-        }
-
-        @Override
-        public String toString() {
-            return "{id=" + id + ", name=" + name + ", variant=" + variant + "}";
-        }
-    }
-
-    /**
-     * Builds one covered experiment. holdoutIds is set via reflection (see class javadoc); every
-     * other field is a direct compile-time reference since these have existed on Experiment since
-     * before holdout support.
-     */
-    private static Experiment buildExperiment(int id, String name, String unitType, int seedHi, int seedLo,
-            double[] split, int fullOnVariant, String[] variantNames, int[] holdoutIds, Field holdoutIdsField)
-            throws Exception {
-        Experiment experiment = new Experiment();
-        experiment.id = id;
-        experiment.name = name;
-        experiment.iteration = 1;
-        experiment.unitType = unitType;
-        experiment.seedHi = seedHi;
-        experiment.seedLo = seedLo;
-        experiment.split = split;
-        experiment.trafficSeedHi = 1;
-        experiment.trafficSeedLo = 2;
-        experiment.trafficSplit = new double[] {0, 1};
-        experiment.fullOnVariant = fullOnVariant;
-        experiment.applications = new ExperimentApplication[] {new ExperimentApplication("website")};
-        ExperimentVariant[] variants = new ExperimentVariant[variantNames.length];
-        for (int i = 0; i < variantNames.length; i++) {
-            variants[i] = new ExperimentVariant(variantNames[i], null);
-        }
-        experiment.variants = variants;
-        if (holdoutIds != null) {
-            holdoutIdsField.set(experiment, holdoutIds);
-        }
-        return experiment;
-    }
-
-    /**
-     * Constructs one holdout entry of whatever type ContextData.holdouts actually holds on the
-     * linked core-api. Every holdout wire shape this SDK has ever shipped carries at minimum
-     * id/seedHi/seedLo/split (the fields the variant assigner needs); anything else (name,
-     * iteration, unitType, trafficSeedHi/Lo/Split, fullOnVariant, applications, variants, a
-     * holdoutType discriminator, ...) is set opportunistically when present so the fixture
-     * matches the live wire shape as closely as possible, but their absence does not fail fixture
-     * construction. Returns null if id/seedHi/seedLo/split are unavailable - the caller treats
-     * that as "cannot build the fixture" and fails the probe closed.
-     */
-    private static Object buildHoldoutEntry(Class<?> holdoutType, int id, String name, String unitType,
-            int seedHi, int seedLo, double[] split, String holdoutTypeName, String[] variantNames) throws Exception {
-        Object holdout = holdoutType.getDeclaredConstructor().newInstance();
-
-        Field idField = findField(holdoutType, "id");
-        Field seedHiField = findField(holdoutType, "seedHi");
-        Field seedLoField = findField(holdoutType, "seedLo");
-        Field splitField = findField(holdoutType, "split");
-        if (idField == null || seedHiField == null || seedLoField == null || splitField == null) {
-            return null;
-        }
-        idField.set(holdout, id);
-        seedHiField.set(holdout, seedHi);
-        seedLoField.set(holdout, seedLo);
-        splitField.set(holdout, split);
-
-        setIfPresent(holdout, "name", name);
-        setIfPresent(holdout, "iteration", 1);
-        setIfPresent(holdout, "unitType", unitType);
-        setIfPresent(holdout, "trafficSeedHi", 0);
-        setIfPresent(holdout, "trafficSeedLo", 0);
-        setIfPresent(holdout, "trafficSplit", new double[] {0, 1});
-        setIfPresent(holdout, "fullOnVariant", 0);
-        setIfPresent(holdout, "applications", new ExperimentApplication[0]);
-        ExperimentVariant[] variants = new ExperimentVariant[variantNames.length];
-        for (int i = 0; i < variantNames.length; i++) {
-            variants[i] = new ExperimentVariant(variantNames[i], null);
-        }
-        setIfPresent(holdout, "variants", variants);
-        setIfPresent(holdout, "holdoutType", holdoutTypeName);
-
-        return holdout;
-    }
-
-    private static void setIfPresent(Object target, String fieldName, Object value) throws Exception {
-        Field field = findField(target.getClass(), fieldName);
-        if (field != null && field.getType().isInstance(value)) {
-            field.set(target, value);
-        }
-    }
-
-    private static Field findField(Class<?> type, String name) {
-        try {
-            return type.getField(name);
-        } catch (NoSuchFieldException e) {
-            return null;
-        }
+        return verifyTreatmentAndExposures(prefix, "G (mirrors 221, post-unit treatment)", context, exposures,
+            "chk_g_late_unit", 2,
+            new ProbeExposure(318, "chk_g_late_unit", 2),
+            new ProbeExposure(418, "chk_g_holdout", 1));
     }
 }

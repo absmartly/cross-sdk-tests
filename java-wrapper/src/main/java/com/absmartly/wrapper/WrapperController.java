@@ -68,7 +68,7 @@ public class WrapperController {
         response.put("getAttributes", true);
         response.put("readyError", true);
         response.put("holdouts", HoldoutSelfTest.run());
-        response.put("holdout_arms", true);
+        response.put("holdout_arms", HoldoutArmsSelfTest.run());
         return response;
     }
 
