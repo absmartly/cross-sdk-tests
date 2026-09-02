@@ -7,6 +7,9 @@
 # IDE files
 .idea/
 .vscode/
+.classpath
+.project
+.settings/
 
 # Build artifacts
 node_modules/
