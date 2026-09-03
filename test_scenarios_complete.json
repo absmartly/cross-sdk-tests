@@ -20214,15 +20214,15 @@
       "holdouts": [
         {
           "id": 1,
+          "name": "holdout_override_precedence",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 13,
           "seedLo": 111,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_override_precedence",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         }
       ]
     },
@@ -20365,15 +20365,15 @@
       "holdouts": [
         {
           "id": 1,
+          "name": "holdout_custom_precedence",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 13,
           "seedLo": 111,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_custom_precedence",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         }
       ]
     },
@@ -20541,27 +20541,27 @@
       "holdouts": [
         {
           "id": 1,
+          "name": "holdout_multi_a",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 13,
           "seedLo": 111,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_multi_a",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         },
         {
           "id": 2,
+          "name": "holdout_multi_b",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 1,
           "seedLo": 222,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_multi_b",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         }
       ]
     },
@@ -20763,15 +20763,15 @@
       "holdouts": [
         {
           "id": 1,
+          "name": "holdout_shared",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 13,
           "seedLo": 111,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_shared",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         }
       ]
     },
@@ -20946,6 +20946,9 @@
       "holdouts": [
         {
           "id": 21,
+          "name": "holdout_three_arm_v0",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 1,
           "split": [
@@ -20953,10 +20956,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_three_arm_v0",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -21119,6 +21119,9 @@
       "holdouts": [
         {
           "id": 22,
+          "name": "holdout_three_arm_v1",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 3,
           "split": [
@@ -21126,10 +21129,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_three_arm_v1",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -21308,6 +21308,9 @@
       "holdouts": [
         {
           "id": 23,
+          "name": "holdout_three_arm_v2",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 0,
           "split": [
@@ -21315,10 +21318,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_three_arm_v2",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -21472,6 +21472,9 @@
       "holdouts": [
         {
           "id": 24,
+          "name": "holdout_three_arm_v1",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 3,
           "split": [
@@ -21479,10 +21482,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_three_arm_audience_v1",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -21549,7 +21549,7 @@
               "type": "exposure",
               "data": {
                 "id": 24,
-                "name": "holdout_three_arm_audience_v1",
+                "name": "holdout_three_arm_v1",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -21621,6 +21621,9 @@
       "holdouts": [
         {
           "id": 25,
+          "name": "holdout_three_arm_v2",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 0,
           "split": [
@@ -21628,10 +21631,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_three_arm_audience_v2",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -21698,7 +21698,7 @@
               "type": "exposure",
               "data": {
                 "id": 25,
-                "name": "holdout_three_arm_audience_v2",
+                "name": "holdout_three_arm_v2",
                 "unit": "session_id",
                 "variant": 2,
                 "assigned": true,
@@ -21807,18 +21807,21 @@
       "holdouts": [
         {
           "id": 11,
+          "name": "holdout_union_two_arm",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 13,
           "seedLo": 111,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_union_two_arm",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         },
         {
           "id": 22,
+          "name": "holdout_union_three_arm",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 0,
           "split": [
@@ -21826,10 +21829,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_union_three_arm",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -22020,18 +22020,21 @@
       "holdouts": [
         {
           "id": 11,
+          "name": "holdout_union_two_arm",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 1,
           "seedLo": 222,
           "split": [
             0.1,
             0.9
-          ],
-          "name": "holdout_union_two_arm",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         },
         {
           "id": 22,
+          "name": "holdout_union_three_arm",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 3,
           "split": [
@@ -22039,10 +22042,7 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on",
-          "name": "holdout_union_three_arm",
-          "unitType": "session_id",
-          "iteration": 1
+          "holdoutType": "all_full_on"
         }
       ]
     },
@@ -22450,16 +22450,16 @@
       "holdouts": [
         {
           "id": 21,
+          "name": "holdout_arity_from_split",
+          "iteration": 1,
+          "unitType": "session_id",
           "seedHi": 0,
           "seedLo": 1,
           "split": [
             0.3,
             0.3,
             0.4
-          ],
-          "name": "holdout_arity_from_split",
-          "unitType": "session_id",
-          "iteration": 1
+          ]
         }
       ]
     },
