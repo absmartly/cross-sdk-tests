@@ -20219,7 +20219,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_override_precedence",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -20294,7 +20297,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": null,
+                "name": "holdout_override_precedence",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -20367,7 +20370,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_custom_precedence",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -20427,7 +20433,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": null,
+                "name": "holdout_custom_precedence",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -20540,7 +20546,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_multi_a",
+          "unitType": "session_id",
+          "iteration": 1
         },
         {
           "id": 2,
@@ -20549,7 +20558,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_multi_b",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -20602,7 +20614,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": null,
+                "name": "holdout_multi_a",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -20643,7 +20655,7 @@
               "type": "exposure",
               "data": {
                 "id": 2,
-                "name": null,
+                "name": "holdout_multi_b",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -20756,7 +20768,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_shared",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -20809,7 +20824,7 @@
               "type": "exposure",
               "data": {
                 "id": 1,
-                "name": null,
+                "name": "holdout_shared",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -20938,7 +20953,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_three_arm_v0",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -20979,7 +20997,7 @@
               "type": "exposure",
               "data": {
                 "id": 21,
-                "name": null,
+                "name": "holdout_three_arm_v0",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -21108,7 +21126,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_three_arm_v1",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -21149,7 +21170,7 @@
               "type": "exposure",
               "data": {
                 "id": 22,
-                "name": null,
+                "name": "holdout_three_arm_v1",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -21294,7 +21315,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_three_arm_v2",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -21350,7 +21374,7 @@
               "type": "exposure",
               "data": {
                 "id": 23,
-                "name": null,
+                "name": "holdout_three_arm_v2",
                 "unit": "session_id",
                 "variant": 2,
                 "assigned": true,
@@ -21455,7 +21479,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_three_arm_audience_v1",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -21522,7 +21549,7 @@
               "type": "exposure",
               "data": {
                 "id": 24,
-                "name": null,
+                "name": "holdout_three_arm_audience_v1",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -21601,7 +21628,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_three_arm_audience_v2",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -21668,7 +21698,7 @@
               "type": "exposure",
               "data": {
                 "id": 25,
-                "name": null,
+                "name": "holdout_three_arm_audience_v2",
                 "unit": "session_id",
                 "variant": 2,
                 "assigned": true,
@@ -21782,7 +21812,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_union_two_arm",
+          "unitType": "session_id",
+          "iteration": 1
         },
         {
           "id": 22,
@@ -21793,7 +21826,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_union_three_arm",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -21834,7 +21870,7 @@
               "type": "exposure",
               "data": {
                 "id": 11,
-                "name": null,
+                "name": "holdout_union_two_arm",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
@@ -21849,7 +21885,7 @@
               "type": "exposure",
               "data": {
                 "id": 22,
-                "name": null,
+                "name": "holdout_union_three_arm",
                 "unit": "session_id",
                 "variant": 2,
                 "assigned": true,
@@ -21989,7 +22025,10 @@
           "split": [
             0.1,
             0.9
-          ]
+          ],
+          "name": "holdout_union_two_arm",
+          "unitType": "session_id",
+          "iteration": 1
         },
         {
           "id": 22,
@@ -22000,7 +22039,10 @@
             0.3,
             0.4
           ],
-          "holdoutType": "all_full_on"
+          "holdoutType": "all_full_on",
+          "name": "holdout_union_three_arm",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -22041,7 +22083,7 @@
               "type": "exposure",
               "data": {
                 "id": 11,
-                "name": null,
+                "name": "holdout_union_two_arm",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -22056,7 +22098,7 @@
               "type": "exposure",
               "data": {
                 "id": 22,
-                "name": null,
+                "name": "holdout_union_three_arm",
                 "unit": "session_id",
                 "variant": 1,
                 "assigned": true,
@@ -22414,7 +22456,10 @@
             0.3,
             0.3,
             0.4
-          ]
+          ],
+          "name": "holdout_arity_from_split",
+          "unitType": "session_id",
+          "iteration": 1
         }
       ]
     },
@@ -22455,7 +22500,7 @@
               "type": "exposure",
               "data": {
                 "id": 21,
-                "name": null,
+                "name": "holdout_arity_from_split",
                 "unit": "session_id",
                 "variant": 0,
                 "assigned": true,
