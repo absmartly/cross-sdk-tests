@@ -935,6 +935,78 @@ POST /context/{contextId}/readyError
 
 **Response:** `{"result": {"isError": true, "message": "..."}, "events": []}`
 
+### Capability: `httpFaultInjection`
+
+Lets a scenario inject HTTP faults into the SDK-facing context fetch, so the
+SDK's own retry / backoff / bail-on-4xx logic runs for real. Used by scenarios
+68-70, which previously asserted nothing about retry behavior at all.
+
+Arm it by adding a `fault` object to the payload PUT:
+
+```http
+PUT /context_payload/{payloadId}
+{"data": {...}, "fault": {"failTimes": 2, "status": 503}}
+```
+
+The SDK-facing route then returns that status for the first `failTimes` fetches
+and serves the stored payload normally afterward:
+
+```http
+GET /context_payload/{payloadId}/context   ->  503, 503, then 200
+```
+
+`failTimes` defaults to `0` and `status` to `503`. The counter must be
+incremented atomically — SDKs retry concurrently, and a racy counter
+over-consumes the budget.
+
+A wrapper declaring this capability must also surface a failed context data
+load as a **FAILED context** (HTTP 200 with `result.failed = true`), not as an
+HTTP error, matching the `failLoad` path. Returning 500 breaks the scenario in
+two ways: the orchestrator errors on `createContext`, and every later step then
+404s on a context id that was never registered.
+
+#### Wrappers that cannot support this
+
+`kotlin`, `scala`, `rust`, `cpp` and `flutter` do **not** declare this
+capability, and the omission is structural rather than an oversight. Their
+async `createContext` path never issues an HTTP request: they parse the payload
+id out of the endpoint URL, read their own in-process payload store directly,
+and hand the resulting data to `createContextWith`. An injected fault on the
+HTTP route is therefore never observed by the SDK — the context comes up ready
+while the endpoint is still returning 503.
+
+This was measured, not assumed: with a fault armed for 10 failures, those
+wrappers consumed 0 of them and reported `ready=true, failed=false`, while
+`javascript`, `python`, `go`, `typescript`, `angular` and `dart` consumed 5-6
+(one initial attempt plus their retry budget). `rust` states the shortcut in a
+comment at `src/main.rs`, and `flutter` explains it as "Flutter test environment
+can't make HTTP requests to itself".
+
+If one of these wrappers is ever converted to a real live-fetch path, add the
+fault store and declare the capability — the scenarios already exist and will
+start exercising it automatically.
+
+### Capability: `httpRetryOnServerError`
+
+Declared by wrappers whose SDK retries a **5xx response** (as opposed to only a
+transport-level exception). Scenario 68 — "retry recovers from a transient 503"
+— requires it in addition to `httpFaultInjection`.
+
+Two SDKs deliberately do not declare it:
+
+- `ruby` — `default_http_client.rb` configures `faraday-retry` with
+  `max: config.max_retries` (5), but that middleware's `retry_statuses` option
+  defaults to an empty list, so it retries only on raised exceptions. Measured:
+  1 HTTP attempt against a persistently-503 endpoint.
+- `elixir` — the SDK *does* implement 5xx retry in
+  `ABSmartly.HTTP.Client.with_retry`, but the wrapper's async context path does
+  not route through it. Also 1 attempt.
+
+Both still run scenarios 69 and 70, which they pass: they correctly bail on a
+4xx and correctly fail once the load does not succeed. Only the
+retry-and-recover assertion is gated, so the gap is visible as an explicit skip
+instead of silently passing.
+
 ### Capability: `publishFail`
 
 Makes the next publish call fail, so pending events are preserved.

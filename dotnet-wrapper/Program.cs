@@ -41,6 +41,10 @@ app.Use(async (context, next) =>
 
 var contexts = new ConcurrentDictionary<string, ContextData>();
 var payloadStore = new ConcurrentDictionary<string, ABSmartly.Models.ContextData>();
+// Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+// /context_payload/{id}/context route with a given status, then serve normally.
+// Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+var faultStore = new ConcurrentDictionary<string, FaultState>();
 
 string TranslateEndpoint(string endpoint)
 {
@@ -80,7 +84,8 @@ app.MapGet("/capabilities", () => Results.Ok(new
     globalCustomFieldKeys = true,
     getUnits = true,
     getAttributes = true,
-    readyError = true
+    readyError = true,
+    httpFaultInjection = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -151,6 +156,13 @@ app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext 
 
         payloadStore[payloadId] = contextData ?? new ABSmartly.Models.ContextData();
 
+        if (requestJson != null && requestJson.TryGetValue("fault", out var faultEl))
+        {
+            var failTimes = faultEl.TryGetProperty("failTimes", out var ft) ? ft.GetInt32() : 0;
+            var faultStatus = faultEl.TryGetProperty("status", out var st) ? st.GetInt32() : 503;
+            faultStore[payloadId] = new FaultState(failTimes, faultStatus);
+        }
+
         return Results.Ok(new { success = true });
     }
     catch (Exception ex)
@@ -183,6 +195,14 @@ app.MapGet("/context_payload/{payloadId}", (string payloadId, [FromQuery] int th
 
 app.MapGet("/context_payload/{payloadId}/context", (string payloadId) =>
 {
+    if (faultStore.TryGetValue(payloadId, out var fault))
+    {
+        var injected = fault.Consume();
+        if (injected > 0)
+        {
+            return Results.Json(new { error = $"injected fault {injected}" }, statusCode: injected);
+        }
+    }
     var data = payloadStore.GetValueOrDefault(payloadId, new ABSmartly.Models.ContextData
     {
         Experiments = Array.Empty<Experiment>()
@@ -442,8 +462,11 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         {
             context = sdk.CreateContext(contextConfig);  // Async: createContext (SDK will fetch from endpoint)
 
-            // Wait until context is ready
-            for (int i = 0; i < 100 && !context.IsReady(); i++)
+            // Wait until context is ready. A genuine live-fetch failure (e.g. an
+            // injected HTTP fault) leaves the context not-ready but FAILED, so the
+            // loop must also stop on IsFailed() rather than spinning the full
+            // budget; the response below reports IsFailed() either way.
+            for (int i = 0; i < 100 && !context.IsReady() && !context.IsFailed(); i++)
             {
                 await Task.Delay(10);
             }
@@ -1442,6 +1465,33 @@ public class CustomPublisher : IContextPublisher
 public class PublishFailFlag
 {
     public volatile bool Fail;
+}
+
+public class FaultState
+{
+    private readonly int _failTimes;
+    private readonly int _status;
+    private int _count;
+
+    public FaultState(int failTimes, int status)
+    {
+        _failTimes = failTimes;
+        _status = status;
+    }
+
+    /// <summary>Returns the fault status while the budget lasts, or 0 once exhausted.</summary>
+    public int Consume()
+    {
+        lock (this)
+        {
+            if (_count < _failTimes)
+            {
+                _count++;
+                return _status;
+            }
+            return 0;
+        }
+    }
 }
 
 public class DummyHttpClientFactory : IABSdkHttpClientFactory

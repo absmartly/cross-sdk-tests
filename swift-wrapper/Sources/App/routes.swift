@@ -383,6 +383,34 @@ class ContextManager {
 let contextManager = ContextManager()
 var payloadStore: [String: ContextDataDTO] = [:]
 
+// Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+// /context_payload/{id}/context route with a given status, then serve normally.
+// Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+final class FaultState {
+    private let failTimes: Int
+    private let status: Int
+    private var count = 0
+    private let lock = NSLock()
+
+    init(failTimes: Int, status: Int) {
+        self.failTimes = failTimes
+        self.status = status
+    }
+
+    /// Returns the fault status while the budget lasts, or nil once exhausted.
+    func consume() -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        if count < failTimes {
+            count += 1
+            return status
+        }
+        return nil
+    }
+}
+
+var faultStore: [String: FaultState] = [:]
+
 func routes(_ app: VaporApplication) throws {
     app.get("health") { req -> HTTPResponse in
         let health: [String: String] = [
@@ -401,7 +429,8 @@ func routes(_ app: VaporApplication) throws {
             "globalCustomFieldKeys": true,
             "getUnits": true,
             "getAttributes": true,
-            "readyError": true
+            "readyError": true,
+            "httpFaultInjection": true
         ]
         return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(capabilities)))
     }
@@ -440,8 +469,14 @@ func routes(_ app: VaporApplication) throws {
     }
 
     app.put("context_payload", ":payloadId") { req -> HTTPResponse in
+        struct FaultDTO: Content {
+            let failTimes: Int?
+            let status: Int?
+        }
+
         struct StorePayloadRequest: Content {
             let data: ContextDataDTO
+            let fault: FaultDTO?
         }
 
         guard let payloadId = req.parameters.get("payloadId") else {
@@ -451,6 +486,13 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(StorePayloadRequest.self)
         payloadStore[payloadId] = request.data
 
+        if let fault = request.fault {
+            faultStore[payloadId] = FaultState(
+                failTimes: fault.failTimes ?? 0,
+                status: fault.status ?? 503
+            )
+        }
+
         let result: [String: Any] = ["success": true]
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
     }
@@ -458,6 +500,13 @@ func routes(_ app: VaporApplication) throws {
     app.get("context_payload", ":payloadId", "context") { req -> HTTPResponse in
         guard let payloadId = req.parameters.get("payloadId") else {
             throw Abort(.badRequest)
+        }
+
+        if let injected = faultStore[payloadId]?.consume() {
+            let body = try JSONSerialization.data(
+                withJSONObject: ["error": "injected fault \(injected)"], options: []
+            )
+            return try HTTPResponse(status: .init(statusCode: injected), body: .init(data: body))
         }
 
         let data = payloadStore[payloadId] ?? ContextDataDTO(experiments: [])

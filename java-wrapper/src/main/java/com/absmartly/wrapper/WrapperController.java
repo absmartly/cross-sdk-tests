@@ -17,6 +17,31 @@ import java.util.concurrent.*;
 public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
+
+    // Per-payload HTTP fault injection: fail the first N fetches of the SDK-facing
+    // /context_payload/{id}/context route with a given status, then serve normally.
+    // Exercises the SDK's real retry/bail behavior (68-70) over the live-fetch path.
+    private final Map<String, FaultState> faultStore = new ConcurrentHashMap<>();
+
+    private static final class FaultState {
+        private final int failTimes;
+        private final int status;
+        private int count;
+
+        FaultState(int failTimes, int status) {
+            this.failTimes = failTimes;
+            this.status = status;
+        }
+
+        /** Returns the fault status while the budget lasts, or 0 once exhausted. */
+        synchronized int consume() {
+            if (count < failTimes) {
+                count++;
+                return status;
+            }
+            return 0;
+        }
+    }
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String translateEndpoint(String endpoint) {
@@ -69,6 +94,8 @@ public class WrapperController {
         response.put("readyError", true);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
+        response.put("httpFaultInjection", true);
+        response.put("httpRetryOnServerError", true);
         return response;
     }
 
@@ -131,6 +158,15 @@ public class WrapperController {
 
             payloadStore.put(payloadId, contextData);
 
+            @SuppressWarnings("unchecked")
+            Map<String, Object> fault = (Map<String, Object>) request.get("fault");
+            if (fault != null) {
+                faultStore.put(payloadId, new FaultState(
+                    fault.get("failTimes") == null ? 0 : ((Number) fault.get("failTimes")).intValue(),
+                    fault.get("status") == null ? 503 : ((Number) fault.get("status")).intValue()
+                ));
+            }
+
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
 
@@ -165,6 +201,14 @@ public class WrapperController {
 
     @GetMapping("/context_payload/{payloadId}/context")
     public ResponseEntity<?> mockApiContext(@PathVariable String payloadId) {
+        FaultState fault = faultStore.get(payloadId);
+        if (fault != null) {
+            int status = fault.consume();
+            if (status > 0) {
+                return ResponseEntity.status(status)
+                    .body(Collections.singletonMap("error", "injected fault " + status));
+            }
+        }
         com.absmartly.sdk.json.ContextData data = payloadStore.getOrDefault(
             payloadId,
             new com.absmartly.sdk.json.ContextData()
@@ -308,7 +352,18 @@ public class WrapperController {
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
+                    // A genuine live-fetch failure (e.g. an injected HTTP fault) makes
+                    // waitUntilReady throw; surface it as a FAILED context (matching the
+                    // failLoad path) rather than a 500, so fault scenarios can observe
+                    // isFailed() uniformly and later steps still resolve the context id.
+                    //
+                    // This cannot mask an unexpected breakage: every async createContext
+                    // scenario without an httpFault asserts failed:false on this step, so
+                    // a real error still fails loudly. isFailed() is reported either way.
+                    try {
                     context.waitUntilReady();
+                    } catch (Exception ignored) {
+                    }
                     // Wait for events to be collected (like Go wrapper)
                     for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
                         try {
