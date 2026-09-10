@@ -110,9 +110,13 @@ function makeExposureLoggingSdk() {
 // cross-sdk-tests/test_scenarios_complete.json:
 //   - scenario 203 (index 202) "Held-Out Unit Suppresses Covered Experiment" -> check A
 //   - scenario 204 (index 203) "Not-Held-Out Unit Assigns Normally And Exposes Holdout" -> check B
+//   - scenario 205 (index 204) "Union Of Two Holdouts Suppresses Via Higher-Id Holdout" -> check C
+//   - scenario 206 (index 205) "Coverage Is Opt-In Per Experiment" -> check D
+//   - scenario 207 (index 206) "Dangling Holdout Id Ignored, Valid Coverage Still Applies" -> check E
 //   - scenario 208 (index 207) "Suppresses Full-On Experiment Regardless Of Full-On Variant" -> check F
-// Synthetic ids (301-303 for experiments, 401-403 for holdouts) are used instead of the
-// scenarios' own ids so all three checks can be combined onto a single Context without id
+//   - scenario 221 (index 220) "Late Unit Publishes Previously Unavailable Holdout Exposure" -> check G
+// Synthetic ids (301-307 for experiments, 401-407 for holdouts) are used instead of the
+// scenarios' own ids so all seven checks can be combined onto a single Context without id
 // collisions; every value that actually drives variant assignment (unitType, seedHi, seedLo,
 // split, fullOnVariant, the unit id) is carried over verbatim from the source scenario.
 async function runHoldoutsBattery() {
@@ -125,6 +129,14 @@ async function runHoldoutsBattery() {
   // Same unit id used by scenario 204: relative to the same seedHi/seedLo/split it lands
   // OUTSIDE the holdout's held-out arm (variant 1).
   const NOT_HELD_OUT_UID = 'b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3';
+
+  // A third unit type, deliberately NOT installed on the shared context at creation, for check
+  // G (mirrors scenario 221): the covered experiment must be resolvable before this unit type
+  // exists (full-on experiments never read the uid), and the holdout's own exposure must still
+  // publish, exactly once, once unit() installs it and the experiment is resolved again. Reuses
+  // HELD_OUT_UID with seedHi=1/seedLo=222 (see holdoutG below), the same combination scenario
+  // 205/221 use for a not-held-out (variant 1) 2-arm outcome.
+  const LATE_UNIT_TYPE = 'user_id';
 
   // --- Check A fixture (mirrors scenario 203) ---
   const expA = buildExperiment({
@@ -172,6 +184,105 @@ async function runHoldoutsBattery() {
     holdoutType: 'full',
   });
 
+  // --- Check C fixture (mirrors scenario 205: union of two holdouts, held out via the HIGHER
+  // id only). The low-id holdout resolves to variant 1 (not held out) and the high-id holdout
+  // resolves to variant 0 (held out) for the same HELD_OUT_UID - ruling out an implementation
+  // that only ever consults holdouts[0]. Both holdouts still fire their own independent
+  // exposure, low-id first (wire order), each with its own resolved variant.
+  const expC = buildExperiment({
+    id: 304,
+    name: 'probe_c_union',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 100,
+    seedLo: 200,
+    split: [0.5, 0.5],
+    fullOnVariant: 0,
+    variantNames: ['A', 'B'],
+    holdoutIds: [404, 405],
+  });
+  const holdoutCLow = buildHoldout({
+    id: 404,
+    name: 'probe_c_holdout_low',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 1,
+    seedLo: 222,
+    split: [0.1, 0.9],
+    variantNames: ['A', 'B'],
+    holdoutType: 'full',
+  });
+  const holdoutCHigh = buildHoldout({
+    id: 405,
+    name: 'probe_c_holdout_high',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 13,
+    seedLo: 111,
+    split: [0.1, 0.9],
+    variantNames: ['A', 'B'],
+    holdoutType: 'full',
+  });
+
+  // --- Check D fixture (mirrors scenario 206: coverage is opt-in per experiment). A covered
+  // experiment (suppressed by its holdout) plus an uncovered sibling with no holdoutIds at all,
+  // sharing the same context/unit - the sibling must assign and expose completely normally,
+  // unaffected by the holdout suppressing its sibling. ---
+  const expDCovered = buildExperiment({
+    id: 305,
+    name: 'probe_d_covered',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 100,
+    seedLo: 200,
+    split: [0.5, 0.5],
+    fullOnVariant: 0,
+    variantNames: ['A', 'B'],
+    holdoutIds: [406],
+  });
+  const expDSibling = buildExperiment({
+    id: 306,
+    name: 'probe_d_uncovered_sibling',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 100,
+    seedLo: 200,
+    split: [0.5, 0.5],
+    fullOnVariant: 0,
+    variantNames: ['A', 'B'],
+    holdoutIds: null,
+  });
+  const holdoutD = buildHoldout({
+    id: 406,
+    name: 'probe_d_holdout',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 13,
+    seedLo: 111,
+    split: [0.1, 0.9],
+    variantNames: ['A', 'B'],
+    holdoutType: 'full',
+  });
+
+  // --- Check E fixture (mirrors scenario 207: dangling holdout id ignored, valid id still
+  // applies). holdoutIds contains 999, which has no matching entry in data.holdouts - it must
+  // be silently ignored, no throw, while the second, valid id still suppresses normally. ---
+  const expE = buildExperiment({
+    id: 307,
+    name: 'probe_e_dangling_plus_valid',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 100,
+    seedLo: 200,
+    split: [0.5, 0.5],
+    fullOnVariant: 0,
+    variantNames: ['A', 'B'],
+    holdoutIds: [999, 407],
+  });
+  const holdoutE = buildHoldout({
+    id: 407,
+    name: 'probe_e_holdout',
+    unitType: HELD_OUT_UNIT_TYPE,
+    seedHi: 13,
+    seedLo: 111,
+    split: [0.1, 0.9],
+    variantNames: ['A', 'B'],
+    holdoutType: 'full',
+  });
+
   // --- Check F fixture (mirrors scenario 208: suppresses a full-on experiment) ---
   const expF = buildExperiment({
     id: 303,
@@ -195,13 +306,41 @@ async function runHoldoutsBattery() {
     holdoutType: 'full',
   });
 
+  // --- Check G fixture (mirrors scenario 221: late-unit lost-exposure). fullOnVariant != 0 so
+  // the experiment resolves without ever reading LATE_UNIT_TYPE's uid; the holdout is covered
+  // but cannot be evaluated until unit() installs LATE_UNIT_TYPE. This is the exact scenario a
+  // real js-sdk bug (a permanently-lost holdout exposure) was fixed for, so this check has real
+  // regression value beyond spec completeness. ---
+  const expG = buildExperiment({
+    id: 308,
+    name: 'probe_g_late_unit',
+    unitType: LATE_UNIT_TYPE,
+    seedHi: 100,
+    seedLo: 200,
+    split: [0.5, 0.5, 0.0],
+    fullOnVariant: 2,
+    variantNames: ['A', 'B', 'C'],
+    holdoutIds: [408],
+  });
+  const holdoutG = buildHoldout({
+    id: 408,
+    name: 'probe_g_holdout',
+    unitType: LATE_UNIT_TYPE,
+    seedHi: 1,
+    seedLo: 222,
+    split: [0.1, 0.9],
+    variantNames: ['A', 'B'],
+    holdoutType: 'full',
+  });
+
   const data = {
-    experiments: [expA, expB, expF],
-    holdouts: [holdoutA, holdoutB, holdoutF],
+    experiments: [expA, expB, expC, expDCovered, expDSibling, expE, expF, expG],
+    holdouts: [holdoutA, holdoutB, holdoutCLow, holdoutCHigh, holdoutD, holdoutE, holdoutF, holdoutG],
   };
 
   const { sdk, exposureLog } = makeExposureLoggingSdk();
 
+  // LATE_UNIT_TYPE is deliberately absent here - see check G below.
   const context = sdk.createContextWith(
     { units: { [HELD_OUT_UNIT_TYPE]: HELD_OUT_UID, [NOT_HELD_OUT_UNIT_TYPE]: NOT_HELD_OUT_UID } },
     data,
@@ -233,14 +372,84 @@ async function runHoldoutsBattery() {
     return false;
 
   if (
+    !verifyTreatmentAndExposures(prefix, 'C (mirrors 205)', context, exposureLog, 'probe_c_union', 0, [
+      { id: 404, name: 'probe_c_holdout_low', variant: 1 },
+      { id: 405, name: 'probe_c_holdout_high', variant: 0 },
+    ])
+  )
+    return false;
+
+  if (!checkCoverageOptInPerExperiment(prefix, context, exposureLog)) return false;
+
+  if (
+    !verifyTreatmentAndExposures(prefix, 'E (mirrors 207)', context, exposureLog, 'probe_e_dangling_plus_valid', 0, [
+      { id: 407, name: 'probe_e_holdout', variant: 0 },
+    ])
+  )
+    return false;
+
+  if (
     !verifyTreatmentAndExposures(prefix, 'F (mirrors 208)', context, exposureLog, 'probe_f_fullon', 0, [
       { id: 403, name: 'probe_f_holdout', variant: 0 },
     ])
   )
     return false;
 
-  console.log(`${prefix} behavioral self-test PASSED: all 3 checks mirroring scenarios 203, 204, 208 passed`);
+  if (!checkLateUnitPublishesHoldoutExposure(prefix, context, exposureLog)) return false;
+
+  console.log(`${prefix} behavioral self-test PASSED: all 7 checks mirroring scenarios 203-208 and 221 passed`);
   return true;
+}
+
+// Check D - mirrors scenario 206: holdout coverage never leaks to an uncovered sibling.
+function checkCoverageOptInPerExperiment(prefix, context, exposureLog) {
+  if (
+    !verifyTreatmentAndExposures(prefix, 'D (mirrors 206, covered)', context, exposureLog, 'probe_d_covered', 0, [
+      { id: 406, name: 'probe_d_holdout', variant: 0 },
+    ])
+  ) {
+    return false;
+  }
+  // The uncovered sibling has no holdoutIds, so it must assign and expose exactly as it would
+  // with no holdout in the payload at all - variant 1, unaffected by the holdout covering its
+  // sibling.
+  return verifyTreatmentAndExposures(
+    prefix,
+    'D (mirrors 206, uncovered sibling)',
+    context,
+    exposureLog,
+    'probe_d_uncovered_sibling',
+    1,
+    [{ id: 306, name: 'probe_d_uncovered_sibling', variant: 1 }]
+  );
+}
+
+// Check G - mirrors scenario 221: peek resolves the full-on covered experiment before its unit
+// type is installed (full-on experiments never read the uid, so this succeeds and must not
+// itself expose anything); unit() then installs it; a second resolution - via treatment, which
+// does expose - must publish BOTH the experiment's own exposure and the holdout's own exposure
+// exactly once each. This is what distinguishes the capability from a probe that only exercises
+// checks A-F: an SDK that resolves a covered full-on experiment correctly before its unit
+// exists, but pins that decision so the holdout's own exposure is silently lost once the unit
+// later arrives, passes A-F yet fails this check and 221.
+function checkLateUnitPublishesHoldoutExposure(prefix, context, exposureLog) {
+  const before = exposureLog.length;
+  const peeked = context.peek('probe_g_late_unit');
+  const peekExposures = exposureLog.slice(before);
+  if (peeked !== 2 || peekExposures.length !== 0) {
+    console.log(
+      `${prefix} check G (mirrors 221, pre-unit peek) FAILED: expected treatment=2 with no exposures, got ` +
+        `treatment=${peeked} exposures=${JSON.stringify(peekExposures)}`
+    );
+    return false;
+  }
+
+  context.unit('user_id', 'e791e240fcd3df7d238cfc285f475e8152fcc0ec');
+
+  return verifyTreatmentAndExposures(prefix, 'G (mirrors 221, post-unit treatment)', context, exposureLog, 'probe_g_late_unit', 2, [
+    { id: 308, name: 'probe_g_late_unit', variant: 2 },
+    { id: 408, name: 'probe_g_holdout', variant: 1 },
+  ]);
 }
 
 // Three-arm holdout semantics battery. Ported from real fixture values in
