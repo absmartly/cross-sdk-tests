@@ -60,9 +60,16 @@ jobs:
 
       - name: Checkout SDK source repos
         run: |
+          # Per-SDK known-good branches, single source of truth in
+          # cross-sdk-tests/sdk-branches.sh (also used by local runs via
+          # setup-sdks.sh) so CI builds the same branches that pass locally
+          # instead of SDK main, which has API drift vs the wrappers.
+          # Repos not listed fall back to main.
+          source cross-sdk-tests/sdk-branches.sh
           for repo in ${{ matrix.repos }}; do
-            echo "::group::Cloning absmartly/$repo (main)"
-            git clone --depth 1 --branch main \
+            branch="${SDK_BRANCHES[$repo]:-main}"
+            echo "::group::Cloning absmartly/$repo ($branch)"
+            git clone --depth 1 --branch "$branch" \
               "https://github.com/absmartly/$repo.git" "$repo"
             echo "::endgroup::"
           done
@@ -115,9 +122,16 @@ jobs:
 
       - name: Checkout SDK source repos
         run: |
+          # Per-SDK known-good branches, single source of truth in
+          # cross-sdk-tests/sdk-branches.sh (also used by local runs via
+          # setup-sdks.sh) so CI builds the same branches that pass locally
+          # instead of SDK main, which has API drift vs the wrappers.
+          # Repos not listed fall back to main.
+          source cross-sdk-tests/sdk-branches.sh
           for repo in javascript-sdk python3-sdk go-sdk; do
-            echo "::group::Cloning absmartly/$repo (main)"
-            git clone --depth 1 --branch main \
+            branch="${SDK_BRANCHES[$repo]:-main}"
+            echo "::group::Cloning absmartly/$repo ($branch)"
+            git clone --depth 1 --branch "$branch" \
               "https://github.com/absmartly/$repo.git" "$repo"
             echo "::endgroup::"
           done

@@ -1,4 +1,4 @@
-FROM node:20-alpine AS sdk-builder
+FROM node:24-alpine AS sdk-builder
 
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./
@@ -15,6 +15,7 @@ COPY cross-sdk-tests/javascript-wrapper/package*.json ./
 RUN npm install
 
 COPY cross-sdk-tests/javascript-wrapper/server.js ./
+COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
 
 EXPOSE 3000
 
