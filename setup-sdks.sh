@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.."
 
 BRANCH_OVERRIDE="${BRANCH:-}"
 
@@ -25,7 +26,7 @@ Examples:
   BRANCH=main ./cross-sdk-tests/setup-sdks.sh              # Same via env var
 
 Branch configuration:
-  Edit the SDK_BRANCHES map in this script to change default per-SDK branches.
+  Edit the SDK_BRANCHES map in sdk-branches.sh to change default per-SDK branches.
 EOF
   exit 0
 }
@@ -38,27 +39,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-declare -A SDK_BRANCHES=(
-  ["angular-sdk"]="feat/angular-sdk-complete"
-  ["cpp-sdk"]="feat/initial-sdk"
-  ["dotnet-sdk"]="fix/audit-operator-fixes"
-  ["elixir-sdk"]="feat/initial-implementation"
-  ["flutter-sdk"]="fix/audit-operator-fixes"
-  ["go-sdk"]="fix/audit-operator-fixes"
-  ["java-sdk"]="fix/all-tests-passing"
-  ["javascript-sdk"]="feat/holdouts"
-  ["kotlin-sdk"]="fix/audit-operator-fixes"
-  ["liquid-sdk"]="feat/comprehensive-test-coverage"
-  ["php-sdk"]="fix/audit-operator-fixes"
-  ["python3-sdk"]="fix/python-sdk-all-tests-passing"
-  ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-  ["ruby-sdk"]="feat/ruby-3.3-compatibility"
-  ["rust-sdk"]="fix/all-tests-passing"
-  ["scala-sdk"]="fix/all-tests-passing"
-  ["swift-sdk"]="feat/cross-sdk-tests-and-fixes"
-  ["vue2-sdk"]="fix/all-tests-passing"
-  ["vue3-sdk"]="fix/jest-config-vue3"
-)
+# shellcheck source=sdk-branches.sh
+source "$SCRIPT_DIR/sdk-branches.sh"
 
 clone_or_update() {
   local repo="$1"

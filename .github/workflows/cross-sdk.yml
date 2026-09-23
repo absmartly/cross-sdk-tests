@@ -60,31 +60,12 @@ jobs:
 
       - name: Checkout SDK source repos
         run: |
-          # Per-SDK known-good branches. Mirrors the SDK_BRANCHES map in
-          # cross-sdk-tests/setup-sdks.sh (the local-run defaults) so CI builds
-          # the same branches that pass locally instead of SDK main, which has
-          # API drift vs the wrappers. Repos not listed fall back to main.
-          declare -A SDK_BRANCHES=(
-            ["angular-sdk"]="feat/angular-sdk-complete"
-            ["cpp-sdk"]="feat/initial-sdk"
-            ["dotnet-sdk"]="fix/audit-operator-fixes"
-            ["elixir-sdk"]="feat/initial-implementation"
-            ["flutter-sdk"]="fix/audit-operator-fixes"
-            ["go-sdk"]="fix/audit-operator-fixes"
-            ["java-sdk"]="fix/all-tests-passing"
-            ["javascript-sdk"]="feat/holdouts"
-            ["kotlin-sdk"]="fix/audit-operator-fixes"
-            ["liquid-sdk"]="feat/comprehensive-test-coverage"
-            ["php-sdk"]="fix/audit-operator-fixes"
-            ["python3-sdk"]="fix/python-sdk-all-tests-passing"
-            ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-            ["ruby-sdk"]="feat/ruby-3.3-compatibility"
-            ["rust-sdk"]="fix/all-tests-passing"
-            ["scala-sdk"]="fix/all-tests-passing"
-            ["swift-sdk"]="feat/cross-sdk-tests-and-fixes"
-            ["vue2-sdk"]="fix/all-tests-passing"
-            ["vue3-sdk"]="fix/jest-config-vue3"
-          )
+          # Per-SDK known-good branches, single source of truth in
+          # cross-sdk-tests/sdk-branches.sh (also used by local runs via
+          # setup-sdks.sh) so CI builds the same branches that pass locally
+          # instead of SDK main, which has API drift vs the wrappers.
+          # Repos not listed fall back to main.
+          source cross-sdk-tests/sdk-branches.sh
           for repo in ${{ matrix.repos }}; do
             branch="${SDK_BRANCHES[$repo]:-main}"
             echo "::group::Cloning absmartly/$repo ($branch)"
@@ -141,31 +122,12 @@ jobs:
 
       - name: Checkout SDK source repos
         run: |
-          # Per-SDK known-good branches. Mirrors the SDK_BRANCHES map in
-          # cross-sdk-tests/setup-sdks.sh (the local-run defaults) so CI builds
-          # the same branches that pass locally instead of SDK main, which has
-          # API drift vs the wrappers. Repos not listed fall back to main.
-          declare -A SDK_BRANCHES=(
-            ["angular-sdk"]="feat/angular-sdk-complete"
-            ["cpp-sdk"]="feat/initial-sdk"
-            ["dotnet-sdk"]="fix/audit-operator-fixes"
-            ["elixir-sdk"]="feat/initial-implementation"
-            ["flutter-sdk"]="fix/audit-operator-fixes"
-            ["go-sdk"]="fix/audit-operator-fixes"
-            ["java-sdk"]="fix/all-tests-passing"
-            ["javascript-sdk"]="feat/holdouts"
-            ["kotlin-sdk"]="fix/audit-operator-fixes"
-            ["liquid-sdk"]="feat/comprehensive-test-coverage"
-            ["php-sdk"]="fix/audit-operator-fixes"
-            ["python3-sdk"]="fix/python-sdk-all-tests-passing"
-            ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-            ["ruby-sdk"]="feat/ruby-3.3-compatibility"
-            ["rust-sdk"]="fix/all-tests-passing"
-            ["scala-sdk"]="fix/all-tests-passing"
-            ["swift-sdk"]="feat/cross-sdk-tests-and-fixes"
-            ["vue2-sdk"]="fix/all-tests-passing"
-            ["vue3-sdk"]="fix/jest-config-vue3"
-          )
+          # Per-SDK known-good branches, single source of truth in
+          # cross-sdk-tests/sdk-branches.sh (also used by local runs via
+          # setup-sdks.sh) so CI builds the same branches that pass locally
+          # instead of SDK main, which has API drift vs the wrappers.
+          # Repos not listed fall back to main.
+          source cross-sdk-tests/sdk-branches.sh
           for repo in javascript-sdk python3-sdk go-sdk; do
             branch="${SDK_BRANCHES[$repo]:-main}"
             echo "::group::Cloning absmartly/$repo ($branch)"
