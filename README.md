@@ -8,10 +8,10 @@ across languages.
 
 ## What's here
 
-- **21 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+- **20 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
   directory:
 
-  `javascript`, `typescript`, `react`, `angular`, `vue2`, `vue3`, `python`,
+  `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 

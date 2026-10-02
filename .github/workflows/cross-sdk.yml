@@ -29,7 +29,6 @@ jobs:
       matrix:
         include:
           - { sdk: javascript, repos: javascript-sdk }
-          - { sdk: typescript, repos: typescript-sdk }
           - { sdk: python,     repos: python3-sdk }
           - { sdk: ruby,       repos: ruby-sdk }
           - { sdk: php,        repos: php-sdk }

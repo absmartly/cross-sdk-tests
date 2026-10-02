@@ -144,7 +144,7 @@ get_cross_service_names() {
 # trips on stale generated files). git clean -dfX only ever deletes files git
 # already ignores, so source is never touched. No-op for non-git or absent dirs.
 clean_js_build_artifacts() {
-  local js_sdks="javascript-sdk typescript-sdk react-sdk vue2-sdk vue3-sdk angular-sdk"
+  local js_sdks="javascript-sdk react-sdk vue2-sdk vue3-sdk angular-sdk"
   for sdk in $js_sdks; do
     local dir="../$sdk"
     [ -d "$dir" ] || continue

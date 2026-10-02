@@ -5,6 +5,7 @@ import re
 import time
 import uuid
 import base64
+import hashlib
 from concurrent.futures import Future
 
 from sdk.absmartly import ABSmartly
@@ -18,7 +19,20 @@ from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
-from sdk.internal.hashing import hash_unit
+try:
+    # sdk.internal.hashing only exists on python3-sdk branches that merged
+    # the public hash-unit-function PR (absmartly/python3-sdk#12), not yet
+    # on the pinned fix/python-sdk-all-tests-passing branch (sdk-branches.sh).
+    # Fall back to the exact same MD5+base64url computation the pinned
+    # branch's Context.get_unit_hash() does internally (sdk/context.py:629-633),
+    # so this isn't an approximation of the SDK's hashing, it's the same
+    # algorithm — just duplicated because that branch doesn't expose it as a
+    # standalone function outside a live Context.
+    from sdk.internal.hashing import hash_unit
+except ImportError:
+    def hash_unit(text):
+        digest = hashlib.md5(text.encode('utf-8')).digest()
+        return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
 import jsons
 import threading
 import urllib.request
