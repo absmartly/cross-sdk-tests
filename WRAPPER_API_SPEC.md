@@ -1095,7 +1095,12 @@ semantic the group's scenarios exercise:
 - two treatments in one period exposing once;
 - a full-on switchback serving `fullOnVariant` with `fullOn: true`;
 - an override winning over the switchback draw;
-- a switchback exposure serializing to exactly the fields of a unit exposure.
+- through the SDK's real publish path (the event handler receives the
+  `PublishEvent`): a unit baseline and then a switchback experiment on the
+  same unit, each published on its own. The switchback publish must carry its
+  exposure with the served variant and every other exposure field, plus the
+  hashed unit. The switchback exposure and the serialized publish event must
+  have exactly the baseline's fields at every depth.
 
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the

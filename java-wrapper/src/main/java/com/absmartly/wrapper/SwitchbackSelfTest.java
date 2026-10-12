@@ -4,11 +4,15 @@ import com.absmartly.sdk.ABSmartly;
 import com.absmartly.sdk.ABSmartlyConfig;
 import com.absmartly.sdk.ContextConfig;
 import com.absmartly.sdk.ContextEventLogger;
+import com.absmartly.sdk.DefaultContextEventSerializer;
 import com.absmartly.sdk.json.ContextData;
 import com.absmartly.sdk.json.Experiment;
 import com.absmartly.sdk.json.ExperimentApplication;
 import com.absmartly.sdk.json.ExperimentVariant;
 import com.absmartly.sdk.json.Exposure;
+import com.absmartly.sdk.json.PublishEvent;
+import com.absmartly.sdk.json.Unit;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Field;
@@ -37,6 +41,9 @@ final class SwitchbackSelfTest {
     private static final long ANCHOR_PERIOD_0 = 1_704_067_200_000L;
     private static final long ANCHOR_PERIOD_1 = ANCHOR_PERIOD_0 - PERIOD_MS;
     private static final long ANCHOR_FUTURE = 4_102_444_800_000L;
+
+    // hashUnit("serving-1"): base64url-no-pad MD5, as published in PublishEvent.units.
+    private static final String SERVING_UNIT_HASH = "8zUG4zeowBfL2OK2oEtOng";
 
     // {clusterUnit, periodIndex, seed, armCount, expectedVariant}, taken from the platform
     // golden vectors, including Long.MIN_VALUE/MAX_VALUE periods and seeds.
@@ -172,9 +179,13 @@ final class SwitchbackSelfTest {
             .setPublishDelay(-1)
             .setRefreshInterval(0);
 
+        List<PublishEvent> published = new CopyOnWriteArrayList<>();
         ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
             .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) -> java8.util.concurrent.CompletableFuture.completedFuture(null))
+            .setContextEventHandler((context, event) -> {
+                published.add(event);
+                return java8.util.concurrent.CompletableFuture.completedFuture(null);
+            })
             .setContextEventLogger(logger);
 
         com.absmartly.sdk.Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
@@ -205,34 +216,121 @@ final class SwitchbackSelfTest {
                 && expect(context, exposures, "full-on", "sb_full_on", 2,
                     new Exposure(511, "sb_full_on", "unit_serving", 2, 0, true, true, false, true, false, false))
                 && checkOverride(context, exposures)
-                && checkPayloadShape(context, exposures);
+                && checkPayloadShape(context, exposures, published);
         } finally {
             context.close();
         }
     }
 
-    // Mirrors the payload scenario: a switchback exposure serializes to exactly the fields of a
-    // unit exposure on the same unit.
-    private static boolean checkPayloadShape(com.absmartly.sdk.Context context, List<Exposure> exposures) {
+    // Mirrors the payload scenario: expose and publish a unit baseline, then expose and publish a
+    // switchback experiment on the same unit. The switchback exposure and its publish event must
+    // have exactly the baseline's fields at every depth, and the published exposure must carry
+    // the served values.
+    private static boolean checkPayloadShape(com.absmartly.sdk.Context context, List<Exposure> exposures,
+            List<PublishEvent> published) throws Exception {
+        // Drain the exposures queued by the earlier checks so each publish below carries one.
+        context.publish();
+
         int before = exposures.size();
         context.getTreatment("sb_unit_baseline");
+        PublishEvent baselineEvent = publishOne(context, published);
         context.getTreatment("sb_payload");
+        PublishEvent switchbackEvent = publishOne(context, published);
         List<Exposure> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
-        if (emitted.size() != 2) {
-            System.out.println(PREFIX + " check payload shape FAILED: expected 2 exposures, got " + emitted);
+        if (emitted.size() != 2 || baselineEvent == null || switchbackEvent == null) {
+            System.out.println(PREFIX + " check payload shape FAILED: expected 2 exposures and 2 publish events, got "
+                + emitted + " and " + baselineEvent + ", " + switchbackEvent);
             return false;
         }
+
         ObjectMapper mapper = new ObjectMapper();
-        Set<String> unitFields = new TreeSet<>();
-        mapper.valueToTree(emitted.get(0)).fieldNames().forEachRemaining(unitFields::add);
-        Set<String> switchbackFields = new TreeSet<>();
-        mapper.valueToTree(emitted.get(1)).fieldNames().forEachRemaining(switchbackFields::add);
-        if (!unitFields.equals(switchbackFields)) {
-            System.out.println(PREFIX + " check payload shape FAILED: unit exposure fields " + unitFields
-                + ", switchback exposure fields " + switchbackFields);
+        String exposureMismatch = shapeMismatch(mapper.valueToTree(emitted.get(0)), mapper.valueToTree(emitted.get(1)),
+            "exposure");
+        if (exposureMismatch != null) {
+            System.out.println(PREFIX + " check payload shape FAILED: " + exposureMismatch);
+            return false;
+        }
+
+        Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 0, 0, true, true, false, false,
+            false, false);
+        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
+            false, false);
+        if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
+            System.out.println(PREFIX + " check published exposures FAILED: baseline " + baselineEvent
+                + ", switchback " + switchbackEvent);
+            return false;
+        }
+
+        // Compare the bytes the SDK's own serializer would send, not the Java objects.
+        DefaultContextEventSerializer serializer = new DefaultContextEventSerializer();
+        JsonNode baselineJson = mapper.readTree(serializer.serialize(baselineEvent));
+        JsonNode switchbackJson = mapper.readTree(serializer.serialize(switchbackEvent));
+        String publishMismatch = shapeMismatch(baselineJson, switchbackJson, "publish");
+        if (publishMismatch != null) {
+            System.out.println(PREFIX + " check publish payload shape FAILED: " + publishMismatch);
             return false;
         }
         return true;
+    }
+
+    private static PublishEvent publishOne(com.absmartly.sdk.Context context, List<PublishEvent> published) {
+        int before = published.size();
+        context.publish();
+        return published.size() == before + 1 ? published.get(before) : null;
+    }
+
+    // The publish event must carry exactly one exposure, equal to expected in every field but
+    // exposedAt, which must be set, and must publish the hashed serving unit.
+    private static boolean publishedExactly(PublishEvent event, Exposure expected) {
+        if (!event.hashed || event.exposures == null || event.exposures.length != 1 || event.units == null) {
+            return false;
+        }
+        Exposure actual = event.exposures[0];
+        boolean exposureMatches = actual.id == expected.id && expected.name.equals(actual.name)
+            && expected.unit.equals(actual.unit) && actual.variant == expected.variant
+            && actual.assigned == expected.assigned && actual.eligible == expected.eligible
+            && actual.overridden == expected.overridden && actual.fullOn == expected.fullOn
+            && actual.custom == expected.custom && actual.audienceMismatch == expected.audienceMismatch
+            && actual.exposedAt > 0;
+        boolean unitMatches = false;
+        for (Unit unit : event.units) {
+            unitMatches |= "unit_serving".equals(unit.type) && SERVING_UNIT_HASH.equals(unit.uid);
+        }
+        return exposureMatches && unitMatches;
+    }
+
+    // Object keys must match exactly and arrays must have equal length, recursively; scalar values
+    // are checked separately.
+    private static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
+        if (baseline.isObject() != actual.isObject() || baseline.isArray() != actual.isArray()) {
+            return path + ": baseline is " + baseline.getNodeType() + ", got " + actual.getNodeType();
+        }
+        if (baseline.isObject()) {
+            Set<String> baselineKeys = new TreeSet<>();
+            baseline.fieldNames().forEachRemaining(baselineKeys::add);
+            Set<String> actualKeys = new TreeSet<>();
+            actual.fieldNames().forEachRemaining(actualKeys::add);
+            if (!baselineKeys.equals(actualKeys)) {
+                return path + ": baseline fields " + baselineKeys + ", got " + actualKeys;
+            }
+            for (String key : baselineKeys) {
+                String mismatch = shapeMismatch(baseline.get(key), actual.get(key), path + "." + key);
+                if (mismatch != null) {
+                    return mismatch;
+                }
+            }
+        } else if (baseline.isArray()) {
+            if (baseline.size() != actual.size()) {
+                return path + ": baseline length " + baseline.size() + ", got " + actual.size();
+            }
+            for (int i = 0; i < baseline.size(); i++) {
+                String mismatch = shapeMismatch(baseline.get(i), actual.get(i), path + "[" + i + "]");
+                if (mismatch != null) {
+                    return mismatch;
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean checkOverride(com.absmartly.sdk.Context context, List<Exposure> exposures) {
