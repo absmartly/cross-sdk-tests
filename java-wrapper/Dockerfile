@@ -5,7 +5,7 @@ WORKDIR /build
 # SDK_SOURCE_DIR lets local validation point at an unreleased SDK checkout (e.g. a
 # feature-branch worktree) that sits alongside cross-sdk-tests in the build context.
 # CI keeps the default "java-sdk" sibling checkout; see docker-compose.local-sdk.yml
-# for the override used to validate against a local branch named java-sdk-holdouts.
+# for the override, which takes the directory from JAVA_SDK_SOURCE_DIR.
 ARG SDK_SOURCE_DIR=java-sdk
 
 # core-api version published to the local maven repo. Must match the
