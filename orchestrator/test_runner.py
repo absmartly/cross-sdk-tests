@@ -17,6 +17,12 @@ import requests
 # so main() prints a loud warning at startup when the name is absent.
 CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
 
+# Context-free pure-function actions (capability `switchback`), routed to fixed wrapper paths.
+SWITCHBACK_ACTIONS = {
+    "switchbackAssign": "/switchback/assign",
+    "switchbackPermutation": "/switchback/permutation",
+}
+
 
 class Colors:
     GREEN = "\033[92m"
@@ -375,6 +381,11 @@ class TestOrchestrator:
 
                 elif action == "diagnostic":
                     response = requests.post(f"{base_url}/diagnostic", json=params or {}, timeout=5)
+                    response.raise_for_status()
+                    data = response.json()
+
+                elif action in SWITCHBACK_ACTIONS:
+                    response = requests.post(f"{base_url}{SWITCHBACK_ACTIONS[action]}", json=params, timeout=5)
                     response.raise_for_status()
                     data = response.json()
 

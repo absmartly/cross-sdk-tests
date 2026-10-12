@@ -122,6 +122,64 @@ public class WrapperController {
         }
     }
 
+    // clusterUnit is the assigner input (the SDK's hashed unit) and is not hashed again; 64-bit
+    // values arrive as decimal strings. See WRAPPER_API_SPEC.md, capability `switchback`.
+    @PostMapping("/switchback/assign")
+    public ResponseEntity<?> switchbackAssign(@RequestBody Map<String, Object> request) {
+        return switchbackCall(() -> SwitchbackAssignerAccess.assign(stringParam(request, "clusterUnit"),
+            longParam(request, "periodIndex"), longParam(request, "seed"), intParam(request, "armCount")));
+    }
+
+    @PostMapping("/switchback/permutation")
+    public ResponseEntity<?> switchbackPermutation(@RequestBody Map<String, Object> request) {
+        return switchbackCall(() -> {
+            int[] permutation = SwitchbackAssignerAccess.permutation(stringParam(request, "clusterUnit"),
+                longParam(request, "cycleIndex"), longParam(request, "seed"), intParam(request, "armCount"));
+            List<Integer> result = new ArrayList<>(permutation.length);
+            for (int arm : permutation) {
+                result.add(arm);
+            }
+            return result;
+        });
+    }
+
+    private ResponseEntity<?> switchbackCall(java.util.function.Supplier<Object> call) {
+        if (!SwitchbackSelfTest.run()) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(Collections.singletonMap("error", "switchback capability not available"));
+        }
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", call.get());
+            response.put("events", Collections.emptyList());
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", String.valueOf(e.getMessage())));
+        }
+    }
+
+    private static String stringParam(Map<String, Object> request, String name) {
+        Object value = request.get(name);
+        if (!(value instanceof String)) {
+            throw new IllegalArgumentException(name + " must be a string");
+        }
+        return (String) value;
+    }
+
+    // Long.parseLong is exact over the full signed 64-bit range and rejects anything else.
+    private static long longParam(Map<String, Object> request, String name) {
+        return Long.parseLong(stringParam(request, name));
+    }
+
+    private static int intParam(Map<String, Object> request, String name) {
+        Object value = request.get(name);
+        if (!(value instanceof Integer)) {
+            throw new IllegalArgumentException(name + " must be an integer");
+        }
+        return (Integer) value;
+    }
+
     @PutMapping("/context_payload/{payloadId}")
     public ResponseEntity<?> storePayload(@PathVariable String payloadId, @RequestBody Map<String, Object> request) {
         try {
