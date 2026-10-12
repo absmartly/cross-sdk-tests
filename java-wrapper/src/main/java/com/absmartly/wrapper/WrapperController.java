@@ -18,6 +18,15 @@ public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SwitchbackFunctions switchback;
+
+    public WrapperController() {
+        this(SwitchbackFunctions.LINKED);
+    }
+
+    WrapperController(SwitchbackFunctions switchback) {
+        this.switchback = switchback;
+    }
 
     private String translateEndpoint(String endpoint) {
         if (endpoint == null) return null;
@@ -126,14 +135,14 @@ public class WrapperController {
     // values arrive as decimal strings. See WRAPPER_API_SPEC.md, capability `switchback`.
     @PostMapping("/switchback/assign")
     public ResponseEntity<?> switchbackAssign(@RequestBody Map<String, Object> request) {
-        return switchbackCall(() -> SwitchbackAssignerAccess.assign(stringParam(request, "clusterUnit"),
+        return switchbackCall(() -> switchback.assign(stringParam(request, "clusterUnit"),
             longParam(request, "periodIndex"), longParam(request, "seed"), intParam(request, "armCount")));
     }
 
     @PostMapping("/switchback/permutation")
     public ResponseEntity<?> switchbackPermutation(@RequestBody Map<String, Object> request) {
         return switchbackCall(() -> {
-            int[] permutation = SwitchbackAssignerAccess.permutation(stringParam(request, "clusterUnit"),
+            int[] permutation = switchback.permutation(stringParam(request, "clusterUnit"),
                 longParam(request, "cycleIndex"), longParam(request, "seed"), intParam(request, "armCount"));
             List<Integer> result = new ArrayList<>(permutation.length);
             for (int arm : permutation) {
@@ -146,7 +155,7 @@ public class WrapperController {
     // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
     // assigner reports its actual outputs rather than a blanket refusal.
     private ResponseEntity<?> switchbackCall(java.util.function.Supplier<Object> call) {
-        if (!SwitchbackAssignerAccess.isAvailable()) {
+        if (!switchback.isAvailable()) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
                 .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
         }

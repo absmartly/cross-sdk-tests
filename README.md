@@ -52,6 +52,12 @@ across languages.
   over HTTP and validates responses against the expected results baked into the
   scenarios (the JavaScript SDK is the canonical reference).
 
+  Harness unit tests (`sameShapeAs`, capability gating, the switchback
+  generator's `--check`) run in under a second with
+  `python3 -m pytest orchestrator/tests -q` (needs `pytest` and `requests`).
+  The java wrapper's switchback endpoint tests run inside the wrapper's
+  `builder` image stage with `gradle test`.
+
 - **A live-backend e2e runner** (`orchestrator/e2e_runner.py`) that drives the
   wrappers against a real ABsmartly environment and verifies data arrives.
 

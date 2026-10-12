@@ -85,7 +85,7 @@ final class SwitchbackSelfTest {
 
     private static boolean runSafely() {
         try {
-            if (!checkGoldenSample() || !checkContextServing()) {
+            if (!checkGoldenSample(SwitchbackFunctions.LINKED) || !checkContextServing()) {
                 return false;
             }
             System.out.println(PREFIX + " behavioral self-test PASSED");
@@ -97,13 +97,13 @@ final class SwitchbackSelfTest {
         }
     }
 
-    private static boolean checkGoldenSample() {
-        if (!SwitchbackAssignerAccess.isAvailable()) {
+    static boolean checkGoldenSample(SwitchbackFunctions functions) {
+        if (!functions.isAvailable()) {
             System.out.println(PREFIX + " FAILED: linked core-api has no SwitchbackAssigner");
             return false;
         }
         for (String[] c : ASSIGN_CASES) {
-            int actual = SwitchbackAssignerAccess.assign(c[0], Long.parseLong(c[1]), Long.parseLong(c[2]),
+            int actual = functions.assign(c[0], Long.parseLong(c[1]), Long.parseLong(c[2]),
                 Integer.parseInt(c[3]));
             if (actual != Integer.parseInt(c[4])) {
                 System.out.println(PREFIX + " golden assign FAILED for " + Arrays.toString(c) + ": got " + actual);
@@ -112,7 +112,7 @@ final class SwitchbackSelfTest {
         }
         for (Object[] c : PERMUTATION_CASES) {
             int[] expected = (int[]) c[3];
-            int[] actual = SwitchbackAssignerAccess.permutation((String) c[0], Long.parseLong((String) c[1]),
+            int[] actual = functions.permutation((String) c[0], Long.parseLong((String) c[1]),
                 Long.parseLong((String) c[2]), expected.length);
             if (!Arrays.equals(expected, actual)) {
                 System.out.println(PREFIX + " golden permutation FAILED for " + c[0] + "/" + c[1] + "/" + c[2]
