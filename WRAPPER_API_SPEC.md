@@ -1060,3 +1060,49 @@ exposure sequence published (which experiments/holdouts fire, in what order,
 at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
+
+### Capability: `switchback`
+
+Gates the Switchback scenario group: switchback serving on existing endpoints
+(`treatment`, `publish`, ...) for experiments with
+`randomizationType: "switchback"`.
+The SDK contract is the SDK's own switchback documentation (for java-sdk,
+`SWITCHBACK.md`); the assignment algorithm is pinned by the platform's golden
+vectors.
+
+Advertise `switchback` truthfully and dynamically, on the same terms as
+`holdouts`: never as a static flag, and never because the SDK merely
+deserializes the switchback wire fields (`randomizationType`,
+`switchbackStartAt`, `switchbackPeriodMs`, ...) or links an assignment class.
+An SDK that parses the fields but serves sticky unit assignment, or whose
+assigner drifts from the golden vectors, must report `false`.
+
+The capability means a behavioral self-test passed. It must cover every
+semantic the group's scenarios exercise:
+
+- a sample of the golden vectors through the SDK's own assigner and
+  permutation function, including `Long.MIN_VALUE`/`Long.MAX_VALUE` periods,
+  cycles and seeds and integer cluster units;
+- switchback serving through a real context on clock-free grids (see below):
+  2, 3 and 10 arms in period 0 and period 1, each checked against
+  `assignSwitchback(hashUnit(uid), period, seed, arms)`;
+- pre-anchor and missing-anchor experiments resolving to variant 0 with
+  `assigned: true, eligible: false`, exposed once;
+- a cluster unit absent from the context resolving to variant 0 with
+  `assigned: false`;
+- two treatments in one period exposing once;
+- a full-on switchback serving `fullOnVariant` with `fullOn: true`;
+- an override winning over the switchback draw;
+- a switchback exposure serializing to exactly the fields of a unit exposure.
+
+Every check compares the treatment and the complete exposure record (every
+field except `exposedAt`). Run the self-test lazily on first use, cache the
+result, and catch `Throwable` around it, exactly as for `holdouts`.
+
+Wrappers have no clock control and none is added. The Context scenarios are
+deterministic because their grids keep "now" inside one known period for
+decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the
+anchor `switchbackStartAt` is hour-aligned at 2024-01-01T00:00Z (period 0),
+one period earlier at 1978-05-15T08:00Z (period 1), or 2100-01-01T00:00Z
+(before the anchor, so ineligible). All three hold until 2069-08-18T16:00Z.
+Clock rollover between periods stays in the SDKs' own test suites.
