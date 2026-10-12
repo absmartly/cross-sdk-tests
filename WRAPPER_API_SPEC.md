@@ -1156,3 +1156,7 @@ Both endpoints are pure functions with no context. Request rules:
   string, which is how the platform normalizes a numeric unit.
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2`) returns 400 with `{"error": "..."}`.
+
+The golden-vector scenarios are generated from
+`fixtures/switchback/golden-vectors.json` by
+`generate_switchback_scenarios.py`; do not edit them by hand.
