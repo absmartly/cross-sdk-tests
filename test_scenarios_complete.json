@@ -47392,7 +47392,7 @@
   },
   {
     "name": "242 - Switchback - Inertness - Unit Experiments Unaffected By Switchback Data",
-    "description": "INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a switchback experiment and unit experiments, two of which also carry every switchback wire field (one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment and exposure equal plain unit assignment, and the uid is chosen so the switchback draw would differ. The switchback experiment is never queried: an SDK without switchback serves it a sticky unit assignment that is documented and SDK-specific.",
+    "description": "INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a switchback experiment and unit experiments, two of which also carry every switchback wire field (one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment, exposure and published exposure equal plain unit assignment in every field, the uid is chosen so the switchback draw would differ, and each exposure and publish event has exactly the fields of the plain unit experiment's at every depth. The switchback experiment is never queried: an SDK without switchback serves it a sticky unit assignment that is documented and SDK-specific.",
     "contextData": {
       "experiments": [
         {
@@ -47685,6 +47685,34 @@
         }
       },
       {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 131,
+                    "name": "exp_inert_unit_plain",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
         "action": "treatment",
         "params": {
           "experimentName": "exp_inert_unit_typed"
@@ -47705,7 +47733,37 @@
                 "fullOn": false,
                 "custom": false,
                 "audienceMismatch": false
-              }
+              },
+              "sameShapeAs": 1
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 132,
+                    "name": "exp_inert_unit_typed",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameShapeAs": 2
             }
           ]
         }
@@ -47731,7 +47789,37 @@
                 "fullOn": false,
                 "custom": false,
                 "audienceMismatch": false
-              }
+              },
+              "sameShapeAs": 1
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 133,
+                    "name": "exp_inert_unit_untyped",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameShapeAs": 2
             }
           ]
         }
@@ -47757,7 +47845,8 @@
                 "fullOn": false,
                 "custom": false,
                 "audienceMismatch": false
-              }
+              },
+              "sameShapeAs": 1
             }
           ]
         }
@@ -47773,27 +47862,20 @@
               "data": {
                 "exposures": [
                   {
-                    "id": 131,
-                    "name": "exp_inert_unit_plain",
-                    "variant": 1
-                  },
-                  {
-                    "id": 132,
-                    "name": "exp_inert_unit_typed",
-                    "variant": 1
-                  },
-                  {
-                    "id": 133,
-                    "name": "exp_inert_unit_untyped",
-                    "variant": 1
-                  },
-                  {
                     "id": 134,
                     "name": "exp_inert_unit_store",
-                    "variant": 1
+                    "unit": "store_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "sameShapeAs": 2
             }
           ]
         }

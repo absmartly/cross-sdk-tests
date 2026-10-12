@@ -517,21 +517,30 @@ def inertness_scenarios(_golden: dict) -> list:
     experiments = [switchback, plain, typed_unit, untyped, same_unit]
     units = {"session_id": session_uid, "store_id": store_uid}
 
-    steps, exposed = [], []
+    # Each unit experiment is exposed and published on its own. The plain experiment (steps 1 and
+    # 2) is the shape baseline: the others' exposure and publish events must have exactly its
+    # fields at every depth, and every published exposure is pinned in full.
+    steps = []
     for exp, uid in ((plain, session_uid), (typed_unit, session_uid), (untyped, session_uid), (same_unit, store_uid)):
         variant = unit_variant(uid, exp["split"], exp["seedHi"], exp["seedLo"])
-        exposed.append(exposure(exp, variant))
-        steps.append(treatment_step(exp, variant, exposed[-1]))
-    steps.append(publish_step(exposed))
+        exposed = exposure(exp, variant)
+        treatment = treatment_step(exp, variant, exposed)
+        publish = {"action": "publish", "params": {},
+                   "expect": {"result": None, "events": [{"type": "publish", "data": {"exposures": [exposed]}}]}}
+        if steps:
+            treatment["expect"]["events"][0]["sameShapeAs"] = 1
+            publish["expect"]["events"][0]["sameShapeAs"] = 2
+        steps += [treatment, publish]
 
     scenario = context_scenario(
         "Inertness - Unit Experiments Unaffected By Switchback Data",
         ("INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a "
          "switchback experiment and unit experiments, two of which also carry every switchback wire field "
-         "(one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment and "
-         "exposure equal plain unit assignment, and the uid is chosen so the switchback draw would differ. "
-         "The switchback experiment is never queried: an SDK without switchback serves it a sticky unit "
-         "assignment that is documented and SDK-specific."),
+         "(one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment, "
+         "exposure and published exposure equal plain unit assignment in every field, the uid is chosen so "
+         "the switchback draw would differ, and each exposure and publish event has exactly the fields of "
+         "the plain unit experiment's at every depth. The switchback experiment is never queried: an SDK "
+         "without switchback serves it a sticky unit assignment that is documented and SDK-specific."),
         experiments, units, steps)
     del scenario["requires"]
     return [scenario]
