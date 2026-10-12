@@ -252,6 +252,7 @@ class TestOrchestrator:
         failures: List[Dict[str, Any]] = []
         # Successful step responses by index, for `sameShapeAs` references.
         responses: List[Any] = [None] * len(steps)
+        pure_session: Optional[requests.Session] = None
 
         for step_index, step in enumerate(steps):
             action = step.get("action")
@@ -387,7 +388,10 @@ class TestOrchestrator:
                     data = response.json()
 
                 elif action in SWITCHBACK_ACTIONS:
-                    response = requests.post(f"{base_url}{SWITCHBACK_ACTIONS[action]}", json=params, timeout=5)
+                    # One keep-alive session for a scenario's pure-function steps (up to 294 calls).
+                    if pure_session is None:
+                        pure_session = requests.Session()
+                    response = pure_session.post(f"{base_url}{SWITCHBACK_ACTIONS[action]}", json=params, timeout=5)
                     response.raise_for_status()
                     data = response.json()
 
@@ -458,6 +462,9 @@ class TestOrchestrator:
                 )
             except Exception as exc:
                 failures.append({"step": step_index, "action": action, "error": str(exc)})
+
+        if pure_session is not None:
+            pure_session.close()
 
         if context_id:
             try:
