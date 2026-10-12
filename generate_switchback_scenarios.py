@@ -10,6 +10,8 @@ The group is derived, never hand-edited:
   * Context scenarios exercise switchback serving through createContextWith/treatment/publish.
     Their expected variants come from the reference below applied to the SDK's hashed unit,
     and the reference must reproduce every golden vector before anything is written.
+  * The inertness scenario is ungated: every SDK, switchback-aware or not, must serve its unit
+    experiments unchanged when switchback experiments and fields are present in the payload.
 
 Usage:
     python3 generate_switchback_scenarios.py          # rewrite the group in place
@@ -482,6 +484,59 @@ def serving_scenarios(_golden: dict) -> list:
     ]
 
 
+def inertness_scenarios(_golden: dict) -> list:
+    """Ungated: must pass on every SDK. Unit experiments are served exactly as without any
+    switchback data; the switchback experiment itself is never queried, because a non-capable
+    SDK serves it a sticky unit assignment whose value differs per SDK."""
+    seed_hi, seed_lo, split = ARMS[2]
+    sb_fields = {
+        "switchbackClusterUnitType": "session_id",
+        "switchbackStartAt": ANCHOR_PERIOD_0,
+        "switchbackPeriodMs": PERIOD_MS,
+        "switchbackCarryoverDurationMs": 0,
+        "switchbackBurnInDurationMs": 0,
+        "switchbackBurnOutDurationMs": 0,
+        "switchbackDesignType": "balanced_block",
+        "switchbackEstimand": "global_average_treatment_effect",
+    }
+
+    # A uid whose unit variant is 1 and whose switchback draw is 0: a unit experiment carrying
+    # switchback fields that were served as a switchback, or fell back to control, would differ.
+    def discriminating(k):
+        uid = f"inert-{k}"
+        return unit_variant(uid, split, seed_hi, seed_lo) == 1 and switchback_variant(uid, 0, 2) == 0
+
+    session_uid = next(f"inert-{k}" for k in range(10_000) if discriminating(k))
+    store_uid = "inert-store-0"
+
+    switchback = switchback_experiment(130, "exp_inert_switchback", "store_id", 2, ANCHOR_PERIOD_0)
+    plain = experiment(131, "exp_inert_unit_plain", "session_id", 2)
+    typed_unit = experiment(132, "exp_inert_unit_typed", "session_id", 2, randomizationType="unit", **sb_fields)
+    untyped = experiment(133, "exp_inert_unit_untyped", "session_id", 2, **sb_fields)
+    same_unit = experiment(134, "exp_inert_unit_store", "store_id", 2)
+    experiments = [switchback, plain, typed_unit, untyped, same_unit]
+    units = {"session_id": session_uid, "store_id": store_uid}
+
+    steps, exposed = [], []
+    for exp, uid in ((plain, session_uid), (typed_unit, session_uid), (untyped, session_uid), (same_unit, store_uid)):
+        variant = unit_variant(uid, exp["split"], exp["seedHi"], exp["seedLo"])
+        exposed.append(exposure(exp, variant))
+        steps.append(treatment_step(exp, variant, exposed[-1]))
+    steps.append(publish_step(exposed))
+
+    scenario = context_scenario(
+        "Inertness - Unit Experiments Unaffected By Switchback Data",
+        ("INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a "
+         "switchback experiment and unit experiments, two of which also carry every switchback wire field "
+         "(one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment and "
+         "exposure equal plain unit assignment, and the uid is chosen so the switchback draw would differ. "
+         "The switchback experiment is never queried: an SDK without switchback serves it a sticky unit "
+         "assignment that is documented and SDK-specific."),
+        experiments, units, steps)
+    del scenario["requires"]
+    return [scenario]
+
+
 def build_group(golden: dict, first_number: int) -> list:
     scenarios = []
     for builder in BUILDERS:
@@ -491,7 +546,7 @@ def build_group(golden: dict, first_number: int) -> list:
     return scenarios
 
 
-BUILDERS = [golden_scenarios, period_scenarios, eligibility_scenarios, serving_scenarios]
+BUILDERS = [golden_scenarios, period_scenarios, eligibility_scenarios, serving_scenarios, inertness_scenarios]
 
 
 def write(scenarios: list, path: str) -> None:
