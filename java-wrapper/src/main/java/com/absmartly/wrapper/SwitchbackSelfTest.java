@@ -2,6 +2,7 @@ package com.absmartly.wrapper;
 
 import com.absmartly.sdk.ABSmartly;
 import com.absmartly.sdk.ABSmartlyConfig;
+import com.absmartly.sdk.Context;
 import com.absmartly.sdk.ContextConfig;
 import com.absmartly.sdk.ContextEventLogger;
 import com.absmartly.sdk.DefaultContextEventSerializer;
@@ -14,6 +15,7 @@ import com.absmartly.sdk.json.PublishEvent;
 import com.absmartly.sdk.json.Unit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java8.util.concurrent.CompletableFuture;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -68,7 +70,7 @@ final class SwitchbackSelfTest {
 
     private static volatile Boolean cachedResult;
 
-    /** Runs the probe lazily and exactly once so probe failures cannot prevent startup. */
+    // Runs the probe lazily and exactly once so probe failures cannot prevent startup.
     static boolean run() {
         Boolean result = cachedResult;
         if (result == null) {
@@ -162,8 +164,8 @@ final class SwitchbackSelfTest {
 
         List<Exposure> exposures = new CopyOnWriteArrayList<>();
         ContextEventLogger logger = (context, type, data) -> {
-            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure) {
-                exposures.add((Exposure) data);
+            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure exposure) {
+                exposures.add(exposure);
             }
         };
 
@@ -184,11 +186,11 @@ final class SwitchbackSelfTest {
             .setContextDataProvider(new DummyContextDataProvider())
             .setContextEventHandler((context, event) -> {
                 published.add(event);
-                return java8.util.concurrent.CompletableFuture.completedFuture(null);
+                return CompletableFuture.completedFuture(null);
             })
             .setContextEventLogger(logger);
 
-        com.absmartly.sdk.Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
+        Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
         context.waitUntilReady();
         if (!context.isReady() || context.isFailed()) {
             System.out.println(PREFIX + " FAILED: context not ready (failed=" + context.isFailed() + ")");
@@ -226,7 +228,7 @@ final class SwitchbackSelfTest {
     // switchback experiment on the same unit. The switchback exposure and its publish event must
     // have exactly the baseline's fields at every depth, and the published exposure must carry
     // the served values.
-    private static boolean checkPayloadShape(com.absmartly.sdk.Context context, List<Exposure> exposures,
+    private static boolean checkPayloadShape(Context context, List<Exposure> exposures,
             List<PublishEvent> published) throws Exception {
         // Drain the exposures queued by the earlier checks so each publish below carries one.
         context.publish();
@@ -313,7 +315,7 @@ final class SwitchbackSelfTest {
         return "publish.units lacks the hashed serving unit: " + event.get("units");
     }
 
-    private static PublishEvent publishOne(com.absmartly.sdk.Context context, List<PublishEvent> published) {
+    private static PublishEvent publishOne(Context context, List<PublishEvent> published) {
         int before = published.size();
         context.publish();
         return published.size() == before + 1 ? published.get(before) : null;
@@ -325,18 +327,21 @@ final class SwitchbackSelfTest {
         if (!event.hashed || event.exposures == null || event.exposures.length != 1 || event.units == null) {
             return false;
         }
-        Exposure actual = event.exposures[0];
-        boolean exposureMatches = actual.id == expected.id && expected.name.equals(actual.name)
+        boolean unitMatches = false;
+        for (Unit unit : event.units) {
+            unitMatches |= "unit_serving".equals(unit.type) && SERVING_UNIT_HASH.equals(unit.uid);
+        }
+        return servedAs(event.exposures[0], expected) && unitMatches;
+    }
+
+    // Every Exposure field equals expected, except exposedAt, which must be set.
+    private static boolean servedAs(Exposure actual, Exposure expected) {
+        return actual.id == expected.id && expected.name.equals(actual.name)
             && expected.unit.equals(actual.unit) && actual.variant == expected.variant
             && actual.assigned == expected.assigned && actual.eligible == expected.eligible
             && actual.overridden == expected.overridden && actual.fullOn == expected.fullOn
             && actual.custom == expected.custom && actual.audienceMismatch == expected.audienceMismatch
             && actual.exposedAt > 0;
-        boolean unitMatches = false;
-        for (Unit unit : event.units) {
-            unitMatches |= "unit_serving".equals(unit.type) && SERVING_UNIT_HASH.equals(unit.uid);
-        }
-        return exposureMatches && unitMatches;
     }
 
     // Object keys must match exactly and arrays must have equal length, recursively; scalar values
@@ -373,7 +378,7 @@ final class SwitchbackSelfTest {
         return null;
     }
 
-    private static boolean checkOverride(com.absmartly.sdk.Context context, List<Exposure> exposures) {
+    private static boolean checkOverride(Context context, List<Exposure> exposures) {
         context.setOverride("sb_override", 2);
         return expect(context, exposures, "override", "sb_override", 2,
             new Exposure(512, "sb_override", "unit_serving", 2, 0, false, true, true, false, false, false));
@@ -423,11 +428,8 @@ final class SwitchbackSelfTest {
         return new Exposure(id, name, unitType, variant, 0, true, true, false, false, false, false);
     }
 
-    /**
-     * One getTreatment call: the treatment and the exposures it emits must match exactly, every
-     * Exposure field except exposedAt included.
-     */
-    private static boolean expect(com.absmartly.sdk.Context context, List<Exposure> exposures, String check,
+    // One getTreatment call: the treatment and every exposure it emits must match exactly.
+    private static boolean expect(Context context, List<Exposure> exposures, String check,
             String experimentName, int expectedTreatment, Exposure... expectedExposures) {
         int before = exposures.size();
         int treatment = context.getTreatment(experimentName);
@@ -435,14 +437,7 @@ final class SwitchbackSelfTest {
 
         boolean matches = treatment == expectedTreatment && emitted.size() == expectedExposures.length;
         for (int i = 0; matches && i < expectedExposures.length; i++) {
-            Exposure actual = emitted.get(i);
-            Exposure expected = expectedExposures[i];
-            matches = actual.id == expected.id && expected.name.equals(actual.name)
-                && expected.unit.equals(actual.unit) && actual.variant == expected.variant
-                && actual.assigned == expected.assigned && actual.eligible == expected.eligible
-                && actual.overridden == expected.overridden && actual.fullOn == expected.fullOn
-                && actual.custom == expected.custom && actual.audienceMismatch == expected.audienceMismatch
-                && actual.exposedAt > 0;
+            matches = servedAs(emitted.get(i), expectedExposures[i]);
         }
         if (!matches) {
             System.out.println(PREFIX + " check " + check + " FAILED: expected treatment=" + expectedTreatment

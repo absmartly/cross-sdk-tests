@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 
 @RestController
 public class WrapperController {
@@ -154,7 +155,7 @@ public class WrapperController {
 
     // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
     // assigner reports its actual outputs rather than a blanket refusal.
-    private ResponseEntity<?> switchbackCall(java.util.function.Supplier<Object> call) {
+    private ResponseEntity<?> switchbackCall(Supplier<Object> call) {
         if (!switchback.isAvailable()) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
                 .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
@@ -171,11 +172,10 @@ public class WrapperController {
     }
 
     private static String stringParam(Map<String, Object> request, String name) {
-        Object value = request.get(name);
-        if (!(value instanceof String)) {
+        if (!(request.get(name) instanceof String value)) {
             throw new IllegalArgumentException(name + " must be a string");
         }
-        return (String) value;
+        return value;
     }
 
     // Long.parseLong is exact over the full signed 64-bit range and rejects anything else.
@@ -184,11 +184,10 @@ public class WrapperController {
     }
 
     private static int intParam(Map<String, Object> request, String name) {
-        Object value = request.get(name);
-        if (!(value instanceof Integer)) {
+        if (!(request.get(name) instanceof Integer value)) {
             throw new IllegalArgumentException(name + " must be an integer");
         }
-        return (Integer) value;
+        return value;
     }
 
     @PutMapping("/context_payload/{payloadId}")

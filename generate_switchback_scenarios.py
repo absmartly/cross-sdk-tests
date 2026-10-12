@@ -243,9 +243,6 @@ ARMS = {
     10: (2147483647, -1, [0.1] * 10),
 }
 
-EXPOSURE_KEYS = ("id", "name", "unit", "variant", "exposedAt", "assigned", "eligible", "overridden",
-                 "fullOn", "custom", "audienceMismatch")
-
 
 def switchback_variant(uid: str, period: int, arm_count: int) -> int:
     seed_hi, seed_lo, _ = ARMS[arm_count]

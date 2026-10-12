@@ -550,9 +550,6 @@ class TestOrchestrator:
                         reference, error = self.resolve_reference(
                             prior_responses, expected_event["sameShapeAs"], step_index, i
                         )
-                        mismatch = None
-                        if error is None:
-                            mismatch = self.shape_mismatch(actual_event.get("data"), reference, "data")
                         if error is not None:
                             failures.append(
                                 {
@@ -563,7 +560,7 @@ class TestOrchestrator:
                                     "actual": error,
                                 }
                             )
-                        elif mismatch is not None:
+                        elif (mismatch := self.shape_mismatch(actual_event.get("data"), reference, "data")) is not None:
                             failures.append(
                                 {
                                     "step": step_index,
@@ -617,7 +614,7 @@ class TestOrchestrator:
             return None, f"reference step {reference} event {event_index} has no data"
         return data, None
 
-    def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Any:
+    def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Optional[Tuple[str, Any, Any]]:
         """`sameShapeAs: <step>` compares an event's data with the same-index event the SDK
         emitted at an earlier step: object key sets must be equal at every depth and arrays must
         have equal length, element by element. Values are not compared (`data` does that), so a

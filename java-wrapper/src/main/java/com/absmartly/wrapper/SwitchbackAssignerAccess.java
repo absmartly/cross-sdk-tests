@@ -56,11 +56,10 @@ final class SwitchbackAssignerAccess {
         try {
             return method.invoke(null, args);
         } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException) {
-                throw (RuntimeException) cause;
+            if (e.getCause() instanceof RuntimeException cause) {
+                throw cause;
             }
-            throw new IllegalStateException(cause);
+            throw new IllegalStateException(e.getCause());
         } catch (IllegalAccessException e) {
             throw new IllegalStateException(e);
         }
