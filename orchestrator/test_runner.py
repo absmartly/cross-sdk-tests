@@ -540,9 +540,23 @@ class TestOrchestrator:
                         )
 
                     if "sameShapeAs" in expected_event:
-                        reference = self.reference_event(prior_responses, expected_event["sameShapeAs"], i)
-                        mismatch = self.shape_mismatch(actual_event.get("data"), reference, "data")
-                        if mismatch is not None:
+                        reference, error = self.resolve_reference(
+                            prior_responses, expected_event["sameShapeAs"], step_index, i
+                        )
+                        mismatch = None
+                        if error is None:
+                            mismatch = self.shape_mismatch(actual_event.get("data"), reference, "data")
+                        if error is not None:
+                            failures.append(
+                                {
+                                    "step": step_index,
+                                    "action": action,
+                                    "field": f"events[{i}].sameShapeAs",
+                                    "expected": "a usable baseline event",
+                                    "actual": error,
+                                }
+                            )
+                        elif mismatch is not None:
                             failures.append(
                                 {
                                     "step": step_index,
@@ -574,13 +588,27 @@ class TestOrchestrator:
         return failures
 
     @staticmethod
-    def reference_event(prior_responses: List[Any], step: int, index: int) -> Any:
-        if step >= len(prior_responses) or not isinstance(prior_responses[step], dict):
-            return {"<missing reference step>": step}
-        events = prior_responses[step].get("events") or []
-        if index >= len(events):
-            return {"<missing reference event>": index}
-        return events[index].get("data")
+    def resolve_reference(
+        prior_responses: List[Any], reference: Any, step_index: int, event_index: int
+    ) -> Tuple[Any, Optional[str]]:
+        """Resolve `sameShapeAs: <step>` to the data of the same-index event of an earlier step.
+        Returns (data, None), or (None, reason) when there is no usable baseline: the reference
+        is not an integer in [0, step_index), that step has no response, or its event or data is
+        missing or null. Empty objects and arrays are valid baselines."""
+        if isinstance(reference, bool) or not isinstance(reference, int):
+            return None, f"reference must be an integer step index, got {reference!r}"
+        if not 0 <= reference < step_index:
+            return None, f"reference step {reference} is not an earlier step of step {step_index}"
+        response = prior_responses[reference] if reference < len(prior_responses) else None
+        if not isinstance(response, dict):
+            return None, f"reference step {reference} has no response"
+        events = response.get("events")
+        if not isinstance(events, list) or event_index >= len(events) or not isinstance(events[event_index], dict):
+            return None, f"reference step {reference} has no event {event_index}"
+        data = events[event_index].get("data")
+        if data is None:
+            return None, f"reference step {reference} event {event_index} has no data"
+        return data, None
 
     def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Any:
         """`sameShapeAs: <step>` compares an event's data with the same-index event the SDK
