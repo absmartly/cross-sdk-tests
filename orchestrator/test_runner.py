@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -250,6 +250,8 @@ class TestOrchestrator:
         context_id = None
         payload_id = None
         failures: List[Dict[str, Any]] = []
+        # Successful step responses by index, for `sameShapeAs` references.
+        responses: List[Any] = [None] * len(steps)
 
         for step_index, step in enumerate(steps):
             action = step.get("action")
@@ -399,9 +401,10 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
-                step_failures = self.validate_step(step_index, action, data, expected)
+                step_failures = self.validate_step(step_index, action, data, expected, responses)
                 if step_failures:
                     failures.extend(step_failures)
+                responses[step_index] = data
 
             except requests.HTTPError as exc:
                 error_msg = None
@@ -470,8 +473,10 @@ class TestOrchestrator:
         action: str,
         actual: Dict[str, Any],
         expected: Dict[str, Any],
+        prior_responses: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
+        prior_responses = prior_responses or []
 
         # validate_step only runs on the success path (raise_for_status did not
         # raise), so if the scenario expected an error, the call succeeding is
@@ -534,6 +539,21 @@ class TestOrchestrator:
                             }
                         )
 
+                    if "sameShapeAs" in expected_event:
+                        reference = self.reference_event(prior_responses, expected_event["sameShapeAs"], i)
+                        mismatch = self.shape_mismatch(actual_event.get("data"), reference, "data")
+                        if mismatch is not None:
+                            failures.append(
+                                {
+                                    "step": step_index,
+                                    "action": action,
+                                    "field": f"events[{i}].{mismatch[0]} (sameShapeAs step "
+                                    f"{expected_event['sameShapeAs']})",
+                                    "expected": mismatch[1],
+                                    "actual": mismatch[2],
+                                }
+                            )
+
                     if "data" in expected_event:
                         actual_data = actual_event.get("data", {})
                         expected_data = expected_event["data"]
@@ -552,6 +572,46 @@ class TestOrchestrator:
                                 )
 
         return failures
+
+    @staticmethod
+    def reference_event(prior_responses: List[Any], step: int, index: int) -> Any:
+        if step >= len(prior_responses) or not isinstance(prior_responses[step], dict):
+            return {"<missing reference step>": step}
+        events = prior_responses[step].get("events") or []
+        if index >= len(events):
+            return {"<missing reference event>": index}
+        return events[index].get("data")
+
+    def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Any:
+        """`sameShapeAs: <step>` compares an event's data with the same-index event the SDK
+        emitted at an earlier step: object key sets must be equal at every depth and arrays must
+        have equal length, element by element. Values are not compared (`data` does that), so a
+        payload is pinned to the SDK's own baseline shape and any added or dropped field fails
+        without hardcoding SDK-specific envelope fields. Returns (path, expected, actual) of the
+        first difference, or None."""
+        if isinstance(reference, dict):
+            if not isinstance(actual, dict):
+                return path, "object", type(actual).__name__
+            if set(actual) != set(reference):
+                return f"{path} keys", sorted(reference), sorted(actual)
+            for key in reference:
+                mismatch = self.shape_mismatch(actual[key], reference[key], f"{path}.{key}")
+                if mismatch is not None:
+                    return mismatch
+            return None
+
+        if isinstance(reference, list):
+            if not isinstance(actual, list) or len(actual) != len(reference):
+                return f"{path} length", len(reference), len(actual) if isinstance(actual, list) else actual
+            for index, (a, r) in enumerate(zip(actual, reference)):
+                mismatch = self.shape_mismatch(a, r, f"{path}[{index}]")
+                if mismatch is not None:
+                    return mismatch
+            return None
+
+        if isinstance(actual, (dict, list)):
+            return path, type(reference).__name__, type(actual).__name__
+        return None
 
     def values_match(self, actual: Any, expected: Any, ordered: bool = False) -> bool:
         if isinstance(expected, dict) and isinstance(actual, dict):

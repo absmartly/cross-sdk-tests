@@ -44143,5 +44143,3251 @@
     "requires": [
       "switchback"
     ]
+  },
+  {
+    "name": "229 - Switchback - Period 0 - 2 Arms - Three Clusters",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 0, (seedHi << 32) | seedLo, 2); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p0-a2-a-3",
+            "store_b": "p0-a2-b-0",
+            "store_c": "p0-a2-c-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 1
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 1
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "230 - Switchback - Period 0 - 3 Arms - Three Clusters",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 0, (seedHi << 32) | seedLo, 3); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p0-a3-a-1",
+            "store_b": "p0-a3-b-0",
+            "store_c": "p0-a3-c-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 1
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 2
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "231 - Switchback - Period 0 - 10 Arms - Three Clusters",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 0, (seedHi << 32) | seedLo, 10); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p0-a10-a-0",
+            "store_b": "p0-a10-b-1",
+            "store_c": "p0-a10-c-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 3,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 3,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 8,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 8,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 3
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 8
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "232 - Switchback - Period 1 - 2 Arms - Three Clusters",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 1, (seedHi << 32) | seedLo, 2); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p1-a2-a-8",
+            "store_b": "p1-a2-b-3",
+            "store_c": "p1-a2-c-6"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 1
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 1
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "233 - Switchback - Period 1 - 3 Arms - Three Clusters",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 1, (seedHi << 32) | seedLo, 3); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p1-a3-a-2",
+            "store_b": "p1-a3-b-1",
+            "store_c": "p1-a3-c-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 2
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 2
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "234 - Switchback - Period 1 - 10 Arms - Three Clusters",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), 1, (seedHi << 32) | seedLo, 10); every uid is chosen so that variant is nonzero and differs from the sticky unit assignment.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 100,
+          "name": "exp_switchback_a",
+          "iteration": 1,
+          "unitType": "store_a",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_a",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 101,
+          "name": "exp_switchback_b",
+          "iteration": 1,
+          "unitType": "store_b",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_b",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        },
+        {
+          "id": 102,
+          "name": "exp_switchback_c",
+          "iteration": 1,
+          "unitType": "store_c",
+          "seedHi": 2147483647,
+          "seedLo": -1,
+          "split": [
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            },
+            {
+              "name": "D",
+              "config": null
+            },
+            {
+              "name": "E",
+              "config": null
+            },
+            {
+              "name": "F",
+              "config": null
+            },
+            {
+              "name": "G",
+              "config": null
+            },
+            {
+              "name": "H",
+              "config": null
+            },
+            {
+              "name": "I",
+              "config": null
+            },
+            {
+              "name": "J",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_c",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 264067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_a": "p1-a10-a-0",
+            "store_b": "p1-a10-b-0",
+            "store_c": "p1-a10-c-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_a"
+        },
+        "expect": {
+          "result": 6,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 100,
+                "name": "exp_switchback_a",
+                "unit": "store_a",
+                "variant": 6,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_b"
+        },
+        "expect": {
+          "result": 5,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 101,
+                "name": "exp_switchback_b",
+                "unit": "store_b",
+                "variant": 5,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_c"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 102,
+                "name": "exp_switchback_c",
+                "unit": "store_c",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 100,
+                    "name": "exp_switchback_a",
+                    "variant": 6
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_switchback_b",
+                    "variant": 5
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_switchback_c",
+                    "variant": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "235 - Switchback - Ineligible - exp_switchback_pre_anchor",
+    "description": "switchbackStartAt 4102444800000 (2100-01-01T00:00Z) is after now, so the experiment is ineligible: variant 0 with assigned=true, eligible=false, exposed once and never drawn from split/seed.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 110,
+          "name": "exp_switchback_pre_anchor",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 4102444800000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "eligibility-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 110,
+                    "name": "exp_switchback_pre_anchor"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_pre_anchor"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 110,
+                "name": "exp_switchback_pre_anchor",
+                "unit": "store_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_pre_anchor"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 110,
+                    "name": "exp_switchback_pre_anchor",
+                    "variant": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "236 - Switchback - Ineligible - exp_switchback_no_anchor",
+    "description": "switchbackStartAt is absent (an experiment that has not started), so the grid cannot be evaluated: variant 0 with assigned=true, eligible=false, exposed once.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 111,
+          "name": "exp_switchback_no_anchor",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "eligibility-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 111,
+                    "name": "exp_switchback_no_anchor"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_no_anchor"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 111,
+                "name": "exp_switchback_no_anchor",
+                "unit": "store_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_no_anchor"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 111,
+                    "name": "exp_switchback_no_anchor",
+                    "variant": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "237 - Switchback - Unassigned - Cluster Unit Not Set",
+    "description": "The context has no warehouse_id unit, so the switchback experiment is unassigned: variant 0 with assigned=false and eligible=true, and no fallback to any other unit.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 112,
+          "name": "exp_switchback_no_cluster_unit",
+          "iteration": 1,
+          "unitType": "warehouse_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "warehouse_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "eligibility-0"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 112,
+                    "name": "exp_switchback_no_cluster_unit"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_no_cluster_unit"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 112,
+                "name": "exp_switchback_no_cluster_unit",
+                "unit": "warehouse_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 112,
+                    "name": "exp_switchback_no_cluster_unit",
+                    "variant": 0
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "238 - Switchback - Same Period - Exactly One Exposure",
+    "description": "Two getTreatment calls within one period return the same variant and expose once.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 120,
+          "name": "exp_switchback_dedup",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "serving-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 120,
+                    "name": "exp_switchback_dedup"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_dedup"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 120,
+                "name": "exp_switchback_dedup",
+                "unit": "store_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_dedup"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 120,
+                    "name": "exp_switchback_dedup",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "239 - Switchback - Full-On Serves The Full-On Variant",
+    "description": "fullOnVariant=2 takes precedence over the switchback draw: variant 2 with fullOn=true.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 121,
+          "name": "exp_switchback_full_on",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 2,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "serving-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 121,
+                    "name": "exp_switchback_full_on"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_full_on"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 121,
+                "name": "exp_switchback_full_on",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 121,
+                    "name": "exp_switchback_full_on",
+                    "variant": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "240 - Switchback - Override Wins Over The Switchback Draw",
+    "description": "The period-0 draw for this cluster is 1; an override to 2 is served instead with assigned=false and overridden=true.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 122,
+          "name": "exp_switchback_override",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "serving-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 122,
+                    "name": "exp_switchback_override"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_switchback_override",
+          "variant": 2
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_override"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 122,
+                "name": "exp_switchback_override",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 122,
+                    "name": "exp_switchback_override",
+                    "variant": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "241 - Switchback - Exposure And Publish Payload Carry No New Fields",
+    "description": "A unit experiment on the same cluster unit is exposed and published first as the baseline. The switchback exposure and its publish event must then have exactly the baseline's fields at every depth (sameShapeAs), with every exposure field value pinned, so a switchback-only field such as a period index fails the scenario.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 123,
+          "name": "exp_switchback_payload",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusterUnitType": "store_id",
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "switchbackStartAt": 1704067200000
+        },
+        {
+          "id": 124,
+          "name": "exp_switchback_payload_baseline",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "serving-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 123,
+                    "name": "exp_switchback_payload"
+                  },
+                  {
+                    "id": 124,
+                    "name": "exp_switchback_payload_baseline"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_payload_baseline"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 124,
+                "name": "exp_switchback_payload_baseline",
+                "unit": "store_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "8zUG4zeowBfL2OK2oEtOng"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 124,
+                    "name": "exp_switchback_payload_baseline",
+                    "unit": "store_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_switchback_payload"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "sameShapeAs": 1,
+              "data": {
+                "id": 123,
+                "name": "exp_switchback_payload",
+                "unit": "store_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "sameShapeAs": 2,
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "8zUG4zeowBfL2OK2oEtOng"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 123,
+                    "name": "exp_switchback_payload",
+                    "unit": "store_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
   }
 ]
