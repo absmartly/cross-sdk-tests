@@ -118,7 +118,24 @@ class SwitchbackEndpointsTest {
             new Object[] {"armCount", 2.0});
     }
 
-    // The arm-count bound is enforced by the SDK's own assigner, so these run against it.
+    // The wrapper enforces armCount >= 2 itself: even functions that accept any arm count must
+    // never be called, and the response is 400.
+    @ParameterizedTest
+    @ValueSource(ints = {1, 0, -3})
+    void rejectsTooFewArmsWith400WithoutCallingTheAssigner(int armCount) {
+        WrongFunctions functions = new WrongFunctions();
+        WrapperController controller = new WrapperController(functions);
+
+        Map<String, Object> assign = assignRequest();
+        assign.put("armCount", armCount);
+        assertEquals(HttpStatus.BAD_REQUEST, controller.switchbackAssign(assign).getStatusCode());
+
+        Map<String, Object> permutation = permutationRequest();
+        permutation.put("armCount", armCount);
+        assertEquals(HttpStatus.BAD_REQUEST, controller.switchbackPermutation(permutation).getStatusCode());
+        assertEquals(0, functions.calls.get());
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {1, 0, -3})
     void linkedAssignerRejectsTooFewArmsWith400(int armCount) {

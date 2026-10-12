@@ -137,14 +137,14 @@ public class WrapperController {
     @PostMapping("/switchback/assign")
     public ResponseEntity<?> switchbackAssign(@RequestBody Map<String, Object> request) {
         return switchbackCall(() -> switchback.assign(stringParam(request, "clusterUnit"),
-            longParam(request, "periodIndex"), longParam(request, "seed"), intParam(request, "armCount")));
+            longParam(request, "periodIndex"), longParam(request, "seed"), armCountParam(request)));
     }
 
     @PostMapping("/switchback/permutation")
     public ResponseEntity<?> switchbackPermutation(@RequestBody Map<String, Object> request) {
         return switchbackCall(() -> {
             int[] permutation = switchback.permutation(stringParam(request, "clusterUnit"),
-                longParam(request, "cycleIndex"), longParam(request, "seed"), intParam(request, "armCount"));
+                longParam(request, "cycleIndex"), longParam(request, "seed"), armCountParam(request));
             List<Integer> result = new ArrayList<>(permutation.length);
             for (int arm : permutation) {
                 result.add(arm);
@@ -181,6 +181,16 @@ public class WrapperController {
     // Long.parseLong is exact over the full signed 64-bit range and rejects anything else.
     private static long longParam(Map<String, Object> request, String name) {
         return Long.parseLong(stringParam(request, name));
+    }
+
+    // The 400-on-armCount<2 contract is the wrapper's, so it must not depend on how the linked
+    // assigner reacts (a regressed one could return a value or throw something unexpected).
+    private static int armCountParam(Map<String, Object> request) {
+        int armCount = intParam(request, "armCount");
+        if (armCount < 2) {
+            throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
+        }
+        return armCount;
     }
 
     private static int intParam(Map<String, Object> request, String name) {
