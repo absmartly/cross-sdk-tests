@@ -15,14 +15,18 @@ it from `mavenLocal()`.
 To run the suite against a local, unreleased SDK checkout (e.g. a feature-branch
 worktree) without touching the default CI path:
 
-1. Check out the SDK branch as a sibling of `cross-sdk-tests`, naming the directory
-   `java-sdk-holdouts` — that name must match the `SDK_SOURCE_DIR` value committed in
-   `docker-compose.local-sdk.yml`.
+1. Check out the SDK branch as a sibling of `cross-sdk-tests`. The override in
+   `docker-compose.local-sdk.yml` reads the directory name from `JAVA_SDK_SOURCE_DIR`,
+   defaulting to `java-sdk-holdouts`.
 2. Build the java-sdk image with the compose override that sets `SDK_SOURCE_DIR`:
 
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml build java-sdk
    docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml up -d java-sdk
+
+   # any other sibling checkout, e.g. the switchback branch
+   JAVA_SDK_SOURCE_DIR=java-sdk-switchback \
+     docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml build java-sdk
    ```
 
    `SDK_SOURCE_DIR` defaults to `java-sdk` (the Dockerfile's `ARG`), so the override

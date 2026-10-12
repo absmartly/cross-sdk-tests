@@ -758,6 +758,8 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | GET | /health | Health check |
 | GET | /capabilities | Feature flags (`diagnostics`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
+| POST | /switchback/assign | Switchback variant for a period (capability `switchback`) |
+| POST | /switchback/permutation | Switchback cycle permutation (capability `switchback`) |
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
@@ -1060,3 +1062,106 @@ exposure sequence published (which experiments/holdouts fire, in what order,
 at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
+
+### Capability: `switchback`
+
+Gates the Switchback scenario group: switchback serving on existing endpoints
+(`treatment`, `publish`, ...) for experiments with
+`randomizationType: "switchback"`, plus the two pure-function endpoints below.
+The SDK contract is the SDK's own switchback documentation (for java-sdk,
+`SWITCHBACK.md`); the assignment algorithm is pinned by the platform's golden
+vectors.
+
+Advertise `switchback` truthfully and dynamically, on the same terms as
+`holdouts`: never as a static flag, and never because the SDK merely
+deserializes the switchback wire fields (`randomizationType`,
+`switchbackStartAt`, `switchbackPeriodMs`, ...) or links an assignment class.
+An SDK that parses the fields but serves sticky unit assignment, or whose
+assigner drifts from the golden vectors, must report `false`.
+
+The capability means a behavioral self-test passed. It must cover every
+semantic the group's scenarios exercise:
+
+- a sample of the golden vectors through the SDK's own assigner and
+  permutation function, including `Long.MIN_VALUE`/`Long.MAX_VALUE` periods,
+  cycles and seeds and integer cluster units;
+- switchback serving through a real context on clock-free grids (see below):
+  2, 3 and 10 arms in period 0 and period 1, each checked against
+  `assignSwitchback(hashUnit(uid), period, seed, arms)`;
+- pre-anchor and missing-anchor experiments resolving to variant 0 with
+  `assigned: true, eligible: false`, exposed once;
+- a cluster unit absent from the context resolving to variant 0 with
+  `assigned: false`;
+- two treatments in one period exposing once;
+- a full-on switchback serving `fullOnVariant` with `fullOn: true`;
+- an override winning over the switchback draw;
+- through the SDK's real publish path (the event handler receives the
+  `PublishEvent`): a unit baseline and then a switchback experiment on the
+  same unit, each published on its own. The switchback publish must carry its
+  exposure with the served variant and every other exposure field, plus the
+  hashed unit. The switchback exposure and the serialized publish event must
+  have exactly the baseline's fields at every depth.
+
+Every check compares the treatment and the complete exposure record (every
+field except `exposedAt`). Run the self-test lazily on first use, cache the
+result, and catch `Throwable` around it, exactly as for `holdouts`.
+
+Wrappers have no clock control and none is added. The Context scenarios are
+deterministic because their grids keep "now" inside one known period for
+decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the
+anchor `switchbackStartAt` is hour-aligned at 2024-01-01T00:00Z (period 0),
+one period earlier at 1978-05-15T08:00Z (period 1), or 2100-01-01T00:00Z
+(before the anchor, so ineligible). All three hold until 2069-08-18T16:00Z.
+Clock rollover between periods stays in the SDKs' own test suites.
+
+#### Switchback assign
+
+```http
+POST /switchback/assign
+Content-Type: application/json
+
+{"clusterUnit": "pENS7DC7K_G0ZstvAZTwRA", "periodIndex": "-9223372036854775808", "seed": "42", "armCount": 3}
+```
+
+**Response:** `{"result": 0, "events": []}` — the variant
+`assignSwitchback(clusterUnit, periodIndex, seed, armCount)`. The cluster unit
+here is `hashUnit("store-42")`.
+
+#### Switchback permutation
+
+```http
+POST /switchback/permutation
+Content-Type: application/json
+
+{"clusterUnit": "market_1", "cycleIndex": "0", "seed": "0", "armCount": 10}
+```
+
+**Response:** `{"result": [0, 3, 7, 5, 8, 2, 6, 4, 1, 9], "events": []}` —
+the Fisher-Yates permutation of `[0, armCount)` for that (cluster, cycle,
+seed), i.e. `fisherYatesPermutation(armCount, baseHash(clusterUnit,
+cycleIndex, seed))`.
+
+Both endpoints are pure functions with no context. Request rules:
+
+- `periodIndex`, `cycleIndex` and `seed` are signed 64-bit values sent as
+  **decimal strings** and must be parsed exactly (never through a double);
+  JSON numbers lose precision above 2^53 in most languages. `seed` is the
+  experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
+- `armCount` is a JSON integer, at least 2.
+- `clusterUnit` is a string and is passed to the assigner **unchanged**.
+  It is the value the SDK feeds its switchback assigner, which for a context
+  is the already-hashed cluster unit: `hashUnit(uid)`, the base64url
+  (no padding) MD5 digest of the UTF-8 uid, the same string published as
+  `units[].uid`. The endpoint must not hash it again. This is the layer the
+  golden vectors are defined at: the platform's `assignSwitchback` keys its
+  hash on the cluster unit it is given (`"market_1"`, `"123456789"`), so the
+  vectors can only be replayed against the assigner input, and the
+  Collector must apply the same `hashUnit` before using the same assigner.
+  Integer cluster units in the golden vectors are sent as their decimal
+  string, which is how the platform normalizes a numeric unit.
+- An invalid request (missing field, non-decimal string, out-of-range value,
+  `armCount < 2`) returns 400 with `{"error": "..."}`.
+
+The golden-vector scenarios are generated from
+`fixtures/switchback/golden-vectors.json` by
+`generate_switchback_scenarios.py`; do not edit them by hand.

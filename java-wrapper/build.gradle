@@ -17,6 +17,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'com.absmartly.sdk:core-api:1.6.3'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
 tasks.named('test') {
