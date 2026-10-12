@@ -266,11 +266,51 @@ final class SwitchbackSelfTest {
         JsonNode baselineJson = mapper.readTree(serializer.serialize(baselineEvent));
         JsonNode switchbackJson = mapper.readTree(serializer.serialize(switchbackEvent));
         String publishMismatch = shapeMismatch(baselineJson, switchbackJson, "publish");
+        if (publishMismatch == null) {
+            publishMismatch = serializedMismatch(baselineJson, unitServed, mapper);
+        }
+        if (publishMismatch == null) {
+            publishMismatch = serializedMismatch(switchbackJson, switchbackServed, mapper);
+        }
         if (publishMismatch != null) {
-            System.out.println(PREFIX + " check publish payload shape FAILED: " + publishMismatch);
+            System.out.println(PREFIX + " check publish payload FAILED: " + publishMismatch);
             return false;
         }
         return true;
+    }
+
+    private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",
+        "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch");
+
+    // The serialized bytes, not just the PublishEvent object, must carry the served values: one
+    // exposure equal to expected in every field but a positive integral exposedAt, published hashed
+    // with the serving unit. Null when they do.
+    static String serializedMismatch(JsonNode event, Exposure expected, ObjectMapper mapper) {
+        if (!event.path("hashed").asBoolean(false)) {
+            return "publish.hashed is " + event.get("hashed");
+        }
+        JsonNode exposures = event.path("exposures");
+        if (!exposures.isArray() || exposures.size() != 1) {
+            return "publish.exposures is " + exposures;
+        }
+        JsonNode actual = exposures.get(0);
+        JsonNode wanted = mapper.valueToTree(expected);
+        for (String field : SERIALIZED_EXPOSURE_FIELDS) {
+            if (!wanted.path(field).equals(actual.path(field))) {
+                return "publish.exposures[0]." + field + " is " + actual.get(field) + ", expected " + wanted.get(field);
+            }
+        }
+        JsonNode exposedAt = actual.path("exposedAt");
+        if (!exposedAt.isIntegralNumber() || exposedAt.asLong() <= 0) {
+            return "publish.exposures[0].exposedAt is " + exposedAt;
+        }
+        for (JsonNode unit : event.path("units")) {
+            if ("unit_serving".equals(unit.path("type").asText(null))
+                    && SERVING_UNIT_HASH.equals(unit.path("uid").asText(null))) {
+                return null;
+            }
+        }
+        return "publish.units lacks the hashed serving unit: " + event.get("units");
     }
 
     private static PublishEvent publishOne(com.absmartly.sdk.Context context, List<PublishEvent> published) {
