@@ -143,10 +143,12 @@ public class WrapperController {
         });
     }
 
+    // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
+    // assigner reports its actual outputs rather than a blanket refusal.
     private ResponseEntity<?> switchbackCall(java.util.function.Supplier<Object> call) {
-        if (!SwitchbackSelfTest.run()) {
+        if (!SwitchbackAssignerAccess.isAvailable()) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-                .body(Collections.singletonMap("error", "switchback capability not available"));
+                .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
         }
         try {
             Map<String, Object> response = new HashMap<>();
