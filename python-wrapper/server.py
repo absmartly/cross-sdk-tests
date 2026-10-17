@@ -29,7 +29,12 @@ try:
     # algorithm — just duplicated because that branch doesn't expose it as a
     # standalone function outside a live Context.
     from sdk.internal.hashing import hash_unit
-except ImportError:
+except ImportError as e:
+    # Only fall back when the module itself (or a parent package) is missing,
+    # or it lacks hash_unit. A failure importing one of its own dependencies
+    # means a broken SDK install and must not be masked.
+    if e.name not in ('sdk', 'sdk.internal', 'sdk.internal.hashing'):
+        raise
     def hash_unit(text):
         digest = hashlib.md5(text.encode('utf-8')).digest()
         return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
