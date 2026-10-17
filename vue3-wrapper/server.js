@@ -5,8 +5,7 @@ if (typeof self === 'undefined') {
   global.self = global;
 }
 
-const { createSSRApp, h } = require('vue');
-const { renderToString } = require('@vue/server-renderer');
+const { createRenderer, h } = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const vue3sdk = require('@absmartly/vue3-sdk');
@@ -19,28 +18,42 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// SSR-compatible Treatment: Vue3 SSR only fires beforeCreate+created, NOT beforeMount.
-// The Treatment component initializes state in beforeMount, so we move that logic to created.
-const TreatmentOriginal = vue3sdk.Treatment.options || vue3sdk.Treatment;
-const TreatmentSSR = Object.assign({}, TreatmentOriginal, {
-  created() {
-    const context = this[this.__absmartlyGlobal];
-    this.failed = context.isFailed();
-    if (context.isReady()) {
-      if (this.attributes instanceof Object) {
-        context.attributes(this.attributes);
-      }
-      this.treatment = context.treatment(this.name);
-      this.ready = true;
-    }
-    if (this.ready) {
-      this.treatmentNames = [String.fromCharCode(65 + this.treatment), this.treatment.toString(), 'default'];
-    } else {
-      this.treatmentNames = ['loading', 'default'];
+// The SDK's <Treatment> picks its variant in beforeMount(), which Vue's SSR
+// renderer never calls. Instead of re-implementing that hook, mount the SDK
+// component exactly as shipped through Vue's own runtime (createRenderer) with a
+// minimal in-memory host. This runs the real lifecycle (beforeCreate, created,
+// beforeMount, render, mounted, beforeUnmount) without DOM globals that could
+// change the JS SDK's environment detection.
+const TreatmentComponent = vue3sdk.Treatment;
+const memoryNodeOps = {
+  createElement: (tag) => ({ tag, children: [], props: {}, parent: null }),
+  createText: (text) => ({ text, parent: null }),
+  createComment: (text) => ({ comment: text, parent: null }),
+  setText: (node, text) => { node.text = text; },
+  setElementText: (el, text) => { el.children = [{ text, parent: el }]; },
+  insert: (child, parent, anchor) => {
+    child.parent = parent;
+    const i = anchor ? parent.children.indexOf(anchor) : -1;
+    if (i >= 0) parent.children.splice(i, 0, child);
+    else parent.children.push(child);
+  },
+  remove: (child) => {
+    const p = child.parent;
+    if (p) {
+      const i = p.children.indexOf(child);
+      if (i >= 0) p.children.splice(i, 1);
+      child.parent = null;
     }
   },
-  beforeMount: undefined
-});
+  parentNode: (node) => node.parent || null,
+  nextSibling: (node) => {
+    const p = node.parent;
+    if (!p) return null;
+    return p.children[p.children.indexOf(node) + 1] || null;
+  },
+  patchProp: (el, key, prev, next) => { el.props[key] = next; },
+};
+const memoryRenderer = createRenderer(memoryNodeOps);
 
 const app = express();
 app.use(express.json());
@@ -284,23 +297,46 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   }
 
   try {
-    const vueApp = createSSRApp({
+    // Each numbered slot records its index only when the SDK component invokes
+    // it. No 'default' slot and no HTML scraping: if the SDK selects nothing we
+    // can identify, that is an error, never variant 0.
+    const rendered = [];
+    const slots = {};
+    for (let i = 0; i <= 10; i++) {
+      const idx = i;
+      slots[idx.toString()] = () => {
+        rendered.push(idx);
+        return h('span', String(idx));
+      };
+    }
+
+    let renderError = null;
+    const vueApp = memoryRenderer.createApp({
       render() {
-        const slots = {};
-        for (let i = 0; i <= 10; i++) {
-          const idx = i;
-          slots[idx.toString()] = () => h('span', { 'data-variant': idx }, String(idx));
-        }
-        slots['default'] = () => h('span', { 'data-variant': 0 }, '0');
-        return h(TreatmentSSR, { name: experimentName }, slots);
+        return h(TreatmentComponent, { name: experimentName }, slots);
       }
     });
+    vueApp.config.errorHandler = (err) => { if (!renderError) renderError = err; };
+    // Same per-app injection the SDK plugin performs (plugin.js install()),
+    // scoped to this request's app instance.
     vueApp.config.globalProperties.__absmartlyGlobal = '$absmartly';
     vueApp.config.globalProperties.$absmartly = context;
 
-    const html = await renderToString(vueApp);
-    const match = html.match(/data-variant="(\d+)"/);
-    const variant = match ? parseInt(match[1], 10) : 0;
+    try {
+      vueApp.mount(memoryNodeOps.createElement('root'));
+    } finally {
+      vueApp.unmount();
+    }
+
+    if (renderError) throw renderError;
+
+    const distinct = [...new Set(rendered)];
+    if (distinct.length !== 1) {
+      return res.status(500).json({
+        error: `Vue3 SDK <Treatment> rendered ${distinct.length} distinct variant slots (expected exactly 1): [${distinct.join(', ')}]`
+      });
+    }
+    const variant = distinct[0];
 
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
@@ -600,14 +636,13 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh may fail, still report events
+    // Public SDK API: context.refresh() re-fetches through the SDK's data
+    // provider (the wrapper's mock /context_payload endpoint, which the
+    // orchestrator updates before calling this) and rejects on failure.
+    await context.refresh();
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);

@@ -1,19 +1,13 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
-// typescript-sdk (tsup bundle) exposes utils via the package root, not a /lib/utils subpath,
-// and does not export isObject/isNumeric/isPromise. Shim them with the SDK's exact semantics.
+// typescript-sdk (tsup bundle) exposes utils via the package root, not a /lib/utils subpath.
+// Only the helpers the SDK actually exports are wired up. isObject/isNumeric/isPromise
+// are NOT exported by typescript-sdk (src/index.ts:11), so those diagnostics are
+// reported as unsupported (HTTP 501) rather than re-implemented here.
 const sdkUtils = {
   hashUnit: absmartly.hashUnit,
   base64UrlNoPadding: absmartly.base64UrlNoPadding,
   stringToUint8Array: absmartly.toUtf8Bytes,
-  isObject: (value) => {
-    if (!(value instanceof Object)) return false;
-    const proto = Object.getPrototypeOf(value);
-    return proto == null || proto === Object.prototype;
-  },
-  isNumeric: (value) => typeof value === 'number',
-  isPromise: (value) =>
-    value !== null && typeof value === 'object' && typeof value.then === 'function',
 };
 
 process.on('uncaughtException', (err) => {
@@ -690,14 +684,13 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh failed, still report events
+    // Public SDK API: context.refresh() re-fetches through the SDK's data
+    // provider (the wrapper's mock /context_payload endpoint, which the
+    // orchestrator updates before calling this) and rejects on failure.
+    await context.refresh();
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);
@@ -747,14 +740,12 @@ app.post('/diagnostic', (req, res) => {
         break;
       }
       case 'isObject':
-        result = sdkUtils.isObject(body.value);
-        break;
       case 'isNumeric':
-        result = sdkUtils.isNumeric(body.value);
-        break;
       case 'isPromise':
-        result = sdkUtils.isPromise(body.value);
-        break;
+        return res.status(501).json({
+          error: `Diagnostic operation not supported: ${op} is not exported by typescript-sdk`,
+          unsupported: true,
+        });
       default:
         return res.status(400).json({ error: `Unsupported diagnostic operation: ${op}` });
     }
