@@ -252,36 +252,40 @@ app.post('/context/:contextId/treatment', async (req, res) => {
     return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
   }
 
-  if (!context.isReady()) {
-    return res.json({ result: 0, events: [] });
-  }
-
+  // No wrapper-side not-ready shortcut: when the context is not ready the SDK's
+  // <Treatment> renders its loading state (first child) itself.
   try {
-    let capturedVariant = 0;
+    // Each TreatmentVariant child contains a marker component that records its
+    // variant only when the SDK's <Treatment> actually renders it. No HTML
+    // scraping and no default: if the SDK renders no variant child, that is an
+    // error, not variant 0.
+    const rendered = [];
+    const VariantMarker = ({ variant }) => {
+      rendered.push(variant);
+      return React.createElement('span', null, `Variant ${variant}`);
+    };
     const variants = [];
     for (let i = 0; i <= 10; i++) {
       variants.push(
         React.createElement(TreatmentVariant, { key: i, variant: i },
-          React.createElement('span', { 'data-variant': i }, `Variant ${i}`)
+          React.createElement(VariantMarker, { variant: i })
         )
       );
     }
 
-    const TreatmentWrapper = () => {
-      return React.createElement(Treatment, {
-        name: experimentName,
-        context: context
-      }, ...variants);
-    };
+    renderToString(React.createElement(Treatment, {
+      name: experimentName,
+      context: context
+    }, ...variants));
 
-    const html = renderToString(React.createElement(TreatmentWrapper));
-    const match = html.match(/data-variant="(\d+)"/);
-    if (match) {
-      capturedVariant = parseInt(match[1], 10);
+    if (rendered.length !== 1) {
+      return res.status(500).json({
+        error: `React SDK <Treatment> rendered ${rendered.length} variant children (expected exactly 1): [${rendered.join(', ')}]`
+      });
     }
 
     const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result: capturedVariant, events: newEvents });
+    res.json({ result: rendered[0], events: newEvents });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -610,14 +614,13 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh may fail, still report events
+    // Public SDK API: context.refresh() re-fetches through the SDK's data
+    // provider (the wrapper's mock /context_payload endpoint, which the
+    // orchestrator updates before calling this) and rejects on failure.
+    await context.refresh();
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);
