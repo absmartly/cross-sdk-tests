@@ -216,7 +216,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"diagnostics":  true,
 		"attrsSeq":     false,
-		"publishFail":  true,
+		"publishFail":  false,
 		"variableKeysMap": true,
 		"globalCustomFieldKeys": true,
 		"getUnits":     true,
