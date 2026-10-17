@@ -358,42 +358,10 @@ public class WrapperController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
+            // Return exactly what the SDK emitted through its ContextEventLogger
+            // during creation. Never filter, dedupe or synthesize ready/error
+            // events: the conformance suite attributes these to the SDK.
             List<Map<String, Object>> createEvents = eventCollector.getEvents();
-            if (context.isFailed()) {
-                Map<String, Object> errorEvent = null;
-                for (Map<String, Object> event : createEvents) {
-                    if ("error".equals(event.get("type"))) {
-                        errorEvent = event;
-                        break;
-                    }
-                }
-                if (errorEvent != null) {
-                    createEvents = Collections.singletonList(errorEvent);
-                } else {
-                    Map<String, Object> syntheticError = new HashMap<>();
-                    syntheticError.put("type", "error");
-                    syntheticError.put("data", new HashMap<String, Object>());
-                    createEvents = Collections.singletonList(syntheticError);
-                }
-            } else if (!context.isReady()) {
-                createEvents = Collections.emptyList();
-            } else {
-                Map<String, Object> readyEvent = null;
-                for (Map<String, Object> event : createEvents) {
-                    if ("ready".equals(event.get("type"))) {
-                        readyEvent = event;
-                        break;
-                    }
-                }
-                if (readyEvent != null) {
-                    createEvents = Collections.singletonList(readyEvent);
-                } else {
-                    Map<String, Object> syntheticReady = new HashMap<>();
-                    syntheticReady.put("type", "ready");
-                    syntheticReady.put("data", new HashMap<String, Object>());
-                    createEvents = Collections.singletonList(syntheticReady);
-                }
-            }
             response.put("events", createEvents);
 
             return ResponseEntity.ok(response);

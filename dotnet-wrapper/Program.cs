@@ -80,7 +80,11 @@ app.MapGet("/capabilities", () => Results.Ok(new
     globalCustomFieldKeys = true,
     getUnits = true,
     getAttributes = true,
-    readyError = true
+    // readyError withdrawn: the .NET SDK has no public path that populates
+    // Context.ReadyError. The only failure path (data provider/HTTP fetch fails
+    // -> ABSmartlyService.GetContextDataAsync returns null -> Context ctor)
+    // calls SetDataFailed() with no exception, so ReadyError is always null.
+    readyError = false
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -326,12 +330,34 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             endpoint = TranslateEndpoint(endpoint);
         }
 
+        int payloadThrottle = 0;
+        if (requestJson.ContainsKey("options"))
+        {
+            var opts = requestJson["options"];
+            if (opts.TryGetProperty("payloadThrottle", out var pt))
+            {
+                payloadThrottle = pt.GetInt32();
+            }
+        }
+
+        bool failLoad = requestJson.ContainsKey("failLoad") &&
+            requestJson["failLoad"].ValueKind == JsonValueKind.True;
+
+        if (failLoad)
+        {
+            // Genuinely failing fetch: nothing listens on this port, so the SDK's
+            // own HTTP data provider fails and the SDK decides how to surface it.
+            endpoint = "http://127.0.0.1:9";
+        }
+
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var eventCollector = new EventCollector();
         var publishFailFlag = new PublishFailFlag();
 
         var sdk = new ABSdk(
-            new DummyHttpClientFactory(),
+            // payloadThrottle only delays the HTTP GET of context data (simulated
+            // network latency); everything else is the SDK's own fetch path.
+            new DummyHttpClientFactory(payloadThrottle),
             new ABSmartlyServiceConfiguration
             {
                 Endpoint = endpoint,  // Use provided endpoint or dummy
@@ -387,66 +413,21 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
-        int payloadThrottle = 0;
-        if (requestJson.ContainsKey("options"))
-        {
-            var opts = requestJson["options"];
-            if (opts.TryGetProperty("payloadThrottle", out var pt))
-            {
-                payloadThrottle = pt.GetInt32();
-            }
-        }
-
-        bool failLoad = requestJson.ContainsKey("failLoad") &&
-            requestJson["failLoad"].ValueKind == JsonValueKind.True;
-
         IContext context;
-        if (failLoad)
-        {
-            var failedContext = (Context)sdk.CreateContextWith(contextConfig, null);
-            var setDataFailedMethod = typeof(Context).GetMethod("SetDataFailed", BindingFlags.NonPublic | BindingFlags.Instance);
-            setDataFailedMethod.Invoke(failedContext, new object[] { new Exception("Context load failed") });
-            context = failedContext;
-        }
-        else if (contextData != null && payloadThrottle > 0)
-        {
-            var capturedContextData = contextData;
-            var capturedPayloadThrottle2 = payloadThrottle;
-            var lazyContext2 = new LazyContext(Task.Run(async () =>
-            {
-                await Task.Delay(capturedPayloadThrottle2);
-                return (IContext)sdk.CreateContextWith(contextConfig, capturedContextData);
-            }), eventCollector);
-            context = lazyContext2;
-        }
-        else if (contextData != null)
+        if (contextData != null)
         {
             context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
         }
-        else if (payloadThrottle > 0)
-        {
-            var capturedPayloadThrottle = payloadThrottle;
-            var lazyContext = new LazyContext(Task.Run(async () =>
-            {
-                await Task.Delay(capturedPayloadThrottle);
-                var innerContext = sdk.CreateContext(contextConfig);
-                for (int i = 0; i < 100 && !innerContext.IsReady(); i++)
-                {
-                    await Task.Delay(10);
-                }
-                return (IContext)innerContext;
-            }), eventCollector);
-            context = lazyContext;
-        }
         else
         {
-            context = sdk.CreateContext(contextConfig);  // Async: createContext (SDK will fetch from endpoint)
+            // Async: createContext (SDK fetches from the endpoint). The .NET SDK's
+            // CreateContext/CreateContextAsync only construct the Context after the
+            // data fetch completes, so the SDK has no "created but not ready" state.
+            // Throttled scenarios therefore block here for the throttle duration
+            // and return a ready (or failed) context; the wrapper does not emulate
+            // a pre-ready context or queue calls on the SDK's behalf.
+            context = sdk.CreateContext(contextConfig);
 
-            // Wait until context is ready
-            for (int i = 0; i < 100 && !context.IsReady(); i++)
-            {
-                await Task.Delay(10);
-            }
             // Wait for events to be collected (like Go/Java wrappers)
             for (int i = 0; i < 50 && eventCollector.GetEventsCount() == 0; i++)
             {
@@ -1446,25 +1427,40 @@ public class PublishFailFlag
 
 public class DummyHttpClientFactory : IABSdkHttpClientFactory
 {
+    private readonly int _getDelayMs;
+
+    public DummyHttpClientFactory(int getDelayMs = 0)
+    {
+        _getDelayMs = getDelayMs;
+    }
+
     // Must return base interface type for C# compatibility
     IABsmartlyHttpClient IABsmartlyHttpClientFactory.CreateClient()
     {
-        return new DummyHttpClient();
+        return new DummyHttpClient(_getDelayMs);
     }
 
     public IABSdkHttpClient CreateClient()
     {
-        return new DummyHttpClient();
+        return new DummyHttpClient(_getDelayMs);
     }
 }
 
 public class DummyHttpClient : IABSdkHttpClient
 {
     private readonly HttpClient _client = new HttpClient();
+    private readonly int _getDelayMs;
 
-    public Task<HttpResponseMessage> GetAsync(string requestUri)
+    public DummyHttpClient(int getDelayMs = 0)
     {
-        return _client.GetAsync(requestUri);
+        _getDelayMs = getDelayMs;
+    }
+
+    public async Task<HttpResponseMessage> GetAsync(string requestUri)
+    {
+        // Simulated network latency for the context-data fetch (payloadThrottle).
+        if (_getDelayMs > 0) await Task.Delay(_getDelayMs);
+        return await _client.GetAsync(requestUri);
     }
 
     public Task<HttpResponseMessage> PutAsync(string requestUri, HttpContent content)
@@ -1580,127 +1576,4 @@ public class RefreshRequest
     public ABSmartly.Models.ContextData NewData { get; set; }
 }
 
-public class LazyContext : IContext
-{
-    private volatile IContext _inner;
-    private readonly Task<IContext> _creationTask;
-    private readonly EventCollector _eventCollector;
-    private readonly List<(string goalName, Dictionary<string, object> properties)> _queuedGoals = new();
-    private readonly List<(string name, object value)> _queuedAttributes = new();
-    private readonly object _lock = new();
-
-    public LazyContext(Task<IContext> creationTask, EventCollector eventCollector)
-    {
-        _creationTask = creationTask;
-        _eventCollector = eventCollector;
-        _creationTask.ContinueWith(t =>
-        {
-            if (t.IsCompletedSuccessfully)
-            {
-                lock (_lock)
-                {
-                    _inner = t.Result;
-                    foreach (var (goalName, properties) in _queuedGoals)
-                        _inner.Track(goalName, properties);
-                    _queuedGoals.Clear();
-                    foreach (var (name, value) in _queuedAttributes)
-                        _inner.SetAttribute(name, value);
-                    _queuedAttributes.Clear();
-                }
-            }
-        });
-    }
-
-    public void WaitForReady(int timeoutMs = 5000)
-    {
-        _creationTask.Wait(timeoutMs);
-    }
-
-    public int PendingCount
-    {
-        get
-        {
-            lock (_lock)
-            {
-                if (_inner != null) return _inner.PendingCount;
-                return _queuedGoals.Count;
-            }
-        }
-    }
-
-    public bool IsReady() => _inner?.IsReady() ?? false;
-    public bool IsFailed() => _inner?.IsFailed() ?? false;
-    public bool IsClosed() => _inner?.IsClosed() ?? false;
-    public bool IsClosing() => _inner?.IsClosing() ?? false;
-    public bool IsFinalized => _inner?.IsFinalized ?? false;
-    public bool IsFinalizing => _inner?.IsFinalizing ?? false;
-    public Exception ReadyError => _inner?.ReadyError;
-    public Dictionary<string, string> Units => _inner?.Units ?? new Dictionary<string, string>();
-    [Obsolete("Use the Units property instead.")]
-    public Dictionary<string, string> GetUnits() => Units;
-    public object GetAttribute(string name) => _inner?.GetAttribute(name);
-    public Dictionary<string, object> Attributes => _inner?.Attributes ?? new Dictionary<string, object>();
-    [Obsolete("Use the Attributes property instead.")]
-    public Dictionary<string, object> GetAttributes() => Attributes;
-    public void Close() => _inner?.Close();
-
-    public string[] Experiments => _inner?.Experiments ?? Array.Empty<string>();
-    [Obsolete("Use the Experiments property instead.")]
-    public string[] GetExperiments() => Experiments;
-    public ABSmartly.Models.ContextData GetContextData() => _inner?.GetContextData();
-
-    public void SetAttribute(string name, object value)
-    {
-        lock (_lock)
-        {
-            if (_inner != null) _inner.SetAttribute(name, value);
-            else _queuedAttributes.Add((name, value));
-        }
-    }
-
-    public void SetAttributes(Dictionary<string, object> attributes)
-    {
-        lock (_lock)
-        {
-            if (_inner != null) _inner.SetAttributes(attributes);
-            else foreach (var kvp in attributes) _queuedAttributes.Add((kvp.Key, kvp.Value));
-        }
-    }
-
-    public void SetCustomAssignment(string experimentName, int variant) => _inner?.SetCustomAssignment(experimentName, variant);
-    public int? GetCustomAssignment(string experimentName) => _inner?.GetCustomAssignment(experimentName);
-    public void SetCustomAssignments(Dictionary<string, int> customAssignments) => _inner?.SetCustomAssignments(customAssignments);
-    public void SetOverride(string experimentName, int variant) => _inner?.SetOverride(experimentName, variant);
-    public int? GetOverride(string experimentName) => _inner?.GetOverride(experimentName);
-    public void SetOverrides(Dictionary<string, int> overrides) => _inner?.SetOverrides(overrides);
-    public int GetTreatment(string experimentName) => _inner?.GetTreatment(experimentName) ?? 0;
-    public int PeekTreatment(string experimentName) => _inner?.PeekTreatment(experimentName) ?? 0;
-    public void SetUnit(string unitType, string uid) => _inner?.SetUnit(unitType, uid);
-    public void SetUnits(Dictionary<string, string> units) => _inner?.SetUnits(units);
-    public Dictionary<string, List<string>> VariableKeys => _inner?.VariableKeys ?? new Dictionary<string, List<string>>();
-    public Dictionary<string, string> GetVariableKeys() => _inner?.GetVariableKeys() ?? new Dictionary<string, string>();
-    public Dictionary<string, List<string>> GetVariableExperimentKeys() => _inner?.GetVariableExperimentKeys() ?? new Dictionary<string, List<string>>();
-    public object GetVariableValue(string key, object defaultValue) => _inner?.GetVariableValue(key, defaultValue) ?? defaultValue;
-    public object PeekVariableValue(string key, object defaultValue) => _inner?.PeekVariableValue(key, defaultValue) ?? defaultValue;
-    public void Publish() => _inner?.Publish();
-    public Task PublishAsync() => _inner?.PublishAsync() ?? Task.CompletedTask;
-    public void Refresh() => _inner?.Refresh();
-    public Task RefreshAsync() => _inner?.RefreshAsync() ?? Task.CompletedTask;
-
-    public void Track(string goalName, Dictionary<string, object> properties)
-    {
-        lock (_lock)
-        {
-            if (_inner != null)
-            {
-                _inner.Track(goalName, properties);
-            }
-            else
-            {
-                _queuedGoals.Add((goalName, properties));
-                _eventCollector.HandleEvent(this, EventType.Goal, new { name = goalName, properties });
-            }
-        }
-    }
-}
 
