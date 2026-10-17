@@ -935,6 +935,12 @@ POST /context/{contextId}/readyError
 
 **Response:** `{"result": {"isError": true, "message": "..."}, "events": []}`
 
+The error must come from the SDK's own ready-error accessor. A wrapper whose
+SDK has no such accessor must report `readyError: false` rather than synthesize
+the error from `isFailed()` (the Go SDK on `fix/all-tests-passing` has no
+`ReadyError` API: `SetDataFailed` discards the error, so go-wrapper reports
+`false`).
+
 ### Capability: `publishFail`
 
 Makes the next publish call fail, so pending events are preserved.
@@ -946,6 +952,18 @@ POST /context/{contextId}/publishFail
 **Response:** `{"result": null, "events": []}` — this endpoint arms a failure. The
 next `POST /publish` call fails and its pending events are preserved (pending
 count is unchanged by the failed publish).
+
+Wrappers must implement this by injecting a one-shot failure into the
+`ContextPublisher` the SDK invokes, then letting `/publish` call the SDK's real
+`publish()`. Whether pending survives is the SDK's own behaviour and must not be
+simulated by short-circuiting `/publish` in the wrapper.
+
+Go note (verified against the CI-pinned `go-sdk` `fix/all-tests-passing`,
+`sdk/Context.go` `Flush()`): the SDK zeroes `PendingCount_` and clears the
+exposure/goal buffers *before* invoking the publisher, and does not restore them
+when the publisher's future fails. The go-wrapper uses the real-publisher
+mechanism, so scenario 193 currently fails for Go (pending `0` after a failed
+publish) until the SDK restores events on failure.
 
 ### Capability: `holdouts`
 

@@ -31,6 +31,11 @@ defmodule ElixirWrapper.Router do
       globalCustomFieldKeys: true,
       getUnits: true,
       getAttributes: true,
+      # readyError / publishFail both drive the REAL SDK path (failing
+      # data_fetcher; one-shot failing injected publisher). Known SDK gaps are
+      # deliberately NOT masked: the SDK emits no "error" event on a failed
+      # fetch (scenario 200 events check) and Context.publish swallows
+      # publisher errors after draining pending (scenario 193).
       readyError: true
     })
   end
@@ -390,29 +395,21 @@ defmodule ElixirWrapper.Router do
   end
 
   post "/context/:context_id/publishFail" do
-    context_id = conn.path_params["context_id"]
-    ContextStore.set_publish_fail(context_id, true)
-    send_json(conn, 200, %{result: nil, events: []})
+    # Arms a one-shot transport failure in the injected publisher
+    # (ElixirWrapper.ArmablePublisher). The next /publish runs the REAL
+    # ABSmartly.Context.publish/1; whatever the SDK does with the failure is
+    # reported as-is.
+    with_context_action(conn, fn {ctx, _collector, _eb} ->
+      ContextStore.arm_publish_fail(ctx)
+      send_json(conn, 200, %{result: nil, events: []})
+    end)
   end
 
   post "/context/:context_id/publish" do
-    context_id = conn.path_params["context_id"]
-    should_fail = ContextStore.get_publish_fail(context_id)
-
     with_context_action(conn, fn {ctx, collector, eb} ->
-      if should_fail do
-        # Simulate a publish failure the way go-wrapper does: report the failure
-        # to the client (500) without invoking the SDK publish. This is required
-        # because the elixir SDK's publish clears pending eagerly (even on HTTP
-        # failure), which would violate scenario 193's "pending preserved after
-        # failed publish" expectation. No synthetic event is fabricated.
-        ContextStore.set_publish_fail(context_id, false)
-        send_error(conn, 500, "Publish failed")
-      else
-        case ABSmartly.Context.publish(ctx) do
-          {:error, reason} -> send_error(conn, 500, error_message(reason))
-          _ -> send_action_response(conn, nil, collector, eb)
-        end
+      case ABSmartly.Context.publish(ctx) do
+        {:error, reason} -> send_error(conn, 500, error_message(reason))
+        _ -> send_action_response(conn, nil, collector, eb)
       end
     end)
   end
@@ -470,7 +467,8 @@ defmodule ElixirWrapper.Router do
       endpoint: "http://localhost:3000",
       api_key: "test-key",
       application: "test-app",
-      environment: "test"
+      environment: "test",
+      publisher: ElixirWrapper.ArmablePublisher
     }
 
     context_config =
@@ -516,7 +514,8 @@ defmodule ElixirWrapper.Router do
       endpoint: translated_endpoint,
       api_key: "test-key",
       application: "test-app",
-      environment: "test"
+      environment: "test",
+      publisher: ElixirWrapper.ArmablePublisher
     }
 
     context_options =
@@ -583,7 +582,8 @@ defmodule ElixirWrapper.Router do
       endpoint: "http://localhost:3000",
       api_key: "test-key",
       application: "test-app",
-      environment: "test"
+      environment: "test",
+      publisher: ElixirWrapper.ArmablePublisher
     }
 
     context_options =
@@ -595,22 +595,30 @@ defmodule ElixirWrapper.Router do
 
     context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
 
-    case ABSmartly.Context.start_link_async(sdk_config, context_config) do
+    # Spec: "configure the SDK with ... a data provider that immediately returns
+    # an error". The SDK's own async-fetch path (Context.handle_continue
+    # :fetch_async -> handle_info {:fetch_async_complete, {:error, _}}) sets
+    # failed + failed_reason itself. The wrapper does not touch failed state,
+    # does not fabricate events, and reports SDK-observed state verbatim.
+    data_fetcher = fn -> {:error, "Context load failed"} end
+
+    case ABSmartly.Context.start_link_async(sdk_config, context_config, data_fetcher: data_fetcher) do
       {:ok, ctx} ->
-        ABSmartly.Context.set_failed(ctx, "Context load failed")
-        EventCollector.push(collector, "error", %{message: "Context load failed"})
-        Process.sleep(50)
+        # wait_until_ready replies {:error, reason} once the SDK processes the
+        # failed fetch (or immediately if it already has).
+        _ = ABSmartly.Context.wait_until_ready(ctx, 5000)
 
         context_id = UUID.uuid4()
         ContextStore.store_context(context_id, ctx, collector)
 
+        Process.sleep(10)
         events = EventCollector.get_all(collector)
 
         result = %{
           contextId: context_id,
-          ready: false,
-          failed: true,
-          finalized: false
+          ready: ABSmartly.Context.is_ready?(ctx),
+          failed: ABSmartly.Context.is_failed?(ctx),
+          finalized: ABSmartly.Context.is_finalized?(ctx)
         }
 
         send_json(conn, 200, %{result: result, events: events})

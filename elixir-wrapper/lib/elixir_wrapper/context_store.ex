@@ -17,12 +17,16 @@ defmodule ElixirWrapper.ContextStore do
     GenServer.call(__MODULE__, {:get_context, context_id})
   end
 
-  def set_publish_fail(context_id, value) do
-    GenServer.call(__MODULE__, {:set_publish_fail, context_id, value})
+  # One-shot publish failure, keyed by the SDK context GenServer pid so the
+  # injected ElixirWrapper.ArmablePublisher (which only sees its caller chain)
+  # can consume it from inside the real SDK publish path.
+  def arm_publish_fail(context_pid) when is_pid(context_pid) do
+    GenServer.call(__MODULE__, {:arm_publish_fail, context_pid})
   end
 
-  def get_publish_fail(context_id) do
-    GenServer.call(__MODULE__, {:get_publish_fail, context_id})
+  # Atomically consumes an armed failure for any pid in `pids`.
+  def take_publish_fail(pids) when is_list(pids) do
+    GenServer.call(__MODULE__, {:take_publish_fail, pids})
   end
 
   def delete_context(context_id) do
@@ -58,21 +62,31 @@ defmodule ElixirWrapper.ContextStore do
     end
   end
 
-  def handle_call({:set_publish_fail, context_id, value}, _from, state) do
-    :ets.insert(state.flags, {{:publish_fail, context_id}, value})
+  def handle_call({:arm_publish_fail, pid}, _from, state) do
+    :ets.insert(state.flags, {{:publish_fail, pid}, true})
     {:reply, :ok, state}
   end
 
-  def handle_call({:get_publish_fail, context_id}, _from, state) do
-    case :ets.lookup(state.flags, {:publish_fail, context_id}) do
-      [{_, value}] -> {:reply, value, state}
-      [] -> {:reply, false, state}
-    end
+  def handle_call({:take_publish_fail, pids}, _from, state) do
+    taken =
+      Enum.any?(pids, fn
+        pid when is_pid(pid) -> :ets.take(state.flags, {:publish_fail, pid}) != []
+        _ -> false
+      end)
+
+    {:reply, taken, state}
   end
 
   def handle_call({:delete_context, context_id}, _from, state) do
+    case :ets.lookup(state.contexts, context_id) do
+      [{^context_id, {ctx, _collector}}] when is_pid(ctx) ->
+        :ets.delete(state.flags, {:publish_fail, ctx})
+
+      _ ->
+        :ok
+    end
+
     :ets.delete(state.contexts, context_id)
-    :ets.delete(state.flags, {:publish_fail, context_id})
     {:reply, :ok, state}
   end
 

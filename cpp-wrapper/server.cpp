@@ -11,6 +11,8 @@
 #include <absmartly/client_config.h>
 #include <absmartly/client.h>
 #include <absmartly/default_http_client.h>
+#include <absmartly/context_publisher.h>
+#include <absmartly/default_context_publisher.h>
 
 #include <atomic>
 #include <chrono>
@@ -81,11 +83,45 @@ public:
     }
 };
 
+// ContextPublisher handed to the SDK Context. It is the transport boundary
+// only: the SDK's own Context::publish() builds the event, manages pending
+// state and invokes this publisher. `arm_failure()` makes the NEXT transport
+// call fail (one-shot) with "Publish failed", so the publishFail capability
+// exercises the SDK's real failure path instead of the wrapper short-circuiting
+// publish. Whether pending events survive is decided entirely by the SDK.
+// In e2e mode the delegate is the SDK's DefaultContextPublisher (real HTTP);
+// in local mode there is no collector, so a successful transport is a no-op.
+class FailablePublisher : public absmartly::ContextPublisher {
+public:
+    explicit FailablePublisher(std::shared_ptr<absmartly::ContextPublisher> delegate = nullptr)
+        : delegate_(std::move(delegate)) {}
+
+    void arm_failure() { fail_next_.store(true); }
+
+    std::future<void> publish(const absmartly::PublishEvent& event) override {
+        if (fail_next_.exchange(false)) {
+            std::promise<void> p;
+            p.set_exception(std::make_exception_ptr(std::runtime_error("Publish failed")));
+            return p.get_future();
+        }
+        if (delegate_) {
+            return delegate_->publish(event);
+        }
+        std::promise<void> p;
+        p.set_value();
+        return p.get_future();
+    }
+
+private:
+    std::shared_ptr<absmartly::ContextPublisher> delegate_;
+    std::atomic<bool> fail_next_{false};
+};
+
 struct ContextEntry {
     std::unique_ptr<absmartly::Context> context;
     std::shared_ptr<EventCollector> collector;
+    std::shared_ptr<FailablePublisher> publisher;
     std::map<std::string, json> unit_original_values;
-    bool publishFail = false;
 };
 
 static std::mutex contexts_mu;
@@ -305,6 +341,11 @@ int main() {
                      e2e_sdk_config.client = std::make_shared<absmartly::Client>(client_config,
                          std::make_shared<absmartly::DefaultHTTPClient>());
                      e2e_sdk_config.context_event_handler = e2e_collector;
+                     // Real SDK HTTP publisher, wrapped only so publishFail can
+                     // arm a one-shot transport failure.
+                     auto e2e_publisher = std::make_shared<FailablePublisher>(
+                         std::make_shared<absmartly::DefaultContextPublisher>(e2e_sdk_config.client));
+                     e2e_sdk_config.context_event_publisher = e2e_publisher;
 
                      auto e2e_sdk = absmartly::SDK::create(std::move(e2e_sdk_config));
 
@@ -339,6 +380,7 @@ int main() {
                      ContextEntry entry;
                      entry.context = std::move(e2e_ctx);
                      entry.collector = e2e_collector;
+                     entry.publisher = e2e_publisher;
                      entry.unit_original_values = std::move(e2e_original_units);
 
                      {
@@ -382,6 +424,7 @@ int main() {
                  }
 
                  auto collector = std::make_shared<EventCollector>();
+                 auto publisher = std::make_shared<FailablePublisher>();
                  std::string context_id = make_context_id();
 
                  try {
@@ -391,7 +434,7 @@ int main() {
                          // Deferred context: create with a pending future, resolve after throttle delay
                          std::string endpoint = body["endpoint"].get<std::string>();
                          auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
-                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector);
+                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector, publisher);
 
                          std::thread([promise, endpoint, payload_throttle]() {
                              std::this_thread::sleep_for(std::chrono::milliseconds(payload_throttle));
@@ -413,7 +456,7 @@ int main() {
                          }).detach();
                      } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
                          auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
-                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector);
+                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector, publisher);
                          promise->set_exception(std::make_exception_ptr(std::runtime_error("Context load failed")));
                          std::this_thread::sleep_for(std::chrono::milliseconds(50));
                      } else {
@@ -432,7 +475,7 @@ int main() {
                                  }
                              }
                          }
-                         ctx = std::make_unique<absmartly::Context>(config, context_data, collector);
+                         ctx = std::make_unique<absmartly::Context>(config, context_data, collector, publisher);
                      }
 
                      bool ready = ctx->is_ready();
@@ -443,6 +486,7 @@ int main() {
                      ContextEntry entry;
                      entry.context = std::move(ctx);
                      entry.collector = collector;
+                     entry.publisher = publisher;
                      entry.unit_original_values = std::move(original_units);
 
                      {
@@ -1215,19 +1259,8 @@ int main() {
                  std::string experiment_name = body.value("experimentName", "");
                  std::string field_name = body.value("fieldName", "");
 
-                 json result = nullptr;
-                 const auto& ctx_data = entry->context->data();
-                 for (const auto& exp : ctx_data.experiments) {
-                     if (exp.name == experiment_name) {
-                         for (const auto& field : exp.customFieldValues) {
-                             if (field.name == field_name) {
-                                 result = field.type;
-                                 break;
-                             }
-                         }
-                         break;
-                     }
-                 }
+                 auto type = entry->context->custom_field_value_type(experiment_name, field_name);
+                 json result = type ? json(*type) : json(nullptr);
 
                  std::vector<Event> empty;
                  json resp = make_response(result, empty);
@@ -1331,7 +1364,12 @@ int main() {
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
                      return;
                  }
-                 entry->publishFail = true;
+                 if (!entry->publisher) {
+                     res.status = 501;
+                     res.set_content(make_error_response("publishFail not supported for this context", "UNSUPPORTED").dump(), "application/json");
+                     return;
+                 }
+                 entry->publisher->arm_failure();
                  res.set_content(make_response(nullptr, {}).dump(), "application/json");
              });
 
@@ -1345,15 +1383,6 @@ int main() {
                      res.status = 404;
                      res.set_content(
                          make_error_response("Context not found", "NOT_FOUND").dump(),
-                         "application/json");
-                     return;
-                 }
-
-                 if (entry->publishFail) {
-                     entry->publishFail = false;
-                     res.status = 500;
-                     res.set_content(
-                         make_error_response("publish failed", "PUBLISH_ERROR").dump(),
                          "application/json");
                      return;
                  }

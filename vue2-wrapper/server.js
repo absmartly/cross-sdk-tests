@@ -6,7 +6,6 @@ if (typeof self === 'undefined') {
 }
 
 const Vue = require('vue');
-const { createRenderer } = require('vue-server-renderer');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const vue2sdk = require('@absmartly/vue2-sdk');
@@ -19,30 +18,15 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-const renderer = createRenderer();
-
-// SSR-compatible Treatment: Vue2 SSR only fires beforeCreate+created, NOT beforeMount.
-// The Treatment component initializes state in beforeMount, so we move that logic to created.
-const TreatmentOriginal = vue2sdk.Treatment.options || vue2sdk.Treatment;
-const TreatmentSSR = Object.assign({}, TreatmentOriginal, {
-  created() {
-    const context = this[this.__absmartlyGlobal];
-    this.failed = context.isFailed();
-    if (context.isReady()) {
-      if (this.attributes instanceof Object) {
-        context.attributes(this.attributes);
-      }
-      this.treatment = context.treatment(this.name);
-      this.ready = true;
-    }
-    if (this.ready) {
-      this.treatmentNames = [String.fromCharCode(65 + this.treatment), this.treatment.toString(), 'default'];
-    } else {
-      this.treatmentNames = ['loading', 'default'];
-    }
-  },
-  beforeMount: undefined
-});
+// The SDK's <Treatment> picks its variant in beforeMount(), which Vue's SSR
+// renderer never calls. Instead of re-implementing that hook, the shipped
+// component is instantiated directly and mounted with vm.$mount(), which runs its
+// real lifecycle (beforeCreate, created, beforeMount, render, mounted). Under
+// Node, Vue 2 has no `window`, so its DOM patch step is a no-op. That is fine:
+// the SDK's render() selects and invokes the variant slot before the patch.
+// No DOM globals are introduced, so the JS SDK's environment detection is
+// unchanged.
+const TreatmentOptions = vue2sdk.Treatment.options || vue2sdk.Treatment;
 
 const app = express();
 app.use(express.json());
@@ -285,31 +269,67 @@ app.post('/context/:contextId/treatment', async (req, res) => {
     return res.json({ result: 0, events: [] });
   }
 
+  let TreatmentCtor = null;
+  let vm = null;
   try {
-    Vue.prototype.__absmartlyGlobal = '$absmartly';
-    Vue.prototype.$absmartly = context;
+    // Per-request injection instead of mutating the global Vue.prototype: the
+    // SDK plugin sets __absmartlyGlobal/$absmartly on Vue.prototype
+    // (plugin.js install()); here the same two properties go on the prototype
+    // of a request-local subclass, and the shipped Treatment options are
+    // extended from it, so the component reads this[this.__absmartlyGlobal]
+    // exactly as it does under the plugin.
+    const RequestVue = Vue.extend({});
+    RequestVue.prototype.__absmartlyGlobal = '$absmartly';
+    RequestVue.prototype.$absmartly = context;
+    TreatmentCtor = RequestVue.extend(TreatmentOptions);
 
-    const vueApp = new Vue({
-      render(h) {
-        const scopedSlots = {};
-        for (let i = 0; i <= 10; i++) {
-          const idx = i;
-          scopedSlots[idx.toString()] = () => h('span', { attrs: { 'data-variant': idx } }, [String(idx)]);
-        }
-        scopedSlots['default'] = () => h('span', { attrs: { 'data-variant': 0 } }, ['0']);
-        return h(TreatmentSSR, { props: { name: experimentName }, scopedSlots });
-      }
-    });
+    // Each numbered slot records its index only when the SDK component invokes
+    // it. No 'default' slot and no HTML scraping: if the SDK selects nothing we
+    // can identify, that is an error, never variant 0.
+    const rendered = [];
+    let renderError = null;
+    vm = new TreatmentCtor({ propsData: { name: experimentName } });
+    // A root instance has no parent vnode to supply scoped slots, so set them
+    // the way a parent's render would before mounting.
+    const scopedSlots = {};
+    for (let i = 0; i <= 10; i++) {
+      const idx = i;
+      scopedSlots[idx.toString()] = () => {
+        rendered.push(idx);
+        return vm.$createElement('span', [String(idx)]);
+      };
+    }
+    vm.$scopedSlots = scopedSlots;
+    const prevErrorHandler = Vue.config.errorHandler;
+    Vue.config.errorHandler = (err) => { if (!renderError) renderError = err; };
+    try {
+      vm.$mount();
+    } finally {
+      Vue.config.errorHandler = prevErrorHandler;
+    }
 
-    const html = await renderer.renderToString(vueApp);
-    const match = html.match(/data-variant="(\d+)"/);
-    const variant = match ? parseInt(match[1], 10) : 0;
+    if (renderError) throw renderError;
+
+    const distinct = [...new Set(rendered)];
+    if (distinct.length !== 1) {
+      return res.status(500).json({
+        error: `Vue2 SDK <Treatment> rendered ${distinct.length} distinct variant slots (expected exactly 1): [${distinct.join(', ')}]`
+      });
+    }
+    const variant = distinct[0];
 
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
   } catch (error) {
     console.error('Treatment error:', error);
     res.status(400).json({ error: error.message });
+  } finally {
+    if (vm) vm.$destroy();
+    // Vue.extend caches the subclass on the options object keyed by the parent
+    // cid; drop this request's entry so per-request subclasses don't accumulate.
+    if (TreatmentCtor && TreatmentOptions._Ctor) {
+      delete TreatmentOptions._Ctor[TreatmentCtor.super.cid];
+    }
   }
 });
 
@@ -603,14 +623,13 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh may fail, still report events
+    // Public SDK API: context.refresh() re-fetches through the SDK's data
+    // provider (the wrapper's mock /context_payload endpoint, which the
+    // orchestrator updates before calling this) and rejects on failure.
+    await context.refresh();
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);

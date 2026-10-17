@@ -1,7 +1,6 @@
 require 'sinatra'
 require 'json'
 require 'base64'
-require 'digest'
 require 'ostruct'
 require 'net/http'
 require 'uri'
@@ -1109,8 +1108,7 @@ post '/diagnostic' do
 
   result = case op
            when 'hashUnit'
-             digest = Digest::MD5.digest(value.to_s)
-             Base64.urlsafe_encode64(digest, padding: false)
+             Hashing.hash_unit(value.to_s)
            when 'base64UrlNoPadding'
              Base64.urlsafe_encode64(value.to_s, padding: false)
            when 'utf8Bytes'
