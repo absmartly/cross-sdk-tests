@@ -5,7 +5,6 @@ import re
 import time
 import uuid
 import base64
-import hashlib
 from concurrent.futures import Future
 
 from sdk.absmartly import ABSmartly
@@ -19,25 +18,6 @@ from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
-try:
-    # sdk.internal.hashing only exists on python3-sdk branches that merged
-    # the public hash-unit-function PR (absmartly/python3-sdk#12), not yet
-    # on the pinned fix/python-sdk-all-tests-passing branch (sdk-branches.sh).
-    # Fall back to the exact same MD5+base64url computation the pinned
-    # branch's Context.get_unit_hash() does internally (sdk/context.py:629-633),
-    # so this isn't an approximation of the SDK's hashing, it's the same
-    # algorithm — just duplicated because that branch doesn't expose it as a
-    # standalone function outside a live Context.
-    from sdk.internal.hashing import hash_unit
-except ImportError as e:
-    # Only fall back when the module itself (or a parent package) is missing,
-    # or it lacks hash_unit. A failure importing one of its own dependencies
-    # means a broken SDK install and must not be masked.
-    if e.name not in ('sdk', 'sdk.internal', 'sdk.internal.hashing'):
-        raise
-    def hash_unit(text):
-        digest = hashlib.md5(text.encode('utf-8')).digest()
-        return base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
 import jsons
 import threading
 import urllib.request
@@ -849,6 +829,25 @@ def delete_context(context_id):
         del contexts[context_id]
     return jsonify({'result': 'deleted'})
 
+def sdk_hash_unit(text):
+    # Hash through the SDK's own Context.get_unit_hash() rather than any
+    # wrapper-side reimplementation: the pinned python3-sdk branch exposes no
+    # standalone hash function, so a throwaway context over empty data is the
+    # only way to exercise the SDK's hashing code path.
+    client_config = ClientConfig()
+    client_config.endpoint = 'http://dummy'
+    client_config.api_key = 'dummy'
+    client_config.application = 'test'
+    client_config.environment = 'test'
+    sdk_config = ABSmartlyConfig()
+    sdk_config.client = Client(client_config, DefaultHTTPClient(DefaultHTTPClientConfig()))
+    context = ABSmartly(sdk_config).create_context_with(
+        ContextConfig(), jsons.load({'experiments': []}, ContextData))
+    try:
+        return context.get_unit_hash('diagnostic', text).decode('ascii')
+    finally:
+        context.close()
+
 @app.route('/diagnostic', methods=['POST'])
 def diagnostic():
     try:
@@ -858,7 +857,7 @@ def diagnostic():
 
         if op == 'hashUnit':
             text = '' if value is None else str(value)
-            result = hash_unit(text)
+            result = sdk_hash_unit(text)
         elif op == 'base64UrlNoPadding':
             text = '' if value is None else str(value)
             result = base64.urlsafe_b64encode(text.encode('utf-8')).decode('ascii').rstrip('=')
