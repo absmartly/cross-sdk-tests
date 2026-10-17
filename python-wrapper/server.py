@@ -18,7 +18,6 @@ from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
-from sdk.internal.hashing import hash_unit
 import jsons
 import threading
 import urllib.request
@@ -830,6 +829,25 @@ def delete_context(context_id):
         del contexts[context_id]
     return jsonify({'result': 'deleted'})
 
+def sdk_hash_unit(text):
+    # Hash through the SDK's own Context.get_unit_hash() rather than any
+    # wrapper-side reimplementation: the pinned python3-sdk branch exposes no
+    # standalone hash function, so a throwaway context over empty data is the
+    # only way to exercise the SDK's hashing code path.
+    client_config = ClientConfig()
+    client_config.endpoint = 'http://dummy'
+    client_config.api_key = 'dummy'
+    client_config.application = 'test'
+    client_config.environment = 'test'
+    sdk_config = ABSmartlyConfig()
+    sdk_config.client = Client(client_config, DefaultHTTPClient(DefaultHTTPClientConfig()))
+    context = ABSmartly(sdk_config).create_context_with(
+        ContextConfig(), jsons.load({'experiments': []}, ContextData))
+    try:
+        return context.get_unit_hash('diagnostic', text).decode('ascii')
+    finally:
+        context.close()
+
 @app.route('/diagnostic', methods=['POST'])
 def diagnostic():
     try:
@@ -839,7 +857,7 @@ def diagnostic():
 
         if op == 'hashUnit':
             text = '' if value is None else str(value)
-            result = hash_unit(text)
+            result = sdk_hash_unit(text)
         elif op == 'base64UrlNoPadding':
             text = '' if value is None else str(value)
             result = base64.urlsafe_b64encode(text.encode('utf-8')).decode('ascii').rstrip('=')
