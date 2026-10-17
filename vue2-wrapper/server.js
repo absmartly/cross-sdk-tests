@@ -28,6 +28,19 @@ process.on('unhandledRejection', (reason, promise) => {
 // unchanged.
 const TreatmentOptions = vue2sdk.Treatment.options || vue2sdk.Treatment;
 
+// Vue defers dependency-subscription cleanup until its scheduler flushes. The
+// wrapper mounts and destroys components without a browser event loop, so
+// provide a harmless reactive tick to flush that queue after each request.
+const cleanupScheduler = new Vue({
+  data: () => ({ tick: 0 }),
+  watch: { tick() {} }
+});
+
+async function flushVueCleanup() {
+  cleanupScheduler.tick += 1;
+  await Vue.nextTick();
+}
+
 const app = express();
 app.use(express.json());
 
@@ -330,6 +343,7 @@ app.post('/context/:contextId/treatment', async (req, res) => {
     if (TreatmentCtor && TreatmentOptions._Ctor) {
       delete TreatmentOptions._Ctor[TreatmentCtor.super.cid];
     }
+    await flushVueCleanup();
   }
 });
 
