@@ -13,7 +13,31 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{utils, ABsmartly, Context, ContextData};
+use absmartly_sdk::{utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Mock-mode publisher: delivers nothing, fails once when armed by /publishFail.
+struct MockPublisher {
+    fail_next: Arc<AtomicBool>,
+}
+
+impl ContextPublisher for MockPublisher {
+    fn publish(&self, _params: &PublishParams) -> Result<(), String> {
+        if self.fail_next.swap(false, Ordering::SeqCst) {
+            return Err("Publish failed".to_string());
+        }
+        Ok(())
+    }
+}
+
+fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
+    let ec = ec.clone();
+    ContextOptions {
+        publish_delay: -1,
+        refresh_period: 0,
+        event_logger: Some(Arc::new(move |_ctx: &Context, name: &str, data: Option<Value>| ec.push(name, data))),
+    }
+}
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -84,6 +108,7 @@ impl EventCollector {
 struct ContextData_ {
     context: Mutex<Context>,
     event_collector: Arc<EventCollector>,
+    publish_fail: Arc<AtomicBool>,
 }
 
 struct AppState {
@@ -219,22 +244,12 @@ async fn health_handler() -> impl IntoResponse {
 async fn capabilities_handler() -> impl IntoResponse {
     Json(json!({"diagnostics": true,
         "attrsSeq": false,
-        // publishFail withdrawn: ContextPublisher::publish returns () so a
-        // transport failure cannot be surfaced, and Context::publish zeroes
-        // pending/clears exposures+goals BEFORE invoking the publisher
-        // (rust-sdk src/context.rs Context::publish). Faking the failure in
-        // the wrapper would attribute pending-preservation to the SDK.
-        "publishFail": false,
+        "publishFail": true,
         "variableKeysMap": true,
         "globalCustomFieldKeys": true,
         "getUnits": true,
         "getAttributes": true,
-        // readyError withdrawn: ABsmartly::create_context returns
-        // Err(SDKError) on load failure and never yields a failed Context;
-        // ready_error() is only populated by an external
-        // become_failed_with_error() call, which the SDK itself never makes.
-        // Producing it here would be the wrapper's behaviour, not the SDK's.
-        "readyError": false
+        "readyError": true
     }))
 }
 
@@ -356,10 +371,9 @@ async fn create_context_handler(
             }
         };
 
-        // The SDK emits no ready/error events and returns Err (not a failed
-        // Context) when loading fails, so surface the real SDK error instead
-        // of fabricating a failed context or events.
-        let mut context = match sdk.create_context(units.clone(), None).await {
+        // create_context returns Err on load failure; surface the real SDK
+        // error rather than fabricating a failed context.
+        let mut context = match sdk.create_context(units.clone(), Some(logging_options(&event_collector))).await {
             Ok(ctx) => ctx,
             Err(e) => {
                 return (
@@ -370,11 +384,6 @@ async fn create_context_handler(
         };
         let ready = context.is_ready();
         let failed = context.is_failed();
-
-        let ec = event_collector.clone();
-        context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
-            ec.push(event_name, data);
-        }));
 
         if let Some(attributes) = &req.attributes {
             for (name, value) in attributes {
@@ -387,6 +396,7 @@ async fn create_context_handler(
         let context_data = Arc::new(ContextData_ {
             context: Mutex::new(context),
             event_collector: event_collector.clone(),
+            publish_fail: Arc::new(AtomicBool::new(false)),
         });
 
         let mut contexts = state.contexts.write().unwrap();
@@ -424,24 +434,20 @@ async fn create_context_handler(
 
     let (mut context, ready, failed) = if let Some(data) = req.data {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-        let ctx = sdk.create_context_with(units, data, None);
+        let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     } else if let Some(endpoint) = req.endpoint {
         if payload_throttle_ms > 0 {
-            let mut ctx = Context::new_loading();
+            let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
             for (unit_type, uid) in &units {
                 let _ = ctx.set_unit(unit_type, uid);
             }
 
-            let ec = event_collector.clone();
-            ctx.set_event_logger(Arc::new(move |_ctx, event_name, data| {
-                ec.push(event_name, data);
-            }));
-
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
+                publish_fail: Arc::new(AtomicBool::new(false)),
             });
 
             {
@@ -521,7 +527,7 @@ async fn create_context_handler(
 
             if let Some(data) = payload_data {
                 let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-                let ctx = sdk.create_context_with(units, data, None);
+                let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
                 let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
                 (ctx, ready, failed)
             } else {
@@ -534,30 +540,29 @@ async fn create_context_handler(
             }
         }
     } else if req.fail_load {
-        // readyError capability is withdrawn (see capabilities_handler): the
-        // SDK has no API that yields a failed Context with a ready error, so
-        // any failed context built here would be wrapper-fabricated.
-        return (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(json!({"error": "failLoad not supported: rust SDK create_context returns Err, never a failed Context"})),
-        ).into_response();
+        let sdk = ABsmartly::builder()
+            .endpoint("http://127.0.0.1:1")
+            .api_key("test-key").application("test-app").environment("test-env")
+            .retries(1).build().expect("Failed to create SDK");
+        let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
+        let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+        (ctx, ready, failed)
     } else {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-        let ctx = sdk.create_context_with(units, ContextData::default(), None);
+        let ctx = sdk.create_context_with(units, ContextData::default(), Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     };
 
-    let ec = event_collector.clone();
-    context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
-        ec.push(event_name, data);
-    }));
+    let publish_fail = Arc::new(AtomicBool::new(false));
+    context.set_publisher(Box::new(MockPublisher { fail_next: publish_fail.clone() }));
 
     let finalized = context.is_finalized();
 
     let context_data = Arc::new(ContextData_ {
         context: Mutex::new(context),
         event_collector: event_collector.clone(),
+        publish_fail,
     });
 
     let mut contexts = state.contexts.write().unwrap();
@@ -1181,12 +1186,9 @@ async fn publish_fail_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    // Capability withdrawn (see capabilities_handler); never fake a failure.
-    let _ = get_context(&state, &context_id)?;
-    Err::<Json<ApiResponse>, _>((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({"error": "publishFail not supported: rust SDK ContextPublisher cannot report failure and Context::publish drains pending first"})),
-    ))
+    let ctx_data = get_context(&state, &context_id)?;
+    ctx_data.publish_fail.store(true, Ordering::SeqCst);
+    Ok(Json(ApiResponse { result: Value::Null, events: vec![], error: None }))
 }
 
 async fn publish_handler(
@@ -1197,12 +1199,15 @@ async fn publish_handler(
 
     let events_before = ctx_data.event_collector.len();
 
-    // Always the real SDK path: Context::publish builds the event, drains
-    // pending and hands it to the SDK's own publisher (DefaultContextPublisher
-    // in e2e mode, which performs the real HTTP PUT).
-    {
+    // Always the real SDK path: Context::publish hands the event to the
+    // context's publisher (MockPublisher in mock mode, the SDK's
+    // DefaultContextPublisher in e2e mode) and keeps pending on failure.
+    let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.publish();
+        context.publish()
+    };
+    if let Err(e) = outcome {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
@@ -1244,9 +1249,12 @@ async fn finalize_handler(
     let events_before = ctx_data.event_collector.len();
 
     // Always the real SDK path (see publish_handler).
-    {
+    let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.finalize();
+        context.finalize()
+    };
+    if let Err(e) = outcome {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
