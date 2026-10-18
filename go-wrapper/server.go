@@ -140,20 +140,27 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 }
 
 // CustomPublisher is the per-context ContextPublisher handed to the real SDK.
-// It never touches the network. When armed via /publishFail it fails the next
-// SDK-invoked Publish exactly once; what happens to pending events after that
-// failure is decided entirely by the SDK's own Flush() logic.
+// When armed via /publishFail it fails the next SDK-invoked Publish exactly
+// once; what happens to pending events after that failure is decided entirely
+// by the SDK's own Flush() logic. Otherwise it forwards to inner (the SDK's
+// DefaultContextEventHandler in e2e mode) or, in mock mode where there is no
+// collector, delivers nothing.
 type CustomPublisher struct {
 	eventCollector *EventCollector
 	failNext       atomic.Bool
+	inner          sdk.ContextEventHandler
 }
 
 func (cp *CustomPublisher) Publish(context sdk.Context, event jsonmodels.PublishEvent) *future.Future {
-	result, done := future.New()
 	if cp.failNext.CompareAndSwap(true, false) {
+		result, done := future.New()
 		done(nil, errors.New("Publish failed"))
 		return result
 	}
+	if cp.inner != nil {
+		return cp.inner.Publish(context, event)
+	}
+	result, done := future.New()
 	done(nil, nil)
 	return result
 }
@@ -367,8 +374,13 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			Environment_: e2eEnvironment,
 		}
 		e2eClient := sdk.CreateDefaultClient(e2eClientConfig)
+		e2ePublisher := &CustomPublisher{
+			eventCollector: e2eEventCollector,
+			inner:          sdk.CreateDefaultContextEventHandler(e2eClient),
+		}
 		e2eAbsmartly := sdk.Create(sdk.ABSmartlyConfig{
 			Client_:              e2eClient,
+			ContextPublisher_:    e2ePublisher,
 			ContextEventLogger_: e2eEventCollector,
 		})
 
@@ -410,6 +422,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		e2eCtxData := &ContextData{
 			context:        e2eContext,
 			eventCollector: e2eEventCollector,
+			publisher:      e2ePublisher,
 		}
 
 		contextsMu.Lock()

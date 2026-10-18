@@ -13,20 +13,33 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams};
+use absmartly_sdk::{
+    utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
+};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Mock-mode publisher: delivers nothing, fails once when armed by /publishFail.
-struct MockPublisher {
+/// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
+/// mode it sends through the SDK's own `ABsmartly::publish` (same request and
+/// headers as the SDK's default publisher, blocking on the multi-thread
+/// runtime the same way); in mock mode there is no collector, so it delivers
+/// nothing.
+struct ArmablePublisher {
     fail_next: Arc<AtomicBool>,
+    sdk: Option<Arc<ABsmartly>>,
 }
 
-impl ContextPublisher for MockPublisher {
-    fn publish(&self, _params: &PublishParams) -> Result<(), String> {
+impl ContextPublisher for ArmablePublisher {
+    fn publish(&self, params: &PublishParams) -> Result<(), String> {
         if self.fail_next.swap(false, Ordering::SeqCst) {
             return Err("Publish failed".to_string());
         }
-        Ok(())
+        match &self.sdk {
+            Some(sdk) => tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(sdk.publish(params))
+            })
+            .map_err(|e| format!("Publish failed: {}", e)),
+            None => Ok(()),
+        }
     }
 }
 
@@ -391,12 +404,18 @@ async fn create_context_handler(
             }
         }
 
+        let publish_fail = Arc::new(AtomicBool::new(false));
+        context.set_publisher(Box::new(ArmablePublisher {
+            fail_next: publish_fail.clone(),
+            sdk: Some(sdk.clone()),
+        }));
+
         let finalized = context.is_finalized();
 
         let context_data = Arc::new(ContextData_ {
             context: Mutex::new(context),
             event_collector: event_collector.clone(),
-            publish_fail: Arc::new(AtomicBool::new(false)),
+            publish_fail,
         });
 
         let mut contexts = state.contexts.write().unwrap();
@@ -555,7 +574,7 @@ async fn create_context_handler(
     };
 
     let publish_fail = Arc::new(AtomicBool::new(false));
-    context.set_publisher(Box::new(MockPublisher { fail_next: publish_fail.clone() }));
+    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
 
     let finalized = context.is_finalized();
 
@@ -1200,8 +1219,8 @@ async fn publish_handler(
     let events_before = ctx_data.event_collector.len();
 
     // Always the real SDK path: Context::publish hands the event to the
-    // context's publisher (MockPublisher in mock mode, the SDK's
-    // DefaultContextPublisher in e2e mode) and keeps pending on failure.
+    // context's ArmablePublisher (which delivers nothing in mock mode and
+    // sends via the SDK's ABsmartly::publish in e2e mode) and keeps pending on failure.
     let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
         context.publish()
