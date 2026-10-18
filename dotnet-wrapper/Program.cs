@@ -80,11 +80,7 @@ app.MapGet("/capabilities", () => Results.Ok(new
     globalCustomFieldKeys = true,
     getUnits = true,
     getAttributes = true,
-    // readyError withdrawn: the .NET SDK has no public path that populates
-    // Context.ReadyError. The only failure path (data provider/HTTP fetch fails
-    // -> ABSmartlyService.GetContextDataAsync returns null -> Context ctor)
-    // calls SetDataFailed() with no exception, so ReadyError is always null.
-    readyError = false
+    readyError = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -418,14 +414,13 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         {
             context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
         }
+        else if (payloadThrottle > 0)
+        {
+            // SDK not-ready state: returns immediately, data loads in the background.
+            context = sdk.CreatePendingContext(contextConfig);
+        }
         else
         {
-            // Async: createContext (SDK fetches from the endpoint). The .NET SDK's
-            // CreateContext/CreateContextAsync only construct the Context after the
-            // data fetch completes, so the SDK has no "created but not ready" state.
-            // Throttled scenarios therefore block here for the throttle duration
-            // and return a ready (or failed) context; the wrapper does not emulate
-            // a pre-ready context or queue calls on the SDK's behalf.
             context = sdk.CreateContext(contextConfig);
 
             // Wait for events to be collected (like Go/Java wrappers)
