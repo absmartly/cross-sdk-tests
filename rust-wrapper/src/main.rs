@@ -462,11 +462,13 @@ async fn create_context_handler(
             for (unit_type, uid) in &units {
                 let _ = ctx.set_unit(unit_type, uid);
             }
+            let publish_fail = Arc::new(AtomicBool::new(false));
+            ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
 
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
-                publish_fail: Arc::new(AtomicBool::new(false)),
+                publish_fail,
             });
 
             {
