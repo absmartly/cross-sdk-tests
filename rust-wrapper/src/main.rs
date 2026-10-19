@@ -13,7 +13,44 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{utils, ABsmartly, Context, ContextData};
+use absmartly_sdk::{
+    utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
+};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
+/// mode it sends through the SDK's own `ABsmartly::publish` (same request and
+/// headers as the SDK's default publisher, blocking on the multi-thread
+/// runtime the same way); in mock mode there is no collector, so it delivers
+/// nothing.
+struct ArmablePublisher {
+    fail_next: Arc<AtomicBool>,
+    sdk: Option<Arc<ABsmartly>>,
+}
+
+impl ContextPublisher for ArmablePublisher {
+    fn publish(&self, params: &PublishParams) -> Result<(), String> {
+        if self.fail_next.swap(false, Ordering::SeqCst) {
+            return Err("Publish failed".to_string());
+        }
+        match &self.sdk {
+            Some(sdk) => tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(sdk.publish(params))
+            })
+            .map_err(|e| format!("Publish failed: {}", e)),
+            None => Ok(()),
+        }
+    }
+}
+
+fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
+    let ec = ec.clone();
+    ContextOptions {
+        publish_delay: -1,
+        refresh_period: 0,
+        event_logger: Some(Arc::new(move |_ctx: &Context, name: &str, data: Option<Value>| ec.push(name, data))),
+    }
+}
 
 fn now_millis() -> i64 {
     SystemTime::now()
@@ -84,9 +121,7 @@ impl EventCollector {
 struct ContextData_ {
     context: Mutex<Context>,
     event_collector: Arc<EventCollector>,
-    publish_fail: std::sync::atomic::AtomicBool,
-    sdk: Arc<ABsmartly>,
-    is_e2e: bool,
+    publish_fail: Arc<AtomicBool>,
 }
 
 struct AppState {
@@ -289,8 +324,10 @@ async fn mock_api_context_handler(
     Path(payload_id): Path<String>,
 ) -> impl IntoResponse {
     let payloads = state.payloads.read().unwrap();
-    let data = payloads.get(&payload_id).cloned().unwrap_or_default();
-    Json(data)
+    match payloads.get(&payload_id).cloned() {
+        Some(data) => Json(data).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({"error": "payload not found"}))).into_response(),
+    }
 }
 
 fn value_to_string(v: &Value) -> String {
@@ -349,28 +386,19 @@ async fn create_context_handler(
             }
         };
 
-        let result = sdk.create_context(units.clone(), None).await;
-        let (mut context, ready, failed) = match result {
-            Ok(ctx) => {
-                let data = ctx.data().clone();
-                event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
-                (ctx, true, false)
-            }
+        // create_context returns Err on load failure; surface the real SDK
+        // error rather than fabricating a failed context.
+        let mut context = match sdk.create_context(units.clone(), Some(logging_options(&event_collector))).await {
+            Ok(ctx) => ctx,
             Err(e) => {
-                let mut ctx = Context::new_loading();
-                for (unit_type, uid) in &units {
-                    let _ = ctx.set_unit(unit_type, uid);
-                }
-                ctx.become_failed();
-                event_collector.push("error", Some(json!({"message": format!("{}", e)})));
-                (ctx, false, true)
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({"error": format!("{}", e)})),
+                ).into_response();
             }
         };
-
-        let ec = event_collector.clone();
-        context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
-            ec.push(event_name, data);
-        }));
+        let ready = context.is_ready();
+        let failed = context.is_failed();
 
         if let Some(attributes) = &req.attributes {
             for (name, value) in attributes {
@@ -378,14 +406,18 @@ async fn create_context_handler(
             }
         }
 
+        let publish_fail = Arc::new(AtomicBool::new(false));
+        context.set_publisher(Box::new(ArmablePublisher {
+            fail_next: publish_fail.clone(),
+            sdk: Some(sdk.clone()),
+        }));
+
         let finalized = context.is_finalized();
 
         let context_data = Arc::new(ContextData_ {
             context: Mutex::new(context),
             event_collector: event_collector.clone(),
-            publish_fail: std::sync::atomic::AtomicBool::new(false),
-            sdk: sdk.clone(),
-            is_e2e: true,
+            publish_fail,
         });
 
         let mut contexts = state.contexts.write().unwrap();
@@ -423,30 +455,22 @@ async fn create_context_handler(
 
     let (mut context, ready, failed) = if let Some(data) = req.data {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-        let ctx = sdk.create_context_with(units, data.clone(), None);
-        event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
-        (ctx, true, false)
+        let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
+        let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+        (ctx, ready, failed)
     } else if let Some(endpoint) = req.endpoint {
         if payload_throttle_ms > 0 {
-            let mut ctx = Context::new_loading();
+            let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
             for (unit_type, uid) in &units {
                 let _ = ctx.set_unit(unit_type, uid);
             }
-
-            let ec = event_collector.clone();
-            ctx.set_event_logger(Arc::new(move |_ctx, event_name, data| {
-                ec.push(event_name, data);
-            }));
+            let publish_fail = Arc::new(AtomicBool::new(false));
+            ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
 
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
-                publish_fail: std::sync::atomic::AtomicBool::new(false),
-                sdk: Arc::new(
-                    ABsmartly::new("http://dummy", "test-key", "test-app", "test-env")
-                        .expect("Failed to create SDK"),
-                ),
-                is_e2e: false,
+                publish_fail,
             });
 
             {
@@ -456,7 +480,6 @@ async fn create_context_handler(
 
             let endpoint_clone = translate_endpoint(&endpoint);
             let context_data_clone = context_data.clone();
-            let event_collector_clone = event_collector.clone();
             let state_clone = state.clone();
             let throttle_delay = payload_throttle_ms;
 
@@ -474,11 +497,8 @@ async fn create_context_handler(
                     };
 
                     if let Some(data) = payload_data {
-                        {
-                            let mut context = context_data_clone.context.lock().unwrap();
-                            context.become_ready(data.clone());
-                        }
-                        event_collector_clone.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                        let mut context = context_data_clone.context.lock().unwrap();
+                        context.become_ready(data);
                         return;
                     }
                 }
@@ -490,22 +510,13 @@ async fn create_context_handler(
                 match result {
                     Ok(ready_ctx) => {
                         let data: ContextData = ready_ctx.data().clone();
-                        {
-                            let mut context = context_data_clone.context.lock().unwrap();
-                            context.become_ready(data.clone());
-                        }
-                        event_collector_clone
-                            .push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
+                        let mut context = context_data_clone.context.lock().unwrap();
+                        context.become_ready(data);
                     }
                     Err(e) => {
-                        {
-                            let mut context = context_data_clone.context.lock().unwrap();
-                            context.become_failed();
-                        }
-                        event_collector_clone.push(
-                            "error",
-                            Some(json!({"message": format!("Failed to fetch context: {}", e)})),
-                        );
+                        tracing::warn!("deferred context fetch failed: {}", e);
+                        let mut context = context_data_clone.context.lock().unwrap();
+                        context.become_failed();
                     }
                 }
             });
@@ -539,50 +550,46 @@ async fn create_context_handler(
 
             if let Some(data) = payload_data {
                 let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-                let ctx = sdk.create_context_with(units, data.clone(), None);
-                event_collector.push("ready", Some(serde_json::to_value(&data).unwrap_or_default()));
-                (ctx, true, false)
+                let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
+                let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+                (ctx, ready, failed)
             } else {
-                let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-                let ctx = sdk.create_context_with(HashMap::<String, String>::new(), ContextData::default(), None);
-                event_collector.push(
-                    "error",
-                    Some(json!({"message": format!("Payload not found for endpoint: {}", translated_endpoint)})),
-                );
-                (ctx, true, true)
+                // No stored payload: let the SDK fetch the endpoint itself
+                // (the mock collector returns 404), so the context's failed
+                // state and ready_error come from the SDK.
+                let sdk = ABsmartly::builder()
+                    .endpoint(&translated_endpoint)
+                    .api_key("test-key").application("test-app").environment("test-env")
+                    .retries(1).build().expect("Failed to create SDK");
+                let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
+                let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+                (ctx, ready, failed)
             }
         }
     } else if req.fail_load {
-        let mut ctx = Context::new_loading();
-        for (unit_type, uid) in &units {
-            let _ = ctx.set_unit(unit_type, uid);
-        }
-        ctx.become_failed_with_error("Context load failed".to_string());
-        event_collector.push("error", Some(json!({"message": "Context load failed"})));
-        (ctx, false, true)
+        let sdk = ABsmartly::builder()
+            .endpoint("http://127.0.0.1:1")
+            .api_key("test-key").application("test-app").environment("test-env")
+            .retries(1).build().expect("Failed to create SDK");
+        let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
+        let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+        (ctx, ready, failed)
     } else {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-        let ctx = sdk.create_context_with(units, ContextData::default(), None);
-        event_collector.push("ready", Some(serde_json::to_value(&ContextData::default()).unwrap_or_default()));
-        (ctx, true, false)
+        let ctx = sdk.create_context_with(units, ContextData::default(), Some(logging_options(&event_collector)));
+        let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+        (ctx, ready, failed)
     };
 
-    let ec = event_collector.clone();
-    context.set_event_logger(Arc::new(move |_ctx: &Context, event_name: &str, data: Option<Value>| {
-        ec.push(event_name, data);
-    }));
+    let publish_fail = Arc::new(AtomicBool::new(false));
+    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
 
     let finalized = context.is_finalized();
 
     let context_data = Arc::new(ContextData_ {
         context: Mutex::new(context),
         event_collector: event_collector.clone(),
-        publish_fail: std::sync::atomic::AtomicBool::new(false),
-        sdk: Arc::new(
-            ABsmartly::new("http://dummy", "test-key", "test-app", "test-env")
-                .expect("Failed to create SDK"),
-        ),
-        is_e2e: false,
+        publish_fail,
     });
 
     let mut contexts = state.contexts.write().unwrap();
@@ -1207,7 +1214,7 @@ async fn publish_fail_handler(
     Path(context_id): Path<String>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     let ctx_data = get_context(&state, &context_id)?;
-    ctx_data.publish_fail.store(true, std::sync::atomic::Ordering::Relaxed);
+    ctx_data.publish_fail.store(true, Ordering::SeqCst);
     Ok(Json(ApiResponse { result: Value::Null, events: vec![], error: None }))
 }
 
@@ -1217,42 +1224,17 @@ async fn publish_handler(
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     let ctx_data = get_context(&state, &context_id)?;
 
-    if ctx_data.publish_fail.load(std::sync::atomic::Ordering::Relaxed) {
-        ctx_data.publish_fail.store(false, std::sync::atomic::Ordering::Relaxed);
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "publish failed"}))));
-    }
-
     let events_before = ctx_data.event_collector.len();
 
-    if ctx_data.is_e2e {
-        // E2E mode: drive the SDK's awaitable publish so the HTTP PUT actually
-        // completes before we return (the sync Context::publish is fire-and-forget).
-        let params = {
-            let mut context = ctx_data.context.lock().unwrap();
-            if context.pending() == 0 {
-                None
-            } else {
-                Some(context.get_publish_params())
-            }
-        };
-
-        if let Some(params) = params {
-            // Mirror Context::publish's event logging so the response shape is unchanged.
-            ctx_data.event_collector.push(
-                "publish",
-                Some(serde_json::to_value(&params).unwrap_or_default()),
-            );
-
-            if let Err(e) = ctx_data.sdk.publish(&params).await {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": format!("publish failed: {}", e)})),
-                ));
-            }
-        }
-    } else {
+    // Always the real SDK path: Context::publish hands the event to the
+    // context's ArmablePublisher (which delivers nothing in mock mode and
+    // sends via the SDK's ABsmartly::publish in e2e mode) and keeps pending on failure.
+    let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.publish();
+        context.publish()
+    };
+    if let Err(e) = outcome {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
@@ -1293,39 +1275,13 @@ async fn finalize_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    if ctx_data.is_e2e {
-        // E2E mode: DefaultContextPublisher's send is fire-and-forget, so finalize()
-        // would return before the HTTP PUT lands and the batch would race verification.
-        // Mirror publish_handler: drive the SDK's awaitable publish for any pending
-        // events, then emit the finalize event so the collector receives the batch
-        // before we respond.
-        let params = {
-            let mut context = ctx_data.context.lock().unwrap();
-            if context.is_finalized() || context.pending() == 0 {
-                None
-            } else {
-                Some(context.get_publish_params())
-            }
-        };
-
-        if let Some(params) = params {
-            ctx_data.event_collector.push(
-                "publish",
-                Some(serde_json::to_value(&params).unwrap_or_default()),
-            );
-
-            if let Err(e) = ctx_data.sdk.publish(&params).await {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": format!("finalize publish failed: {}", e)})),
-                ));
-            }
-        }
-
-        ctx_data.event_collector.push("finalize", None);
-    } else {
+    // Always the real SDK path (see publish_handler).
+    let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.finalize();
+        context.finalize()
+    };
+    if let Err(e) = outcome {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);

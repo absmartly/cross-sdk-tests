@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/absmartly/go-sdk/sdk"
@@ -137,35 +139,36 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 	return d.dataFuture
 }
 
+// CustomPublisher is the per-context ContextPublisher handed to the real SDK.
+// When armed via /publishFail it fails the next SDK-invoked Publish exactly
+// once; what happens to pending events after that failure is decided entirely
+// by the SDK's own Flush() logic. Otherwise it forwards to inner (the SDK's
+// DefaultContextEventHandler in e2e mode) or, in mock mode where there is no
+// collector, delivers nothing.
 type CustomPublisher struct {
 	eventCollector *EventCollector
+	failNext       atomic.Bool
+	inner          sdk.ContextEventHandler
 }
 
 func (cp *CustomPublisher) Publish(context sdk.Context, event jsonmodels.PublishEvent) *future.Future {
+	if cp.failNext.CompareAndSwap(true, false) {
+		result, done := future.New()
+		done(nil, errors.New("Publish failed"))
+		return result
+	}
+	if cp.inner != nil {
+		return cp.inner.Publish(context, event)
+	}
 	result, done := future.New()
 	done(nil, nil)
 	return result
 }
 
-type CustomVariableParser struct{}
-
-func (cvp *CustomVariableParser) Parse(context sdk.Context, experimentName string, variantName string, config string) map[string]interface{} {
-	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(config), &data); err != nil {
-		// If not a JSON object, parse as any JSON type and wrap it
-		var anyData interface{}
-		if err2 := json.Unmarshal([]byte(config), &anyData); err2 == nil {
-			return map[string]interface{}{"__raw_value": anyData}
-		}
-		return nil
-	}
-	return data
-}
-
 type ContextData struct {
 	context        *sdk.Context
 	eventCollector *EventCollector
-	publishFail    bool
+	publisher      *CustomPublisher
 }
 
 var (
@@ -225,7 +228,9 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"globalCustomFieldKeys": true,
 		"getUnits":     true,
 		"getAttributes": true,
-		"readyError":   true,
+		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
+		// so the wrapper cannot report it without fabricating it.
+		"readyError":   false,
 	})
 }
 
@@ -361,7 +366,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e2eEventCollector := &EventCollector{events: []Event{}}
-		e2eVariableParser := &CustomVariableParser{}
 
 		e2eClientConfig := sdk.ClientConfig{
 			Endpoint_:    e2eEndpoint,
@@ -370,10 +374,14 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			Environment_: e2eEnvironment,
 		}
 		e2eClient := sdk.CreateDefaultClient(e2eClientConfig)
+		e2ePublisher := &CustomPublisher{
+			eventCollector: e2eEventCollector,
+			inner:          sdk.CreateDefaultContextEventHandler(e2eClient),
+		}
 		e2eAbsmartly := sdk.Create(sdk.ABSmartlyConfig{
 			Client_:              e2eClient,
+			ContextPublisher_:    e2ePublisher,
 			ContextEventLogger_: e2eEventCollector,
-			VariableParser_:     e2eVariableParser,
 		})
 
 		e2eUnits := make(map[string]string)
@@ -414,6 +422,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		e2eCtxData := &ContextData{
 			context:        e2eContext,
 			eventCollector: e2eEventCollector,
+			publisher:      e2ePublisher,
 		}
 
 		contextsMu.Lock()
@@ -438,14 +447,12 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
-	customVariableParser := &CustomVariableParser{}
 
 	config := sdk.ABSmartlyConfig{
 		Client_:               nil,
 		ContextPublisher_:  customPublisher,
 		ContextEventLogger_:  eventCollector,
 		ContextDataProvider_:  nil,
-		VariableParser_:      customVariableParser,
 		AudienceDeserializer_:nil,
 	}
 
@@ -530,7 +537,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				ContextDataProvider_:  deferredProvider,
 				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
-				VariableParser_:      customVariableParser,
 				AudienceDeserializer_:nil,
 			})
 			context = absmartlyDeferred.CreateContext(contextConfig)
@@ -546,7 +552,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				Client_:               client,
 				ContextPublisher_:  customPublisher,
 				ContextEventLogger_:  eventCollector,
-				VariableParser_:      customVariableParser,
 				AudienceDeserializer_:nil,
 			})
 			context = absmartlyWithClient.CreateContext(contextConfig)
@@ -563,7 +568,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			ContextDataProvider_:  failingProvider,
 			ContextPublisher_:  customPublisher,
 			ContextEventLogger_:  eventCollector,
-			VariableParser_:      customVariableParser,
 			AudienceDeserializer_:nil,
 		})
 		context = absmartlyFailing.CreateContext(contextConfig)
@@ -578,6 +582,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	contextData := &ContextData{
 		context:        context,
 		eventCollector: eventCollector,
+		publisher:      customPublisher,
 	}
 
 	contextsMu.Lock()
@@ -1170,13 +1175,6 @@ func customFieldValueHandler(w http.ResponseWriter, r *http.Request) {
 	value := ctxData.context.GetCustomFieldValue(req.ExperimentName, req.FieldName)
 	log.Printf("GetCustomFieldValue(%s, %s) returned: %v (type: %T)", req.ExperimentName, req.FieldName, value, value)
 
-	if mapValue, ok := value.(map[string]interface{}); ok {
-		if rawValue, exists := mapValue["__raw_value"]; exists {
-			value = rawValue
-			log.Printf("Unwrapped __raw_value: %v (type: %T)", value, value)
-		}
-	}
-
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
 	response := Response{
@@ -1545,25 +1543,11 @@ func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	var result interface{}
-	if ctxData.context.IsFailed() {
-		result = map[string]interface{}{
-			"isError": true,
-			"message": "Context load failed",
-		}
-	}
-
+	// The Go SDK exposes IsFailed() but no ReadyError()/error accessor, so the
+	// wrapper has nothing real to return. Capability "readyError" is false.
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: result, Events: []Event{}})
+	w.WriteHeader(http.StatusNotImplemented)
+	json.NewEncoder(w).Encode(map[string]string{"error": "readyError not supported by Go SDK"})
 }
 
 func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
@@ -1628,7 +1612,13 @@ func publishFailHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctxData.publishFail = true
+	if ctxData.publisher == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{"error": "publishFail not supported for this context mode"})
+		return
+	}
+	ctxData.publisher.failNext.Store(true)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(Response{Result: nil, Events: []Event{}})
@@ -1644,19 +1634,13 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ctxData.publishFail {
-		ctxData.publishFail = false
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "publish failed"})
-		return
-	}
-
 	eventsBefore := ctxData.eventCollector.Len()
 
 	err = ctxData.context.Publish()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 

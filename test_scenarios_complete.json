@@ -11497,7 +11497,7 @@
           },
           "options": {
             "publishDelay": -1,
-            "refreshPeriod": 5
+            "refreshPeriod": 60000
           }
         },
         "expect": {

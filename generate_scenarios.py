@@ -6513,7 +6513,7 @@ def generate_all_scenarios():
             'steps': [
                 {
                     'action': 'createContextWith',
-                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1, 'refreshPeriod': 5}},
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1, 'refreshPeriod': 60000}},
                     'expect': {
                         'result': {'ready': True, 'failed': False, 'finalized': False},
                         'events': [
