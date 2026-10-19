@@ -52,6 +52,34 @@ fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
     }
 }
 
+/// SDK pointed at a mock collector endpoint (e.g. `/context_payload/{id}`);
+/// the SDK appends `/context` and fetches it itself.
+fn mock_endpoint_sdk(endpoint: &str) -> Result<ABsmartly, absmartly_sdk::SDKError> {
+    ABsmartly::builder()
+        .endpoint(endpoint)
+        .api_key("test-key")
+        .application("test-app")
+        .environment("test-env")
+        .retries(1)
+        .build()
+}
+
+/// Refresh fetcher for a context resolved outside `create_context` (the
+/// throttled path). It fetches through the SDK's own client, as the fetcher
+/// the SDK installs in `create_context` does.
+fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher {
+    Box::new(move || {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                sdk.create_context(HashMap::<String, String>::new(), None)
+                    .await
+                    .map(|c| c.data().clone())
+                    .map_err(|e| format!("Refresh fetch failed: {}", e))
+            })
+        })
+    })
+}
+
 fn now_millis() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -122,6 +150,9 @@ struct ContextData_ {
     context: Mutex<Context>,
     event_collector: Arc<EventCollector>,
     publish_fail: Arc<AtomicBool>,
+    /// The context's data comes from an endpoint the SDK fetches (mock
+    /// collector or e2e), so /refresh re-fetches through the SDK.
+    fetches_from_endpoint: bool,
 }
 
 struct AppState {
@@ -231,8 +262,8 @@ struct CustomFieldValueRequest {
 
 #[derive(Deserialize)]
 struct RefreshRequest {
-    #[serde(rename = "newData")]
-    new_data: ContextData,
+    #[serde(rename = "newData", default)]
+    new_data: Option<ContextData>,
 }
 
 #[derive(Deserialize)]
@@ -316,6 +347,23 @@ async fn store_payload_handler(
     payloads.insert(payload_id, req.data);
 
     Json(json!({ "success": true }))
+}
+
+// Read a stored payload; `?throttle=<ms>` delays the response.
+async fn get_payload_handler(
+    State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let throttle_ms = query.get("throttle").and_then(|t| t.parse::<u64>().ok()).unwrap_or(0);
+    if throttle_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(throttle_ms)).await;
+    }
+    let data = state.payloads.read().unwrap().get(&payload_id).cloned();
+    match data {
+        Some(data) => Json(data).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({"error": "payload not found"}))).into_response(),
+    }
 }
 
 // Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
@@ -418,6 +466,7 @@ async fn create_context_handler(
             context: Mutex::new(context),
             event_collector: event_collector.clone(),
             publish_fail,
+            fetches_from_endpoint: true,
         });
 
         let mut contexts = state.contexts.write().unwrap();
@@ -453,24 +502,45 @@ async fn create_context_handler(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
+    let fetches_from_endpoint = req.data.is_none() && req.endpoint.is_some();
+
     let (mut context, ready, failed) = if let Some(data) = req.data {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     } else if let Some(endpoint) = req.endpoint {
+        let translated_endpoint = translate_endpoint(&endpoint);
+        // The SDK fetches `{endpoint}/context` itself in both the throttled and
+        // the immediate path. The mock collector route answers 404 for an
+        // unknown payload, so a missing payload fails the context (with
+        // ready_error and an `error` event) instead of loading as empty data.
+        let sdk = match mock_endpoint_sdk(&translated_endpoint) {
+            Ok(sdk) => Arc::new(sdk),
+            Err(e) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"error": format!("Failed to create SDK: {}", e)})),
+                ).into_response();
+            }
+        };
+
         if payload_throttle_ms > 0 {
+            // The context exists (not ready) before its data arrives, so calls
+            // made meanwhile (e.g. track before ready) land on this context.
             let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
             for (unit_type, uid) in &units {
                 let _ = ctx.set_unit(unit_type, uid);
             }
             let publish_fail = Arc::new(AtomicBool::new(false));
             ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
+            ctx.set_data_fetcher(sdk_data_fetcher(sdk.clone()));
 
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
                 publish_fail,
+                fetches_from_endpoint: true,
             });
 
             {
@@ -478,45 +548,26 @@ async fn create_context_handler(
                 contexts.insert(context_id.clone(), context_data.clone());
             }
 
-            let endpoint_clone = translate_endpoint(&endpoint);
             let context_data_clone = context_data.clone();
-            let state_clone = state.clone();
             let throttle_delay = payload_throttle_ms;
 
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(throttle_delay)).await;
 
-                if let Some(payload_id) = endpoint_clone
-                    .split("/context_payload/")
-                    .nth(1)
-                    .map(|s| s.trim_matches('/').to_string())
-                {
-                    let payload_data = {
-                        let payloads = state_clone.payloads.read().unwrap();
-                        payloads.get(&payload_id).cloned()
-                    };
-
-                    if let Some(data) = payload_data {
-                        let mut context = context_data_clone.context.lock().unwrap();
-                        context.become_ready(data);
-                        return;
-                    }
-                }
-
-                let sdk = ABsmartly::new(&endpoint_clone, "test-key", "test-app", "test-env")
-                    .expect("Failed to create SDK");
-                let result: Result<Context, _> =
-                    sdk.create_context(HashMap::<String, String>::new(), None).await;
-                match result {
-                    Ok(ready_ctx) => {
-                        let data: ContextData = ready_ctx.data().clone();
-                        let mut context = context_data_clone.context.lock().unwrap();
-                        context.become_ready(data);
-                    }
+                // Fetch through the SDK's own client. The temporary context is
+                // only a carrier for the fetched data: the stored context
+                // already holds the units and the event logger, and resolving
+                // it below emits the single `ready`/`error` event.
+                let fetched = sdk
+                    .create_context(HashMap::<String, String>::new(), None)
+                    .await
+                    .map(|c| c.data().clone());
+                let mut context = context_data_clone.context.lock().unwrap();
+                match fetched {
+                    Ok(data) => context.become_ready(data),
                     Err(e) => {
                         tracing::warn!("deferred context fetch failed: {}", e);
-                        let mut context = context_data_clone.context.lock().unwrap();
-                        context.become_failed();
+                        context.become_failed_with_error(e.to_string());
                     }
                 }
             });
@@ -536,35 +587,9 @@ async fn create_context_handler(
             })
             .into_response();
         } else {
-            let translated_endpoint = translate_endpoint(&endpoint);
-            let payload_data = if let Some(payload_id) = translated_endpoint
-                .split("/context_payload/")
-                .nth(1)
-                .map(|s| s.to_string())
-            {
-                let payloads = state.payloads.read().unwrap();
-                payloads.get(&payload_id).cloned()
-            } else {
-                None
-            };
-
-            if let Some(data) = payload_data {
-                let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
-                let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
-                let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
-                (ctx, ready, failed)
-            } else {
-                // No stored payload: let the SDK fetch the endpoint itself
-                // (the mock collector returns 404), so the context's failed
-                // state and ready_error come from the SDK.
-                let sdk = ABsmartly::builder()
-                    .endpoint(&translated_endpoint)
-                    .api_key("test-key").application("test-app").environment("test-env")
-                    .retries(1).build().expect("Failed to create SDK");
-                let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
-                let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
-                (ctx, ready, failed)
-            }
+            let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
+            let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+            (ctx, ready, failed)
         }
     } else if req.fail_load {
         let sdk = ABsmartly::builder()
@@ -590,6 +615,7 @@ async fn create_context_handler(
         context: Mutex::new(context),
         event_collector: event_collector.clone(),
         publish_fail,
+        fetches_from_endpoint,
     });
 
     let mut contexts = state.contexts.write().unwrap();
@@ -1249,14 +1275,45 @@ async fn publish_handler(
 async fn refresh_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
-    Json(req): Json<RefreshRequest>,
+    body: axum::body::Bytes,
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     let ctx_data = get_context(&state, &context_id)?;
+
+    // The body is optional: the orchestrator sends `{}` (or `{"newData": ...}`
+    // after it has already stored the new payload at the context's endpoint).
+    let req: RefreshRequest = if body.iter().all(|b| b.is_ascii_whitespace()) {
+        RefreshRequest { new_data: None }
+    } else {
+        serde_json::from_slice(&body).map_err(|e| {
+            (StatusCode::BAD_REQUEST, Json(json!({"error": format!("Invalid refresh body: {}", e)})))
+        })?
+    };
+
     let events_before = ctx_data.event_collector.len();
 
-    {
+    let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        context.refresh_with(req.new_data);
+        if ctx_data.fetches_from_endpoint {
+            // Endpoint-backed context: the SDK re-fetches through its own
+            // client (its data fetcher), as a real refresh does. The
+            // orchestrator stores any newData at the endpoint first.
+            context.refresh()
+        } else if let Some(new_data) = req.new_data {
+            // A context built from inline data has no endpoint to fetch, so
+            // apply the supplied data through the SDK's refresh_with.
+            context.refresh_with(new_data);
+            Ok(())
+        } else {
+            Err("Refresh of a context created from inline data requires newData".to_string())
+        }
+    };
+    if let Err(e) = outcome {
+        let status = if ctx_data.fetches_from_endpoint {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        return Err((status, Json(json!({"error": e}))));
     }
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
@@ -1313,7 +1370,7 @@ async fn main() {
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
-        .route("/context_payload/{payloadId}", put(store_payload_handler))
+        .route("/context_payload/{payloadId}", put(store_payload_handler).get(get_payload_handler))
         .route("/context_payload/{payloadId}/context", get(mock_api_context_handler))
         .route("/context", post(create_context_handler))
         .route("/context/{contextId}/setUnit", post(set_unit_handler))

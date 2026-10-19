@@ -34,10 +34,14 @@ extension Promise {
     }
 }
 
+// Keeps every event for the context's lifetime. Handlers slice the new events
+// with `suffix(from: eventsBefore)`, so the array must only ever grow: evicting
+// old events would shift indices and return the wrong window (or trap once
+// `eventsBefore` exceeds the count). Memory is bounded by ContextManager, which
+// caps live contexts and drops a context's collector with it.
 class EventCollector: ContextEventLogger {
     private var storedEvents: [[String: Any]] = []
     private let lock = NSLock()
-    private let maxEvents = 100 // Prevent unbounded growth
 
     var events: [[String: Any]] {
         lock.lock()
@@ -95,10 +99,6 @@ class EventCollector: ContextEventLogger {
         }
 
         lock.lock()
-        // Prevent memory exhaustion from unbounded event accumulation
-        if storedEvents.count >= maxEvents {
-            storedEvents.removeFirst(maxEvents / 2) // Remove oldest half
-        }
         storedEvents.append(eventRecord)
         lock.unlock()
     }
@@ -214,9 +214,18 @@ class EventCollector: ContextEventLogger {
     }
 }
 
+// The ContextPublisher the SDK invokes. `/publishFail` arms a one-shot failure;
+// otherwise the publish goes to `delegate` (the SDK's DefaultContextPublisher in
+// e2e mode) or, in mock mode where there is no collector, succeeds without
+// sending anything.
 class CustomPublisher: ContextPublisher {
     private let lock = NSLock()
     private var shouldFail: Bool = false
+    private let delegate: ContextPublisher?
+
+    init(delegate: ContextPublisher? = nil) {
+        self.delegate = delegate
+    }
 
     func setShouldFail(_ value: Bool) {
         lock.lock()
@@ -231,6 +240,9 @@ class CustomPublisher: ContextPublisher {
         lock.unlock()
         if failNow {
             return Promise(error: NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Publish failed"]))
+        }
+        if let delegate = delegate {
+            return delegate.publish(event: event)
         }
         return Promise.value(())
     }
@@ -280,39 +292,52 @@ class DeferredContextDataProviderFromData: ContextDataProvider {
     }
 }
 
+// Delays the SDK's own data provider by `throttleMs` for the initial load, then
+// lets it fetch. The fetch itself (URL `{endpoint}/context`, query, decoding,
+// HTTP errors) is the SDK's DefaultClient path, exactly as in the unthrottled
+// endpoint mode. Later fetches (refresh) are not delayed.
 class DeferredContextDataProvider: ContextDataProvider {
-    private let endpoint: String
+    private let inner: ContextDataProvider
     private let throttleMs: Int
+    private let lock = NSLock()
+    private var delayed = false
 
-    init(endpoint: String, throttleMs: Int) {
-        self.endpoint = endpoint
+    init(inner: ContextDataProvider, throttleMs: Int) {
+        self.inner = inner
         self.throttleMs = throttleMs
     }
 
     func getContextData() -> Promise<ContextData> {
+        lock.lock()
+        let delayThisCall = !delayed
+        delayed = true
+        lock.unlock()
+        if !delayThisCall {
+            return inner.getContextData()
+        }
         return Promise { seal in
             DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(self.throttleMs)) {
-                guard let url = URL(string: self.endpoint) else {
-                    seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid context data endpoint: \(self.endpoint)"]))
-                    return
+                self.inner.getContextData().done(on: DispatchQueue.global()) { data in
+                    seal.fulfill(data)
+                }.catch(on: DispatchQueue.global()) { error in
+                    seal.reject(error)
                 }
-                let task = URLSession.shared.dataTask(with: url) { data, _, error in
-                    if let data = data, error == nil {
-                        do {
-                            let decoder = JSONDecoder()
-                            let contextData = try decoder.decode(ContextData.self, from: data)
-                            seal.fulfill(contextData)
-                        } catch {
-                            seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to parse context data: \(error.localizedDescription)"]))
-                        }
-                    } else {
-                        let message = error?.localizedDescription ?? "Failed to fetch context data"
-                        seal.reject(NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: message]))
-                    }
-                }
-                task.resume()
             }
         }
+    }
+}
+
+// Waits (bounded) until the event logger has recorded the outcome of the
+// context's data load: a `ready` or an `error` event. waitUntilReady() can
+// resolve as soon as the state flips, a moment before the SDK hands the event
+// to the logger.
+func awaitLoadEvent(_ collector: EventCollector, timeoutSeconds: TimeInterval = 2.0) async throws {
+    let deadline = Date().addingTimeInterval(timeoutSeconds)
+    while Date() < deadline {
+        if collector.events.contains(where: { ["ready", "error"].contains($0["type"] as? String ?? "") }) {
+            return
+        }
+        try await Task.sleep(nanoseconds: 5_000_000)
     }
 }
 
@@ -380,8 +405,29 @@ class ContextManager {
     }
 }
 
+// Vapor serves requests on several event loops, so the payload map needs a lock.
+class PayloadStore {
+    private var payloads: [String: ContextDataDTO] = [:]
+    private let lock = NSLock()
+
+    subscript(id: String) -> ContextDataDTO? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return payloads[id]
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            payloads[id] = newValue
+        }
+    }
+}
+
 let contextManager = ContextManager()
-var payloadStore: [String: ContextDataDTO] = [:]
+let payloadStore = PayloadStore()
+
+let payloadNotFoundBody: [String: Any] = ["error": "payload not found"]
 
 func routes(_ app: VaporApplication) throws {
     app.get("health") { req -> HTTPResponse in
@@ -455,12 +501,33 @@ func routes(_ app: VaporApplication) throws {
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
     }
 
+    // Read a stored payload; `?throttle=<ms>` delays the response.
+    app.get("context_payload", ":payloadId") { req async throws -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else {
+            throw Abort(.badRequest)
+        }
+
+        if let throttle = req.query[Int.self, at: "throttle"], throttle > 0 {
+            try await Task.sleep(nanoseconds: UInt64(throttle) * 1_000_000)
+        }
+
+        guard let data = payloadStore[payloadId] else {
+            return try HTTPResponse(status: .notFound, body: .init(data: JSONSerialization.data(withJSONObject: payloadNotFoundBody)))
+        }
+        return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(data)))
+    }
+
+    // Mock collector `GET {endpoint}/context`. An unknown payload is a 404, so
+    // the SDK's own fetch fails the context instead of it loading as ready with
+    // empty data.
     app.get("context_payload", ":payloadId", "context") { req -> HTTPResponse in
         guard let payloadId = req.parameters.get("payloadId") else {
             throw Abort(.badRequest)
         }
 
-        let data = payloadStore[payloadId] ?? ContextDataDTO(experiments: [])
+        guard let data = payloadStore[payloadId] else {
+            return try HTTPResponse(status: .notFound, body: .init(data: JSONSerialization.data(withJSONObject: payloadNotFoundBody)))
+        }
         return try HTTPResponse(status: .ok, body: .init(data: JSONEncoder().encode(data)))
     }
 
@@ -495,9 +562,12 @@ func routes(_ app: VaporApplication) throws {
                 environment: e2eEnv
             )
             let client = try DefaultClient(config: clientConfig)
+            // The SDK's real HTTP publisher, wrapped so /publishFail can arm a
+            // one-shot failure in e2e mode too (otherwise it forwards).
+            let e2ePublisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
             let sdkConfig = ABSmartlyConfig(
                 contextDataProvider: nil,
-                contextPublisher: nil,
+                contextPublisher: e2ePublisher,
                 contextEventLogger: eventCollector,
                 variableParser: nil,
                 scheduler: nil,
@@ -530,7 +600,7 @@ func routes(_ app: VaporApplication) throws {
                 }
             }
 
-            contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: e2eSdk)
+            contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: e2eSdk, publisher: e2ePublisher)
 
             let result: [String: Any] = [
                 "result": [
@@ -608,33 +678,36 @@ func routes(_ app: VaporApplication) throws {
 
             let payloadThrottle = request.options?.payloadThrottle ?? 0
 
+            // Both paths fetch through the SDK's DefaultClient
+            // (`GET {endpoint}/context`); a throttle only delays that fetch.
+            let clientConfig = ClientConfig(
+                apiKey: "test-api-key",
+                application: "test-app",
+                endpoint: endpoint,
+                environment: "test-env"
+            )
+
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: clientConfig)
+            } catch {
+                print("Error creating client: \(error)")
+                throw error
+            }
+
             let sdkConfig: ABSmartlyConfig
             if payloadThrottle > 0 {
-                let deferredProvider = DeferredContextDataProvider(endpoint: endpoint, throttleMs: payloadThrottle)
+                let deferredProvider = DeferredContextDataProvider(
+                    inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: deferredProvider,
                     contextPublisher: customPublisher,
                     contextEventLogger: eventCollector,
                     variableParser: nil,
                     scheduler: nil,
-                    client: nil
+                    client: client
                 )
             } else {
-                let clientConfig = ClientConfig(
-                    apiKey: "test-api-key",
-                    application: "test-app",
-                    endpoint: endpoint,
-                    environment: "test-env"
-                )
-
-                let client: DefaultClient
-                do {
-                    client = try DefaultClient(config: clientConfig)
-                } catch {
-                    print("Error creating client: \(error)")
-                    throw error
-                }
-
                 sdkConfig = ABSmartlyConfig(
                     contextDataProvider: nil,
                     contextPublisher: customPublisher,
@@ -665,15 +738,10 @@ func routes(_ app: VaporApplication) throws {
 
             context = sdk.createContext(config: configBuilder)
             if payloadThrottle == 0 {
+                // waitUntilReady() resolves on success AND on failure (a
+                // missing payload is a 404, so the context ends up failed).
                 _ = try await context.waitUntilReady().asyncValue()
-                // Ensure the ready event has been observed by the event logger before responding.
-                let deadline = Date().addingTimeInterval(0.25)
-                while Date() < deadline {
-                    if eventCollector.events.contains(where: { ($0["type"] as? String) == "ready" }) {
-                        break
-                    }
-                    try await Task.sleep(nanoseconds: 10_000_000)
-                }
+                try await awaitLoadEvent(eventCollector)
             }
         } else if request.failLoad == true {
             let failingProvider = FailingContextDataProvider()
@@ -698,11 +766,10 @@ func routes(_ app: VaporApplication) throws {
             configBuilder.eventLogger = eventCollector
 
             context = sdk.createContext(config: configBuilder)
-            let deadline = Date().addingTimeInterval(0.5)
-            while Date() < deadline {
-                if !eventCollector.events.isEmpty { break }
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
+            // Respond only once the SDK has established the failure: the
+            // failed state, readyError() and the `error` event.
+            _ = try await context.waitUntilReady().asyncValue()
+            try await awaitLoadEvent(eventCollector)
         } else {
             throw Abort(.badRequest, reason: "Either data or endpoint must be provided")
         }
@@ -1044,7 +1111,8 @@ func routes(_ app: VaporApplication) throws {
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
     }
 
-    app.post("context", ":contextId", "override") { req -> HTTPResponse in
+    // `override` and its spec alias `setOverride` call the same SDK setter.
+    let overrideHandler: @Sendable (Request) throws -> HTTPResponse = { req in
         guard let contextId = req.parameters.get("contextId"),
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
@@ -1065,8 +1133,11 @@ func routes(_ app: VaporApplication) throws {
 
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
     }
+    app.post("context", ":contextId", "override", use: overrideHandler)
+    app.post("context", ":contextId", "setOverride", use: overrideHandler)
 
-    app.post("context", ":contextId", "customAssignment") { req -> HTTPResponse in
+    // `customAssignment` and its spec alias `setCustomAssignment`.
+    let customAssignmentHandler: @Sendable (Request) throws -> HTTPResponse = { req in
         guard let contextId = req.parameters.get("contextId"),
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
@@ -1088,6 +1159,8 @@ func routes(_ app: VaporApplication) throws {
 
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
     }
+    app.post("context", ":contextId", "customAssignment", use: customAssignmentHandler)
+    app.post("context", ":contextId", "setCustomAssignment", use: customAssignmentHandler)
 
     app.post("context", ":contextId", "customFieldValue") { req -> HTTPResponse in
         guard let contextId = req.parameters.get("contextId"),
