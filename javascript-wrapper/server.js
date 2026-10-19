@@ -271,7 +271,7 @@ app.post('/context/:contextId/getUnit', (req, res) => {
   try {
     const result = context.getUnit(req.body.unitType);
     const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result, events: newEvents });
+    res.json({ result: result ?? null, events: newEvents });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -303,7 +303,7 @@ app.post('/context/:contextId/getAttribute', (req, res) => {
   try {
     const result = context.getAttribute(req.body.name);
     const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result, events: newEvents });
+    res.json({ result: result ?? null, events: newEvents });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
