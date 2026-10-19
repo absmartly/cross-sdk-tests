@@ -1,0 +1,166 @@
+{
+  "_comment": [
+    "Checked-in capability policy for the cross-SDK suite (read by orchestrator/test_runner.py).",
+    "Every capability a scenario lists under `requires` must appear in `capabilities`, and every SDK",
+    "must classify every capability as either `required` (the wrapper MUST advertise it as true; a",
+    "false/missing value fails the run and the gated scenarios still execute) or a reviewed",
+    "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
+    "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
+    "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
+    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports.",
+    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`."
+  ],
+  "capabilities": {
+    "diagnostics": "POST /diagnostic hashing/encoding/type-check helpers",
+    "publishFail": "POST /context/{id}/publishFail arms a one-shot publisher failure",
+    "variableKeysMap": "POST /context/{id}/variableKeysMap returns every experiment per variable key",
+    "globalCustomFieldKeys": "POST /context/{id}/globalCustomFieldKeys returns the union of custom field keys",
+    "getUnits": "POST /context/{id}/getUnits",
+    "getAttributes": "POST /context/{id}/getAttributes",
+    "readyError": "POST /context/{id}/readyError reports the error of a failed context",
+    "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
+    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test"
+  },
+  "sdks": {
+    "javascript": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
+    },
+    "python": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks"
+      }
+    },
+    "ruby": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks"
+      }
+    },
+    "liquid": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
+        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks"
+      }
+    },
+    "php": {
+      "required": ["diagnostics", "publishFail", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
+        "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks"
+      }
+    },
+    "go": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes"],
+      "unsupported": {
+        "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
+        "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks"
+      }
+    },
+    "rust": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks"
+      }
+    },
+    "java": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wrapper advertises this from a behavioral self-test, which fails against the pinned java-sdk branch (no holdout resolution)",
+        "holdout_arms": "behavioral self-test short-circuits to false without the holdouts foundation on the pinned java-sdk branch"
+      }
+    },
+    "kotlin": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks"
+      }
+    },
+    "scala": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes"],
+      "unsupported": {
+        "readyError": "scala-sdk has no public path to a failed Context from a failing fetch and emits no error event",
+        "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
+      }
+    },
+    "swift": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks"
+      }
+    },
+    "dart": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks"
+      }
+    },
+    "flutter": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks"
+      }
+    },
+    "dotnet": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks"
+      }
+    },
+    "cpp": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks"
+      }
+    },
+    "elixir": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks"
+      }
+    },
+    "react": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
+        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
+      }
+    },
+    "vue2": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
+        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
+      }
+    },
+    "vue3": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
+        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
+      }
+    },
+    "angular": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
+      "unsupported": {
+        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
+        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
+      }
+    }
+  }
+}

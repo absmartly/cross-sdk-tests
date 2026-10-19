@@ -5,8 +5,10 @@ Reconstructed from test_scenarios_complete.json
 
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
-The checked-in test_scenarios_complete.json is the CANONICAL source of truth
-for the cross-SDK suite (227 scenarios). This generator is OUT OF DATE:
+NOT CANONICAL. The checked-in test_scenarios_complete.json is the CANONICAL
+source of truth for the cross-SDK suite (227 scenarios); the harness never
+runs this script, and nothing (CI included) may be wired to it. This
+generator is OUT OF DATE:
 
   * It emits only 192 scenarios, not the canonical 227.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
@@ -10082,9 +10084,10 @@ def main():
     print("=" * 76)
     print("WARNING: generate_scenarios.py is STALE and NON-CANONICAL.")
     print("  The checked-in test_scenarios_complete.json is the canonical oracle")
-    print("  (209 scenarios). This generator emits only 192 and has ~14 drifted")
-    print("  scenarios. Its output is written to test_scenarios_generated.json and")
-    print("  MUST be diffed against test_scenarios_complete.json before use.")
+    print("  (see its length for the current count). This generator emits only 192")
+    print("  and has drifted scenarios. Its output is written to")
+    print("  test_scenarios_generated.json and MUST be diffed against")
+    print("  test_scenarios_complete.json before use.")
     print("  Do NOT overwrite the canonical file with this output.")
     print("=" * 76)
 

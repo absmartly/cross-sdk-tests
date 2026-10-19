@@ -1,13 +1,15 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 202-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 227-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
 # the orchestrator, and drives the suite through the orchestrator container
 # (race-free service discovery over the compose network).
 #
-# Unit tests run in each SDK's own repo CI; this workflow is cross-SDK only.
+# SDK unit tests run in each SDK's own repo CI. The fast `harness` job below
+# runs the orchestrator's own Docker-free unit tests (tests/) before any
+# wrapper image is built; every Docker job depends on it.
 # The live-backend e2e suite is intentionally not run here (needs secrets +
 # the abs CLI and mutates real experiments).
 name: Cross-SDK Tests
@@ -21,8 +23,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  harness:
+    name: harness-unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install orchestrator requirements
+        run: pip install -r orchestrator/requirements.txt
+
+      - name: Byte-compile harness
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py
+
+      - name: Shell syntax
+        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
+
+      - name: Harness unit tests (no Docker)
+        run: python -m unittest discover -s tests -v
+
   cross-sdk:
     name: ${{ matrix.sdk }}
+    needs: harness
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -84,10 +110,14 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: csdk
         run: |
-          docker compose up -d ${{ matrix.sdk }}-sdk
+          set -euo pipefail
+          mkdir -p test-results
+          rm -f test-results/report.json
+          docker compose up -d --force-recreate ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
+          test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
 
       - name: Upload results
         if: always()
@@ -95,7 +125,7 @@ jobs:
         with:
           name: report-${{ matrix.sdk }}
           path: cross-sdk-tests/test-results/report.json
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Tear down
         if: always()
@@ -112,6 +142,7 @@ jobs:
   # workflow like any other required job.
   cross-sdk-consistency:
     name: cross-sdk-consistency
+    needs: harness
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cross-sdk-tests
@@ -146,10 +177,17 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: csdk
         run: |
-          docker compose up -d javascript-sdk python-sdk go-sdk
+          set -euo pipefail
+          mkdir -p test-results
+          rm -f test-results/report.json
+          docker compose up -d --force-recreate javascript-sdk python-sdk go-sdk
+          # The runner's exit code fails this step (set -e); with 3 SDKs it
+          # also fails when the consistency check made zero comparisons.
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=javascript,python,go" \
             orchestrator python3 test_runner.py
+          test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
+          python3 -c "import json,sys; r=json.load(open('test-results/report.json')); n=r.get('consistency_comparisons',0); print(f'consistency comparisons: {n}'); sys.exit(0 if n>0 else 1)"
 
       - name: Upload results
         if: always()
@@ -157,7 +195,7 @@ jobs:
         with:
           name: report-cross-sdk-consistency
           path: cross-sdk-tests/test-results/report.json
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Tear down
         if: always()
