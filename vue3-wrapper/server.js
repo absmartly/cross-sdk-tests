@@ -72,23 +72,44 @@ class EventCollector {
   }
 }
 
+// Test contexts have no collector, so a publish succeeds without sending
+// anything. e2e contexts pass forwardToSdk so the publish goes through the
+// SDK's own ContextPublisher (real HTTP to the collector). Either way,
+// /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends absmartly.ContextPublisher {
-  constructor(eventCollector) {
+  constructor(eventCollector, { forwardToSdk = false } = {}) {
     super();
     this.eventCollector = eventCollector;
     this._shouldFail = false;
+    this._forwardToSdk = forwardToSdk;
   }
 
-  publish(request, sdk, context) {
+  publish(request, sdk, context, requestOptions) {
     if (this._shouldFail) {
       this._shouldFail = false;
       return Promise.reject(new Error('Publish failed'));
+    }
+    if (this._forwardToSdk) {
+      return super.publish(request, sdk, context, requestOptions);
     }
     return Promise.resolve();
   }
 }
 
 const contexts = new Map();
+
+// The SDK's <Treatment> renders the 'loading' slot while the context is not
+// ready. An app shows control there, so that render reports variant 0. The
+// loading slot rendering for a ready context is a component bug, not variant 0.
+const LOADING_SLOT = 'loading';
+function loadingSlotVariant(slot, context) {
+  if (slot !== LOADING_SLOT) return slot;
+  if (context.isReady()) {
+    throw new Error('SDK <Treatment> rendered its loading slot for a ready context');
+  }
+  return 0;
+}
+
 const payloadStore = {};
 
 function normalizeAsyncEndpoint(endpoint) {
@@ -172,6 +193,7 @@ app.post('/context', async (req, res) => {
       const contextId = `ctx-${Date.now()}-${Math.random()}`;
       const eventCollector = new EventCollector();
 
+      const customPublisher = new CustomPublisher(eventCollector, { forwardToSdk: true });
       const e2eSdk = new absmartly.SDK({
         endpoint: e2eEndpoint,
         apiKey: e2eApiKey,
@@ -179,7 +201,8 @@ app.post('/context', async (req, res) => {
         environment: e2eEnv,
         eventLogger: (ctx, eventName, eventData) => {
           eventCollector.handleEvent(ctx, eventName, eventData);
-        }
+        },
+        publisher: customPublisher
       });
 
       const contextConfig = { units: req.body.units || {} };
@@ -193,7 +216,7 @@ app.post('/context', async (req, res) => {
         }
       }
 
-      contexts.set(contextId, { context, eventCollector });
+      contexts.set(contextId, { context, eventCollector, customPublisher });
 
       return res.json({
         result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
@@ -229,7 +252,7 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         data,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else if (failLoad) {
       const failedData = Promise.reject(new Error('Context load failed'));
@@ -237,7 +260,7 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         failedData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
       try { await context.ready(); } catch (e) {}
       await new Promise(r => setTimeout(r, 50));
@@ -253,12 +276,12 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         deferredData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else {
       context = sdk.createContext(
         { units },
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
       await context.ready();
     }
@@ -292,10 +315,8 @@ app.post('/context/:contextId/treatment', async (req, res) => {
     return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
   }
 
-  if (!context.isReady()) {
-    return res.json({ result: 0, events: [] });
-  }
-
+  // No wrapper-side not-ready shortcut: the SDK's <Treatment> renders its
+  // 'loading' slot itself while the context is not ready.
   try {
     // Each numbered slot records its index only when the SDK component invokes
     // it. No 'default' slot and no HTML scraping: if the SDK selects nothing we
@@ -309,6 +330,10 @@ app.post('/context/:contextId/treatment', async (req, res) => {
         return h('span', String(idx));
       };
     }
+    slots.loading = () => {
+      rendered.push(LOADING_SLOT);
+      return h('span', 'loading');
+    };
 
     let renderError = null;
     const vueApp = memoryRenderer.createApp({
@@ -336,7 +361,7 @@ app.post('/context/:contextId/treatment', async (req, res) => {
         error: `Vue3 SDK <Treatment> rendered ${distinct.length} distinct variant slots (expected exactly 1): [${distinct.join(', ')}]`
       });
     }
-    const variant = distinct[0];
+    const variant = loadingSlotVariant(distinct[0], context);
 
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });

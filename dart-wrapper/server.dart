@@ -137,18 +137,23 @@ class CustomPublisher implements ContextPublisher {
   final EventCollector eventCollector;
   bool shouldFail = false;
 
-  CustomPublisher(this.eventCollector);
+  // e2e contexts pass the SDK's real DefaultContextPublisher so publishes
+  // reach the collector; /publishFail still arms a one-shot failure on top.
+  final ContextPublisher? delegate;
+
+  CustomPublisher(this.eventCollector, {this.delegate});
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
-    final completer = Completer<void>();
     if (shouldFail) {
       shouldFail = false;
-      completer.completeError(Exception('publish failed'));
-    } else {
-      completer.complete();
+      return Completer<void>()..completeError(Exception('publish failed'));
     }
-    return completer;
+    final inner = delegate;
+    if (inner != null) {
+      return inner.publish(context, event);
+    }
+    return Completer<void>()..complete();
   }
 }
 
@@ -395,9 +400,11 @@ void main() async {
           .setEnvironment(e2eEnv);
 
         final client = Client.create(clientConfig, httpClient: httpClient);
+        final publisher = CustomPublisher(eventCollector, delegate: DefaultContextPublisher(client));
 
         final sdkConfig = ABSmartlyConfig.create()
           .setClient(client)
+          .setContextPublisher(publisher)
           .setContextEventLogger(eventCollector);
 
         final e2eSdk = ABSmartly(sdkConfig);
@@ -426,7 +433,7 @@ void main() async {
           }
         }
 
-        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {}, CustomPublisher(eventCollector));
+        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {}, publisher);
 
         return shelf.Response.ok(
           jsonEncode({

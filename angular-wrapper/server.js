@@ -42,24 +42,27 @@ class EventCollector {
   }
 }
 
+// Test contexts have no collector, so a publish succeeds without sending
+// anything. e2e contexts pass forwardToSdk so the publish goes through the
+// SDK's own ContextPublisher (real HTTP to the collector). Either way,
+// /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends absmartly.ContextPublisher {
-  constructor(eventCollector) {
+  constructor(eventCollector, { forwardToSdk = false } = {}) {
     super();
     this.eventCollector = eventCollector;
     this._shouldFail = false;
+    this._forwardToSdk = forwardToSdk;
   }
 
-  publish(request, sdk, context) {
+  publish(request, sdk, context, requestOptions) {
     if (this._shouldFail) {
       this._shouldFail = false;
       return Promise.reject(new Error('Publish failed'));
     }
-    try {
-      return Promise.resolve();
-    } catch (error) {
-      console.error('CustomPublisher error:', error);
-      return Promise.reject(error);
+    if (this._forwardToSdk) {
+      return super.publish(request, sdk, context, requestOptions);
     }
+    return Promise.resolve();
   }
 }
 
@@ -158,6 +161,7 @@ app.post('/context', async (req, res) => {
       const contextId = `ctx-${Date.now()}-${Math.random()}`;
       const eventCollector = new EventCollector();
 
+      const customPublisher = new CustomPublisher(eventCollector, { forwardToSdk: true });
       const e2eSdk = new absmartly.SDK({
         endpoint: e2eEndpoint,
         apiKey: e2eApiKey,
@@ -165,7 +169,8 @@ app.post('/context', async (req, res) => {
         environment: e2eEnv,
         eventLogger: (ctx, eventName, eventData) => {
           eventCollector.handleEvent(ctx, eventName, eventData);
-        }
+        },
+        publisher: customPublisher
       });
 
       const contextConfig = { units: req.body.units || {} };
@@ -179,7 +184,8 @@ app.post('/context', async (req, res) => {
         }
       }
 
-      contexts.set(contextId, { context, eventCollector });
+      const service = createService(context);
+      contexts.set(contextId, { context, service, eventCollector, customPublisher });
 
       return res.json({
         result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
@@ -217,7 +223,7 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         data,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else if (failLoad) {
       const failedData = Promise.reject(new Error('Context load failed'));
@@ -225,7 +231,7 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         failedData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
       try { await context.ready(); } catch (e) {}
       await new Promise(r => setTimeout(r, 50));
@@ -241,12 +247,12 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         deferredData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else {
       context = sdk.createContext(
         { units },
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
       await context.ready();
     }
@@ -285,9 +291,7 @@ app.post('/context/:contextId/treatment', (req, res) => {
   }
 
   try {
-    const variant = service
-      ? service.treatment(req.body.experimentName)
-      : context.treatment(req.body.experimentName);
+    const variant = service.treatment(req.body.experimentName);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
   } catch (error) {
@@ -303,9 +307,7 @@ app.post('/context/:contextId/peek', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const variant = service
-      ? service.peek(req.body.experimentName)
-      : context.peek(req.body.experimentName);
+    const variant = service.peek(req.body.experimentName);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
   } catch (error) {
@@ -321,11 +323,7 @@ app.post('/context/:contextId/track', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      service.track(req.body.goalName, req.body.properties);
-    } else {
-      context.track(req.body.goalName, req.body.properties);
-    }
+    service.track(req.body.goalName, req.body.properties);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -341,11 +339,7 @@ app.post('/context/:contextId/attribute', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      service.attribute(req.body.name, req.body.value);
-    } else {
-      context.attribute(req.body.name, req.body.value);
-    }
+    service.attribute(req.body.name, req.body.value);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -361,9 +355,7 @@ app.post('/context/:contextId/getAttribute', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const result = service
-      ? service.getAttribute(req.body.name)
-      : context.getAttribute(req.body.name);
+    const result = service.getAttribute(req.body.name);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result, events: newEvents });
   } catch (error) {
@@ -380,13 +372,7 @@ app.post('/context/:contextId/setAttributes', (req, res) => {
 
   try {
     const attributes = req.body.attributes || {};
-    if (service) {
-      service.attributes(attributes);
-    } else {
-      for (const [name, value] of Object.entries(attributes)) {
-        context.attribute(name, value);
-      }
-    }
+    service.attributes(attributes);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -457,9 +443,7 @@ app.post('/context/:contextId/variableValue', (req, res) => {
   }
 
   try {
-    const value = service
-      ? service.variableValue(req.body.key, req.body.defaultValue)
-      : context.variableValue(req.body.key, req.body.defaultValue);
+    const value = service.variableValue(req.body.key, req.body.defaultValue);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: value, events: newEvents });
   } catch (error) {
@@ -475,9 +459,7 @@ app.post('/context/:contextId/peekVariableValue', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const value = service
-      ? service.peekVariableValue(req.body.key, req.body.defaultValue)
-      : context.peekVariableValue(req.body.key, req.body.defaultValue);
+    const value = service.peekVariableValue(req.body.key, req.body.defaultValue);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: value, events: newEvents });
   } catch (error) {
@@ -492,11 +474,7 @@ app.post('/context/:contextId/override', (req, res) => {
   const { context, service } = data;
 
   try {
-    if (service) {
-      service.override(req.body.experimentName, req.body.variant);
-    } else {
-      context.override(req.body.experimentName, req.body.variant);
-    }
+    service.override(req.body.experimentName, req.body.variant);
     res.json({ result: null, events: [] });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -510,11 +488,7 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
   const { context, service } = data;
 
   try {
-    if (service) {
-      service.customAssignment(req.body.experimentName, req.body.variant);
-    } else {
-      context.customAssignment(req.body.experimentName, req.body.variant);
-    }
+    service.customAssignment(req.body.experimentName, req.body.variant);
     res.json({ result: null, events: [] });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -529,9 +503,7 @@ app.post('/context/:contextId/customFieldValue', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const value = service
-      ? service.customFieldValue(req.body.experimentName, req.body.fieldName)
-      : context.customFieldValue(req.body.experimentName, req.body.fieldName);
+    const value = service.customFieldValue(req.body.experimentName, req.body.fieldName);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: value, events: newEvents });
   } catch (error) {
@@ -551,7 +523,7 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   }
 
   try {
-    const keys = service ? service.variableKeys() : context.variableKeys();
+    const keys = service.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: Object.keys(keys), events: newEvents });
   } catch (error) {
@@ -583,9 +555,7 @@ app.post('/context/:contextId/customFieldValueType', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const valueType = service
-      ? service.customFieldValueType(req.body.experimentName, req.body.fieldName)
-      : context.customFieldValueType(req.body.experimentName, req.body.fieldName);
+    const valueType = service.customFieldValueType(req.body.experimentName, req.body.fieldName);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: valueType, events: newEvents });
   } catch (error) {
@@ -598,7 +568,7 @@ app.get('/context/:contextId/pending', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   const { service, context } = data;
-  const result = service ? service.pending() : context.pending();
+  const result = service.pending();
   res.json({ result, events: [] });
 });
 
@@ -607,7 +577,7 @@ app.get('/context/:contextId/isFinalized', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   const { service, context } = data;
-  const result = service ? service.isFinalized() : context.isFinalized();
+  const result = service.isFinalized();
   res.json({ result, events: [] });
 });
 
@@ -616,7 +586,7 @@ app.get('/context/:contextId/isReady', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   const { service, context } = data;
-  const result = service ? service.isReady() : context.isReady();
+  const result = service.isReady();
   res.json({ result, events: [] });
 });
 
@@ -625,7 +595,7 @@ app.get('/context/:contextId/isFailed', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   const { service, context } = data;
-  const result = service ? service.isFailed() : context.isFailed();
+  const result = service.isFailed();
   res.json({ result, events: [] });
 });
 
@@ -639,7 +609,7 @@ app.get('/context/:contextId/experiments', (req, res) => {
 
   try {
     const { service, context } = data;
-    const experiments = service ? service.experiments() : context.experiments();
+    const experiments = service.experiments();
     res.json({ result: experiments, events: [] });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -711,11 +681,7 @@ app.post('/context/:contextId/publish', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      await service.publish();
-    } else {
-      await context.publish();
-    }
+    await service.publish();
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -734,11 +700,7 @@ app.post('/context/:contextId/refresh', async (req, res) => {
     // Public SDK API: ABSmartlyService.refresh() -> context.refresh(), which
     // re-fetches through the SDK's data provider (the wrapper's mock
     // /context_payload endpoint, updated by the orchestrator beforehand).
-    if (service) {
-      await service.refresh();
-    } else {
-      await context.refresh();
-    }
+    await service.refresh();
   } catch (error) {
     const newEvents = eventCollector.events.slice(eventsBefore);
     return res.status(500).json({ error: error.message, events: newEvents });
@@ -756,11 +718,7 @@ app.post('/context/:contextId/finalize', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      await service.finalize();
-    } else {
-      await context.finalize();
-    }
+    await service.finalize();
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -777,11 +735,7 @@ app.post('/context/:contextId/setUnit', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      service.setUnit(req.body.unitType, req.body.uid);
-    } else {
-      context.unit(req.body.unitType, req.body.uid);
-    }
+    service.setUnit(req.body.unitType, req.body.uid);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -797,9 +751,7 @@ app.post('/context/:contextId/getUnit', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    const result = service
-      ? service.getUnit(req.body.unitType)
-      : context.getUnit(req.body.unitType);
+    const result = service.getUnit(req.body.unitType);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result, events: newEvents });
   } catch (error) {
@@ -815,11 +767,7 @@ app.post('/context/:contextId/setOverride', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      service.override(req.body.experimentName, req.body.variant);
-    } else {
-      context.override(req.body.experimentName, req.body.variant);
-    }
+    service.override(req.body.experimentName, req.body.variant);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
@@ -835,11 +783,7 @@ app.post('/context/:contextId/setCustomAssignment', (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    if (service) {
-      service.customAssignment(req.body.experimentName, req.body.variant);
-    } else {
-      context.customAssignment(req.body.experimentName, req.body.variant);
-    }
+    service.customAssignment(req.body.experimentName, req.body.variant);
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: null, events: newEvents });
   } catch (error) {
