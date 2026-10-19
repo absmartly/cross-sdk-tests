@@ -141,7 +141,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 227-scenario suite for all 21
+`.github/workflows/cross-sdk.yml` runs the full 227-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -177,7 +177,7 @@ cross-sdk-tests/
 │   ├── test_runner.py            # cross-SDK orchestrator
 │   ├── e2e_runner.py             # live-backend e2e orchestrator
 │   └── results_aggregator.py     # merges per-SDK reports into report.json
-├── <sdk>-wrapper/                # one HTTP wrapper per SDK (21 total)
+├── <sdk>-wrapper/                # one HTTP wrapper per SDK (20 total)
 ├── docs/                         # historical design docs (see banners)
 └── test-results/                 # report.json output (generated)
 ```
