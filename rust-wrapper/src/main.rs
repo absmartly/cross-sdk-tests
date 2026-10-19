@@ -324,8 +324,10 @@ async fn mock_api_context_handler(
     Path(payload_id): Path<String>,
 ) -> impl IntoResponse {
     let payloads = state.payloads.read().unwrap();
-    let data = payloads.get(&payload_id).cloned().unwrap_or_default();
-    Json(data)
+    match payloads.get(&payload_id).cloned() {
+        Some(data) => Json(data).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(json!({"error": "payload not found"}))).into_response(),
+    }
 }
 
 fn value_to_string(v: &Value) -> String {
@@ -552,12 +554,16 @@ async fn create_context_handler(
                 let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
                 (ctx, ready, failed)
             } else {
-                // No payload: report the missing payload as an error rather
-                // than fabricating a "ready + failed" empty context.
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(json!({"error": format!("Payload not found for endpoint: {}", translated_endpoint)})),
-                ).into_response();
+                // No stored payload: let the SDK fetch the endpoint itself
+                // (the mock collector returns 404), so the context's failed
+                // state and ready_error come from the SDK.
+                let sdk = ABsmartly::builder()
+                    .endpoint(&translated_endpoint)
+                    .api_key("test-key").application("test-app").environment("test-env")
+                    .retries(1).build().expect("Failed to create SDK");
+                let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
+                let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
+                (ctx, ready, failed)
             }
         }
     } else if req.fail_load {
