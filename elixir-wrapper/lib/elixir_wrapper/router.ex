@@ -647,7 +647,8 @@ defmodule ElixirWrapper.Router do
         endpoint: e2e_endpoint,
         api_key: e2e_api_key,
         application: e2e_app,
-        environment: e2e_env
+        environment: e2e_env,
+        publisher: ElixirWrapper.ArmableE2EPublisher
       }
 
       context_options =

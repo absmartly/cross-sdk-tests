@@ -4,8 +4,8 @@ defmodule ElixirWrapper.ArmablePublisher do
   `SDKConfig.publisher` hook.
 
   Test contexts have no collector, so by default the transport succeeds without
-  sending anything, like the Go and Scala wrappers' publishers (e2e contexts use
-  the SDK's default publisher, not this one). `POST /context/:id/publishFail`
+  sending anything, like the Go and Scala wrappers' publishers. e2e contexts use
+  `ElixirWrapper.ArmableE2EPublisher`, which forwards to the SDK's real one. `POST /context/:id/publishFail`
   arms a ONE-SHOT transport failure for that context's GenServer pid; the next
   real `ABSmartly.Context.publish/1` call then reaches this publisher, which
   returns `{:error, "Publish failed"}`. What the SDK does with that failure
@@ -23,12 +23,37 @@ defmodule ElixirWrapper.ArmablePublisher do
 
   @impl ABSmartly.ContextPublisher
   def publish(_endpoint, _api_key, _application, _environment, _event_map, _retries) do
-    callers = [self() | Process.get(:"$callers", [])]
+    if armed?(), do: {:error, "Publish failed"}, else: :ok
+  end
 
-    if ContextStore.take_publish_fail(callers) do
+  @doc false
+  def armed? do
+    ContextStore.take_publish_fail([self() | Process.get(:"$callers", [])])
+  end
+end
+
+defmodule ElixirWrapper.ArmableE2EPublisher do
+  @moduledoc """
+  e2e counterpart of `ElixirWrapper.ArmablePublisher`: an armed
+  `/publishFail` fails the next publish once; otherwise the publish goes to the
+  SDK's real `ABSmartly.DefaultContextPublisher` transport.
+  """
+
+  @behaviour ABSmartly.ContextPublisher
+
+  @impl ABSmartly.ContextPublisher
+  def publish(endpoint, api_key, application, environment, event_map, retries) do
+    if ElixirWrapper.ArmablePublisher.armed?() do
       {:error, "Publish failed"}
     else
-      :ok
+      ABSmartly.DefaultContextPublisher.publish(
+        endpoint,
+        api_key,
+        application,
+        environment,
+        event_map,
+        retries
+      )
     end
   end
 end

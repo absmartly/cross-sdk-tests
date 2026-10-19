@@ -40,12 +40,12 @@ object Server extends IOApp {
    * (Context.scala `_flush` re-queues on failure). The wrapper never fakes the
    * publish result itself.
    */
-  final class ArmablePublisher extends ContextPublisher {
+  final class ArmablePublisher(delegate: Option[ContextPublisher] = None) extends ContextPublisher {
     private val failNext = new java.util.concurrent.atomic.AtomicBoolean(false)
     def arm(): Unit = failNext.set(true)
     def publish(units: Map[String, String], hashed: Boolean, exposures: List[Exposure], goals: List[Goal], attributes: Option[List[Attribute]]): scala.concurrent.Future[Unit] =
       if (failNext.getAndSet(false)) scala.concurrent.Future.failed(new RuntimeException("Publish failed"))
-      else scala.concurrent.Future.successful(())
+      else delegate.fold(scala.concurrent.Future.successful(()))(_.publish(units, hashed, exposures, goals, attributes))
   }
 
   private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector, publisher: ArmablePublisher): SDKConfig =
@@ -163,21 +163,25 @@ object Server extends IOApp {
 
               IO.fromFuture(IO {
                 val collector = new WrapperEventCollector()
-                val sdkConfig = SDKConfig(
+                val baseConfig = SDKConfig(
                   endpoint = endpoint,
                   apiKey = apiKey,
                   application = application,
                   environment = environment,
                   eventLogger = collector
                 )
-                val sdk = new SDK(sdkConfig)
+                // Real collector transport, wrapped so /publishFail can arm a
+                // one-shot failure in e2e mode too.
+                val publisher = new ArmablePublisher(Some(new DefaultContextPublisher(baseConfig)))
+                val sdk = new SDK(baseConfig.copy(publisher = Some(publisher)))
                 sdk.createContext(units).map { context =>
                   attrs.foreach { case (name, value) => context.setAttribute(name, value) }
-                  (context, collector)
+                  (context, collector, publisher)
                 }
-              }).flatMap { case (context, collector) =>
+              }).flatMap { case (context, collector, publisher) =>
                 val contextId = s"ctx-${contextCounter.getAndIncrement()}"
                 contexts(contextId) = (context, collector)
+                publishers(contextId) = publisher
                 Ok(wrapperResponse(
                   Json.obj(
                     "contextId" -> Json.fromString(contextId),
