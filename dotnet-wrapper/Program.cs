@@ -53,7 +53,9 @@ string TranslateEndpoint(string endpoint)
 string TranslateErrorMessage(string msg)
 {
     if (string.IsNullOrEmpty(msg)) return msg;
-    if (msg.Contains("closed") || msg.Contains("closing"))
+    // Only the SDK's own finalized-context error; a broad "closed" match would
+    // relabel unrelated failures (e.g. a closed HTTP connection).
+    if (msg.Contains("Context is finalized"))
         return "Context finalized";
     if (msg.Contains("already set", StringComparison.OrdinalIgnoreCase))
     {
@@ -219,18 +221,31 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             var e2eContextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
             var e2eEventCollector = new EventCollector();
 
+            var e2eServiceConfig = new ABSmartlyServiceConfiguration
+            {
+                Endpoint = e2eEndpoint,
+                ApiKey = e2eApiKey,
+                Application = e2eApp,
+                Environment = e2eEnv
+            };
+            var e2eHttpClientFactory = new DummyHttpClientFactory();
+            // The SDK's real publish transport, wrapped so /publishFail can arm a
+            // one-shot failure on e2e contexts too.
+            var e2ePublishFailFlag = new PublishFailFlag();
+            var e2ePublisher = new CustomPublisher(e2eEventCollector, e2ePublishFailFlag,
+                new ABSmartly.Services.DefaultContextPublisher(new ABSmartlyService(
+                    e2eServiceConfig,
+                    e2eHttpClientFactory,
+                    new ABSmartly.Services.DefaultContextDataDeserializer(),
+                    new ABSmartly.Services.DefaultContextEventSerializer())));
+
             var e2eSdk = new ABSdk(
-                new DummyHttpClientFactory(),
-                new ABSmartlyServiceConfiguration
-                {
-                    Endpoint = e2eEndpoint,
-                    ApiKey = e2eApiKey,
-                    Application = e2eApp,
-                    Environment = e2eEnv
-                },
+                e2eHttpClientFactory,
+                e2eServiceConfig,
                 new ABSdkConfig
                 {
-                    ContextEventLogger = e2eEventCollector
+                    ContextEventLogger = e2eEventCollector,
+                    ContextPublisher = e2ePublisher
                 }
             );
 
@@ -240,35 +255,32 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                 RefreshInterval = TimeSpan.FromMilliseconds(0)
             };
 
+            var e2ePassedUnits = new Dictionary<string, UnitValue>();
             if (requestJson.ContainsKey("units"))
             {
-                var units = requestJson["units"];
-                foreach (var prop in units.EnumerateObject())
+                foreach (var prop in requestJson["units"].EnumerateObject())
                 {
-                    if (prop.Value.ValueKind == JsonValueKind.Number)
-                    {
-                        if (prop.Value.TryGetInt64(out var intVal))
-                            e2eContextConfig.Units[prop.Name] = intVal.ToString();
-                        else if (prop.Value.TryGetDouble(out var doubleVal))
-                            e2eContextConfig.Units[prop.Name] = doubleVal.ToString();
-                        else
-                            e2eContextConfig.Units[prop.Name] = prop.Value.GetRawText();
-                    }
-                    else
-                    {
-                        e2eContextConfig.Units[prop.Name] = prop.Value.GetString();
-                    }
+                    var unit = CaptureUnitValue(prop.Value);
+                    e2ePassedUnits[prop.Name] = unit;
+                    e2eContextConfig.Units[prop.Name] = unit.Sent;
                 }
             }
 
-            var e2eContext = e2eSdk.CreateContext(e2eContextConfig);
-            for (int i = 0; i < 100 && !e2eContext.IsReady(); i++)
+            // Wait for the SDK's own readiness, bounded below the orchestrator's 10s
+            // request timeout. A context that is still loading or failed to load is
+            // an error, not a usable context.
+            const int e2eReadyTimeoutMs = 8000;
+            var e2eContext = e2eSdk.CreatePendingContext(e2eContextConfig);
+            var e2eReady = e2eContext.WaitUntilReadyAsync();
+            if (await Task.WhenAny(e2eReady, Task.Delay(e2eReadyTimeoutMs)) != e2eReady)
             {
-                await Task.Delay(10);
+                if (e2eContext is IAsyncDisposable pending) await pending.DisposeAsync();
+                return Results.Json(new { error = $"e2e context not ready after {e2eReadyTimeoutMs}ms" }, statusCode: 504);
             }
-            for (int i = 0; i < 50 && e2eEventCollector.GetEventsCount() == 0; i++)
+            if (e2eContext.IsFailed() || !e2eContext.IsReady())
             {
-                await Task.Delay(10);
+                var reason = e2eContext.ReadyError?.Message ?? "context data failed to load";
+                return Results.Json(new { error = $"e2e context failed to load: {reason}" }, statusCode: 502);
             }
 
             if (requestJson.ContainsKey("attributes"))
@@ -292,8 +304,9 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             {
                 Context = e2eContext,
                 EventCollector = e2eEventCollector,
-                Units = new Dictionary<string, object>(),
-                Attributes = new Dictionary<string, object>()
+                Units = e2ePassedUnits,
+                Attributes = new Dictionary<string, object>(),
+                PublishFailFlag = e2ePublishFailFlag
             };
 
             return Results.Ok(new ApiResponse
@@ -387,25 +400,14 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
+        var passedUnits = new Dictionary<string, UnitValue>();
         if (requestJson.ContainsKey("units"))
         {
-            var units = requestJson["units"];
-            foreach (var prop in units.EnumerateObject())
+            foreach (var prop in requestJson["units"].EnumerateObject())
             {
-                // Convert numeric values to strings for the SDK
-                if (prop.Value.ValueKind == JsonValueKind.Number)
-                {
-                    if (prop.Value.TryGetInt64(out var intVal))
-                        contextConfig.Units[prop.Name] = intVal.ToString();
-                    else if (prop.Value.TryGetDouble(out var doubleVal))
-                        contextConfig.Units[prop.Name] = doubleVal.ToString();
-                    else
-                        contextConfig.Units[prop.Name] = prop.Value.GetRawText();
-                }
-                else
-                {
-                    contextConfig.Units[prop.Name] = prop.Value.GetString();
-                }
+                var unit = CaptureUnitValue(prop.Value);
+                passedUnits[prop.Name] = unit;
+                contextConfig.Units[prop.Name] = unit.Sent;
             }
         }
 
@@ -416,50 +418,24 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         }
         else if (payloadThrottle > 0)
         {
-            // SDK not-ready state: returns immediately, data loads in the background.
+            // SDK not-ready state: returns immediately; the SDK fetches the endpoint
+            // in the background and readies (or fails) the context itself.
             context = sdk.CreatePendingContext(contextConfig);
         }
         else
         {
+            // Returns once the SDK has loaded (ready event) or failed (error event).
             context = sdk.CreateContext(contextConfig);
-
-            // Wait for events to be collected (like Go/Java wrappers)
-            for (int i = 0; i < 50 && eventCollector.GetEventsCount() == 0; i++)
-            {
-                await Task.Delay(10);
-            }
         }
 
         var storedData = new ContextData
         {
             Context = context,
             EventCollector = eventCollector,
-            Units = new Dictionary<string, object>(),
+            Units = passedUnits,
             Attributes = new Dictionary<string, object>(),
             PublishFailFlag = publishFailFlag
         };
-
-        if (requestJson.ContainsKey("units"))
-        {
-            var units = requestJson["units"];
-            foreach (var prop in units.EnumerateObject())
-            {
-                if (prop.Value.ValueKind == JsonValueKind.Number)
-                {
-                    // Store the numeric value for getUnit
-                    if (prop.Value.TryGetInt64(out var intVal))
-                        storedData.Units[prop.Name] = intVal;
-                    else if (prop.Value.TryGetDouble(out var doubleVal))
-                        storedData.Units[prop.Name] = doubleVal;
-                    else
-                        storedData.Units[prop.Name] = prop.Value.GetRawText();
-                }
-                else
-                {
-                    storedData.Units[prop.Name] = prop.Value.GetString();
-                }
-            }
-        }
 
         contexts[contextId] = storedData;
 
@@ -496,35 +472,12 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        string uidString;
-        object uidValue;
+        if (request.Uid is not JsonElement uidElement)
+            return Results.BadRequest(new { error = "uid is required" });
 
-        if (request.Uid is JsonElement jsonElement)
-        {
-            if (jsonElement.ValueKind == JsonValueKind.Number)
-            {
-                uidValue = jsonElement.GetInt64();
-                uidString = uidValue.ToString();
-            }
-            else if (jsonElement.ValueKind == JsonValueKind.String)
-            {
-                uidValue = jsonElement.GetString();
-                uidString = (string)uidValue;
-            }
-            else
-            {
-                uidValue = jsonElement.ToString();
-                uidString = (string)uidValue;
-            }
-        }
-        else
-        {
-            uidValue = request.Uid;
-            uidString = request.Uid?.ToString() ?? "";
-        }
-
-        data.Context.SetUnit(request.UnitType, uidString);
-        data.Units[request.UnitType] = uidValue;
+        var unit = CaptureUnitValue(uidElement);
+        data.Context.SetUnit(request.UnitType, unit.Sent);
+        lock (data.Units) data.Units[request.UnitType] = unit;
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -551,12 +504,7 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
         object result = null;
         if (data.Context.Units.TryGetValue(request.UnitType, out var uid))
         {
-            if (long.TryParse(uid, out var longVal))
-                result = longVal;
-            else if (double.TryParse(uid, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
-                result = dblVal;
-            else
-                result = uid;
+            lock (data.Units) result = ResolveUnitValue(data.Units, request.UnitType, uid);
         }
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -568,14 +516,6 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
     }
     catch (Exception ex)
     {
-        if (TranslateErrorMessage(ex.Message) == "Context finalized")
-        {
-            return Results.Ok(new ApiResponse
-            {
-                Result = null,
-                Events = new List<object>()
-            });
-        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -848,24 +788,18 @@ app.MapPost("/context/{contextId}/override", (string contextId, [FromBody] Overr
 
     try
     {
+        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetOverride(request.ExperimentName, request.Variant);
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
         {
             Result = null,
-            Events = new List<object>()
+            Events = newEvents
         });
     }
     catch (Exception ex)
     {
-        if (TranslateErrorMessage(ex.Message) == "Context finalized")
-        {
-            return Results.Ok(new ApiResponse
-            {
-                Result = null,
-                Events = new List<object>()
-            });
-        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -877,12 +811,14 @@ app.MapPost("/context/{contextId}/customAssignment", (string contextId, [FromBod
 
     try
     {
+        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetCustomAssignment(request.ExperimentName, request.Variant);
+        var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
         {
             Result = null,
-            Events = new List<object>()
+            Events = newEvents
         });
     }
     catch (Exception ex)
@@ -1007,14 +943,6 @@ app.MapPost("/context/{contextId}/setOverride", (string contextId, [FromBody] Ov
     }
     catch (Exception ex)
     {
-        if (TranslateErrorMessage(ex.Message) == "Context finalized")
-        {
-            return Results.Ok(new ApiResponse
-            {
-                Result = null,
-                Events = new List<object>()
-            });
-        }
         return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
     }
 });
@@ -1118,23 +1046,18 @@ app.MapPost("/context/{contextId}/getUnits", (string contextId) =>
     try
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
-        var rawUnits = data.Context.Units;
         var units = new Dictionary<string, object>();
-        foreach (var kvp in rawUnits)
+        lock (data.Units)
         {
-            if (long.TryParse(kvp.Value, out var longVal))
-                units[kvp.Key] = longVal;
-            else if (double.TryParse(kvp.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var dblVal))
-                units[kvp.Key] = dblVal;
-            else
-                units[kvp.Key] = kvp.Value;
+            foreach (var kvp in data.Context.Units)
+                units[kvp.Key] = ResolveUnitValue(data.Units, kvp.Key, kvp.Value);
         }
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
         return Results.Ok(new ApiResponse { Result = units, Events = newEvents });
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Results.BadRequest(new { error = TranslateErrorMessage(e.Message) });
     }
 });
 
@@ -1273,16 +1196,19 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
     {
         var eventsBefore = data.EventCollector.GetEventsCount();
 
-        var context = data.Context as Context;
-        if (context != null)
+        // The SDK's only public close paths (Close/Dispose/DisposeAsync) also dispose
+        // the context's locks, after which Units/GetAttribute throw, but a finalized
+        // context must stay readable. CloseAsync is the finalize step on its own.
+        if (data.Context is not Context context)
         {
-            var closeMethod = typeof(Context).GetMethod("CloseAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (closeMethod == null)
-            {
-                return Results.Json(new { error = "Context.CloseAsync method not found via reflection; cannot finalize" }, statusCode: 500);
-            }
-            await (Task)closeMethod.Invoke(context, null);
+            return Results.Json(new { error = $"{data.Context.GetType().Name} is not an SDK Context; cannot finalize" }, statusCode: 500);
         }
+        var closeMethod = typeof(Context).GetMethod("CloseAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (closeMethod == null)
+        {
+            return Results.Json(new { error = "Context.CloseAsync method not found via reflection; cannot finalize" }, statusCode: 500);
+        }
+        await (Task)closeMethod.Invoke(context, null);
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -1305,6 +1231,42 @@ app.MapDelete("/context/{contextId}", (string contextId) =>
 });
 
 app.Run();
+
+// The SDK stores unit UIDs as strings; numbers become their invariant string form.
+static string UnitUidString(JsonElement element)
+{
+    return element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Null => null,
+        JsonValueKind.Number when element.TryGetInt64(out var l) => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        JsonValueKind.Number when element.TryGetDouble(out var d) => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        _ => element.GetRawText()
+    };
+}
+
+// The value the caller originally passed for a unit, kept so getUnit/getUnits can
+// return it with its original JSON type (e.g. a number) instead of the SDK's string.
+static UnitValue CaptureUnitValue(JsonElement element)
+{
+    object original = element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+        JsonValueKind.Number => element.GetDouble(),
+        _ => element.Clone()
+    };
+    return new UnitValue(original, UnitUidString(element));
+}
+
+// Returns the caller's original value only while the SDK still holds exactly the
+// string the wrapper passed for it; otherwise the SDK's own string.
+static object ResolveUnitValue(Dictionary<string, UnitValue> passed, string unitType, string sdkUid)
+{
+    if (passed.TryGetValue(unitType, out var unit) && unit.Sent == sdkUid)
+        return unit.Original;
+    return sdkUid;
+}
 
 static object ConvertJsonElement(JsonElement element)
 {
@@ -1395,11 +1357,14 @@ public class CustomPublisher : IContextPublisher
 {
     private readonly EventCollector _eventCollector;
     private readonly PublishFailFlag _publishFailFlag;
+    private readonly IContextPublisher _delegate;
 
-    public CustomPublisher(EventCollector eventCollector, PublishFailFlag publishFailFlag)
+    public CustomPublisher(EventCollector eventCollector, PublishFailFlag publishFailFlag,
+        IContextPublisher delegatePublisher = null)
     {
         _eventCollector = eventCollector;
         _publishFailFlag = publishFailFlag;
+        _delegate = delegatePublisher;
     }
 
     public Task PublishAsync(IContext context, PublishEvent publishEvent)
@@ -1411,7 +1376,7 @@ public class CustomPublisher : IContextPublisher
             _publishFailFlag.Fail = false;
             throw new Exception("publish failed");
         }
-        return Task.CompletedTask;
+        return _delegate?.PublishAsync(context, publishEvent) ?? Task.CompletedTask;
     }
 }
 
@@ -1485,10 +1450,12 @@ public class ContextData
 {
     public IContext Context { get; set; }
     public EventCollector EventCollector { get; set; }
-    public Dictionary<string, object> Units { get; set; }
+    public Dictionary<string, UnitValue> Units { get; set; }
     public Dictionary<string, object> Attributes { get; set; }
     public PublishFailFlag PublishFailFlag { get; set; }
 }
+
+public record UnitValue(object Original, string Sent);
 
 public class ApiResponse
 {
