@@ -18,31 +18,44 @@ from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
+from sdk.default_context_data_provider import DefaultContextDataProvider
 import jsons
 import threading
-import urllib.request
 
 app = Flask(__name__)
 
 class DeferredContextDataProvider(ContextDataProvider):
-    def __init__(self, endpoint, throttle_ms):
-        self.endpoint = endpoint
+    """Delays the SDK's own context-data fetch by throttle_ms.
+
+    The fetch and deserialization are delegated to the wrapped SDK provider
+    (the SDK's DefaultContextDataProvider over a real Client), so a throttled
+    context exercises the same HTTP + parse path as a non-throttled one.
+    """
+
+    def __init__(self, delegate, throttle_ms):
+        self.delegate = delegate
         self.throttle_ms = throttle_ms
 
     def get_context_data(self):
         future = Future()
+
         def fetch():
             time.sleep(self.throttle_ms / 1000.0)
             try:
-                with urllib.request.urlopen(self.endpoint, timeout=10) as response:
-                    raw = json.loads(response.read().decode())
-                    data = jsons.load(raw, ContextData)
-                    future.set_result(data)
+                inner = self.delegate.get_context_data()
             except Exception as e:
-                # Surface fetch/parse failures so the SDK's failed-load path
-                # runs (context becomes FAILED, readyError reports the error)
-                # instead of swallowing them into empty-but-ready data.
                 future.set_exception(e)
+                return
+
+            def relay(done):
+                exc = done.exception()
+                if exc is not None:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(done.result())
+
+            inner.add_done_callback(relay)
+
         threading.Thread(target=fetch, daemon=True).start()
         return future
 
@@ -55,20 +68,44 @@ class FailingContextDataProvider(ContextDataProvider):
 class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
-        self._suppress_init_errors = False
+        self._lock = threading.Lock()
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
         if event_type_str == 'close':
             event_type_str = 'finalize'
-        if event_type_str == 'error' and self._suppress_init_errors:
-            return
         serialized_data = self._serialize(data) if data is not None else None
-        self.events.append({
-            'type': event_type_str,
-            'data': serialized_data,
-            'timestamp': int(time.time() * 1000)
-        })
+        with self._lock:
+            self.events.append({
+                'type': event_type_str,
+                'data': serialized_data,
+                'timestamp': int(time.time() * 1000)
+            })
+
+    def since(self, index):
+        with self._lock:
+            return list(self.events[index:])
+
+    def count(self):
+        with self._lock:
+            return len(self.events)
+
+    def await_event(self, since, types, timeout_s=5.0):
+        """Wait until an event of one of `types` is logged after `since`.
+
+        The SDK resolves its ready/close futures just before it logs the
+        matching event, so the event can land a moment after the blocking call
+        returns. Raises on timeout so a response is never silently missing it.
+        """
+        deadline = time.time() + timeout_s
+        while True:
+            new_events = self.since(since)
+            if any(e['type'] in types for e in new_events):
+                return new_events
+            if time.time() >= deadline:
+                raise RuntimeError(
+                    f"Timed out after {timeout_s}s waiting for SDK {'/'.join(types)} event")
+            time.sleep(0.005)
 
     def _serialize(self, data):
         try:
@@ -144,8 +181,25 @@ def get_context_payload(payload_id):
 
 @app.route('/context_payload/<payload_id>/context', methods=['GET'])
 def mock_api_context(payload_id):
-    data = payload_store.get(payload_id, {'experiments': []})
-    return jsonify(data)
+    # A never-stored payload id is a missing collector payload: answer 404 so
+    # the SDK's own fetch fails the context, instead of serving an
+    # empty-but-valid payload that would make it silently ready.
+    if payload_id not in payload_store:
+        return jsonify({'error': 'Payload not found'}), 404
+    return jsonify(payload_store[payload_id])
+
+def restore_unit_type(ctx_data, unit_type, sdk_value):
+    """Return the caller's original JSON value for a unit when the SDK's
+    stored string is exactly its string form (so 125 / 125.75 round-trip as
+    numbers); otherwise return the SDK's string unchanged, so a string UID
+    that merely looks numeric (e.g. "123") is never retyped."""
+    if sdk_value is None:
+        return None
+    original = ctx_data.get('unitInputs', {}).get(unit_type)
+    if isinstance(original, (int, float)) and not isinstance(original, bool) \
+            and str(original) == sdk_value:
+        return original
+    return sdk_value
 
 @app.route('/context', methods=['POST'])
 def create_context():
@@ -185,6 +239,7 @@ def create_context():
 
         context = sdk.create_context(context_config)
         context.wait_until_ready()
+        event_collector.await_event(0, ('ready', 'error'))
 
         for name, value in (req_data.get('attributes') or {}).items():
             context.set_attribute(name, value)
@@ -202,7 +257,7 @@ def create_context():
                 'failed': context.is_failed(),
                 'finalized': context.is_closed()
             },
-            'events': event_collector.events
+            'events': event_collector.since(0)
         })
 
     context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
@@ -243,9 +298,7 @@ def create_context():
     if 'data' in req_data:
         # Sync: createContextWith
         context_data = jsons.load(req_data['data'], ContextData)
-        event_collector._suppress_init_errors = True
         context = sdk.create_context_with(context_config, context_data)
-        event_collector._suppress_init_errors = False
     elif fail_load:
         failing_sdk_config = ABSmartlyConfig()
         failing_sdk_config.context_data_provider = FailingContextDataProvider()
@@ -253,12 +306,11 @@ def create_context():
         failing_sdk_config.context_event_handler = publisher
         failing_sdk = ABSmartly(failing_sdk_config)
         context = failing_sdk.create_context(context_config)
-        for _ in range(50):
-            if event_collector.events:
-                break
-            time.sleep(0.01)
+        event_collector.await_event(0, ('error',))
     elif payload_throttle > 0 and endpoint:
-        deferred_provider = DeferredContextDataProvider(translated_endpoint, payload_throttle)
+        # Delay the SDK's own fetch; the context stays not-ready until it lands.
+        deferred_provider = DeferredContextDataProvider(
+            DefaultContextDataProvider(client), payload_throttle)
         deferred_sdk_config = ABSmartlyConfig()
         deferred_sdk_config.context_data_provider = deferred_provider
         deferred_sdk_config.context_event_logger = event_collector
@@ -266,19 +318,16 @@ def create_context():
         deferred_sdk = ABSmartly(deferred_sdk_config)
         context = deferred_sdk.create_context(context_config)
     else:
-        # Async: createContext (SDK will fetch from endpoint)
+        # Async: createContext (the SDK's Client fetches <endpoint>/context)
         context = sdk.create_context(context_config)
         context.wait_until_ready()
-        # Wait for events to be collected (like Go/Java wrappers)
-        for _ in range(50):
-            if event_collector.events:
-                break
-            time.sleep(0.01)
+        event_collector.await_event(0, ('ready', 'error'))
 
     contexts[context_id] = {
         'context': context,
         'eventCollector': event_collector,
-        'publisher': publisher
+        'publisher': publisher,
+        'unitInputs': dict(req_data['units']),
     }
 
     return jsonify({
@@ -288,7 +337,7 @@ def create_context():
             'failed': context.is_failed(),
             'finalized': context.is_closed()
         },
-        'events': event_collector.events
+        'events': event_collector.since(0)
     })
 
 @app.route('/context/<context_id>/setUnit', methods=['POST'])
@@ -299,18 +348,17 @@ def set_unit(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         unit_type = request.json['unitType']
-        uid = str(request.json['uid'])
+        raw_uid = request.json['uid']
 
-        existing = context.units.get(unit_type)
-        if existing is not None and existing != uid:
-            return jsonify({'error': f"Unit '{unit_type}' UID already set."}), 400
-
-        context.set_unit(unit_type, uid)
-        new_events = collector.events[events_before:]
+        # The SDK itself raises "Unit '<type>' UID already set." / "UID must
+        # not be blank." and the finalized error, so no wrapper-side pre-check.
+        context.set_unit(unit_type, str(raw_uid))
+        ctx_data.setdefault('unitInputs', {}).setdefault(unit_type, raw_uid)
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -323,19 +371,12 @@ def get_unit(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
-        result = context.units.get(request.json['unitType'])
-        if result is not None:
-            try:
-                if '.' in str(result):
-                    result = float(result)
-                else:
-                    result = int(result)
-            except (ValueError, TypeError):
-                pass
-        new_events = collector.events[events_before:]
+        unit_type = request.json['unitType']
+        result = restore_unit_type(ctx_data, unit_type, context.get_unit(unit_type))
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -348,11 +389,11 @@ def attribute(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         context.set_attribute(request.json['name'], request.json['value'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -365,7 +406,7 @@ def get_attribute(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         # Python SDK doesn't have get_attribute, search in attributes list
@@ -373,7 +414,7 @@ def get_attribute(context_id):
         for attr in context.attributes:
             if attr.name == request.json['name']:
                 result = attr.value
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -386,7 +427,7 @@ def treatment(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     # The python SDK's get_treatment() returns 0 after finalize (context.py:642)
     # rather than raising, so guard the finalized state explicitly (scenario 189).
@@ -395,7 +436,7 @@ def treatment(context_id):
 
     try:
         variant = context.get_treatment(request.json['experimentName'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': variant, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -408,11 +449,11 @@ def peek(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         variant = context.peek_treatment(request.json['experimentName'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': variant, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -425,11 +466,11 @@ def variable_value(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         value = context.get_variable_value(request.json['key'], request.json['defaultValue'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -442,11 +483,11 @@ def peek_variable_value(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         value = context.peek_variable_value(request.json['key'], request.json['defaultValue'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -459,7 +500,7 @@ def track(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         goal_name = request.json['goalName']
@@ -469,7 +510,7 @@ def track(context_id):
             return jsonify({'error': f"Goal '{goal_name}' properties must be of type object."}), 400
 
         context.track(goal_name, properties)
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -512,11 +553,11 @@ def custom_field_value(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         value = context.get_custom_field_value(request.json['experimentName'], request.json['fieldName'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -529,13 +570,13 @@ def variable_keys(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         keys = context.get_variable_keys()
         # Python SDK returns dict, we want just the keys as array
         result = list(keys.keys()) if isinstance(keys, dict) else keys
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -548,12 +589,12 @@ def custom_field_keys(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         # Python SDK customFieldKeys() takes NO parameters
         keys = context.get_custom_field_keys()
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -566,12 +607,12 @@ def custom_field_value_type(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         # Python SDK method is get_custom_field_type, not get_custom_field_value_type
         value_type = context.get_custom_field_type(request.json['experimentName'], request.json['fieldName'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': value_type, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -584,12 +625,12 @@ def set_override(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         # Python SDK uses set_override method
         context.set_override(request.json['experimentName'], request.json['variant'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         if is_context_finalized_error(e):
@@ -604,12 +645,12 @@ def set_custom_assignment(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         # Python SDK uses set_custom_assignment method
         context.set_custom_assignment(request.json['experimentName'], request.json['variant'])
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -669,19 +710,11 @@ def get_units(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
-        result = dict(context.units)
-        for k, v in result.items():
-            try:
-                if '.' in str(v):
-                    result[k] = float(v)
-                else:
-                    result[k] = int(v)
-            except (ValueError, TypeError):
-                pass
-        new_events = collector.events[events_before:]
+        result = {k: restore_unit_type(ctx_data, k, v) for k, v in dict(context.units).items()}
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -694,13 +727,13 @@ def get_attributes(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         result = {}
         for attr in context.attributes:
             result[attr.name] = attr.value
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -713,14 +746,14 @@ def ready_error(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         error = getattr(context, 'ready_error', None)
         if callable(error):
             error = error()
         result = {'isError': True, 'message': str(error)} if error else None
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -733,11 +766,11 @@ def variable_keys_map(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         keys = context.get_variable_keys()
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -750,11 +783,11 @@ def global_custom_field_keys(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         keys = context.get_custom_field_keys()
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -776,11 +809,11 @@ def publish(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         context.publish()
-        new_events = collector.events[events_before:]
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -793,15 +826,13 @@ def refresh(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
         context.refresh()
-        for _ in range(50):
-            if len(collector.events) > events_before:
-                break
-            time.sleep(0.01)
-        new_events = collector.events[events_before:]
+        # The SDK resolves the refresh future just before logging the refresh
+        # event; wait for it (or fail loudly) instead of a fixed poll.
+        new_events = collector.await_event(events_before, ('refresh',), 2.0)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -814,11 +845,17 @@ def finalize(context_id):
     ctx_data = contexts[context_id]
     context = ctx_data['context']
     collector = ctx_data['eventCollector']
-    events_before = len(collector.events)
+    events_before = collector.count()
 
     try:
+        was_closed = context.is_closed()
         context.close()
-        new_events = collector.events[events_before:]
+        # With pending events the SDK resolves the close future before it
+        # logs the close event, so wait for it on the first close.
+        if was_closed:
+            new_events = collector.since(events_before)
+        else:
+            new_events = collector.await_event(events_before, ('finalize',), 2.0)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
