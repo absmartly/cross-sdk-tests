@@ -1395,7 +1395,7 @@ int main() {
                      json resp = make_response(nullptr, new_events);
                      res.set_content(resp.dump(), "application/json");
                  } catch (const std::exception& e) {
-                     res.status = 400;
+                     res.status = 500;
                      res.set_content(
                          make_error_response(e.what(), "PUBLISH_ERROR").dump(),
                          "application/json");
