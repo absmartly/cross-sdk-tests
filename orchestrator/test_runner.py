@@ -962,13 +962,16 @@ class TestOrchestrator:
                 if isinstance(expected_data, dict) and isinstance(actual_data, dict):
                     for key, expected_value in expected_data.items():
                         actual_value = actual_data.get(key, MISSING)
-                        # Event data is the SDK's own object serialized by the
-                        # wrapper. Several SDKs omit null members by design
-                        # (e.g. Java's GoalAchievement is @JsonInclude(NON_NULL)),
-                        # so an expected null also matches an omitted member
-                        # here. This does not apply to a step's top-level
-                        # `result`, where omission stays a failure.
-                        if expected_value is None and actual_value is MISSING:
+                        # A goal's null `properties` may be omitted: the Java SDK's
+                        # GoalAchievement is @JsonInclude(NON_NULL), so omission is
+                        # that SDK's real wire output. Every other event member is
+                        # strict: an omitted member never matches an expected null.
+                        if (
+                            expected_value is None
+                            and actual_value is MISSING
+                            and expected_event.get("type") == "goal"
+                            and key == "properties"
+                        ):
                             continue
                         if not values_match(actual_value, expected_value):
                             fail(f"events[{i}].data.{key}", expected_value, actual_value)

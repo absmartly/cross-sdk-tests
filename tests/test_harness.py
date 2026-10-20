@@ -144,15 +144,20 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.fields(failures), ["events"])
         self.assertIn("goal", failures[0]["actual"])
 
-    def test_event_data_null_matches_omitted_member(self):
+    def test_goal_properties_null_matches_omitted_member(self):
         actual = {"result": None, "events": [{"type": "goal", "data": {"name": "g"}}]}
         expected = {"result": None, "events": [{"type": "goal", "data": {"name": "g", "properties": None}}]}
         self.assertEqual(self.orch.validate_step(0, "track", actual, expected), [])
 
-    def test_event_data_omitted_member_still_fails_for_non_null(self):
+    def test_goal_properties_omitted_still_fails_for_non_null(self):
         actual = {"result": None, "events": [{"type": "goal", "data": {"name": "g"}}]}
         expected = {"result": None, "events": [{"type": "goal", "data": {"name": "g", "properties": {"a": 1}}}]}
         self.assertEqual(self.fields(self.orch.validate_step(0, "track", actual, expected)), ["events[0].data.properties"])
+
+    def test_null_exemption_is_limited_to_goal_properties(self):
+        actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1, "properties": None}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "treatment", actual, expected)), ["events[0].data.properties"])
 
     def test_no_events_ok_when_step_omits_events(self):
         self.assertEqual(self.orch.validate_step(0, "createContext", {"result": {"ready": True}, "events": []}, {"result": {"ready": True}}), [])

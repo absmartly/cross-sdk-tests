@@ -163,7 +163,9 @@ class EventCollector: ContextEventLogger {
         var dict: [String: Any] = [:]
         dict["id"] = exposure.id
         dict["name"] = exposure.name
-        dict["unit"] = exposure.unit
+        // An unknown experiment exposes with no unit; the wire contract carries
+        // that as an explicit null, not an omitted member.
+        dict["unit"] = exposure.unit as Any? ?? NSNull()
         dict["variant"] = exposure.variant
         dict["exposedAt"] = exposure.exposedAt
         dict["assigned"] = exposure.assigned
