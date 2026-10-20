@@ -215,6 +215,20 @@ class ValidateStepTests(unittest.TestCase):
         json.dumps(failures)
 
 
+class ConstructorStateTests(unittest.TestCase):
+    """run_scenario reads attributes the constructor must always set."""
+
+    def test_verbose_flag_is_stored(self):
+        self.assertTrue(make_orchestrator(verbose=True).verbose)
+        self.assertFalse(make_orchestrator().verbose)
+
+    def test_run_scenario_reaches_the_sdk_loop(self):
+        orch = make_orchestrator(sdks={})
+        with quiet():
+            result = orch.run_scenario({"name": "x", "steps": []})
+        self.assertIn("sdks", result)
+
+
 class ErrorMatchTests(unittest.TestCase):
     def test_existing_rules_unchanged(self):
         orch = make_orchestrator()

@@ -375,6 +375,7 @@ class TestOrchestrator:
         self.consistency_failures: Dict[str, List[str]] = {}
         self.consistency_report: List[Dict[str, Any]] = []
         self.consistency_comparisons = 0
+        self.verbose = verbose
         # Pass-through skipping (a wrapper declaring an operation as a straight
         # pass-through to another SDK under test) is OFF by default: a skipped
         # scenario proves nothing about the wrapper. It is an explicit opt-in
