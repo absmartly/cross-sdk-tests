@@ -370,6 +370,8 @@ class TestOrchestrator:
         # Per-scenario actual outcome ("pass"/"fail"/"skip"/"error") per SDK,
         # used for the cross-SDK consistency pass after all SDKs have run.
         self.scenario_outcomes: Dict[str, Dict[str, str]] = {}
+        # scenario name -> sdk name -> per-step normalized observations.
+        self.step_observations: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.consistency_failures: Dict[str, List[str]] = {}
         self.consistency_report: List[Dict[str, Any]] = []
         self.consistency_comparisons = 0
@@ -901,19 +903,20 @@ class TestOrchestrator:
             return failures
 
         if "result" in expected:
-            # Preserve the wrapper API's historical null semantics: several
-            # language runtimes omit an undefined/null `result` member when
-            # serializing JSON. `result: null` is therefore intentionally
-            # equivalent to an omitted result key in the response. JSON type
-            # distinctions still apply whenever a value is present.
-            actual_result = actual.get("result")
+            # An omitted `result` member is NOT the same as `result: null`: a
+            # wrapper that drops the key is violating the wire contract.
+            actual_result = actual.get("result", MISSING)
             expected_result = expected["result"]
             if not result_matches(
                 action, actual_result, expected_result, ordered=expected.get("orderedResult", False)
             ):
                 fail("result", expected_result, actual_result)
 
-        actual_events = actual.get("events", [])
+        actual_events = actual.get("events", MISSING)
+        if actual_events is MISSING:
+            # The wire contract requires an `events` array on every response.
+            fail("events", expected.get("events", []), MISSING)
+            return failures
         if "events" not in expected:
             # A step that does not list events expects none. Any emitted event
             # is unexpected and must not pass silently.

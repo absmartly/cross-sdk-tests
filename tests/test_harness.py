@@ -146,7 +146,7 @@ class ValidateStepTests(unittest.TestCase):
 
     def test_no_events_ok_when_step_omits_events(self):
         self.assertEqual(self.orch.validate_step(0, "createContext", {"result": {"ready": True}, "events": []}, {"result": {"ready": True}}), [])
-        self.assertEqual(self.orch.validate_step(0, "createContext", {"result": {"ready": True}}, {"result": {"ready": True}}), [])
+        self.assertEqual(self.fields(self.orch.validate_step(0, "createContext", {"result": {"ready": True}}, {"result": {"ready": True}})), ["events"])
 
     def test_event_count_mismatch(self):
         actual = {"result": 1, "events": [{"type": "exposure"}, {"type": "exposure"}]}
