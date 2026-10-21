@@ -1293,16 +1293,15 @@ async fn refresh_handler(
 
     let outcome = {
         let mut context = ctx_data.context.lock().unwrap();
-        if ctx_data.fetches_from_endpoint {
-            // Endpoint-backed context: the SDK re-fetches through its own
-            // client (its data fetcher), as a real refresh does. The
-            // orchestrator stores any newData at the endpoint first.
-            context.refresh()
-        } else if let Some(new_data) = req.new_data {
-            // A context built from inline data has no endpoint to fetch, so
-            // apply the supplied data through the SDK's refresh_with.
+        if let Some(new_data) = req.new_data {
+            // Supplied data is applied as given, so direct callers get the
+            // data they sent even on endpoint-backed contexts.
             context.refresh_with(new_data);
             Ok(())
+        } else if ctx_data.fetches_from_endpoint {
+            // No newData: the SDK re-fetches through its own client (its
+            // data fetcher), as a real refresh does.
+            context.refresh()
         } else {
             Err("Refresh of a context created from inline data requires newData".to_string())
         }

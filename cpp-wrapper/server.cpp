@@ -1512,15 +1512,15 @@ int main() {
                  size_t events_before = entry->collector->size();
 
                  try {
-                     if (entry->fetches_from_endpoint) {
-                         // Endpoint-backed context: the SDK re-fetches through
-                         // its own data provider, as a real refresh does (the
-                         // orchestrator stores newData at the endpoint first).
-                         entry->context->refresh();
-                     } else if (body.contains("newData")) {
-                         // Inline-data context: no endpoint to fetch from.
+                     if (body.contains("newData") && !body["newData"].is_null()) {
+                         // Supplied data is applied as given, so direct callers
+                         // get the data they sent even on endpoint-backed contexts.
                          absmartly::ContextData new_data = parse_context_data(body["newData"]);
                          entry->context->refresh(new_data);
+                     } else if (entry->fetches_from_endpoint) {
+                         // No newData: the SDK re-fetches through its own data
+                         // provider, as a real refresh does.
+                         entry->context->refresh();
                      } else {
                          entry->context->refresh(entry->context->data());
                      }

@@ -839,10 +839,13 @@ fun Application.configureRouting() {
                 val newData = if (request.containsKey("newData")) {
                     objectMapper.convertValue(request["newData"], ContextData::class.java)
                 } else null
-                if (wrapper.fetchesFromEndpoint) {
-                    // The orchestrator has already stored newData at this
-                    // context's payload id; the SDK re-fetches it itself (an
-                    // HTTP request back to this server, so not on the event loop).
+                if (newData != null && wrapper.fetchesFromEndpoint) {
+                    // Supplied data is applied as given, even on an
+                    // endpoint-backed context.
+                    wrapper.context.refresh(newData)
+                } else if (wrapper.fetchesFromEndpoint) {
+                    // No newData: the SDK re-fetches it itself (an HTTP request
+                    // back to this server, so not on the event loop).
                     withContext(Dispatchers.IO) { wrapper.context.refresh().join() }
                 } else if (wrapper.dataProvider != null && newData != null) {
                     wrapper.dataProvider.setNextData(newData)
