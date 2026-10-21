@@ -5,6 +5,49 @@ const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const { Treatment, TreatmentVariant, TreatmentFunction, useTreatment } = require('@absmartly/react-sdk');
 const SDKProvider = require('@absmartly/react-sdk').default;
+const { JSDOM } = require('jsdom');
+const { createRoot } = require('react-dom/client');
+const reactAct = React.act || require('react-dom/test-utils').act;
+
+// <Treatment> records its exposure in a post-commit effect (peek during render,
+// treatment() after commit), so it must be rendered into a real DOM with effects
+// flushed. renderToString never runs effects and would report zero exposures.
+// Renders are serialised because the DOM globals are process-wide.
+let renderQueue = Promise.resolve();
+function renderCommitted(element) {
+  const run = async () => {
+    const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    const saved = { window: global.window, document: global.document, act: global.IS_REACT_ACT_ENVIRONMENT };
+    global.window = dom.window;
+    global.document = dom.window.document;
+    global.IS_REACT_ACT_ENVIRONMENT = true;
+    const container = dom.window.document.getElementById('root');
+    const root = createRoot(container);
+    try {
+      await reactAct(async () => {
+        root.render(element);
+      });
+      // let the SDK's ready() promise settle and re-render the committed tree
+      await reactAct(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      return container;
+    } finally {
+      const snapshot = container.cloneNode(true);
+      await reactAct(async () => {
+        root.unmount();
+      });
+      global.window = saved.window;
+      global.document = saved.document;
+      global.IS_REACT_ACT_ENVIRONMENT = saved.act;
+      dom.window.close();
+      container.committedSnapshot = snapshot;
+    }
+  };
+  const result = renderQueue.then(run, run);
+  renderQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -265,15 +308,11 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   // No wrapper-side not-ready shortcut: when the context is not ready the SDK's
   // <Treatment> renders its loading state (first child) itself.
   try {
-    // Each TreatmentVariant child contains a marker component that records its
-    // variant only when the SDK's <Treatment> actually renders it. No HTML
-    // scraping and no default: if the SDK renders no variant child, that is an
-    // error, not variant 0.
-    const rendered = [];
-    const VariantMarker = ({ variant }) => {
-      rendered.push(variant);
-      return React.createElement('span', null, `Variant ${variant}`);
-    };
+    // Each TreatmentVariant child contains a marker element that exists in the
+    // committed DOM only if the SDK's <Treatment> actually rendered that variant.
+    // No default: if the SDK renders no variant child, that is an error, not variant 0.
+    const VariantMarker = ({ variant }) =>
+      React.createElement('span', { 'data-variant': String(variant) }, `Variant ${variant}`);
     const variants = [];
     for (let i = 0; i <= 10; i++) {
       variants.push(
@@ -283,10 +322,13 @@ app.post('/context/:contextId/treatment', async (req, res) => {
       );
     }
 
-    renderToString(React.createElement(Treatment, {
+    const container = await renderCommitted(React.createElement(Treatment, {
       name: experimentName,
       context: context
     }, ...variants));
+
+    const rendered = Array.from(container.committedSnapshot.querySelectorAll('[data-variant]'))
+      .map((el) => Number(el.getAttribute('data-variant')));
 
     if (rendered.length !== 1) {
       return res.status(500).json({

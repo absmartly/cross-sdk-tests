@@ -1385,7 +1385,7 @@ public class PublishFailFlag
     public volatile bool Fail;
 }
 
-public class DummyHttpClientFactory : IABSdkHttpClientFactory
+public class DummyHttpClientFactory : IABsmartlyHttpClientFactory
 {
     private readonly int _getDelayMs;
 
@@ -1394,19 +1394,13 @@ public class DummyHttpClientFactory : IABSdkHttpClientFactory
         _getDelayMs = getDelayMs;
     }
 
-    // Must return base interface type for C# compatibility
-    IABsmartlyHttpClient IABsmartlyHttpClientFactory.CreateClient()
-    {
-        return new DummyHttpClient(_getDelayMs);
-    }
-
-    public IABSdkHttpClient CreateClient()
+    public IABsmartlyHttpClient CreateClient()
     {
         return new DummyHttpClient(_getDelayMs);
     }
 }
 
-public class DummyHttpClient : IABSdkHttpClient
+public class DummyHttpClient : IABsmartlyHttpClient
 {
     private readonly HttpClient _client = new HttpClient();
     private readonly int _getDelayMs;
@@ -1416,14 +1410,14 @@ public class DummyHttpClient : IABSdkHttpClient
         _getDelayMs = getDelayMs;
     }
 
-    public async Task<HttpResponseMessage> GetAsync(string requestUri)
+    public async Task<HttpResponseMessage> GetAsync(string? requestUri)
     {
         // Simulated network latency for the context-data fetch (payloadThrottle).
         if (_getDelayMs > 0) await Task.Delay(_getDelayMs);
         return await _client.GetAsync(requestUri);
     }
 
-    public Task<HttpResponseMessage> PutAsync(string requestUri, HttpContent content)
+    public Task<HttpResponseMessage> PutAsync(string? requestUri, HttpContent content)
     {
         return _client.PutAsync(requestUri, content);
     }
