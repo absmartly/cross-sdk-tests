@@ -8,14 +8,14 @@ across languages.
 
 ## What's here
 
-- **21 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+- **20 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
   directory:
 
-  `javascript`, `typescript`, `react`, `angular`, `vue2`, `vue3`, `python`,
+  `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **242 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **247 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -33,14 +33,19 @@ across languages.
   yet implemented three-arm holdout logic. Scenario 221 requires `holdouts`, and
   scenario 222 requires `holdout_arms`: it repeats the three-arm variant 0 case
   with `holdoutType` omitted, pinning that arity comes from the holdout's own
-  split length rather than a type string on the wire.
+  split length rather than a type string on the wire. Scenarios 223-227 require
+  `holdouts` and pin holdout behaviour over the life of a context: exposure
+  state survives publish (223), refresh keeps it unless the holdout iteration
+  changes (224), a refresh that changes `holdoutIds` re-resolves the experiment
+  (225), `variableValue` on a suppressed experiment returns control (226), and
+  a holdout resolves with the covered experiment's unit type (227).
 
-  Scenarios 223-241 (Switchback) require the `switchback` capability.
-  223-228 replay all 882 `assignSwitchback` and 504 `fisherYatesPermutation`
+  Scenarios 228-246 (Switchback) require the `switchback` capability.
+  228-233 replay all 882 `assignSwitchback` and 504 `fisherYatesPermutation`
   platform golden vectors through `POST /switchback/assign` and
-  `POST /switchback/permutation`; 229-241 exercise switchback serving through
+  `POST /switchback/permutation`; 234-246 exercise switchback serving through
   a context on grids that keep "now" in a known period until 2069, so no clock
-  control is needed. Scenario 242 (switchback wire-format inertness) is
+  control is needed. Scenario 247 (switchback wire-format inertness) is
   ungated, like 209: on every SDK, unit experiments carrying switchback data
   must be served, exposed and published exactly like a plain unit experiment,
   with the same payload fields. The
@@ -155,7 +160,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 242-scenario suite for all 21
+`.github/workflows/cross-sdk.yml` runs the full 247-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -175,9 +180,9 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 242 scenarios
+├── test_scenarios_complete.json  # 247 scenarios
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
-│                                 #   (223-242) in place; --check verifies
+│                                 #   (228-247) in place; --check verifies
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # regenerates scenarios; output
 │                                 #   test_scenarios_generated.json must be
@@ -194,7 +199,7 @@ cross-sdk-tests/
 │   ├── test_runner.py            # cross-SDK orchestrator
 │   ├── e2e_runner.py             # live-backend e2e orchestrator
 │   └── results_aggregator.py     # merges per-SDK reports into report.json
-├── <sdk>-wrapper/                # one HTTP wrapper per SDK (21 total)
+├── <sdk>-wrapper/                # one HTTP wrapper per SDK (20 total)
 ├── docs/                         # historical design docs (see banners)
 └── test-results/                 # report.json output (generated)
 ```

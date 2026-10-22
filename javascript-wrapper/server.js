@@ -1,6 +1,7 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
+const holdoutSelfTest = require('./holdoutSelfTest');
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -74,7 +75,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/capabilities', (req, res) => {
+app.get('/capabilities', async (req, res) => {
+  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+
   res.json({
     diagnostics: true,
     attrsSeq: true,
@@ -83,7 +86,9 @@ app.get('/capabilities', (req, res) => {
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true
+    readyError: true,
+    holdouts,
+    holdout_arms: holdoutArms
   });
 });
 
@@ -677,14 +682,13 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh failed, still report events
+    // Public SDK API: context.refresh() re-fetches through the SDK's data
+    // provider (the wrapper's mock /context_payload endpoint, which the
+    // orchestrator updates before calling this) and rejects on failure.
+    await context.refresh();
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);

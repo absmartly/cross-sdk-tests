@@ -152,43 +152,24 @@ class CustomDataProvider implements ContextDataProvider {
   }
 }
 
+// Delays the load, then delegates to the SDK's own provider so the payload is
+// fetched by the SDK Client and parsed by DefaultContextDataDeserializer.
 class DeferredDataProvider implements ContextDataProvider {
-  final ContextData data;
+  final ContextDataProvider inner;
   final int throttleMs;
 
-  DeferredDataProvider(this.data, this.throttleMs);
+  DeferredDataProvider(this.inner, this.throttleMs);
 
   @override
   Completer<ContextData> getContextData() {
     final completer = Completer<ContextData>();
     Future.delayed(Duration(milliseconds: throttleMs), () {
-      completer.complete(data);
+      inner.getContextData().future.then(
+        completer.complete,
+        onError: completer.completeError,
+      );
     });
     return completer;
-  }
-}
-
-class CustomVariableParser implements VariableParser {
-  @override
-  Map<String, dynamic>? parse(
-    Context context,
-    String experimentName,
-    String variantName,
-    String? config,
-  ) {
-    if (config == null || config.isEmpty) {
-      return {};
-    }
-
-    try {
-      final decoded = jsonDecode(config);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      return {'__raw_value': decoded};
-    } catch (e) {
-      return {};
-    }
   }
 }
 
@@ -198,37 +179,16 @@ class ContextStore {
   final CustomDataProvider dataProvider;
   final Map<String, dynamic> rawData;
   final CustomPublisher publisher;
+  final bool usesInjectedData;
 
-  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.publisher);
+  ContextStore(this.context, this.eventCollector, this.dataProvider, this.rawData, this.publisher,
+      {this.usesInjectedData = false});
 }
 
 final Map<String, ContextStore> contexts = {};
-final Map<String, ContextData> payloadStore = {};
-
-Map<String, dynamic> _normalizeContextData(Map<String, dynamic> data) {
-  final result = Map<String, dynamic>.from(data);
-
-  if (result.containsKey('experiments')) {
-    final experiments = result['experiments'] as List;
-    result['experiments'] = experiments.map((exp) {
-      final expMap = Map<String, dynamic>.from(exp as Map);
-
-      if (expMap.containsKey('split') && expMap['split'] != null) {
-        final split = expMap['split'] as List;
-        expMap['split'] = List<double>.from(split.map((v) => (v as num).toDouble()));
-      }
-
-      if (expMap.containsKey('trafficSplit') && expMap['trafficSplit'] != null) {
-        final trafficSplit = expMap['trafficSplit'] as List;
-        expMap['trafficSplit'] = List<double>.from(trafficSplit.map((v) => (v as num).toDouble()));
-      }
-
-      return expMap;
-    }).toList();
-  }
-
-  return result;
-}
+// Raw payloads exactly as the orchestrator sent them. Served back verbatim so
+// the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
+final Map<String, Map<String, dynamic>> payloadStore = {};
 
 String translateEndpoint(String endpoint) {
   return endpoint
@@ -335,9 +295,7 @@ Future<void> startServer() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final data = body['data'] as Map<String, dynamic>? ?? {'experiments': []};
 
-      final normalizedData = _normalizeContextData(data);
-      final contextData = ContextData.fromMap(normalizedData);
-      payloadStore[payloadId] = contextData;
+      payloadStore[payloadId] = data;
 
       return shelf.Response.ok(
         jsonEncode({'success': true}),
@@ -359,10 +317,13 @@ Future<void> startServer() async {
         await Future.delayed(Duration(milliseconds: throttle));
       }
 
-      final data = payloadStore[payloadId] ?? ContextData();
+      final data = payloadStore[payloadId];
+      if (data == null) {
+        return shelf.Response.notFound(jsonEncode({'error': 'Payload not found'}));
+      }
 
       return shelf.Response.ok(
-        jsonEncode(data.toMap()),
+        jsonEncode(data),
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
@@ -374,9 +335,14 @@ Future<void> startServer() async {
   });
 
   router.get('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
-    final data = payloadStore[payloadId] ?? ContextData();
+    // Unknown payload: 404 so the SDK's fetch fails, rather than serving an
+    // empty-but-valid payload the SDK never received.
+    final data = payloadStore[payloadId];
+    if (data == null) {
+      return shelf.Response.notFound(jsonEncode({'error': 'Payload not found'}));
+    }
     return shelf.Response.ok(
-      jsonEncode(data.toMap()),
+      jsonEncode(data),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -466,38 +432,21 @@ Future<void> startServer() async {
 
       final eventCollector = EventCollector();
       final publisher = CustomPublisher(eventCollector);
-      final variableParser = CustomVariableParser();
       final dataProvider = CustomDataProvider();
 
       ContextData? contextDataForCreation;
-      Map<String, dynamic> rawDataForStore = {};
       final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
-      // Set when the endpoint fetch path cannot resolve a payload. The context must
-      // then become FAILED rather than fabricating an empty-but-ready ContextData.
-      bool fetchFailed = false;
 
       if (data != null) {
-        final normalizedData = _normalizeContextData(data);
-        contextDataForCreation = ContextData.fromMap(normalizedData);
-        rawDataForStore = data;
-      } else if (!failLoad && endpoint != null) {
-        // Flutter test environment can't make HTTP requests to itself.
-        // For async context tests, use createContextWith instead.
-        // Extract payloadId from endpoint URL and fetch directly from payloadStore.
-        final payloadMatch = RegExp(r'/context_payload/([^/]+)$').firstMatch(endpoint);
-        final storedData = payloadMatch != null ? payloadStore[payloadMatch.group(1)!] : null;
-        if (storedData != null) {
-          contextDataForCreation = storedData;
-          rawDataForStore = storedData.toMap();
-        } else {
-          // The payload could not be resolved from the endpoint: this is a genuine
-          // fetch/parse failure. Fail the context so waitForReady reports failure.
-          fetchFailed = true;
-        }
+        // createContextWith: the SDK's own ContextData.fromMap parses the raw payload.
+        contextDataForCreation = ContextData.fromMap(data);
       }
 
+      // Live-fetch path: the SDK Client GETs {endpoint}/context and deserializes it
+      // with DefaultContextDataDeserializer, exactly as against the real collector.
+      final translatedEndpoint = endpoint != null ? translateEndpoint(endpoint) : null;
       final clientConfig = ClientConfig.create()
-        .setEndpoint('http://dummy')
+        .setEndpoint(translatedEndpoint ?? 'http://dummy')
         .setAPIKey('dummy')
         .setApplication('test')
         .setEnvironment('test');
@@ -506,14 +455,14 @@ Future<void> startServer() async {
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)
         .setContextPublisher(publisher)
-        .setContextEventLogger(eventCollector)
-        .setVariableParser(variableParser);
+        .setContextEventLogger(eventCollector);
 
-      if (payloadThrottle > 0 && contextDataForCreation != null) {
-        sdkConfig.setContextDataProvider(DeferredDataProvider(contextDataForCreation, payloadThrottle));
-        contextDataForCreation = null;
-      } else {
+      if (failLoad) {
+        sdkConfig.setContextDataProvider(FailingContextDataProvider());
+      } else if (data != null) {
         sdkConfig.setContextDataProvider(dataProvider);
+      } else if (payloadThrottle > 0 && translatedEndpoint != null) {
+        sdkConfig.setContextDataProvider(DeferredDataProvider(DefaultContextDataProvider(client), payloadThrottle));
       }
 
       final sdk = ABSmartly(sdkConfig);
@@ -527,22 +476,13 @@ Future<void> startServer() async {
 
       final publishDelay = options['publishDelay'] as int? ?? -1;
       contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
-      // Flutter wrapper uses createContextWith payload injection in this test harness.
-      // Disable auto-refresh to avoid background refresh noise without a real provider.
-      // A negative interval fires the refresh Timer immediately (risking a spurious
-      // refresh against an empty provider), so use 0 to disable, matching the e2e path.
+      // Auto-refresh disabled (0); tests drive refresh explicitly. A negative
+      // interval fires the refresh Timer immediately, so 0 is the off value.
       contextConfig.setRefreshInterval(0);
 
-      late Context context;
-      if (failLoad || fetchFailed) {
-        sdkConfig.setContextDataProvider(FailingContextDataProvider());
-        final failingSdk = ABSmartly(sdkConfig);
-        context = failingSdk.createContext(contextConfig);
-      } else if (contextDataForCreation != null) {
-        context = sdk.createContextWith(contextConfig, contextDataForCreation);
-      } else {
-        context = sdk.createContext(contextConfig);
-      }
+      final Context context = contextDataForCreation != null && !failLoad
+          ? sdk.createContextWith(contextConfig, contextDataForCreation)
+          : sdk.createContext(contextConfig);
 
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
@@ -552,7 +492,8 @@ Future<void> startServer() async {
         }
       }
 
-      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, rawDataForStore, publisher);
+      contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {}, publisher,
+          usesInjectedData: data != null);
 
       return shelf.Response.ok(
         jsonEncode({
@@ -1217,12 +1158,15 @@ Future<void> startServer() async {
 
     try {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
-      final newData = body['newData'] as Map<String, dynamic>;
+      final newData = body['newData'] as Map<String, dynamic>?;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final normalizedData = _normalizeContextData(newData);
-      final contextData = ContextData.fromMap(normalizedData);
-      ctxData.dataProvider.setNextData(contextData);
+      // Injected-data (createContextWith) contexts refresh from the wrapper's
+      // provider; live-fetch contexts re-fetch through the SDK Client from the
+      // endpoint the orchestrator already updated via PUT /context_payload.
+      if (newData != null && ctxData.usesInjectedData) {
+        ctxData.dataProvider.setNextData(ContextData.fromMap(newData));
+      }
 
       await ctxData.context.refresh();
 

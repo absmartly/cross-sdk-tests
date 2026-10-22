@@ -6,14 +6,14 @@ Reconstructed from test_scenarios_complete.json
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 The checked-in test_scenarios_complete.json is the CANONICAL source of truth
-for the cross-SDK suite (242 scenarios). This generator is OUT OF DATE:
+for the cross-SDK suite (247 scenarios). This generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 242.
+  * It emits only 192 scenarios, not the canonical 247.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
-  * It does not emit the Holdouts scenario group (203-222) at all.
-  * It does not emit the Switchback group (223-242); that group is owned by
+  * It does not emit the Holdouts scenario group (203-227) at all.
+  * It does not emit the Switchback group (228-247); that group is owned by
     generate_switchback_scenarios.py, which rewrites it in place in the
     canonical file and verifies it with --check.
 
@@ -6516,7 +6516,7 @@ def generate_all_scenarios():
             'steps': [
                 {
                     'action': 'createContextWith',
-                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1, 'refreshPeriod': 5}},
+                    'params': {'units': {'session_id': 'test123'}, 'options': {'publishDelay': -1, 'refreshPeriod': 60000}},
                     'expect': {
                         'result': {'ready': True, 'failed': False, 'finalized': False},
                         'events': [

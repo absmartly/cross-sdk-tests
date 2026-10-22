@@ -20,7 +20,7 @@ object Server extends IOApp {
   implicit val ec: ExecutionContext = ExecutionContext.global
 
   private val contexts = TrieMap[String, (Context, WrapperEventCollector)]()
-  private val publishFailFlags = TrieMap[String, Boolean]()
+  private val publishers = TrieMap[String, ArmablePublisher]()
   private val payloads = TrieMap[String, ContextData]()
   private val contextCounter = new AtomicInteger(0)
 
@@ -32,19 +32,30 @@ object Server extends IOApp {
       .replaceAll("http://127\\.0\\.0\\.1:\\d+", "http://localhost:3000")
   }
 
-  private val noOpPublisher: Option[ContextPublisher] = Some(new ContextPublisher {
+  /**
+   * Transport injected through the SDK's public `SDKConfig.publisher` hook.
+   * Normally a no-op sink (scenarios have no collector). `/publishFail` arms a
+   * one-shot transport failure; the real `Context.publish()` path then runs,
+   * receives the failed Future and is responsible for preserving pending events
+   * (Context.scala `_flush` re-queues on failure). The wrapper never fakes the
+   * publish result itself.
+   */
+  final class ArmablePublisher(delegate: Option[ContextPublisher] = None) extends ContextPublisher {
+    private val failNext = new java.util.concurrent.atomic.AtomicBoolean(false)
+    def arm(): Unit = failNext.set(true)
     def publish(units: Map[String, String], hashed: Boolean, exposures: List[Exposure], goals: List[Goal], attributes: Option[List[Attribute]]): scala.concurrent.Future[Unit] =
-      scala.concurrent.Future.successful(())
-  })
+      if (failNext.getAndSet(false)) scala.concurrent.Future.failed(new RuntimeException("Publish failed"))
+      else delegate.fold(scala.concurrent.Future.successful(()))(_.publish(units, hashed, exposures, goals, attributes))
+  }
 
-  private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector): SDKConfig =
+  private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector, publisher: ArmablePublisher): SDKConfig =
     SDKConfig(
       endpoint = endpoint,
       apiKey = "test-key",
       application = "test-app",
       environment = "test",
       eventLogger = collector,
-      publisher = noOpPublisher
+      publisher = Some(publisher)
     )
 
   private def parseUnitsMap(cursor: io.circe.ACursor): Map[String, String] = {
@@ -74,7 +85,9 @@ object Server extends IOApp {
         "globalCustomFieldKeys" -> Json.fromBoolean(true),
         "getUnits" -> Json.fromBoolean(true),
         "getAttributes" -> Json.fromBoolean(true),
-        "readyError" -> Json.fromBoolean(true)
+        // readyError withdrawn: Scala SDK has no public path to a failed
+        // Context from a failing fetch and emits no "error" event.
+        "readyError" -> Json.fromBoolean(false)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -150,21 +163,25 @@ object Server extends IOApp {
 
               IO.fromFuture(IO {
                 val collector = new WrapperEventCollector()
-                val sdkConfig = SDKConfig(
+                val baseConfig = SDKConfig(
                   endpoint = endpoint,
                   apiKey = apiKey,
                   application = application,
                   environment = environment,
                   eventLogger = collector
                 )
-                val sdk = new SDK(sdkConfig)
+                // Real collector transport, wrapped so /publishFail can arm a
+                // one-shot failure in e2e mode too.
+                val publisher = new ArmablePublisher(Some(new DefaultContextPublisher(baseConfig)))
+                val sdk = new SDK(baseConfig.copy(publisher = Some(publisher)))
                 sdk.createContext(units).map { context =>
                   attrs.foreach { case (name, value) => context.setAttribute(name, value) }
-                  (context, collector)
+                  (context, collector, publisher)
                 }
-              }).flatMap { case (context, collector) =>
+              }).flatMap { case (context, collector, publisher) =>
                 val contextId = s"ctx-${contextCounter.getAndIncrement()}"
                 contexts(contextId) = (context, collector)
+                publishers(contextId) = publisher
                 Ok(wrapperResponse(
                   Json.obj(
                     "contextId" -> Json.fromString(contextId),
@@ -192,11 +209,21 @@ object Server extends IOApp {
           cassignments = cursor.downField("options").downField("cassignments").as[Map[String, Int]].getOrElse(Map.empty)
         )
 
-        val createContext: IO[(Context, WrapperEventCollector)] = cursor.downField("data").as[ContextData] match {
+        val publisher = new ArmablePublisher()
+        val failLoad = cursor.downField("failLoad").as[Boolean].getOrElse(false)
+
+        val createContext: IO[(Context, WrapperEventCollector)] = if (failLoad) {
+          // readyError capability is withdrawn: the Scala SDK has no public
+          // creation path that yields a failed Context from a failing fetch
+          // (SDK.createContext fails the Future instead) and never emits an
+          // "error" event. Refuse rather than fabricate failed state.
+          IO.raiseError(new UnsupportedOperationException(
+            "failLoad unsupported: Scala SDK cannot produce a failed context from a failing data fetch"))
+        } else cursor.downField("data").as[ContextData] match {
           case Right(data) =>
             IO {
               val collector = new WrapperEventCollector()
-              val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector))
+              val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector, publisher))
               val context = sdk.createContextWith(units, data, options)
               (context, collector)
             }
@@ -210,7 +237,7 @@ object Server extends IOApp {
                 if (payloadThrottle > 0) {
                   IO {
                     val collector = new WrapperEventCollector()
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector))
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher))
                     val context = new Context(sdk, None, units, options, collector)
                     scala.concurrent.Future {
                       try {
@@ -219,7 +246,7 @@ object Server extends IOApp {
                         context.setData(data)
                       } catch {
                         case e: Exception =>
-                          context.setDataFailed(Some(new RuntimeException("Context load failed")))
+                          context.setDataFailed(Some(e))
                       }
                     }
                     (context, collector)
@@ -227,28 +254,19 @@ object Server extends IOApp {
                 } else {
                   IO.fromFuture(IO {
                     val collector = new WrapperEventCollector()
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector))
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher))
                     sdk.createContext(units, options).map { context =>
                       (context, collector)
                     }
                   })
                 }
               case Left(_) =>
-                val failLoad = cursor.downField("failLoad").as[Boolean].getOrElse(false)
                 IO {
                   val collector = new WrapperEventCollector()
                   val emptyData = ContextData(experiments = List.empty)
-                  val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector))
-                  if (failLoad) {
-                    val context = new Context(sdk, None, units, options, collector)
-                    context.setDataFailed(Some(new RuntimeException("Context load failed")))
-                    collector.logEvent("error", Json.obj("message" -> Json.fromString("Context load failed")))
-                    Thread.sleep(50)
-                    (context, collector)
-                  } else {
-                    val context = sdk.createContextWith(units, emptyData, options)
-                    (context, collector)
-                  }
+                  val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector, publisher))
+                  val context = sdk.createContextWith(units, emptyData, options)
+                  (context, collector)
                 }
             }
         }
@@ -256,6 +274,7 @@ object Server extends IOApp {
         createContext.flatMap { case (context, collector) =>
           val contextId = s"ctx-${contextCounter.getAndIncrement()}"
           contexts(contextId) = (context, collector)
+          publishers(contextId) = publisher
 
           Ok(wrapperResponse(
             Json.obj(
@@ -266,15 +285,18 @@ object Server extends IOApp {
             ),
             collector.getEvents()
           ))
-        }.handleErrorWith { err =>
-          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+        }.handleErrorWith {
+          case err: UnsupportedOperationException =>
+            NotImplemented(Json.obj("error" -> Json.fromString(err.getMessage)))
+          case err =>
+            InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
         }
         }
       }
 
     case DELETE -> Root / "context" / contextId =>
       contexts.remove(contextId)
-      publishFailFlags.remove(contextId)
+      publishers.remove(contextId)
       Ok(Json.obj("result" -> Json.fromString("deleted")))
 
     case req @ POST -> Root / "context" / contextId / "setUnit" =>
@@ -642,23 +664,23 @@ object Server extends IOApp {
 
     case POST -> Root / "context" / contextId / "publishFail" =>
       withContext(contextId) { case (_, _) =>
-        publishFailFlags(contextId) = true
-        Ok(wrapperResponse(Json.Null, List.empty))
+        publishers.get(contextId) match {
+          case Some(p) =>
+            p.arm()
+            Ok(wrapperResponse(Json.Null, List.empty))
+          case None =>
+            NotImplemented(Json.obj("error" -> Json.fromString("publishFail unsupported for this context (no injectable publisher)")))
+        }
       }
 
     case POST -> Root / "context" / contextId / "publish" =>
       withContext(contextId) { case (context, collector) =>
-        if (publishFailFlags.getOrElse(contextId, false)) {
-          publishFailFlags.remove(contextId)
-          InternalServerError(Json.obj("error" -> Json.fromString("publish failed")))
-        } else {
-          val prevCount = collector.getEvents().length
-          IO.fromFuture(IO(context.publish())).flatMap { _ =>
-            val newEvents = collector.getEventsSince(prevCount)
-            Ok(wrapperResponse(Json.Null, newEvents))
-          }.handleErrorWith { err =>
-            InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
-          }
+        val prevCount = collector.getEvents().length
+        IO.fromFuture(IO(context.publish())).flatMap { _ =>
+          val newEvents = collector.getEventsSince(prevCount)
+          Ok(wrapperResponse(Json.Null, newEvents))
+        }.handleErrorWith { err =>
+          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
         }
       }
 

@@ -219,7 +219,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         return jsonResponse(200, ['diagnostics' => true,
             'attrsSeq' => false,
             'publishFail' => true,
-            'variableKeysMap' => true,
+            // php-sdk Context::getVariableKeys() returns key => single experiment
+            // name; it cannot report every experiment per key, so the wrapper
+            // must not rebuild the map from raw context data.
+            'variableKeysMap' => false,
             'globalCustomFieldKeys' => true,
             'getUnits' => true,
             'getAttributes' => true,
@@ -1091,35 +1094,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
     }
 
     if (preg_match('#^/context/([^/]+)/variableKeysMap$#', $path, $matches)) {
-        $contextId = $matches[1];
-        $data = $contexts[$contextId] ?? null;
-        if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
-        $context = $data['context'];
-        $eventCollector = $data['eventCollector'];
-        $eventsBefore = count($eventCollector->getEvents());
-        try {
-            $keysMap = [];
-            foreach ($context->getContextData()->experiments as $experiment) {
-                $expName = $experiment->name;
-                foreach ($experiment->variants as $variant) {
-                    if (empty($variant->config)) continue;
-                    $parsed = json_decode($variant->config, false);
-                    if (!$parsed) continue;
-                    foreach (array_keys(get_object_vars($parsed)) as $varKey) {
-                        if (!isset($keysMap[$varKey])) {
-                            $keysMap[$varKey] = [];
-                        }
-                        if (!in_array($expName, $keysMap[$varKey], true)) {
-                            $keysMap[$varKey][] = $expName;
-                        }
-                    }
-                }
-            }
-            $newEvents = $eventCollector->getNewEvents($eventsBefore);
-            return jsonResponse(200, ['result' => (object)$keysMap, 'events' => $newEvents]);
-        } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
-        }
+        return jsonResponse(501, ['error' => 'variableKeysMap not supported by PHP SDK']);
     }
 
     if (preg_match('#^/context/([^/]+)/globalCustomFieldKeys$#', $path, $matches)) {

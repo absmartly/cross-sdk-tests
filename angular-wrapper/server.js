@@ -727,18 +727,21 @@ app.post('/context/:contextId/refresh', async (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  const { context, eventCollector } = data;
+  const { context, service, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
   try {
-    await new Promise((resolve, reject) => {
-      context._refresh((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  } catch (e) {
-    // refresh may fail if no endpoint, still report events
+    // Public SDK API: ABSmartlyService.refresh() -> context.refresh(), which
+    // re-fetches through the SDK's data provider (the wrapper's mock
+    // /context_payload endpoint, updated by the orchestrator beforehand).
+    if (service) {
+      await service.refresh();
+    } else {
+      await context.refresh();
+    }
+  } catch (error) {
+    const newEvents = eventCollector.events.slice(eventsBefore);
+    return res.status(500).json({ error: error.message, events: newEvents });
   }
 
   const newEvents = eventCollector.events.slice(eventsBefore);
