@@ -10085,7 +10085,7 @@ def main():
     print("=" * 76)
     print("WARNING: generate_scenarios.py is STALE and NON-CANONICAL.")
     print("  The checked-in test_scenarios_complete.json is the canonical oracle")
-    print("  (242 scenarios). This generator emits only 192 and has ~14 drifted")
+    print("  (247 scenarios). This generator emits only 192 and has ~14 drifted")
     print("  scenarios. Its output is written to test_scenarios_generated.json and")
     print("  MUST be diffed against test_scenarios_complete.json before use.")
     print("  Do NOT overwrite the canonical file with this output.")

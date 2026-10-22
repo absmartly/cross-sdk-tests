@@ -204,6 +204,26 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
+def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        inert = [s for s in json.load(src) if "Switchback - Inertness" in s["name"]]
+    assert len(inert) == 1
+    assert "requires" not in inert[0]
+
+    runner.capabilities = {"sdk": {"switchback": False}}
+    assert runner.should_skip_wrapper_test("sdk", inert[0])[0] is False
+
+
+def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        scenarios = json.load(src)
+    numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
+    assert numbers == list(range(1, len(scenarios) + 1))
+
+    group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
+    assert group == list(range(len(scenarios) - 20, len(scenarios)))
+
+
 # ---------------------------------------------------------------------------
 # generate_switchback_scenarios.py --check
 # ---------------------------------------------------------------------------
