@@ -4,7 +4,7 @@
 The group is derived, never hand-edited:
 
   * Golden-vector scenarios drive every case in fixtures/switchback/golden-vectors.json (a
-    byte-for-byte copy of the platform's lib/analytics/src/test/resources/switchback/
+    byte-for-byte copy of the platform's lib/utils/src/test/resources/switchback/
     golden-vectors.json) through the wrapper's /switchback/assign and /switchback/permutation
     endpoints.
   * Context scenarios exercise switchback serving through createContextWith/treatment/publish.
