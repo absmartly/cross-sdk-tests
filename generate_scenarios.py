@@ -6,13 +6,16 @@ Reconstructed from test_scenarios_complete.json
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 The checked-in test_scenarios_complete.json is the CANONICAL source of truth
-for the cross-SDK suite (227 scenarios). This generator is OUT OF DATE:
+for the cross-SDK suite (257 scenarios). This generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 227.
+  * It emits only 192 scenarios, not the canonical 257.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
   * It does not emit the Holdouts scenario group (203-227) at all.
+  * It does not emit the Switchback group (228-257); that group is owned by
+    generate_switchback_scenarios.py, which rewrites it in place in the
+    canonical file and verifies it with --check.
 
 To avoid clobbering the fixed oracle, this script writes to
 'test_scenarios_generated.json' (NOT the canonical file). Its output must be
@@ -10082,7 +10085,7 @@ def main():
     print("=" * 76)
     print("WARNING: generate_scenarios.py is STALE and NON-CANONICAL.")
     print("  The checked-in test_scenarios_complete.json is the canonical oracle")
-    print("  (209 scenarios). This generator emits only 192 and has ~14 drifted")
+    print("  (257 scenarios). This generator emits only 192 and has ~14 drifted")
     print("  scenarios. Its output is written to test_scenarios_generated.json and")
     print("  MUST be diffed against test_scenarios_complete.json before use.")
     print("  Do NOT overwrite the canonical file with this output.")

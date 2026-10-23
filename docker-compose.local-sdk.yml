@@ -2,4 +2,4 @@ services:
   java-sdk:
     build:
       args:
-        SDK_SOURCE_DIR: java-sdk-holdouts
+        SDK_SOURCE_DIR: ${JAVA_SDK_SOURCE_DIR:-java-sdk-holdouts}
