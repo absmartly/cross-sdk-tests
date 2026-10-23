@@ -921,6 +921,13 @@ def attribute_timing_scenarios(_golden: dict, _buckets: dict) -> list:
     first = pick_value(lambda k: f"first-{k}", uid, 0, 10, 100)
     first_variant = key_variant(first, 0, 10, 100)
     second = pick_value(lambda k: f"second-{k}", uid, 0, 10, 100, avoid={first_variant})
+    if key_variant(second, 0, 10, 100) == first_variant:
+        raise SystemExit("the mid-period attribute must draw a different variant than the first")
+    # The audience re-exposure keeps the period's cached cluster key instead of re-reading city:
+    # java-sdk SWITCHBACK.md ("The cluster key is read once per period slot ... even when an
+    # audience change re-resolves the slot") and ContextSwitchbackClusterTest
+    # setAttributeMidPeriodDoesNotReassignWithinThePeriod /
+    # audienceRevalidationAfterSetAttributeKeepsThePeriodsBucket.
     audience = json.dumps({"filter": [{"eq": [{"var": "tier"}, {"value": "gold"}]}]}, separators=(",", ":"))
     moved = switchback_experiment(170, "exp_switchback_attr_mid_period", "store_id", 10, ANCHOR_PERIOD_0, 100,
                                   "city", audience=audience)
