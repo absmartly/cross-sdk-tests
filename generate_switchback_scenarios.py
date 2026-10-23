@@ -298,7 +298,7 @@ def verify_bucket_reference(buckets: dict, paths: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def golden_scenarios(golden: dict) -> list:
+def golden_scenarios(golden: dict, _buckets: dict) -> list:
     """One scenario per (function, armCount): 294 assign and 168 permutation steps each."""
     scenarios = []
     for arm_count in (2, 3, 10):
@@ -363,21 +363,54 @@ ARMS = {
 }
 
 
-def switchback_variant(uid: str, period: int, arm_count: int) -> int:
+def key_variant(key: str, period: int, arm_count: int, count: int) -> int:
+    """The switchback draw for a cluster key: its bucket is the cluster unit of assignSwitchback."""
     seed_hi, seed_lo, _ = ARMS[arm_count]
-    return assign_switchback(hash_unit(uid), period, experiment_seed(seed_hi, seed_lo), arm_count)
+    seed = experiment_seed(seed_hi, seed_lo)
+    return assign_switchback(str(bucket_of(key, seed, count)), period, seed, arm_count)
 
 
-def pick_uid(prefix: str, period: int, arm_count: int) -> str:
+def switchback_variant(uid: str, period: int, arm_count: int, count: int) -> int:
+    return key_variant(hash_unit(uid), period, arm_count, count)
+
+
+def wrong_key_variants(key: str, period: int, arm_count: int, count: int) -> set:
+    """What an SDK that drew from the key itself (per-value clustering) or applied another bucket
+    count would serve."""
+    seed_hi, seed_lo, _ = ARMS[arm_count]
+    wrong = {assign_switchback(key, period, experiment_seed(seed_hi, seed_lo), arm_count)}
+    wrong |= {key_variant(key, period, arm_count, other) for other in CLUSTER_COUNTS if other != count}
+    return wrong
+
+
+def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
     """First '<prefix>-<k>' whose switchback variant is nonzero and differs from the sticky unit
-    variant, so neither an ineligible fallback nor plain unit assignment can pass by accident."""
+    variant, from per-value clustering and from every other bucket count, so neither an ineligible
+    fallback, plain unit assignment nor the wrong cluster model can pass by accident."""
     seed_hi, seed_lo, split = ARMS[arm_count]
     for k in range(10_000):
         uid = f"{prefix}-{k}"
-        variant = switchback_variant(uid, period, arm_count)
-        if variant != 0 and variant != unit_variant(uid, split, seed_hi, seed_lo):
+        variant = switchback_variant(uid, period, arm_count, count)
+        wrong = wrong_key_variants(hash_unit(uid), period, arm_count, count)
+        if variant != 0 and variant != unit_variant(uid, split, seed_hi, seed_lo) and variant not in wrong:
             return uid
     raise SystemExit(f"no discriminating uid for {prefix}")
+
+
+def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=()):
+    """First make(k) whose attribute-source variant is nonzero and differs from the unit-source
+    draw for uid, from per-value clustering, from every other bucket count and from `avoid`."""
+    unit_draw = switchback_variant(uid, period, arm_count, count)
+    for k in range(10_000):
+        value = make(k)
+        key = normalize_attribute(value)
+        if key is None:
+            raise SystemExit(f"attribute value {value!r} has no bucket key")
+        variant = key_variant(key, period, arm_count, count)
+        if (variant not in (0, unit_draw) and variant not in avoid
+                and variant not in wrong_key_variants(key, period, arm_count, count)):
+            return value
+    raise SystemExit(f"no discriminating attribute value for {make(0)!r}")
 
 
 def experiment(exp_id: int, name: str, unit_type: str, arm_count: int, **overrides) -> dict:
@@ -404,7 +437,10 @@ def experiment(exp_id: int, name: str, unit_type: str, arm_count: int, **overrid
     return data
 
 
-def switchback_experiment(exp_id: int, name: str, unit_type: str, arm_count: int, anchor, **overrides) -> dict:
+def switchback_experiment(exp_id: int, name: str, unit_type: str, arm_count: int, anchor, count: Optional[int],
+                          attribute: Optional[str] = None, **overrides) -> dict:
+    """count and attribute are switchbackClusterCount and switchbackClusterAttribute; None omits
+    the field, and a null attribute hashes the unit."""
     fields = {
         "randomizationType": "switchback",
         "switchbackClusterUnitType": unit_type,
@@ -417,11 +453,16 @@ def switchback_experiment(exp_id: int, name: str, unit_type: str, arm_count: int
     }
     if anchor is not None:
         fields["switchbackStartAt"] = anchor
+    if count is not None:
+        fields["switchbackClusterCount"] = count
+    if attribute is not None:
+        fields["switchbackClusterAttribute"] = attribute
     fields.update(overrides)
     return experiment(exp_id, name, unit_type, arm_count, **fields)
 
 
-def exposure(exp: dict, variant: int, assigned=True, eligible=True, overridden=False, full_on=False) -> dict:
+def exposure(exp: dict, variant: int, assigned=True, eligible=True, overridden=False, full_on=False,
+             audience_mismatch=False) -> dict:
     return {
         "id": exp["id"],
         "name": exp["name"],
@@ -432,7 +473,7 @@ def exposure(exp: dict, variant: int, assigned=True, eligible=True, overridden=F
         "overridden": overridden,
         "fullOn": full_on,
         "custom": False,
-        "audienceMismatch": False,
+        "audienceMismatch": audience_mismatch,
     }
 
 
@@ -452,6 +493,10 @@ def treatment_step(exp: dict, result: int, exposed: Optional[dict] = None) -> di
     return {"action": "treatment", "params": {"experimentName": exp["name"]}, "expect": {"result": result, "events": events}}
 
 
+def attribute_step(name: str, value) -> dict:
+    return {"action": "attribute", "params": {"name": name, "value": value}, "expect": {"result": None, "events": []}}
+
+
 def publish_step(exposures: list) -> dict:
     summary = [{k: e[k] for k in ("id", "name", "variant")} for e in exposures]
     return {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": {"exposures": summary}}]}}
@@ -467,48 +512,108 @@ def context_scenario(name: str, description: str, experiments: list, units: dict
     }
 
 
-def period_scenarios(_golden: dict) -> list:
+def bucket_vector_scenarios(_golden: dict, buckets: dict) -> list:
+    """One scenario per bucket count: every bucket vector of that count through /switchback/bucket."""
+    scenarios = []
+    for count in CLUSTER_COUNTS:
+        steps = [{
+            "action": "switchbackBucket",
+            "params": {"key": c["key"], "seed": c["seed"], "count": count},
+            "expect": {"result": c["expectedBucket"], "events": []},
+        } for c in buckets["buckets"] if c["count"] == count]
+        scenarios.append({
+            "name": f"Bucket Vectors - bucketOf - {count} Buckets",
+            "description": (f"Every count-{count} case ({len(steps)}) of the platform bucket golden vectors, driven "
+                            "through POST /switchback/bucket: int(MD5_HEX(utf8(\"sbcluster\" + U+001F + seedHi + "
+                            "\":\" + seedLo + U+001F + key))[:8], 16) mod count. The 64-bit seed travels as a "
+                            "decimal string; seedHi/seedLo are its signed 32-bit halves."),
+            "contextData": {"experiments": []},
+            "steps": steps,
+            "requires": [CAPABILITY],
+        })
+    return scenarios
+
+
+# Bucket count per cluster letter, so each period scenario covers every allowed count.
+LETTER_COUNTS = {"a": 10, "b": 50, "c": 100}
+
+
+def period_scenarios(_golden: dict, _buckets: dict) -> list:
     scenarios = []
     for period, anchor in ((0, ANCHOR_PERIOD_0), (1, ANCHOR_PERIOD_1)):
         for arm_count in (2, 3, 10):
             experiments, units, steps, exposed = [], {}, [], []
             for slot, letter in enumerate("abc"):
                 unit_type = f"store_{letter}"
-                uid = pick_uid(f"p{period}-a{arm_count}-{letter}", period, arm_count)
-                exp = switchback_experiment(100 + slot, f"exp_switchback_{letter}", unit_type, arm_count, anchor)
-                variant = switchback_variant(uid, period, arm_count)
+                count = LETTER_COUNTS[letter]
+                uid = pick_uid(f"p{period}-a{arm_count}-{letter}", period, arm_count, count)
+                exp = switchback_experiment(100 + slot, f"exp_switchback_{letter}", unit_type, arm_count, anchor,
+                                            count)
+                variant = switchback_variant(uid, period, arm_count, count)
                 experiments.append(exp)
                 units[unit_type] = uid
                 exposed.append(exposure(exp, variant))
                 steps.append(treatment_step(exp, variant, exposed[-1]))
             steps.append(publish_step(exposed))
             scenarios.append(context_scenario(
-                f"Period {period} - {arm_count} Arms - Three Clusters",
+                f"Period {period} - {arm_count} Arms - Unit Buckets 10, 50, 100",
                 (f"switchbackStartAt {anchor} with switchbackPeriodMs {PERIOD_MS} (400,000 h) puts now in period "
-                 f"{period} until 2069. Each cluster's variant is assignSwitchback(hashUnit(uid), {period}, "
-                 f"(seedHi << 32) | seedLo, {arm_count}); every uid is chosen so that variant is nonzero and differs "
-                 "from the sticky unit assignment."),
+                 f"{period} until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: "
+                 f"each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), {period}, seed, "
+                 f"{arm_count}) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero "
+                 "and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from "
+                 "the other two counts."),
                 experiments, units, steps))
     return scenarios
 
 
-def eligibility_scenarios(_golden: dict) -> list:
-    pre_anchor = switchback_experiment(110, "exp_switchback_pre_anchor", "store_id", 3, ANCHOR_FUTURE)
-    no_anchor = switchback_experiment(111, "exp_switchback_no_anchor", "store_id", 3, None)
-    no_unit = switchback_experiment(112, "exp_switchback_no_cluster_unit", "warehouse_id", 3, ANCHOR_PERIOD_0)
-    uid = pick_uid("eligibility", 0, 3)
+def shared_bucket_scenarios(_golden: dict, _buckets: dict) -> list:
+    """Two units in one bucket share the variant although their per-value draws differ."""
+    count, arm_count = 10, 3
+    seed_hi, seed_lo, _ = ARMS[arm_count]
+    seed = experiment_seed(seed_hi, seed_lo)
+    first = pick_uid("shared-a", 0, arm_count, count)
+    bucket = bucket_of(hash_unit(first), seed, count)
+    per_value = assign_switchback(hash_unit(first), 0, seed, arm_count)
+    second = next(uid for uid in (f"shared-b-{k}" for k in range(10_000))
+                  if bucket_of(hash_unit(uid), seed, count) == bucket
+                  and assign_switchback(hash_unit(uid), 0, seed, arm_count) != per_value)
+    variant = switchback_variant(first, 0, arm_count, count)
+    exp_a = switchback_experiment(105, "exp_switchback_shared_a", "store_a", arm_count, ANCHOR_PERIOD_0, count)
+    exp_b = switchback_experiment(106, "exp_switchback_shared_b", "store_b", arm_count, ANCHOR_PERIOD_0, count)
+    exposed = [exposure(exp_a, variant), exposure(exp_b, variant)]
+    return [context_scenario(
+        "Units In One Bucket Share The Variant",
+        (f"Two experiments with the same seed and switchbackClusterCount {count} on different unit types. Both "
+         f"uids hash into bucket {bucket}, so both serve the bucket's period-0 variant {variant}, while "
+         "per-value clustering on the two hashed uids would serve different variants."),
+        [exp_a, exp_b],
+        {"store_a": first, "store_b": second},
+        [
+            treatment_step(exp_a, variant, exposed[0]),
+            treatment_step(exp_b, variant, exposed[1]),
+            publish_step(exposed),
+        ])]
+
+
+def eligibility_scenarios(_golden: dict, _buckets: dict) -> list:
+    pre_anchor = switchback_experiment(110, "exp_switchback_pre_anchor", "store_id", 3, ANCHOR_FUTURE, 100)
+    no_anchor = switchback_experiment(111, "exp_switchback_no_anchor", "store_id", 3, None, 100)
+    no_unit = switchback_experiment(112, "exp_switchback_no_cluster_unit", "warehouse_id", 3, ANCHOR_PERIOD_0, 100)
+    no_count = switchback_experiment(113, "exp_switchback_no_cluster_count", "store_id", 3, ANCHOR_PERIOD_0, None)
+    bad_count = switchback_experiment(114, "exp_switchback_cluster_count_1000", "store_id", 3, ANCHOR_PERIOD_0,
+                                      1000)
+    uid = pick_uid("eligibility", 0, 3, 100)
+
+    def ineligible_steps(experiments):
+        steps = []
+        for exp in experiments:
+            steps += [treatment_step(exp, 0, exposure(exp, 0, eligible=False)), treatment_step(exp, 0)]
+        return steps + [publish_step([exposure(exp, 0, eligible=False) for exp in experiments])]
 
     def ineligible(exp, description):
-        return context_scenario(
-            f"Ineligible - {exp['name']}",
-            description,
-            [exp],
-            {"store_id": uid},
-            [
-                treatment_step(exp, 0, exposure(exp, 0, eligible=False)),
-                treatment_step(exp, 0),
-                publish_step([exposure(exp, 0, eligible=False)]),
-            ])
+        return context_scenario(f"Ineligible - {exp['name']}", description, [exp], {"store_id": uid},
+                                ineligible_steps([exp]))
 
     return [
         ineligible(pre_anchor, (
@@ -528,17 +633,27 @@ def eligibility_scenarios(_golden: dict) -> list:
                 treatment_step(no_unit, 0, exposure(no_unit, 0, assigned=False)),
                 publish_step([exposure(no_unit, 0, assigned=False)]),
             ]),
+        context_scenario(
+            "Ineligible - Cluster Count Not 10, 50 Or 100",
+            ("switchbackClusterCount absent, and switchbackClusterCount 1000: only 10, 50 and 100 are servable, "
+             "so each experiment is ineligible (variant 0, assigned=true, eligible=false, exposed once) and "
+             "never falls back to per-value clustering or to another count. The uid's count-100 draw is "
+             "nonzero."),
+            [no_count, bad_count],
+            {"store_id": uid},
+            ineligible_steps([no_count, bad_count])),
     ]
 
 
-def serving_scenarios(_golden: dict) -> list:
-    uid = pick_uid("serving", 0, 3)
-    variant = switchback_variant(uid, 0, 3)
-    dedup = switchback_experiment(120, "exp_switchback_dedup", "store_id", 3, ANCHOR_PERIOD_0)
-    full_on = switchback_experiment(121, "exp_switchback_full_on", "store_id", 3, ANCHOR_PERIOD_0, fullOnVariant=2)
-    overridden = switchback_experiment(122, "exp_switchback_override", "store_id", 3, ANCHOR_PERIOD_0)
+def serving_scenarios(_golden: dict, _buckets: dict) -> list:
+    uid = pick_uid("serving", 0, 3, 100)
+    variant = switchback_variant(uid, 0, 3, 100)
+    dedup = switchback_experiment(120, "exp_switchback_dedup", "store_id", 3, ANCHOR_PERIOD_0, 100)
+    full_on = switchback_experiment(121, "exp_switchback_full_on", "store_id", 3, ANCHOR_PERIOD_0, 100,
+                                    fullOnVariant=2)
+    overridden = switchback_experiment(122, "exp_switchback_override", "store_id", 3, ANCHOR_PERIOD_0, 100)
     override_variant = next(v for v in (1, 2) if v != variant)
-    payload = switchback_experiment(123, "exp_switchback_payload", "store_id", 3, ANCHOR_PERIOD_0)
+    payload = switchback_experiment(123, "exp_switchback_payload", "store_id", 3, ANCHOR_PERIOD_0, 100)
     baseline = experiment(124, "exp_switchback_payload_baseline", "store_id", 3)
     seed_hi, seed_lo, split = ARMS[3]
     baseline_variant = unit_variant(uid, split, seed_hi, seed_lo)
@@ -600,7 +715,190 @@ def serving_scenarios(_golden: dict) -> list:
     ]
 
 
-def inertness_scenarios(_golden: dict) -> list:
+def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
+    """Bucket keys read from context attributes through switchbackClusterAttribute."""
+    uid = pick_uid("attribute", 0, 3, 100)
+    city = pick_value(lambda k: f"city-{k}", uid, 0, 3, 100)
+    number = pick_value(lambda k: 4_000_000_000 + k, uid, 0, 2, 50)
+    nested = pick_value(lambda k: f"nested-{k}", uid, 0, 10, 10)
+    other_item = pick_value(lambda k: f"item-b-{k}", uid, 0, 10, 100)
+    first_item = pick_value(lambda k: f"item-a-{k}", uid, 0, 10, 100,
+                            avoid={key_variant(other_item, 0, 10, 100)})
+    sources = [
+        (switchback_experiment(140, "exp_switchback_attr_string", "store_id", 3, ANCHOR_PERIOD_0, 100, "city"),
+         "city", city, city),
+        (switchback_experiment(141, "exp_switchback_attr_number", "store_id", 2, ANCHOR_PERIOD_0, 50,
+                               "store_number"),
+         "store_number", number, str(number)),
+        (switchback_experiment(142, "exp_switchback_attr_nested", "store_id", 10, ANCHOR_PERIOD_0, 10, "geo/city"),
+         "geo", {"city": nested, "region": "north"}, nested),
+        (switchback_experiment(143, "exp_switchback_attr_array_index", "store_id", 10, ANCHOR_PERIOD_0, 100,
+                               "items/0/city"),
+         "items", [{"city": first_item}, {"city": other_item}], first_item),
+    ]
+    steps = [attribute_step(name, value) for _, name, value, _ in sources]
+    exposed = []
+    for exp, _, _, key in sources:
+        variant = key_variant(key, 0, len(exp["split"]), exp["switchbackClusterCount"])
+        exposed.append(exposure(exp, variant))
+        steps.append(treatment_step(exp, variant, exposed[-1]))
+    steps.append(publish_step(exposed))
+    return [context_scenario(
+        "Attribute Source - String, Whole Number, Nested And Array-Index Paths",
+        ("Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a "
+         "top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 "
+         "string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index "
+         "between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, "
+         "seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, "
+         "from per-value clustering on the key and from the other counts, and items[1].city would draw "
+         "differently from items[0].city."),
+        [exp for exp, _, _, _ in sources],
+        {"store_id": uid},
+        steps)]
+
+
+def attribute_ineligible_scenarios(_golden: dict, _buckets: dict) -> list:
+    """No bucket key: variant 0, assigned=true, eligible=false. Each experiment's count and arms are
+    chosen so every lax reading of its value (and the unit hash) would draw nonzero."""
+    uid = pick_uid("attribute-ineligible", 0, 3, 100)
+    cases = [
+        ("missing", "absent_attr", None, "absent_attr", []),
+        ("empty", "empty_attr", "", "empty_attr", [""]),
+        ("float", "float_attr", 2.0, "float_attr", ["2", "2.0"]),
+        ("fraction", "fraction_attr", 1.5, "fraction_attr", ["1.5", "1"]),
+        ("bool", "bool_attr", True, "bool_attr", ["true", "True", "1"]),
+        ("object", "object_attr", {"city": "Porto"}, "object_attr", ['{"city":"Porto"}', "Porto"]),
+        ("negative_index", "items", [{"city": "Lisbon"}, {"city": "Faro"}], "items/-1/city", ["Faro", "Lisbon"]),
+    ]
+    experiments, steps, exposed = [], [], []
+    for offset, (label, name, value, path, lax_keys) in enumerate(cases):
+        lax_keys = lax_keys + [hash_unit(uid)]
+        config = next(((arms, count) for arms in (3, 10, 2) for count in CLUSTER_COUNTS
+                       if all(key_variant(k, 0, arms, count) != 0 for k in lax_keys)), None)
+        if config is None:
+            raise SystemExit(f"no discriminating configuration for the {label} case")
+        exp = switchback_experiment(150 + offset, f"exp_switchback_attr_{label}", "store_id", config[0],
+                                    ANCHOR_PERIOD_0, config[1], path)
+        experiments.append(exp)
+        if value is not None:
+            steps.append(attribute_step(name, value))
+    for exp in experiments:
+        exposed.append(exposure(exp, 0, eligible=False))
+        steps += [treatment_step(exp, 0, exposed[-1]), treatment_step(exp, 0)]
+    steps.append(publish_step(exposed))
+    return [context_scenario(
+        "Attribute Source - No Bucket Key Is Ineligible",
+        ("Attribute-sourced switchbacks whose key is missing (never set), an empty string, a float (2.0 and "
+         "1.5), a boolean, an object, or behind the unsupported path \"items/-1/city\" (a negative index). Each "
+         "serves variant 0 with assigned=true and eligible=false, exposed once, and never falls back to the "
+         "unit. Count and arms per experiment are chosen so that the unit-sourced draw and every lax reading "
+         "of the value (\"2\", \"true\", the last array element, ...) would serve a nonzero variant."),
+        experiments,
+        {"store_id": uid},
+        steps)]
+
+
+def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
+    """Every case of fixtures/switchback/attribute-path-cases.json: a supported path with a value is
+    served from that value's bucket, anything else is ineligible."""
+    with open(PATH_CASES, encoding="utf-8") as src:
+        fixture = json.load(src)
+    uid = pick_uid("attribute-path", 0, 3, 100)
+    leaves = sorted({v for case in fixture["cases"] if case["value"] is not None for v in [case["value"]]}
+                    | {"Lisbon", "Faro", "Porto", "minus-one-key", "plus-one-key"})
+    candidates = leaves + [hash_unit(uid)]
+    experiments, exposed, steps = [], [], [attribute_step(n, v) for n, v in fixture["attributes"].items()]
+    for i, case in enumerate(fixture["cases"]):
+        key = case["value"] if case["supported"] else None
+        unit_key = hash_unit(uid)
+
+        # Hard: an eligible case draws nonzero and unlike the unit; an ineligible one sits where every
+        # leaf and the unit would draw nonzero. Soft: the most other leaves drawing differently.
+        def score(arms, count):
+            served = 0 if key is None else key_variant(key, 0, arms, count)
+            others = [key_variant(c, 0, arms, count) for c in candidates if c != key]
+            if key is None:
+                return 0 if 0 not in others else None
+            if served == 0 or served == key_variant(unit_key, 0, arms, count):
+                return None
+            return sum(other != served for other in others)
+
+        scored = [(score(arms, count), arms, count) for arms in (10, 3, 2) for count in CLUSTER_COUNTS]
+        scored = [entry for entry in scored if entry[0] is not None]
+        if not scored:
+            raise SystemExit(f"no discriminating configuration for path case {case}")
+        config = max(scored, key=lambda entry: entry[0])[1:]
+        exp = switchback_experiment(160 + i, f"exp_switchback_path_{i}", "store_id", config[0], ANCHOR_PERIOD_0,
+                                    config[1], case["path"])
+        experiments.append(exp)
+        variant = 0 if key is None else key_variant(key, 0, *config)
+        exposed.append(exposure(exp, variant, eligible=key is not None))
+        steps.append(treatment_step(exp, variant, exposed[-1]))
+    steps.append(publish_step(exposed))
+    return [context_scenario(
+        "Attribute Source - Platform Attribute Path Cases",
+        ("Every case of the platform's attribute-path-cases.json, one experiment per path, with the fixture's "
+         "attributes set as top-level attributes. A supported path that resolves to a value is served from "
+         "that value's bucket; an unsupported path (a negative index) or a path that resolves to nothing "
+         "(\"+0\" and \"\\u0660\" are keys, not indices) is ineligible. Count and arms per experiment are "
+         "chosen so an eligible case draws nonzero and unlike the unit-sourced draw, and unlike as many other "
+         "leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero."),
+        experiments,
+        {"store_id": uid},
+        steps)]
+
+
+def attribute_timing_scenarios(_golden: dict, _buckets: dict) -> list:
+    """The cluster key is read once per period slot; wrappers cannot advance the clock, so the
+    next-period re-read stays in the SDKs' own suites."""
+    uid = pick_uid("attribute-timing", 0, 10, 100)
+    first = pick_value(lambda k: f"first-{k}", uid, 0, 10, 100)
+    first_variant = key_variant(first, 0, 10, 100)
+    second = pick_value(lambda k: f"second-{k}", uid, 0, 10, 100, avoid={first_variant})
+    audience = json.dumps({"filter": [{"eq": [{"var": "tier"}, {"value": "gold"}]}]}, separators=(",", ":"))
+    moved = switchback_experiment(170, "exp_switchback_attr_mid_period", "store_id", 10, ANCHOR_PERIOD_0, 100,
+                                  "city", audience=audience)
+    late = switchback_experiment(171, "exp_switchback_attr_late", "store_id", 10, ANCHOR_PERIOD_0, 100, "zone")
+    late_value = pick_value(lambda k: f"zone-{k}", uid, 0, 10, 100)
+    return [
+        context_scenario(
+            "Attribute Source - Mid-Period setAttribute Keeps The Bucket",
+            (f"city={first!r} draws variant {first_variant}. setAttribute(city, {second!r}) later in the same "
+             f"period would draw {key_variant(second, 0, 10, 100)}, but the period's bucket is already fixed: "
+             "the treatment stays the same with no new exposure. A non-strict audience flip (tier gold → "
+             "silver) then re-resolves the slot and re-exposes with audienceMismatch=true, still on the "
+             "first bucket. The next period reads the attribute again (not testable without clock control)."),
+            [moved],
+            {"store_id": uid},
+            [
+                attribute_step("tier", "gold"),
+                attribute_step("city", first),
+                treatment_step(moved, first_variant, exposure(moved, first_variant)),
+                attribute_step("city", second),
+                treatment_step(moved, first_variant),
+                attribute_step("tier", "silver"),
+                treatment_step(moved, first_variant, exposure(moved, first_variant, audience_mismatch=True)),
+                publish_step([exposure(moved, first_variant),
+                              exposure(moved, first_variant, audience_mismatch=True)]),
+            ]),
+        context_scenario(
+            "Attribute Source - Attribute Set After An Ineligible Read Waits For The Next Period",
+            (f"zone is unset at the first treatment, so the period resolves ineligible (variant 0, "
+             f"eligible=false). setAttribute(zone, {late_value!r}), which would draw "
+             f"{key_variant(late_value, 0, 10, 100)}, does not reassign within the period: the treatment stays "
+             "0 with no new exposure."),
+            [late],
+            {"store_id": uid},
+            [
+                treatment_step(late, 0, exposure(late, 0, eligible=False)),
+                attribute_step("zone", late_value),
+                treatment_step(late, 0),
+                publish_step([exposure(late, 0, eligible=False)]),
+            ]),
+    ]
+
+
+def inertness_scenarios(_golden: dict, _buckets: dict) -> list:
     """Ungated: must pass on every SDK. Unit experiments are served exactly as without any
     switchback data; the switchback experiment itself is never queried, because a non-capable
     SDK serves it a sticky unit assignment whose value differs per SDK."""
@@ -614,20 +912,22 @@ def inertness_scenarios(_golden: dict) -> list:
         "switchbackBurnOutDurationMs": 0,
         "switchbackDesignType": "balanced_block",
         "switchbackEstimand": "global_average_treatment_effect",
+        "switchbackClusterCount": 10,
     }
 
     # A uid whose unit variant is 1 and whose switchback draw is 0: a unit experiment carrying
     # switchback fields that were served as a switchback, or fell back to control, would differ.
     def discriminating(k):
         uid = f"inert-{k}"
-        return unit_variant(uid, split, seed_hi, seed_lo) == 1 and switchback_variant(uid, 0, 2) == 0
+        return unit_variant(uid, split, seed_hi, seed_lo) == 1 and switchback_variant(uid, 0, 2, 10) == 0
 
     session_uid = next(f"inert-{k}" for k in range(10_000) if discriminating(k))
     store_uid = "inert-store-0"
 
-    switchback = switchback_experiment(130, "exp_inert_switchback", "store_id", 2, ANCHOR_PERIOD_0)
+    switchback = switchback_experiment(130, "exp_inert_switchback", "store_id", 2, ANCHOR_PERIOD_0, 100)
     plain = experiment(131, "exp_inert_unit_plain", "session_id", 2)
-    typed_unit = experiment(132, "exp_inert_unit_typed", "session_id", 2, randomizationType="unit", **sb_fields)
+    typed_unit = experiment(132, "exp_inert_unit_typed", "session_id", 2, randomizationType="unit",
+                            switchbackClusterAttribute="geo/city", **sb_fields)
     untyped = experiment(133, "exp_inert_unit_untyped", "session_id", 2, **sb_fields)
     same_unit = experiment(134, "exp_inert_unit_store", "store_id", 2)
     experiments = [switchback, plain, typed_unit, untyped, same_unit]
@@ -651,8 +951,9 @@ def inertness_scenarios(_golden: dict) -> list:
     scenario = context_scenario(
         "Inertness - Unit Experiments Unaffected By Switchback Data",
         ("INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a "
-         "switchback experiment and unit experiments, two of which also carry every switchback wire field "
-         "(one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment, "
+         "switchback experiment and unit experiments, two of which also carry every switchback wire field, "
+         "switchbackClusterCount and switchbackClusterAttribute included (one with randomizationType \"unit\", "
+         "one with it absent). Each unit experiment's treatment, "
          "exposure and published exposure equal plain unit assignment in every field, the uid is chosen so "
          "the switchback draw would differ, and each exposure and publish event has exactly the fields of "
          "the plain unit experiment's at every depth. The switchback experiment is never queried: an SDK "
@@ -662,16 +963,18 @@ def inertness_scenarios(_golden: dict) -> list:
     return [scenario]
 
 
-def build_group(golden: dict, first_number: int) -> list:
+def build_group(golden: dict, buckets: dict, first_number: int) -> list:
     scenarios = []
     for builder in BUILDERS:
-        for scenario in builder(golden):
+        for scenario in builder(golden, buckets):
             scenario["name"] = f"{first_number + len(scenarios)} - Switchback - {scenario['name']}"
             scenarios.append(scenario)
     return scenarios
 
 
-BUILDERS = [golden_scenarios, period_scenarios, eligibility_scenarios, serving_scenarios, inertness_scenarios]
+BUILDERS = [golden_scenarios, bucket_vector_scenarios, period_scenarios, shared_bucket_scenarios,
+            eligibility_scenarios, serving_scenarios, attribute_source_scenarios, attribute_ineligible_scenarios,
+            attribute_path_case_scenarios, attribute_timing_scenarios, inertness_scenarios]
 
 
 def write(scenarios: list, path: str) -> None:
@@ -686,12 +989,13 @@ def main() -> int:
 
     golden = load_golden()
     verify_reference(golden)
-    verify_bucket_reference(*load_bucket_fixtures())
+    buckets, paths = load_bucket_fixtures()
+    verify_bucket_reference(buckets, paths)
 
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
     kept = [s for s in existing if GROUP_MARKER not in s["name"]]
-    group = build_group(golden, len(kept) + 1)
+    group = build_group(golden, buckets, len(kept) + 1)
     updated = kept + group
 
     if args.check:
