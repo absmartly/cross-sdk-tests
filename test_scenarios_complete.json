@@ -58150,7 +58150,7 @@
   },
   {
     "name": "252 - Switchback - Attribute Source - String, Whole Number, Nested And Array-Index Paths",
-    "description": "Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, from the sticky unit assignment, from per-value clustering on the key, from the other counts and from a little-endian bucket, and items[1].city would draw differently from items[0].city.",
+    "description": "Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, from the sticky unit assignment, from per-value clustering on the key, from the other counts and from a little-endian bucket, and items[1].city would draw differently from items[0].city. The whole number's int32 wrap and its double renderings (\"<n>.0\", \"<m>E9\", \"<m>e+09\") would each serve a different variant.",
     "contextData": {
       "experiments": [
         {
@@ -58492,7 +58492,7 @@
         "action": "attribute",
         "params": {
           "name": "store_number",
-          "value": 4000000029
+          "value": 4000001152
         },
         "expect": {
           "result": null,

@@ -414,10 +414,11 @@ def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
     raise SystemExit(f"no discriminating uid for {prefix}")
 
 
-def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=()):
+def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=(), avoid_keys=lambda value: ()):
     """First make(k) whose attribute-source variant is nonzero and differs from the unit-source
     draw for uid, from the sticky unit assignment of uid, from per-value clustering, from every
-    other bucket count, from a little-endian bucket and from `avoid`."""
+    other bucket count, from a little-endian bucket, from `avoid` and from the draw of every
+    wrong rendering in avoid_keys(value)."""
     unit_draws = (0, switchback_variant(uid, period, arm_count, count), sticky_variant(uid, arm_count))
     for k in range(10_000):
         value = make(k)
@@ -426,9 +427,19 @@ def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=()
             raise SystemExit(f"attribute value {value!r} has no bucket key")
         variant = key_variant(key, period, arm_count, count)
         if (variant not in unit_draws and variant not in avoid
-                and variant not in wrong_key_variants(key, period, arm_count, count)):
+                and variant not in wrong_key_variants(key, period, arm_count, count)
+                and all(key_variant(wrong, period, arm_count, count) != variant for wrong in avoid_keys(value))):
             return value
     raise SystemExit(f"no discriminating attribute value for {make(0)!r}")
+
+
+def number_renderings(value: int) -> list:
+    """Keys an SDK would hash if it wrapped the integer to int32 or read it as a double:
+    "-294967290", "4000000006.0", "4.000000006E9" (Java), "4.000000006e+09" (C/Go %g)."""
+    digits = str(abs(value)).rstrip("0") or "0"
+    exponent = len(str(abs(value))) - 1
+    mantissa = ("-" if value < 0 else "") + digits[0] + "." + (digits[1:] or "0")
+    return [str(signed32(value)), f"{value}.0", f"{mantissa}E{exponent}", f"{mantissa}e{exponent:+03d}"]
 
 
 def experiment(exp_id: int, name: str, unit_type: str, arm_count: int, **overrides) -> dict:
@@ -737,7 +748,7 @@ def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
     """Bucket keys read from context attributes through switchbackClusterAttribute."""
     uid = pick_uid("attribute", 0, 3, 100)
     city = pick_value(lambda k: f"city-{k}", uid, 0, 3, 100)
-    number = pick_value(lambda k: 4_000_000_000 + k, uid, 0, 2, 50)
+    number = pick_value(lambda k: 4_000_000_000 + k, uid, 0, 2, 50, avoid_keys=number_renderings)
     nested = pick_value(lambda k: f"nested-{k}", uid, 0, 10, 10)
     other_item = pick_value(lambda k: f"item-b-{k}", uid, 0, 10, 100)
     first_item = pick_value(lambda k: f"item-a-{k}", uid, 0, 10, 100,
@@ -769,7 +780,9 @@ def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
          "between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, "
          "seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, "
          "from the sticky unit assignment, from per-value clustering on the key, from the other counts and from "
-         "a little-endian bucket, and items[1].city would draw differently from items[0].city."),
+         "a little-endian bucket, and items[1].city would draw differently from items[0].city. The whole "
+         "number's int32 wrap and its double renderings (\"<n>.0\", \"<m>E9\", \"<m>e+09\") would each serve "
+         "a different variant."),
         [exp for exp, _, _, _ in sources],
         {"store_id": uid},
         steps)]
