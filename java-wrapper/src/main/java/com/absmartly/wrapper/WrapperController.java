@@ -153,6 +153,18 @@ public class WrapperController {
         });
     }
 
+    // key is the cluster key hashed as-is (a hashed unit or a normalized attribute value); seed is
+    // the 64-bit experiment seed as a decimal string. The SDK rejects a count outside {10, 50, 100}.
+    @PostMapping("/switchback/bucket")
+    public ResponseEntity<?> switchbackBucket(@RequestBody Map<String, Object> request) {
+        if (!switchback.isBucketAvailable()) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(Collections.singletonMap("error", "linked SDK has no switchback bucket function"));
+        }
+        return switchbackCall(() -> switchback.bucketOf(stringParam(request, "key"), longParam(request, "seed"),
+            intParam(request, "count")));
+    }
+
     // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
     // assigner reports its actual outputs rather than a blanket refusal.
     private ResponseEntity<?> switchbackCall(Supplier<Object> call) {

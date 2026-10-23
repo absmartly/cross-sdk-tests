@@ -44,8 +44,15 @@ final class SwitchbackSelfTest {
     private static final long ANCHOR_PERIOD_1 = ANCHOR_PERIOD_0 - PERIOD_MS;
     private static final long ANCHOR_FUTURE = 4_102_444_800_000L;
 
-    // hashUnit("serving-1"): base64url-no-pad MD5, as published in PublishEvent.units.
-    private static final String SERVING_UNIT_HASH = "8zUG4zeowBfL2OK2oEtOng";
+    // hashUnit("serving-9"): base64url-no-pad MD5, as published in PublishEvent.units.
+    private static final String SERVING_UNIT_HASH = "r5uxZRoi-JuM5yYJa0kmSQ";
+
+    // {key, seed, count, expectedBucket}: hashlib-computed vectors pinned by the platform contract.
+    private static final String[][] BUCKET_CASES = {
+        {"1tdwU5K8evYzMovqjExpBA", "0", "10", "6"},
+        {"\u6771\u4eac", "-123456789012345", "50", "19"},
+        {"a\u001fb", "-9223372036854775808", "100", "43"},
+    };
 
     // {clusterUnit, periodIndex, seed, armCount, expectedVariant}, taken from the platform
     // golden vectors, including Long.MIN_VALUE/MAX_VALUE periods and seeds.
@@ -112,6 +119,17 @@ final class SwitchbackSelfTest {
                 return false;
             }
         }
+        if (!functions.isBucketAvailable()) {
+            System.out.println(PREFIX + " FAILED: linked core-api has no SwitchbackBuckets");
+            return false;
+        }
+        for (String[] c : BUCKET_CASES) {
+            int actual = functions.bucketOf(c[0], Long.parseLong(c[1]), Integer.parseInt(c[2]));
+            if (actual != Integer.parseInt(c[3])) {
+                System.out.println(PREFIX + " golden bucket FAILED for " + Arrays.toString(c) + ": got " + actual);
+                return false;
+            }
+        }
         for (Object[] c : PERMUTATION_CASES) {
             int[] expected = (int[]) c[3];
             int[] actual = functions.permutation((String) c[0], Long.parseLong((String) c[1]),
@@ -128,31 +146,41 @@ final class SwitchbackSelfTest {
     private static boolean checkContextServing() throws Exception {
         if (HoldoutProbeSupport.findField(Experiment.class, "randomizationType") == null
             || HoldoutProbeSupport.findField(Experiment.class, "switchbackStartAt") == null
-            || HoldoutProbeSupport.findField(Experiment.class, "switchbackPeriodMs") == null) {
+            || HoldoutProbeSupport.findField(Experiment.class, "switchbackPeriodMs") == null
+            || HoldoutProbeSupport.findField(Experiment.class, "switchbackClusterCount") == null
+            || HoldoutProbeSupport.findField(Experiment.class, "switchbackClusterAttribute") == null) {
             System.out.println(PREFIX + " FAILED: linked core-api has no switchback wire model");
             return false;
         }
 
-        // Each check uses its own unit type so the hashed cluster units never collide. The uids
-        // and expected variants are the ones the Switchback scenarios pin.
+        // Each check uses its own unit type. The uids and expected variants are the ones the
+        // Switchback scenarios pin: period checks use 10 buckets, the others 100.
         List<Experiment> experiments = new ArrayList<>();
-        experiments.add(switchback(501, "sb_p0_a2", "unit_p0_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(502, "sb_p0_a3", "unit_p0_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(503, "sb_p0_a10", "unit_p0_a10", 2147483647, -1, 10, ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(504, "sb_p1_a2", "unit_p1_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_1, 0));
-        experiments.add(switchback(505, "sb_p1_a3", "unit_p1_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_1, 0));
-        experiments.add(switchback(506, "sb_p1_a10", "unit_p1_a10", 2147483647, -1, 10, ANCHOR_PERIOD_1, 0));
-        experiments.add(switchback(507, "sb_pre_anchor", "unit_store", -559038737, 1234567890, 3, ANCHOR_FUTURE, 0));
-        experiments.add(switchback(508, "sb_no_anchor", "unit_store", -559038737, 1234567890, 3, null, 0));
+        experiments.add(switchback(501, "sb_p0_a2", "unit_p0_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_0, 0, 10));
+        experiments.add(switchback(502, "sb_p0_a3", "unit_p0_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 10));
+        experiments.add(switchback(503, "sb_p0_a10", "unit_p0_a10", 2147483647, -1, 10, ANCHOR_PERIOD_0, 0, 10));
+        experiments.add(switchback(504, "sb_p1_a2", "unit_p1_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_1, 0, 10));
+        experiments.add(switchback(505, "sb_p1_a3", "unit_p1_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_1, 0, 10));
+        experiments.add(switchback(506, "sb_p1_a10", "unit_p1_a10", 2147483647, -1, 10, ANCHOR_PERIOD_1, 0, 10));
+        experiments.add(switchback(507, "sb_pre_anchor", "unit_store", -559038737, 1234567890, 3, ANCHOR_FUTURE, 0, 100));
+        experiments.add(switchback(508, "sb_no_anchor", "unit_store", -559038737, 1234567890, 3, null, 0, 100));
         experiments.add(switchback(509, "sb_no_cluster_unit", "unit_absent", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(510, "sb_dedup", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 2));
+            ANCHOR_PERIOD_0, 0, 100));
+        experiments.add(switchback(510, "sb_dedup", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
+        experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 2, 100));
         experiments.add(switchback(512, "sb_override", "unit_serving", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0));
-        experiments.add(switchback(513, "sb_payload", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0));
+            ANCHOR_PERIOD_0, 0, 100));
+        experiments.add(switchback(513, "sb_payload", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
+        Experiment attributeCity = switchback(515, "sb_attr_city", "unit_serving", -559038737, 1234567890, 3,
+            ANCHOR_PERIOD_0, 0, 100);
+        set(attributeCity, "switchbackClusterAttribute", "city");
+        experiments.add(attributeCity);
+        Experiment attributeMissing = switchback(516, "sb_attr_missing", "unit_serving", -559038737, 1234567890,
+            3, ANCHOR_PERIOD_0, 0, 100);
+        set(attributeMissing, "switchbackClusterAttribute", "zone");
+        experiments.add(attributeMissing);
         Experiment unitBaseline = switchback(514, "sb_unit_baseline", "unit_serving", -559038737, 1234567890, 3,
-            null, 0);
+            null, 0, null);
         set(unitBaseline, "randomizationType", null);
         set(unitBaseline, "switchbackClusterUnitType", null);
         set(unitBaseline, "switchbackPeriodMs", null);
@@ -170,14 +198,14 @@ final class SwitchbackSelfTest {
         };
 
         ContextConfig contextConfig = ContextConfig.create()
-            .setUnit("unit_p0_a2", "p0-a2-a-3")
-            .setUnit("unit_p0_a3", "p0-a3-a-1")
-            .setUnit("unit_p0_a10", "p0-a10-a-0")
-            .setUnit("unit_p1_a2", "p1-a2-a-8")
+            .setUnit("unit_p0_a2", "p0-a2-a-28")
+            .setUnit("unit_p0_a3", "p0-a3-a-15")
+            .setUnit("unit_p0_a10", "p0-a10-a-2")
+            .setUnit("unit_p1_a2", "p1-a2-a-64")
             .setUnit("unit_p1_a3", "p1-a3-a-2")
-            .setUnit("unit_p1_a10", "p1-a10-a-0")
-            .setUnit("unit_store", "eligibility-0")
-            .setUnit("unit_serving", "serving-1")
+            .setUnit("unit_p1_a10", "p1-a10-a-4")
+            .setUnit("unit_store", "eligibility-5")
+            .setUnit("unit_serving", "serving-9")
             .setPublishDelay(-1)
             .setRefreshInterval(0);
 
@@ -191,6 +219,7 @@ final class SwitchbackSelfTest {
             .setContextEventLogger(logger);
 
         Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
+        context.setAttribute("city", "city-29");
         context.waitUntilReady();
         if (!context.isReady() || context.isFailed()) {
             System.out.println(PREFIX + " FAILED: context not ready (failed=" + context.isFailed() + ")");
@@ -200,10 +229,10 @@ final class SwitchbackSelfTest {
         try {
             return expect(context, exposures, "period 0, 2 arms", "sb_p0_a2", 1, served(501, "sb_p0_a2", 1))
                 && expect(context, exposures, "period 0, 3 arms", "sb_p0_a3", 1, served(502, "sb_p0_a3", 1))
-                && expect(context, exposures, "period 0, 10 arms", "sb_p0_a10", 3, served(503, "sb_p0_a10", 3))
+                && expect(context, exposures, "period 0, 10 arms", "sb_p0_a10", 1, served(503, "sb_p0_a10", 1))
                 && expect(context, exposures, "period 1, 2 arms", "sb_p1_a2", 1, served(504, "sb_p1_a2", 1))
-                && expect(context, exposures, "period 1, 3 arms", "sb_p1_a3", 2, served(505, "sb_p1_a3", 2))
-                && expect(context, exposures, "period 1, 10 arms", "sb_p1_a10", 6, served(506, "sb_p1_a10", 6))
+                && expect(context, exposures, "period 1, 3 arms", "sb_p1_a3", 1, served(505, "sb_p1_a3", 1))
+                && expect(context, exposures, "period 1, 10 arms", "sb_p1_a10", 3, served(506, "sb_p1_a10", 3))
                 && expect(context, exposures, "pre-anchor", "sb_pre_anchor", 0,
                     new Exposure(507, "sb_pre_anchor", "unit_store", 0, 0, true, false, false, false, false, false))
                 && expect(context, exposures, "pre-anchor repeat", "sb_pre_anchor", 0)
@@ -212,9 +241,14 @@ final class SwitchbackSelfTest {
                 && expect(context, exposures, "cluster unit not set", "sb_no_cluster_unit", 0,
                     new Exposure(509, "sb_no_cluster_unit", "unit_absent", 0, 0, false, true, false, false, false,
                         false))
-                && expect(context, exposures, "same period", "sb_dedup", 1,
-                    new Exposure(510, "sb_dedup", "unit_serving", 1, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "same period repeat", "sb_dedup", 1)
+                && expect(context, exposures, "same period", "sb_dedup", 2,
+                    new Exposure(510, "sb_dedup", "unit_serving", 2, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "same period repeat", "sb_dedup", 2)
+                && expect(context, exposures, "attribute source", "sb_attr_city", 1,
+                    new Exposure(515, "sb_attr_city", "unit_serving", 1, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "attribute missing", "sb_attr_missing", 0,
+                    new Exposure(516, "sb_attr_missing", "unit_serving", 0, 0, true, false, false, false, false,
+                        false))
                 && expect(context, exposures, "full-on", "sb_full_on", 2,
                     new Exposure(511, "sb_full_on", "unit_serving", 2, 0, true, true, false, true, false, false))
                 && checkOverride(context, exposures)
@@ -253,9 +287,9 @@ final class SwitchbackSelfTest {
             return false;
         }
 
-        Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 0, 0, true, true, false, false,
+        Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
             false, false);
-        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
+        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 2, 0, true, true, false, false,
             false, false);
         if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
             System.out.println(PREFIX + " check published exposures FAILED: baseline " + baselineEvent
@@ -379,13 +413,14 @@ final class SwitchbackSelfTest {
     }
 
     private static boolean checkOverride(Context context, List<Exposure> exposures) {
-        context.setOverride("sb_override", 2);
-        return expect(context, exposures, "override", "sb_override", 2,
-            new Exposure(512, "sb_override", "unit_serving", 2, 0, false, true, true, false, false, false));
+        // The period-0 draw for serving-9 is 2, so the override serves 1.
+        context.setOverride("sb_override", 1);
+        return expect(context, exposures, "override", "sb_override", 1,
+            new Exposure(512, "sb_override", "unit_serving", 1, 0, false, true, true, false, false, false));
     }
 
     private static Experiment switchback(int id, String name, String unitType, int seedHi, int seedLo, int arms,
-            Long startAt, int fullOnVariant) throws Exception {
+            Long startAt, int fullOnVariant, Integer clusterCount) throws Exception {
         Experiment experiment = new Experiment();
         experiment.id = id;
         experiment.name = name;
@@ -412,6 +447,7 @@ final class SwitchbackSelfTest {
         set(experiment, "switchbackStartAt", startAt);
         set(experiment, "switchbackPeriodMs", PERIOD_MS);
         set(experiment, "switchbackDesignType", "balanced_block");
+        set(experiment, "switchbackClusterCount", clusterCount);
         return experiment;
     }
 

@@ -11,6 +11,15 @@ interface SwitchbackFunctions {
 
     int[] permutation(String clusterUnit, long cycleIndex, long seed, int armCount);
 
+    // A core-api with the assigner but without buckets predates the bucket model.
+    default boolean isBucketAvailable() {
+        return false;
+    }
+
+    default int bucketOf(String key, long seed, int count) {
+        throw new UnsupportedOperationException("no switchback bucket function");
+    }
+
     SwitchbackFunctions LINKED = new SwitchbackFunctions() {
         @Override
         public boolean isAvailable() {
@@ -25,6 +34,16 @@ interface SwitchbackFunctions {
         @Override
         public int[] permutation(String clusterUnit, long cycleIndex, long seed, int armCount) {
             return SwitchbackAssignerAccess.permutation(clusterUnit, cycleIndex, seed, armCount);
+        }
+
+        @Override
+        public boolean isBucketAvailable() {
+            return SwitchbackAssignerAccess.isBucketAvailable();
+        }
+
+        @Override
+        public int bucketOf(String key, long seed, int count) {
+            return SwitchbackAssignerAccess.bucketOf(key, seed, count);
         }
     };
 }

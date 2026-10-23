@@ -20,7 +20,7 @@ class SwitchbackSerializedPayloadTest {
 
     private static ObjectNode correctEvent() throws Exception {
         return (ObjectNode) MAPPER.readTree("{\"hashed\":true,"
-            + "\"units\":[{\"type\":\"unit_serving\",\"uid\":\"8zUG4zeowBfL2OK2oEtOng\"}],"
+            + "\"units\":[{\"type\":\"unit_serving\",\"uid\":\"r5uxZRoi-JuM5yYJa0kmSQ\"}],"
             + "\"exposures\":[{\"id\":513,\"name\":\"sb_payload\",\"unit\":\"unit_serving\",\"variant\":1,"
             + "\"exposedAt\":1700000000000,\"assigned\":true,\"eligible\":true,\"overridden\":false,"
             + "\"fullOn\":false,\"custom\":false,\"audienceMismatch\":false}]}");

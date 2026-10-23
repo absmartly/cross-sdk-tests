@@ -21,6 +21,7 @@ CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
 SWITCHBACK_ACTIONS = {
     "switchbackAssign": "/switchback/assign",
     "switchbackPermutation": "/switchback/permutation",
+    "switchbackBucket": "/switchback/bucket",
 }
 
 

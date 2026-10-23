@@ -4,18 +4,21 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
- * Calls core-api's public com.absmartly.sdk.internal.SwitchbackAssigner. It is resolved by name
- * rather than imported because CI builds this wrapper against java-sdk releases that predate
- * switchback; there it is simply absent and {@link #isAvailable()} returns false.
+ * Calls core-api's public com.absmartly.sdk.internal.SwitchbackAssigner and SwitchbackBuckets.
+ * They are resolved by name rather than imported because CI builds this wrapper against java-sdk
+ * releases that predate switchback; there they are simply absent and the is*Available methods
+ * return false.
  */
 final class SwitchbackAssignerAccess {
     private SwitchbackAssignerAccess() {}
 
     private static final String CLASS_NAME = "com.absmartly.sdk.internal.SwitchbackAssigner";
+    private static final String BUCKETS_CLASS_NAME = "com.absmartly.sdk.internal.SwitchbackBuckets";
 
     private static final Method ASSIGN;
     private static final Method BASE_HASH;
     private static final Method PERMUTATION;
+    private static final Method BUCKET_OF;
 
     static {
         Method assign = null;
@@ -34,10 +37,23 @@ final class SwitchbackAssignerAccess {
         ASSIGN = assign;
         BASE_HASH = baseHash;
         PERMUTATION = permutation;
+
+        Method bucketOf;
+        try {
+            bucketOf = Class.forName(BUCKETS_CLASS_NAME)
+                .getMethod("bucketOf", int.class, int.class, String.class, int.class);
+        } catch (Throwable t) {
+            bucketOf = null;
+        }
+        BUCKET_OF = bucketOf;
     }
 
     static boolean isAvailable() {
         return ASSIGN != null;
+    }
+
+    static boolean isBucketAvailable() {
+        return BUCKET_OF != null;
     }
 
     static int assign(String clusterUnit, long periodIndex, long seed, int armCount) {
@@ -49,9 +65,14 @@ final class SwitchbackAssignerAccess {
         return (int[]) invoke(PERMUTATION, armCount, baseHash);
     }
 
+    // The SDK takes the seed's signed 32-bit halves, as ContextData carries them.
+    static int bucketOf(String key, long seed, int count) {
+        return (Integer) invoke(BUCKET_OF, (int) (seed >> 32), (int) seed, key, count);
+    }
+
     private static Object invoke(Method method, Object... args) {
         if (method == null) {
-            throw new UnsupportedOperationException("linked core-api has no " + CLASS_NAME);
+            throw new UnsupportedOperationException("linked core-api has no switchback function");
         }
         try {
             return method.invoke(null, args);
