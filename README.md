@@ -61,7 +61,9 @@ across languages.
   scenarios (the JavaScript SDK is the canonical reference).
 
   Harness unit tests (`sameShapeAs`, capability gating, the switchback
-  generator's `--check`) run in under a second with
+  generator's `--check`, a replay of every switchback context scenario against
+  mutant SDK models, and a digest of main's 227 scenarios) run in under two
+  seconds with
   `python3 -m pytest orchestrator/tests -q` (needs `pytest` and `requests`).
   The java wrapper's switchback endpoint tests run inside the wrapper's
   `builder` image stage with `gradle test`.
