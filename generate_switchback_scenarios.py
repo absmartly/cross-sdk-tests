@@ -174,6 +174,125 @@ def verify_reference(golden: dict) -> None:
             raise SystemExit(f"reference disagrees with golden vector {case}: got {actual}")
 
 
+# Cluster buckets: every switchback hashes its cluster key (the unit hash, or a normalized
+# attribute value) into one of CLUSTER_COUNTS buckets, and the bucket number is the cluster
+# passed to assign_switchback. Pinned by fixtures/switchback/bucket-golden-vectors.json.
+CLUSTER_COUNTS = (10, 50, 100)
+BUCKET_CASES = 702
+BUCKET_GOLDEN = os.path.join(HERE, "fixtures", "switchback", "bucket-golden-vectors.json")
+PATH_CASES = os.path.join(HERE, "fixtures", "switchback", "attribute-path-cases.json")
+
+
+def signed32(value: int) -> int:
+    return ((value + (1 << 31)) & MASK32) - (1 << 31)
+
+
+def bucket_of(key: str, seed: int, count: int) -> int:
+    """int(MD5_HEX(utf8("sbcluster␟<seedHi>:<seedLo>␟" + key))[:8], 16) % count, where seedHi and
+    seedLo are the signed 32-bit halves of the 64-bit experiment seed in base 10."""
+    if count not in CLUSTER_COUNTS:
+        raise ValueError(f"cluster count must be one of {CLUSTER_COUNTS}, got {count}")
+    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
+    return int(hashlib.md5((prefix + key).encode("utf-8")).hexdigest()[:8], 16) % count
+
+
+def normalize_attribute(value) -> Optional[str]:
+    """Bucket key of an attribute value: a non-empty string as-is, an integer in base 10, and None
+    (ineligible) for anything else, floats such as 2.0 and booleans included."""
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None
+
+
+def _index_segment(segment: str) -> Optional[int]:
+    """Guava Ints.tryParse: optional '-', ASCII digits only, within signed 32-bit range."""
+    digits = segment[1:] if segment.startswith("-") else segment
+    if not digits or not all("0" <= c <= "9" for c in digits):
+        return None
+    value = int(segment, 10)
+    return value if -(1 << 31) <= value < (1 << 31) else None
+
+
+def parse_attribute_path(path: str) -> list:
+    """(key, index) segments: '/' separates, a segment quoted with ' or " is a literal key, and an
+    unquoted integer segment is an array index. An unterminated quoted tail is dropped."""
+    segments, i = [], 0
+    while i < len(path):
+        if path[i] == "/":
+            i += 1
+            continue
+        if path[i] in "'\"":
+            end = path.find(path[i], i + 1)
+            if end < 0:
+                break
+            segments.append((path[i + 1:end], None))
+            i = end + 1
+        else:
+            end = path.find("/", i)
+            stop = len(path) if end < 0 else end
+            segments.append((path[i:stop], _index_segment(path[i:stop])))
+            i = stop
+    return segments
+
+
+def supported_attribute_path(path: str) -> Optional[list]:
+    """Segments of a path both serving and analysis accept, else None: every index is
+    non-negative and sits between two key segments."""
+    segments = parse_attribute_path(path)
+    if not segments:
+        return None
+    for i, (_, index) in enumerate(segments):
+        if index is not None and (index < 0 or i == 0 or i == len(segments) - 1 or segments[i - 1][1] is not None):
+            return None
+    return segments
+
+
+def resolve_attribute_path(attributes: dict, segments: list):
+    """An index segment reads only lists, a key segment only objects; None when missing."""
+    current = attributes
+    for key, index in segments:
+        if index is not None:
+            current = current[index] if isinstance(current, list) and 0 <= index < len(current) else None
+        else:
+            current = current.get(key) if isinstance(current, dict) else None
+        if current is None:
+            return None
+    return current
+
+
+def load_bucket_fixtures() -> tuple:
+    with open(BUCKET_GOLDEN, encoding="utf-8") as src:
+        buckets = json.load(src)
+    with open(PATH_CASES, encoding="utf-8") as src:
+        paths = json.load(src)
+    if len(buckets["buckets"]) != BUCKET_CASES:
+        raise SystemExit(f"expected {BUCKET_CASES} bucket vectors")
+    return buckets, paths
+
+
+def verify_bucket_reference(buckets: dict, paths: dict) -> None:
+    for case in buckets["buckets"]:
+        actual = bucket_of(case["key"], exact_long(case["seed"]), case["count"])
+        if actual != case["expectedBucket"]:
+            raise SystemExit(f"bucket_of disagrees with bucket vector {case}: got {actual}")
+    for case in buckets["unitKeys"]:
+        actual = hash_unit(cluster_unit_text(case["unitUid"]))
+        if actual != case["key"]:
+            raise SystemExit(f"hash_unit disagrees with unit key vector {case}: got {actual}")
+    for case in buckets["attributeKeys"]:
+        actual = normalize_attribute(case["value"])
+        if actual != case["key"]:
+            raise SystemExit(f"normalize_attribute disagrees with attribute key vector {case}: got {actual!r}")
+    for case in paths["cases"]:
+        segments = supported_attribute_path(case["path"])
+        value = resolve_attribute_path(paths["attributes"], parse_attribute_path(case["path"]))
+        if (segments is not None) != case["supported"] or value != case["value"]:
+            raise SystemExit(f"attribute path reference disagrees with {case}: supported={segments is not None}, "
+                             f"value={value!r}")
+
+
 # ---------------------------------------------------------------------------
 # Scenario construction
 # ---------------------------------------------------------------------------
@@ -567,6 +686,7 @@ def main() -> int:
 
     golden = load_golden()
     verify_reference(golden)
+    verify_bucket_reference(*load_bucket_fixtures())
 
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
