@@ -328,6 +328,11 @@ def test_attribute_reference_matches_the_copied_key_and_path_vectors():
         supported = generator.supported_attribute_path(case["path"]) is not None
         value = generator.resolve_attribute_path(paths["attributes"], generator.parse_attribute_path(case["path"]))
         assert (supported, value) == (case["supported"], case["value"]), case
+    # Index-position rule: unsupported, although a lax reader would resolve both paths.
+    lax = {"tags": ["a", "b"], "m": [[{"city": "x"}]]}
+    for path, lax_value in (("tags/0", "a"), ("m/0/0/city", "x")):
+        assert generator.supported_attribute_path(path) is None, path
+        assert generator.resolve_attribute_path(lax, generator.parse_attribute_path(path)) == lax_value
 
 
 def test_bucket_vector_scenarios_replay_every_vector_through_the_bucket_endpoint():

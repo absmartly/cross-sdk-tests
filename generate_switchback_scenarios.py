@@ -831,17 +831,34 @@ def attribute_ineligible_scenarios(_golden: dict, _buckets: dict) -> list:
         steps)]
 
 
+def index_position_cases() -> tuple:
+    """Paths the grammar rejects for the index position (an index at the tail, or two in a row),
+    each over an attribute a lax reader would resolve: derived from the reference, so the copied
+    fixture stays byte-identical."""
+    attributes = {"tags": ["a", "b"], "m": [[{"city": "x"}]]}
+    cases = []
+    for path in ("tags/0", "m/0/0/city"):
+        lax_value = resolve_attribute_path(attributes, parse_attribute_path(path))
+        if supported_attribute_path(path) is not None or lax_value is None:
+            raise SystemExit(f"index-position case {path} must be unsupported and resolve laxly")
+        cases.append({"path": path, "supported": False, "value": lax_value})
+    return attributes, cases
+
+
 def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
-    """Every case of fixtures/switchback/attribute-path-cases.json: a supported path with a value is
-    served from that value's bucket, anything else is ineligible."""
+    """Every case of fixtures/switchback/attribute-path-cases.json plus the index-position cases: a
+    supported path with a value is served from that value's bucket, anything else is ineligible."""
     with open(PATH_CASES, encoding="utf-8") as src:
         fixture = json.load(src)
+    extra_attributes, extra_cases = index_position_cases()
+    attributes = {**fixture["attributes"], **extra_attributes}
+    cases = fixture["cases"] + extra_cases
     uid = pick_uid("attribute-path", 0, 3, 100)
-    leaves = sorted({v for case in fixture["cases"] if case["value"] is not None for v in [case["value"]]}
+    leaves = sorted({v for case in cases if case["value"] is not None for v in [case["value"]]}
                     | {"Lisbon", "Faro", "Porto", "minus-one-key", "plus-one-key"})
     candidates = leaves + [hash_unit(uid)]
-    experiments, exposed, steps = [], [], [attribute_step(n, v) for n, v in fixture["attributes"].items()]
-    for i, case in enumerate(fixture["cases"]):
+    experiments, exposed, steps = [], [], [attribute_step(n, v) for n, v in attributes.items()]
+    for i, case in enumerate(cases):
         key = case["value"] if case["supported"] else None
         unit_key = hash_unit(uid)
 
@@ -880,9 +897,12 @@ def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
     return [context_scenario(
         "Attribute Source - Platform Attribute Path Cases",
         ("Every case of the platform's attribute-path-cases.json, one experiment per path, with the fixture's "
-         "attributes set as top-level attributes. A supported path that resolves to a value is served from "
-         "that value's bucket; an unsupported path (a negative index) or a path that resolves to nothing "
-         "(\"+0\" and \"\\u0660\" are keys, not indices) is ineligible. Count and arms per experiment are "
+         "attributes set as top-level attributes, plus two index-position cases over tags=[\"a\",\"b\"] and "
+         "m=[[{\"city\":\"x\"}]]: \"tags/0\" (an index at the tail) and \"m/0/0/city\" (two indices in a row) "
+         "are unsupported although a lax reader would resolve them to \"a\" and \"x\". A supported path that "
+         "resolves to a value is served from that value's bucket; an unsupported path (a negative or "
+         "misplaced index) or a path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) "
+         "is ineligible. Count and arms per experiment are "
          "chosen so an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit "
          "assignment, per-value clustering, the other counts and a little-endian bucket, and unlike as many "
          "other leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero."),
