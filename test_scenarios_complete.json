@@ -7753,8 +7753,8 @@
     ]
   },
   {
-    "name": "68 - HTTP Client - Retry on Connection Error",
-    "description": "Client should retry on network errors up to max retries",
+    "name": "68 - Live Fetch - Treatment Variant 0 (exp_http_68)",
+    "description": "Live-fetched context assigns exp_http_68 to variant 0 and queues one exposure. No HTTP fault is injected: this does NOT test retry on connection errors.",
     "contextData": {
       "experiments": [
         {
@@ -7838,8 +7838,8 @@
     ]
   },
   {
-    "name": "69 - HTTP Client - No Retry on 400 Bad Request",
-    "description": "Client should NOT retry on 4xx client errors",
+    "name": "69 - Live Fetch - Treatment Variant 1 (exp_http_69)",
+    "description": "Live-fetched context assigns exp_http_69 to variant 1 and queues one exposure. No HTTP fault is injected: this does NOT test 4xx no-retry behavior.",
     "contextData": {
       "experiments": [
         {
@@ -7923,8 +7923,8 @@
     ]
   },
   {
-    "name": "70 - HTTP Client - Retry on 500 Server Error",
-    "description": "Client should retry on 5xx server errors",
+    "name": "70 - Live Fetch - Treatment Variant 0 (exp_http_70)",
+    "description": "Live-fetched context assigns exp_http_70 to variant 0 and queues one exposure. No HTTP fault is injected: this does NOT test retry on 5xx errors.",
     "contextData": {
       "experiments": [
         {
@@ -8008,8 +8008,8 @@
     ]
   },
   {
-    "name": "71 - HTTP Client - Timeout After Max Duration",
-    "description": "Client should abort request after timeout duration",
+    "name": "71 - Live Fetch - Ready Within Wait Then Treatment (exp_http_71)",
+    "description": "Live-fetched context becomes ready within the 3s wait, then assigns exp_http_71 to variant 0 with one exposure. No delay is injected: this does NOT test request timeouts.",
     "contextData": {
       "experiments": [
         {
@@ -8103,8 +8103,8 @@
     ]
   },
   {
-    "name": "72 - HTTP Client - Manual Abort Signal",
-    "description": "Client should support manual request abortion",
+    "name": "72 - Live Fetch - Treatment Variant 1 (exp_http_72)",
+    "description": "Live-fetched context assigns exp_http_72 to variant 1 and queues one exposure. No abort is issued: this does NOT test manual request abortion.",
     "contextData": {
       "experiments": [
         {
@@ -8188,8 +8188,8 @@
     ]
   },
   {
-    "name": "73 - HTTP Client - URL Query Encoding",
-    "description": "Client should properly encode special characters in query params",
+    "name": "73 - Live Fetch - Treatment Variant 0 (exp_http_73)",
+    "description": "Live-fetched context assigns exp_http_73 to variant 0 and queues one exposure. The harness does not inspect request URLs: this does NOT test query encoding.",
     "contextData": {
       "experiments": [
         {
@@ -8273,8 +8273,8 @@
     ]
   },
   {
-    "name": "74 - HTTP Client - Empty Query Parameters",
-    "description": "Client should omit query string when params are empty",
+    "name": "74 - Live Fetch - Treatment Variant 1 (exp_http_74)",
+    "description": "Live-fetched context assigns exp_http_74 to variant 1 and queues one exposure. The harness does not inspect request URLs: this does NOT test empty query handling.",
     "contextData": {
       "experiments": [
         {
@@ -18574,8 +18574,8 @@
     ]
   },
   {
-    "name": "201 - Not Ready - Read Methods Return Defaults",
-    "description": "treatment() called before context is ready must return 0 without throwing; variableValue() must return the provided default",
+    "name": "201 - Not Ready - Read Methods Throw",
+    "description": "Read methods (treatment, peek, variableValue, peekVariableValue, variableKeys, experiments) called before the context is ready must raise the SDK not-ready error (\"ABsmartly Context is not yet ready.\") and must not queue exposures",
     "contextData": {
       "experiments": [
         {
@@ -18644,7 +18644,17 @@
           "experimentName": "exp_test_ab"
         },
         "expect": {
-          "result": 0,
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18655,7 +18665,18 @@
           "defaultValue": "blue"
         },
         "expect": {
-          "result": "blue",
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "banner.color",
+          "defaultValue": "blue"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18663,7 +18684,7 @@
         "action": "variableKeys",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18671,7 +18692,15 @@
         "action": "experiments",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
           "events": []
         }
       }

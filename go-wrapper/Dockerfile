@@ -1,6 +1,7 @@
 FROM golang:latest AS sdk-builder
 
-COPY go-sdk /go-sdk
+ARG GO_SDK_DIR=go-sdk
+COPY ${GO_SDK_DIR} /go-sdk
 
 FROM sdk-builder AS tester
 WORKDIR /go-sdk

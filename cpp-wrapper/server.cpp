@@ -13,13 +13,16 @@
 #include <absmartly/default_http_client.h>
 #include <absmartly/context_publisher.h>
 #include <absmartly/default_context_publisher.h>
+#include <absmartly/default_context_data_provider.h>
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <future>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -122,27 +125,111 @@ struct ContextEntry {
     std::shared_ptr<EventCollector> collector;
     std::shared_ptr<FailablePublisher> publisher;
     std::map<std::string, json> unit_original_values;
+    // Data comes from an endpoint the SDK fetches, so /refresh re-fetches
+    // through the SDK's provider.
+    bool fetches_from_endpoint = false;
+    // Serializes calls on this one context. Held for the whole request so a
+    // publish/finalize that waits on HTTP blocks only its own context.
+    std::mutex mu;
 };
 
+// contexts_mu guards only the map; each entry has its own lock.
 static std::mutex contexts_mu;
-static std::map<std::string, ContextEntry> contexts;
+static std::map<std::string, std::shared_ptr<ContextEntry>> contexts;
 static std::atomic<int> context_counter{0};
 
 static std::mutex payloads_mu;
 static std::map<std::string, absmartly::ContextData> payload_store;
+
+static int server_port = 3000;
 
 static std::string make_context_id() {
     int n = context_counter.fetch_add(1);
     return "ctx-" + std::to_string(n);
 }
 
-static ContextEntry* get_context(const std::string& id) {
-    auto it = contexts.find(id);
-    if (it == contexts.end()) {
-        return nullptr;
+// A context entry plus its held per-context lock. The shared_ptr keeps the
+// entry alive if DELETE removes it from the map mid-request.
+class LockedEntry {
+public:
+    explicit LockedEntry(std::shared_ptr<ContextEntry> entry) : entry_(std::move(entry)) {
+        if (entry_) {
+            lock_ = std::unique_lock<std::mutex>(entry_->mu);
+        }
     }
-    return &it->second;
+    ContextEntry* operator->() const { return entry_.get(); }
+    explicit operator bool() const { return entry_ != nullptr; }
+
+private:
+    std::shared_ptr<ContextEntry> entry_;
+    std::unique_lock<std::mutex> lock_;
+};
+
+static LockedEntry lock_context(const std::string& id) {
+    std::shared_ptr<ContextEntry> entry;
+    {
+        std::lock_guard<std::mutex> lock(contexts_mu);
+        auto it = contexts.find(id);
+        if (it != contexts.end()) {
+            entry = it->second;
+        }
+    }
+    return LockedEntry(std::move(entry));
 }
+
+static void store_context(const std::string& id, std::shared_ptr<ContextEntry> entry) {
+    std::lock_guard<std::mutex> lock(contexts_mu);
+    contexts[id] = std::move(entry);
+}
+
+// The orchestrator may address this wrapper as localhost:<published port>,
+// which inside the container is not this server; point it at our own port.
+static std::string translate_endpoint(const std::string& endpoint) {
+    for (const std::string prefix : {"localhost:", "127.0.0.1:"}) {
+        auto start = endpoint.find(prefix);
+        if (start == std::string::npos) {
+            continue;
+        }
+        auto port_start = start + prefix.size();
+        auto port_end = endpoint.find('/', port_start);
+        if (port_end == std::string::npos) {
+            port_end = endpoint.size();
+        }
+        if (port_end == port_start) {
+            continue;
+        }
+        bool digits = true;
+        for (auto i = port_start; i < port_end; ++i) {
+            if (!std::isdigit(static_cast<unsigned char>(endpoint[i]))) {
+                digits = false;
+                break;
+            }
+        }
+        if (digits) {
+            return endpoint.substr(0, start) + "127.0.0.1:" + std::to_string(server_port) +
+                   endpoint.substr(port_end);
+        }
+    }
+    return endpoint;
+}
+
+// Delays the SDK's own data provider by `throttle_ms`, then lets it fetch.
+class DeferredContextDataProvider : public absmartly::ContextDataProvider {
+public:
+    DeferredContextDataProvider(std::shared_ptr<absmartly::ContextDataProvider> inner, int throttle_ms)
+        : inner_(std::move(inner)), throttle_ms_(throttle_ms) {}
+
+    std::future<absmartly::ContextData> get_context_data() override {
+        return std::async(std::launch::async, [inner = inner_, ms = throttle_ms_]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            return inner->get_context_data().get();
+        });
+    }
+
+private:
+    std::shared_ptr<absmartly::ContextDataProvider> inner_;
+    int throttle_ms_;
+};
 
 static json make_response(const json& result, const std::vector<Event>& events) {
     return json{{"result", result}, {"events", events_to_json(events)}};
@@ -181,8 +268,46 @@ static absmartly::ContextData parse_context_data(const json& j) {
     return cd;
 }
 
+static std::optional<absmartly::ContextData> find_payload(const std::string& id) {
+    std::lock_guard<std::mutex> lock(payloads_mu);
+    auto it = payload_store.find(id);
+    if (it == payload_store.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 int main() {
+    if (const char* port_env = std::getenv("PORT")) {
+        server_port = std::atoi(port_env);
+    }
+
     httplib::Server svr;
+    // Endpoint-mode contexts fetch from this same server and finalize/publish
+    // may block on HTTP, so leave headroom beyond the default thread count.
+    svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
+    // SDK lifecycle errors (not ready / finalized) thrown from handlers without
+    // their own try/catch are surfaced as 400 with the SDK's message.
+    svr.set_exception_handler([](const httplib::Request&, httplib::Response& res,
+                                 std::exception_ptr ep) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const absmartly::ContextNotReadyException& e) {
+            res.status = 400;
+            res.set_content(make_error_response(e.what(), "NOT_READY").dump(),
+                            "application/json");
+        } catch (const absmartly::ContextFinalizedException& e) {
+            res.status = 400;
+            res.set_content(make_error_response(e.what(), "FINALIZED").dump(),
+                            "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(make_error_response(e.what(), "INTERNAL_ERROR").dump(),
+                            "application/json");
+        } catch (...) {
+            res.status = 500;
+        }
+    });
 
     svr.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         json resp = {{"status", "healthy"}, {"sdk", "cpp"}, {"version", "1.0.0"}};
@@ -270,37 +395,39 @@ int main() {
                 res.set_content(resp.dump(), "application/json");
             });
 
+    // Read a stored payload; `?throttle=<ms>` delays the response.
     svr.Get(R"(/context_payload/([^/]+)$)",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
-                absmartly::ContextData cd;
-
-                {
-                    std::lock_guard<std::mutex> lock(payloads_mu);
-                    auto it = payload_store.find(payload_id);
-                    if (it != payload_store.end()) {
-                        cd = it->second;
+                if (req.has_param("throttle")) {
+                    int throttle = std::atoi(req.get_param_value("throttle").c_str());
+                    if (throttle > 0) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(throttle));
                     }
                 }
-
-                json resp = cd;
+                std::optional<absmartly::ContextData> cd = find_payload(payload_id);
+                if (!cd) {
+                    res.status = 404;
+                    res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
+                    return;
+                }
+                json resp = *cd;
                 res.set_content(resp.dump(), "application/json");
             });
 
+    // Mock collector `GET {endpoint}/context`, fetched by the SDK's Client. An
+    // unknown payload is a 404, so the SDK fails the context rather than it
+    // loading as ready with empty data.
     svr.Get(R"(/context_payload/([^/]+)/context)",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
-                absmartly::ContextData cd;
-
-                {
-                    std::lock_guard<std::mutex> lock(payloads_mu);
-                    auto it = payload_store.find(payload_id);
-                    if (it != payload_store.end()) {
-                        cd = it->second;
-                    }
+                std::optional<absmartly::ContextData> cd = find_payload(payload_id);
+                if (!cd) {
+                    res.status = 404;
+                    res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
+                    return;
                 }
-
-                json resp = cd;
+                json resp = *cd;
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -377,16 +504,13 @@ int main() {
                      bool finalized = e2e_ctx->is_finalized();
                      auto all = e2e_collector->all_events();
 
-                     ContextEntry entry;
-                     entry.context = std::move(e2e_ctx);
-                     entry.collector = e2e_collector;
-                     entry.publisher = e2e_publisher;
-                     entry.unit_original_values = std::move(e2e_original_units);
-
-                     {
-                         std::lock_guard<std::mutex> lock(contexts_mu);
-                         contexts[e2e_context_id] = std::move(entry);
-                     }
+                     auto entry = std::make_shared<ContextEntry>();
+                     entry->context = std::move(e2e_ctx);
+                     entry->collector = e2e_collector;
+                     entry->publisher = e2e_publisher;
+                     entry->unit_original_values = std::move(e2e_original_units);
+                     entry->fetches_from_endpoint = true;
+                     store_context(e2e_context_id, std::move(entry));
 
                      json result = {{"contextId", e2e_context_id},
                                     {"ready", ready},
@@ -426,54 +550,55 @@ int main() {
                  auto collector = std::make_shared<EventCollector>();
                  auto publisher = std::make_shared<FailablePublisher>();
                  std::string context_id = make_context_id();
+                 bool fetches_from_endpoint = false;
 
                  try {
                      std::unique_ptr<absmartly::Context> ctx;
 
-                     if (payload_throttle > 0 && body.contains("endpoint") && body["endpoint"].is_string()) {
-                         // Deferred context: create with a pending future, resolve after throttle delay
-                         std::string endpoint = body["endpoint"].get<std::string>();
-                         auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
-                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector, publisher);
+                     if (!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string()) {
+                         // Live fetch: the SDK's Client GETs `{endpoint}/context`
+                         // itself. The mock collector route answers 404 for an
+                         // unknown payload, so a missing payload fails the
+                         // context instead of loading as ready-but-empty.
+                         fetches_from_endpoint = true;
+                         absmartly::ClientConfig client_config;
+                         client_config.endpoint = translate_endpoint(body["endpoint"].get<std::string>());
+                         client_config.api_key = "test-api-key";
+                         client_config.application = "test-app";
+                         client_config.environment = "test-env";
+                         auto client = std::make_shared<absmartly::Client>(
+                             client_config, std::make_shared<absmartly::DefaultHTTPClient>());
+                         auto provider = std::make_shared<absmartly::DefaultContextDataProvider>(client);
 
-                         std::thread([promise, endpoint, payload_throttle]() {
-                             std::this_thread::sleep_for(std::chrono::milliseconds(payload_throttle));
-                             auto payload_pos = endpoint.find("/context_payload/");
-                             if (payload_pos != std::string::npos) {
-                                 std::string payload_id = endpoint.substr(payload_pos + 17);
-                                 std::lock_guard<std::mutex> plock(payloads_mu);
-                                 auto it = payload_store.find(payload_id);
-                                 if (it != payload_store.end()) {
-                                     promise->set_value(it->second);
-                                     return;
-                                 }
-                             }
-                             // Payload not found: fail the context instead of
-                             // fabricating a ready, empty ContextData. A missing
-                             // payload is a load failure, not an empty success.
-                             promise->set_exception(std::make_exception_ptr(
-                                 std::runtime_error("Context load failed: payload not found")));
-                         }).detach();
+                         if (payload_throttle > 0) {
+                             // Return before the data arrives: the context stays
+                             // not-ready until the delayed SDK fetch resolves
+                             // (is_ready() picks it up). Refresh uses the
+                             // undelayed SDK provider.
+                             DeferredContextDataProvider deferred(provider, payload_throttle);
+                             ctx = std::make_unique<absmartly::Context>(
+                                 config, deferred.get_context_data(), collector, publisher, provider);
+                         } else {
+                             absmartly::SDKConfig sdk_config;
+                             sdk_config.client = client;
+                             sdk_config.context_data_provider = provider;
+                             sdk_config.context_event_handler = collector;
+                             sdk_config.context_event_publisher = publisher;
+                             auto sdk = absmartly::SDK::create(std::move(sdk_config));
+                             ctx = sdk->create_context(config);
+                             ctx->wait_until_ready();
+                         }
                      } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
                          auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
                          ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector, publisher);
                          promise->set_exception(std::make_exception_ptr(std::runtime_error("Context load failed")));
-                         std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                         // Resolve the load now, so the failed state, ready_error
+                         // and the `error` event all exist before we respond.
+                         ctx->wait_until_ready();
                      } else {
                          absmartly::ContextData context_data;
                          if (body.contains("data")) {
                              context_data = parse_context_data(body["data"]);
-                         } else if (body.contains("endpoint") && body["endpoint"].is_string()) {
-                             std::string endpoint = body["endpoint"].get<std::string>();
-                             auto payload_pos = endpoint.find("/context_payload/");
-                             if (payload_pos != std::string::npos) {
-                                 std::string payload_id = endpoint.substr(payload_pos + 17);
-                                 std::lock_guard<std::mutex> plock(payloads_mu);
-                                 auto it = payload_store.find(payload_id);
-                                 if (it != payload_store.end()) {
-                                     context_data = it->second;
-                                 }
-                             }
                          }
                          ctx = std::make_unique<absmartly::Context>(config, context_data, collector, publisher);
                      }
@@ -483,16 +608,13 @@ int main() {
                      bool finalized = ctx->is_finalized();
                      auto all = collector->all_events();
 
-                     ContextEntry entry;
-                     entry.context = std::move(ctx);
-                     entry.collector = collector;
-                     entry.publisher = publisher;
-                     entry.unit_original_values = std::move(original_units);
-
-                     {
-                         std::lock_guard<std::mutex> lock(contexts_mu);
-                         contexts[context_id] = std::move(entry);
-                     }
+                     auto entry = std::make_shared<ContextEntry>();
+                     entry->context = std::move(ctx);
+                     entry->collector = collector;
+                     entry->publisher = publisher;
+                     entry->unit_original_values = std::move(original_units);
+                     entry->fetches_from_endpoint = fetches_from_endpoint;
+                     store_context(context_id, std::move(entry));
 
                      json result = {{"contextId", context_id},
                                     {"ready", ready},
@@ -523,8 +645,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -569,8 +690,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -644,8 +764,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -688,8 +807,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -722,8 +840,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -773,8 +890,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -813,8 +929,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -856,8 +971,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -900,8 +1014,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -948,7 +1061,8 @@ int main() {
                  }
              });
 
-    svr.Post(R"(/context/([^/]+)/override)",
+    // `override` and its spec alias `setOverride`.
+    svr.Post(R"(/context/([^/]+)/(?:override|setOverride))",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
                  json body;
@@ -962,8 +1076,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -990,7 +1103,8 @@ int main() {
                  }
              });
 
-    svr.Post(R"(/context/([^/]+)/customAssignment)",
+    // `customAssignment` and its spec alias `setCustomAssignment`.
+    svr.Post(R"(/context/([^/]+)/(?:customAssignment|setCustomAssignment))",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
                  json body;
@@ -1004,8 +1118,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1046,8 +1159,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1072,8 +1184,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string id = req.matches[1];
 
-                std::lock_guard<std::mutex> lock(contexts_mu);
-                auto* entry = get_context(id);
+                auto entry = lock_context(id);
                 if (!entry) {
                     res.status = 404;
                     res.set_content(
@@ -1092,8 +1203,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string id = req.matches[1];
 
-                std::lock_guard<std::mutex> lock(contexts_mu);
-                auto* entry = get_context(id);
+                auto entry = lock_context(id);
                 if (!entry) {
                     res.status = 404;
                     res.set_content(
@@ -1112,8 +1222,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string id = req.matches[1];
 
-                std::lock_guard<std::mutex> lock(contexts_mu);
-                auto* entry = get_context(id);
+                auto entry = lock_context(id);
                 if (!entry) {
                     res.status = 404;
                     res.set_content(
@@ -1122,9 +1231,10 @@ int main() {
                     return;
                 }
 
+                size_t events_before = entry->collector->size();
                 bool ready = entry->context->is_ready();
-                std::vector<Event> empty;
-                json resp = make_response(ready, empty);
+                auto new_events = entry->collector->get_new_events(events_before);
+                json resp = make_response(ready, new_events);
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1132,8 +1242,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string id = req.matches[1];
 
-                std::lock_guard<std::mutex> lock(contexts_mu);
-                auto* entry = get_context(id);
+                auto entry = lock_context(id);
                 if (!entry) {
                     res.status = 404;
                     res.set_content(
@@ -1142,9 +1251,14 @@ int main() {
                     return;
                 }
 
+                // The SDK's is_failed()/ready_error() only read state; the
+                // non-blocking is_ready() is what resolves a load future that
+                // has completed (e.g. a throttled fetch that failed).
+                size_t events_before = entry->collector->size();
+                entry->context->is_ready();
                 bool failed = entry->context->is_failed();
-                std::vector<Event> empty;
-                json resp = make_response(failed, empty);
+                auto new_events = entry->collector->get_new_events(events_before);
+                json resp = make_response(failed, new_events);
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1152,8 +1266,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string id = req.matches[1];
 
-                std::lock_guard<std::mutex> lock(contexts_mu);
-                auto* entry = get_context(id);
+                auto entry = lock_context(id);
                 if (!entry) {
                     res.status = 404;
                     res.set_content(
@@ -1177,8 +1290,7 @@ int main() {
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1187,15 +1299,22 @@ int main() {
                      return;
                  }
 
-                 auto var_keys = entry->context->variable_keys();
-                 json result = json::array();
-                 for (const auto& [key, _] : var_keys) {
-                     result.push_back(key);
-                 }
+                 try {
+                     auto var_keys = entry->context->variable_keys();
+                     json result = json::array();
+                     for (const auto& [key, _] : var_keys) {
+                         result.push_back(key);
+                     }
 
-                 std::vector<Event> empty;
-                 json resp = make_response(result, empty);
-                 res.set_content(resp.dump(), "application/json");
+                     std::vector<Event> empty;
+                     json resp = make_response(result, empty);
+                     res.set_content(resp.dump(), "application/json");
+                 } catch (const std::exception& e) {
+                     res.status = 400;
+                     res.set_content(
+                         make_error_response(e.what(), "VARIABLE_KEYS_ERROR").dump(),
+                         "application/json");
+                 }
              });
 
     svr.Post(R"(/context/([^/]+)/customFieldKeys)",
@@ -1212,8 +1331,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1246,8 +1364,7 @@ int main() {
                      return;
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1270,8 +1387,7 @@ int main() {
     svr.Post(R"(/context/([^/]+)/getUnits)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
@@ -1294,8 +1410,7 @@ int main() {
     svr.Post(R"(/context/([^/]+)/getAttributes)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
@@ -1310,23 +1425,24 @@ int main() {
     svr.Post(R"(/context/([^/]+)/readyError)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
                      return;
                  }
+                 size_t eb = entry->collector->size();
+                 entry->context->is_ready();  // resolve a completed load future (see isFailed)
                  auto error = entry->context->ready_error();
                  json result = error.empty() ? json(nullptr) : json{{"isError", true}, {"message", error}};
-                 res.set_content(make_response(result, {}).dump(), "application/json");
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(result, ne).dump(), "application/json");
              });
 
     svr.Post(R"(/context/([^/]+)/variableKeysMap)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
@@ -1341,8 +1457,7 @@ int main() {
     svr.Post(R"(/context/([^/]+)/globalCustomFieldKeys)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
@@ -1357,8 +1472,7 @@ int main() {
     svr.Post(R"(/context/([^/]+)/publishFail)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
@@ -1377,8 +1491,7 @@ int main() {
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1405,19 +1518,22 @@ int main() {
     svr.Post(R"(/context/([^/]+)/refresh)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 json body;
-                 try {
-                     body = json::parse(req.body);
-                 } catch (...) {
-                     res.status = 400;
-                     res.set_content(
-                         make_error_response("Invalid JSON", "PARSE_ERROR").dump(),
-                         "application/json");
-                     return;
+                 // The body is optional (the orchestrator sends `{}` unless it
+                 // has new data).
+                 json body = json::object();
+                 if (req.body.find_first_not_of(" \t\r\n") != std::string::npos) {
+                     try {
+                         body = json::parse(req.body);
+                     } catch (...) {
+                         res.status = 400;
+                         res.set_content(
+                             make_error_response("Invalid JSON", "PARSE_ERROR").dump(),
+                             "application/json");
+                         return;
+                     }
                  }
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1429,9 +1545,15 @@ int main() {
                  size_t events_before = entry->collector->size();
 
                  try {
-                     if (body.contains("newData")) {
+                     if (body.contains("newData") && !body["newData"].is_null()) {
+                         // Supplied data is applied as given, so direct callers
+                         // get the data they sent even on endpoint-backed contexts.
                          absmartly::ContextData new_data = parse_context_data(body["newData"]);
                          entry->context->refresh(new_data);
+                     } else if (entry->fetches_from_endpoint) {
+                         // No newData: the SDK re-fetches through its own data
+                         // provider, as a real refresh does.
+                         entry->context->refresh();
                      } else {
                          entry->context->refresh(entry->context->data());
                      }
@@ -1450,8 +1572,7 @@ int main() {
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
 
-                 std::lock_guard<std::mutex> lock(contexts_mu);
-                 auto* entry = get_context(id);
+                 auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
                      res.set_content(
@@ -1479,22 +1600,26 @@ int main() {
                [](const httplib::Request& req, httplib::Response& res) {
                    std::string id = req.matches[1];
 
+                   // Take the entry out under the map lock but destroy it after
+                   // releasing it: destroying a context whose throttled fetch
+                   // is still pending waits for that fetch.
+                   std::shared_ptr<ContextEntry> removed;
                    {
                        std::lock_guard<std::mutex> lock(contexts_mu);
-                       contexts.erase(id);
+                       auto it = contexts.find(id);
+                       if (it != contexts.end()) {
+                           removed = std::move(it->second);
+                           contexts.erase(it);
+                       }
                    }
+                   removed.reset();
 
                    json resp = {{"result", "deleted"}};
                    res.set_content(resp.dump(), "application/json");
                });
 
-    int port = 3000;
-    const char* port_env = std::getenv("PORT");
-    if (port_env) {
-        port = std::atoi(port_env);
-    }
-    std::cout << "C++ SDK wrapper listening on port " << port << std::endl;
-    svr.listen("0.0.0.0", port);
+    std::cout << "C++ SDK wrapper listening on port " << server_port << std::endl;
+    svr.listen("0.0.0.0", server_port);
 
     return 0;
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	gocontext "context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -79,8 +80,6 @@ func (ec *EventCollector) HandleEvent(context sdk.Context, eventType sdk.EventTy
 		eventTypeLower = "exposure"
 	case sdk.Goal:
 		eventTypeLower = "goal"
-	case sdk.Close:
-		eventTypeLower = "finalize"
 	case sdk.Error:
 		eventTypeLower = "error"
 	}
@@ -829,16 +828,11 @@ func treatmentHandler(w http.ResponseWriter, r *http.Request) {
 	variant, err := ctxData.context.GetTreatment(req.ExperimentName)
 	if err != nil {
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "not yet ready") {
-			// Not-ready read methods return defaults (treatment -> 0), no error.
-			variant = 0
-		} else {
-			if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
-				errMsg = "Context finalized"
-			}
-			http.Error(w, errMsg, http.StatusBadRequest)
-			return
+		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
+			errMsg = "Context finalized"
 		}
+		http.Error(w, errMsg, http.StatusBadRequest)
+		return
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -932,16 +926,10 @@ func variableValueHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if varErr != nil {
-		// Not-ready read methods return the provided default, no error.
-		// Any other SDK error is a real failure and must be surfaced.
-		if strings.Contains(varErr.Error(), "not yet ready") {
-			value = req.DefaultValue
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": varErr.Error()})
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": varErr.Error()})
+		return
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -998,16 +986,10 @@ func peekVariableValueHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if peekErr != nil {
-		// Not-ready read methods return the provided default, no error.
-		// Any other SDK error is a real failure and must be surfaced.
-		if strings.Contains(peekErr.Error(), "not yet ready") {
-			value = req.DefaultValue
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": peekErr.Error()})
-			return
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": peekErr.Error()})
+		return
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -1172,8 +1154,11 @@ func customFieldValueHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	value := ctxData.context.GetCustomFieldValue(req.ExperimentName, req.FieldName)
-	log.Printf("GetCustomFieldValue(%s, %s) returned: %v (type: %T)", req.ExperimentName, req.FieldName, value, value)
+	value, err := ctxData.context.GetCustomFieldValueE(req.ExperimentName, req.FieldName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 
@@ -1200,11 +1185,8 @@ func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
-		if !strings.Contains(err.Error(), "not yet ready") {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		keys = map[string][]string{}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	result := make([]string, 0, len(keys))
@@ -1468,12 +1450,8 @@ func experimentsHandler(w http.ResponseWriter, r *http.Request) {
 
 	experiments, err := ctxData.context.GetExperiments()
 	if err != nil {
-		if strings.Contains(err.Error(), "not yet ready") {
-			experiments = []string{}
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	response := Response{
@@ -1564,12 +1542,8 @@ func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
 
 	keys, err := ctxData.context.GetVariableKeys()
 	if err != nil {
-		if strings.Contains(err.Error(), "not yet ready") {
-			keys = map[string][]string{}
-		} else {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -1667,10 +1641,9 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	ctxData.context.Refresh()
-
-	for i := 0; i < 50 && ctxData.eventCollector.Len() == eventsBefore; i++ {
-		time.Sleep(10 * time.Millisecond)
+	if _, err := ctxData.context.RefreshAsync().Get(gocontext.Background()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
@@ -1696,7 +1669,15 @@ func finalizeHandler(w http.ResponseWriter, r *http.Request) {
 
 	eventsBefore := ctxData.eventCollector.Len()
 
-	ctxData.context.Close()
+	f, err := ctxData.context.FinalizeAsync()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := f.Get(gocontext.Background()); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
 

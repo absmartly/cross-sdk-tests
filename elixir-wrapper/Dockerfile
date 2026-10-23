@@ -1,4 +1,4 @@
-FROM elixir:1.15-alpine AS build
+FROM elixir:1.17-alpine AS build
 
 RUN apk add --no-cache build-base git
 
@@ -25,7 +25,7 @@ RUN mix local.hex --force && \
     mix compile
 CMD ["mix", "test"]
 
-FROM elixir:1.15-alpine
+FROM elixir:1.17-alpine
 
 RUN apk add --no-cache libgcc libstdc++
 

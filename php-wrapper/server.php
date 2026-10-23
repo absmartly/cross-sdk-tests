@@ -543,12 +543,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $body = parseJsonBody($request);
 
-        // The PHP SDK's setUnit() has no finalized guard, so enforce it here to
-        // match the spec (operations on a finalized context return errors).
-        if ($context->isClosed()) {
-            return jsonResponse(400, ['error' => 'ABsmartly Context is finalized.']);
-        }
-
         try {
             $context->setUnit($body['unitType'], (string)$body['uid']);
 
@@ -608,12 +602,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $body = parseJsonBody($request);
 
-        // The PHP SDK's setAttribute() has no finalized guard, so enforce it here
-        // to match the spec (operations on a finalized context return errors).
-        if ($context->isClosed()) {
-            return jsonResponse(400, ['error' => 'ABsmartly Context is finalized.']);
-        }
-
         try {
             $context->setAttribute($body['name'], $body['value']);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
@@ -659,14 +647,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
-
-        if ($context->isClosed()) {
-            return jsonResponse(400, ['error' => 'Context finalized']);
-        }
-
-        if (!$context->isReady()) {
-            return jsonResponse(200, ['result' => 0, 'events' => []]);
-        }
 
         try {
             $experimentName = $body['experimentName'] ?? $body['experiment'] ?? null;
@@ -714,10 +694,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
-
-        if (!$context->isReady()) {
-            return jsonResponse(200, ['result' => $body['defaultValue'] ?? null, 'events' => []]);
-        }
 
         try {
             $value = $context->getVariableValue($body['key'], $body['defaultValue'] ?? null);
@@ -855,10 +831,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $context = $data['context'];
         $eventCollector = $data['eventCollector'];
         $eventsBefore = count($eventCollector->getEvents());
-
-        if (!$context->isReady()) {
-            return jsonResponse(200, ['result' => [], 'events' => []]);
-        }
 
         try {
             $keys = $context->getVariableKeys();
@@ -1026,10 +998,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
-
-        if (!$context->isReady()) {
-            return jsonResponse(200, ['result' => [], 'events' => []]);
-        }
 
         try {
             $experiments = $context->getExperiments();

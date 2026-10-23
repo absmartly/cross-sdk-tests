@@ -26,10 +26,15 @@ SDK_NAMES=""
 BUILD_ONLY=false
 SKIP_BUILD=false
 VERBOSE=false
+WRAPPER_SKIP=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --sdk)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --sdk requires a value"
+        exit 1
+      fi
       SDK_FILTER="--sdk $2"
       SDK_NAMES="$2"
       shift 2
@@ -42,6 +47,15 @@ while [[ $# -gt 0 ]]; do
       SKIP_BUILD=true
       shift
       ;;
+    --wrapper-skip)
+      WRAPPER_SKIP=true
+      shift
+      ;;
+    --no-wrapper-skip)
+      # Compatibility alias: running every scenario on every wrapper is the default.
+      WRAPPER_SKIP=false
+      shift
+      ;;
     -v|--verbose)
       VERBOSE=true
       shift
@@ -52,7 +66,8 @@ while [[ $# -gt 0 ]]; do
       echo "Options:"
       echo "  --sdk <name>      Test specific SDK(s), comma-separated (e.g., --sdk react,vue2)"
       echo "  --build-only      Only build containers, don't run tests"
-      echo "  --skip-build      Skip building, just run tests"
+      echo "  --skip-build      Skip building and reuse existing ${COMPOSE_PROJECT_NAME}-* images (may be stale)"
+      echo "  --wrapper-skip    Opt in to skipping wrapper pass-through scenarios (fast local runs only)"
       echo "  -v, --verbose     Show verbose output"
       echo "  -h, --help        Show this help message"
       echo ""
@@ -72,6 +87,10 @@ done
 VERBOSE_FLAG=""
 if [ "$VERBOSE" = true ]; then
   VERBOSE_FLAG="--verbose"
+fi
+WRAPPER_SKIP_FLAG=""
+if [ "$WRAPPER_SKIP" = true ]; then
+  WRAPPER_SKIP_FLAG="--wrapper-skip"
 fi
 
 restart_docker() {
@@ -256,7 +275,7 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
   BATCH=("${SVC_ARRAY[@]:i:BATCH_SIZE}")
   echo "  Starting batch: ${BATCH[*]}"
   set +e
-  START_OUTPUT=$(docker compose up -d --remove-orphans "${BATCH[@]}" 2>&1)
+  START_OUTPUT=$(docker compose up -d --force-recreate --remove-orphans "${BATCH[@]}" 2>&1)
   START_EXIT=$?
   set -e
 
@@ -264,14 +283,18 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
     if echo "$START_OUTPUT" | grep -qi "500 Internal Server Error"; then
       echo "Docker returned 500. Restarting Docker..."
       restart_docker
-      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
     elif echo "$START_OUTPUT" | grep -q "No such container"; then
       docker compose rm -f "${BATCH[@]}" 2>/dev/null || true
-      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
     else
       echo "ERROR: 'docker compose up -d' failed for batch (${BATCH[*]}) with no recoverable cause:" >&2
       echo "$START_OUTPUT" >&2
       exit "$START_EXIT"
+    fi
+    # One recovery retry; a second failure is fatal rather than swallowed.
+    if ! RETRY_OUTPUT=$(docker compose up -d --force-recreate --remove-orphans "${BATCH[@]}" 2>&1); then
+      echo "ERROR: 'docker compose up -d' failed again for batch (${BATCH[*]}) after recovery:" >&2
+      echo "$RETRY_OUTPUT" >&2
+      exit 1
     fi
   fi
   sleep 2
@@ -284,7 +307,7 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
   UNHEALTHY=""
   for svc in "${SVC_ARRAY[@]}"; do
     STATUS=$(docker compose ps --format '{{.Status}}' "$svc" 2>/dev/null)
-    if echo "$STATUS" | grep -qi "exit\|dead\|created"; then
+    if [ -z "$STATUS" ] || echo "$STATUS" | grep -qi "exit\|dead\|created"; then
       UNHEALTHY="$UNHEALTHY $svc"
     fi
   done
@@ -295,10 +318,13 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
 
   if [ "$health_attempt" -lt "$MAX_HEALTH_RETRIES" ]; then
     echo "  Restarting crashed services (attempt $health_attempt/$MAX_HEALTH_RETRIES):$UNHEALTHY"
-    docker compose up -d $UNHEALTHY 2>/dev/null || true
+    docker compose up -d $UNHEALTHY || echo "  (restart attempt $health_attempt failed; re-checking)"
     sleep 5
   else
-    echo "  ⚠️  Some services still unhealthy after $MAX_HEALTH_RETRIES attempts:$UNHEALTHY"
+    # Not fatal on its own: the orchestrator's /health wait reports each down
+    # service as DOWN and fails the run, which keeps per-SDK attribution.
+    echo "  ⚠️  Some services still not running after $MAX_HEALTH_RETRIES attempts:$UNHEALTHY" >&2
+    echo "     They will be reported DOWN and fail the run." >&2
   fi
 done
 
@@ -306,8 +332,13 @@ echo "Waiting for services to be ready..."
 
 echo "Running tests..."
 TEST_EXIT_CODE=0
+mkdir -p test-results
 if [ -n "$SDK_NAMES" ]; then
-  # For filtered runs, run locally to avoid orchestrator starting all dependencies
+  # For filtered runs, run the orchestrator locally against the published
+  # ports, to avoid the orchestrator service starting all its dependencies.
+  # It is the same entry point (test_runner.py main) as the containerized
+  # path, so scenario validation, the capability policy and strict matching
+  # are identical.
   ensure_requests
 
   # Derive SDK URLs from published ports in docker compose.yml
@@ -324,41 +355,24 @@ if [ -n "$SDK_NAMES" ]; then
       echo "ERROR: could not resolve published port for ${sdk}-sdk after 30s" >&2
       exit 1
     fi
-    SDK_URLS="$SDK_URLS$sdk:http://localhost:$PORT,"
+    SDK_URLS="${SDK_URLS}${sdk}=http://localhost:${PORT},"
   done
   SDK_URLS="${SDK_URLS%,}"
 
-  SDK_URLS="$SDK_URLS" VERBOSE="$VERBOSE" python3 -c "
-import json, os, sys
-sys.path.insert(0, 'orchestrator')
-from test_runner import TestOrchestrator
-
-sdk_urls = os.environ['SDK_URLS']
-verbose = os.environ.get('VERBOSE', 'false') == 'true'
-sdks = dict(item.split(':http://') for item in sdk_urls.split(','))
-sdks = {k: 'http://' + v for k, v in sdks.items()}
-
-orchestrator = TestOrchestrator(sdks, verbose=verbose, allow_wrapper_skip=True)
-working, failed = orchestrator.wait_for_services()
-# Drive only the SDKs that came up, so a down SDK isn't run through every
-# scenario at a 5s timeout each. The failed set is still passed to
-# generate_report() below, so a down SDK fails the run rather than vanishing.
-orchestrator.sdks = working
-
-with open('test_scenarios_complete.json') as f:
-    scenarios = [s for s in json.load(f) if 'steps' in s]
-
-print(f'Running {len(scenarios)} scenarios')
-for scenario in scenarios:
-    orchestrator.run_scenario(scenario)
-
-exit_code = orchestrator.generate_report('test-results/report.json', failed)
-sys.exit(exit_code)
-" || TEST_EXIT_CODE=$?
+  SDK_URLS_OVERRIDE="$SDK_URLS" \
+  TEST_SCENARIOS_PATH="test_scenarios_complete.json" \
+    python3 orchestrator/test_runner.py \
+      --report test-results/report.json \
+      $WRAPPER_SKIP_FLAG $VERBOSE_FLAG || TEST_EXIT_CODE=$?
 else
   SDK_SERVICES=$(IFS=,; echo "${TARGET_SDKS[*]}")
   docker compose run --rm -e "SDK_SERVICES=$SDK_SERVICES" orchestrator \
-    python3 test_runner.py $VERBOSE_FLAG || TEST_EXIT_CODE=$?
+    python3 test_runner.py $WRAPPER_SKIP_FLAG $VERBOSE_FLAG || TEST_EXIT_CODE=$?
+fi
+
+if [ ! -s test-results/report.json ]; then
+  echo "ERROR: the orchestrator did not write test-results/report.json" >&2
+  [ "$TEST_EXIT_CODE" -eq 0 ] && TEST_EXIT_CODE=1
 fi
 
 docker compose down --remove-orphans 2>/dev/null || true

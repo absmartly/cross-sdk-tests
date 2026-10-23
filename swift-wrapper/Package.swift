@@ -25,6 +25,14 @@ let package = Package(
                 .target(name: "App")
             ],
             path: "Sources/Run"
+        ),
+        .testTarget(
+            name: "AppTests",
+            dependencies: [
+                .target(name: "App"),
+                .product(name: "ABSmartly", package: "swift-sdk")
+            ],
+            path: "Tests/AppTests"
         )
     ]
 )

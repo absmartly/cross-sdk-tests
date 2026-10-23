@@ -36,16 +36,23 @@ done
 SDK_URLS="$SDK_URLS" python3 - <<'PY'
 import json, os, sys
 sys.path.insert(0, 'orchestrator')
-from test_runner import TestOrchestrator
+from test_runner import TestOrchestrator, load_capability_policy, load_scenarios
 pairs = [p for p in os.environ['SDK_URLS'].split(';') if p]
 sdks = dict(p.split('=', 1) for p in pairs)
-o = TestOrchestrator(sdks, verbose=False, allow_wrapper_skip=True)
+policy = load_capability_policy()
+# Same loader/validation as test_runner.main(); every scenario runs on every
+# wrapper (no pass-through skipping).
+scs, _empty, invalid = load_scenarios('test_scenarios_complete.json', set(policy['capabilities']))
+if invalid:
+    for entry in invalid:
+        print(f"invalid scenario [{entry['index']}] {entry['name']}: {entry['reason']}")
+    sys.exit(1)
+o = TestOrchestrator(sdks, verbose=False, capability_policy=policy)
 working, failed = o.wait_for_services()
 # Drive only the SDKs that actually came up, so a down SDK isn't run through
 # every scenario at a 5s timeout each. The failed set is still handed to
 # generate_report() below so a down SDK fails the run rather than vanishing.
 o.sdks = working
-scs = [s for s in json.load(open('test_scenarios_complete.json')) if 'steps' in s]
 for sc in scs:
     o.run_scenario(sc)
 os.makedirs('test-results', exist_ok=True)
@@ -69,7 +76,8 @@ for sdk in sdks:
     mark = 'PASS' if not fails else 'FAIL'
     print(f"\n{sdk}: {total-len(fails)}/{total} {mark}")
     for f in fails:
-        det = next(sc['sdks'][sdk]['failures'] for sc in r['results'] if sc['name']==f)
+        res = next(sc['sdks'][sdk] for sc in r['results'] if sc['name']==f)
+        det = res.get('failures') or [{'error': res.get('error')}]
         print(f"  - {f} :: {json.dumps(det[:1])[:160]}")
 sys.exit(report_exit)
 PY

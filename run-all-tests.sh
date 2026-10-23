@@ -3,6 +3,12 @@ set -e
 
 cd "$(dirname "$0")"
 
+# One compose project for every phase: the images this script builds must be
+# the ones run-tests.sh / run-e2e-tests.sh run (they default to "csdk" too).
+# Without this a bare build produced cross-sdk-tests-* images that the
+# --skip-build child phases never used, so they silently ran stale csdk-* ones.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-csdk}"
+
 SDK_NAMES=""
 EXCLUDE_NAMES=""
 UNIT_ONLY=false
@@ -68,7 +74,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --cross-only      Only run cross-SDK tests (same as run-tests.sh)"
       echo "  --e2e             Also run end-to-end tests after unit+cross-SDK tests"
       echo "  --profile <name>  ABsmartly CLI profile for --e2e (default: e2e)"
-      echo "  --skip-build      Skip building images"
+      echo "  --skip-build      Skip building and reuse existing ${COMPOSE_PROJECT_NAME}-* images (may be stale)"
       echo "  -v, --verbose     Show verbose output"
       echo "  -h, --help        Show this help message"
       echo ""
@@ -159,18 +165,26 @@ if [ ${#TARGET_SDKS[@]} -eq 0 ]; then
   exit 1
 fi
 
-# Build phase
+# Build phase. The child phases below only get --skip-build when the images
+# they need were built here (same COMPOSE_PROJECT_NAME) or the user opted in.
+BUILT_WRAPPERS=false
 if [ "$SKIP_BUILD" = false ]; then
   clean_js_build_artifacts
   BUILD_SERVICES=""
   if [ "$CROSS_ONLY" = false ]; then
     BUILD_SERVICES="$BUILD_SERVICES $(get_unit_service_names)"
   fi
-  if [ "$UNIT_ONLY" = false ]; then
-    BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names)"
+  if [ "$UNIT_ONLY" = false ] || [ "$E2E" = true ]; then
+    BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names) orchestrator"
+    BUILT_WRAPPERS=true
   fi
   echo "Building images for:$BUILD_SERVICES"
   docker compose build $BUILD_SERVICES
+fi
+
+CHILD_SKIP_BUILD=""
+if [ "$SKIP_BUILD" = true ] || [ "$BUILT_WRAPPERS" = true ]; then
+  CHILD_SKIP_BUILD="--skip-build"
 fi
 
 UNIT_EXIT_CODE=0
@@ -281,7 +295,7 @@ if [ "$UNIT_ONLY" = false ]; then
   if [ -n "$SDK_CSV" ]; then
     CROSS_ARGS="--sdk $SDK_CSV"
   fi
-  CROSS_ARGS="$CROSS_ARGS --skip-build"
+  CROSS_ARGS="$CROSS_ARGS $CHILD_SKIP_BUILD"
   if [ "$VERBOSE" = true ]; then
     CROSS_ARGS="$CROSS_ARGS --verbose"
   fi
@@ -298,7 +312,7 @@ if [ "$E2E" = true ]; then
   echo "  Running E2E Tests"
   echo "============================================"
 
-  E2E_ARGS="--skip-build"
+  E2E_ARGS="$CHILD_SKIP_BUILD"
   if [ -n "$SDK_NAMES" ]; then
     E2E_ARGS="$E2E_ARGS --sdk $SDK_NAMES"
   fi

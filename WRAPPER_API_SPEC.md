@@ -703,6 +703,11 @@ these errors natively, the wrapper must implement the check itself:
 3. **Unit UID rules** — `setUnit` with a blank UID must return 400 with
    `UID must not be blank`; re-setting an already-set unit type to a different
    value must return 400 with `Unit '<type>' UID already set.`
+4. **Reads before ready** — `treatment`, `peek`, `variableValue`,
+   `peekVariableValue`, `variableKeys`, `experiments` and custom-field reads on
+   a context that is not yet ready must return the SDK's own not-ready error
+   (`ABsmartly Context is not yet ready.`) as a 400. Wrappers must not check
+   readiness themselves and substitute defaults (`0`, the default value, `[]`).
 
 ### Context Lifecycle
 
@@ -959,11 +964,9 @@ Wrappers must implement this by injecting a one-shot failure into the
 simulated by short-circuiting `/publish` in the wrapper.
 
 Go note (verified against the CI-pinned `go-sdk` `fix/all-tests-passing`,
-`sdk/Context.go` `Flush()`): the SDK zeroes `PendingCount_` and clears the
-exposure/goal buffers *before* invoking the publisher, and does not restore them
-when the publisher's future fails. The go-wrapper uses the real-publisher
-mechanism, so scenario 193 currently fails for Go (pending `0` after a failed
-publish) until the SDK restores events on failure.
+`sdk/Context.go`): the SDK requeues exposures and goals and restores the pending
+count when the publisher fails. The go-wrapper uses the real-publisher mechanism,
+so scenario 193 verifies that SDK behavior rather than simulating it.
 
 ### Capability: `holdouts`
 

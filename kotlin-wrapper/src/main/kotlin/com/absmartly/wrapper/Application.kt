@@ -15,10 +15,15 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 3000
@@ -33,8 +38,24 @@ fun Application.configureRouting() {
     }
 
     val contexts = ConcurrentHashMap<String, ContextWrapper>()
-    val payloadStore = ConcurrentHashMap<String, ContextData>()
+    val payloadStore = ConcurrentHashMap<String, Any>()
     val objectMapper = jacksonObjectMapper()
+    val ownPort = System.getenv("PORT")?.toIntOrNull() ?: 3000
+
+    // The orchestrator addresses the wrapper by its host-mapped port; inside the
+    // container that wrapper listens on its own port.
+    fun translateEndpoint(endpoint: String): String {
+        return try {
+            val uri = URI(endpoint)
+            if (uri.host == "localhost" || uri.host == "127.0.0.1") {
+                URI(uri.scheme, uri.userInfo, "localhost", ownPort, uri.path, uri.query, uri.fragment).toString()
+            } else {
+                endpoint
+            }
+        } catch (e: Exception) {
+            endpoint
+        }
+    }
     fun normalizeError(message: String?, unitType: String? = null): String {
         val msg = message ?: "Unknown error"
         if (msg.contains("closed", ignoreCase = true) ||
@@ -98,23 +119,31 @@ fun Application.configureRouting() {
             }
         }
 
+        // Payloads are stored as raw JSON so the SDK's own client deserializes
+        // them when it fetches GET {endpoint}/context.
         put("/context_payload/{payloadId}") {
             val payloadId = call.parameters["payloadId"]!!
-            val request = call.receive<Map<String, Any>>()
-            val data = objectMapper.convertValue(request["data"], ContextData::class.java)
+            val request = call.receive<Map<String, Any?>>()
+            val data = request["data"] ?: return@put call.respond(
+                HttpStatusCode.BadRequest, mapOf("error" to "Missing data")
+            )
             payloadStore[payloadId] = data
             call.respond(mapOf("success" to true))
         }
 
         get("/context_payload/{payloadId}") {
             val payloadId = call.parameters["payloadId"]!!
-            val data = payloadStore[payloadId] ?: ContextData()
+            val data = payloadStore[payloadId] ?: return@get call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Payload not found")
+            )
             call.respond(data)
         }
 
         get("/context_payload/{payloadId}/context") {
             val payloadId = call.parameters["payloadId"]!!
-            val data = payloadStore[payloadId] ?: ContextData()
+            val data = payloadStore[payloadId] ?: return@get call.respond(
+                HttpStatusCode.NotFound, mapOf("error" to "Payload not found")
+            )
             call.respond(data)
         }
 
@@ -203,44 +232,60 @@ fun Application.configureRouting() {
                     .setEventLogger(eventCollector)
 
                 val payloadThrottle = (options["payloadThrottle"] as? Number)?.toLong() ?: 0L
-                val isAsync = request.containsKey("endpoint") && !request.containsKey("data")
-                val deferReady = isAsync && payloadThrottle > 0
-
+                val endpoint = request["endpoint"] as? String
                 val failLoad = request["failLoad"] == true
-                var loadFailure: RuntimeException? = null
-
-                val contextData = if (request.containsKey("data")) {
-                    objectMapper.convertValue(request["data"], ContextData::class.java)
-                } else if (isAsync && !deferReady) {
-                    val endpoint = request["endpoint"] as String
-                    val payloadIdMatch = Regex("context_payload/([^/]+)").find(endpoint)
-                    val storedData = if (payloadIdMatch != null) {
-                        payloadStore[payloadIdMatch.groupValues[1]]
-                    } else {
-                        null
-                    }
-                    if (storedData != null) {
-                        storedData
-                    } else {
-                        loadFailure = RuntimeException("Context load failed")
-                        ContextData()
-                    }
-                } else {
-                    ContextData()
-                }
 
                 val customPublisher = CustomPublisher()
 
-                val dataProvider: DummyContextDataProvider?
+                var dataProvider: DummyContextDataProvider? = null
+                var throttledProvider: ThrottledContextDataProvider? = null
+                val sdk: ABsmartly
                 val context: com.absmartly.sdk.Context
 
-                if (failLoad || loadFailure != null) {
-                    dataProvider = null
-                    val failure = loadFailure ?: RuntimeException("Context load failed")
+                if (request.containsKey("data")) {
+                    val contextData = objectMapper.convertValue(request["data"], ContextData::class.java)
+                    dataProvider = DummyContextDataProvider()
+                    val sdkConfig = ABSmartlyConfig.create()
+                        .setContextDataProvider(dataProvider)
+                        .setContextPublisher(customPublisher)
+                    sdk = ABsmartly.create(sdkConfig)
+                    context = sdk.createContextWith(contextConfig, contextData)
+                } else if (endpoint != null) {
+                    // The SDK's own Client fetches GET {endpoint}/context and
+                    // deserializes the payload, exactly as against the collector.
+                    val clientConfig = com.absmartly.sdk.ClientConfig.create()
+                        .setEndpoint(translateEndpoint(endpoint))
+                        .setAPIKey("test-api-key")
+                        .setApplication("test-app")
+                        .setEnvironment("test-env")
+                    val client = com.absmartly.sdk.Client.create(clientConfig)
+                    val sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
+                        .setContextPublisher(customPublisher)
+                    if (payloadThrottle > 0) {
+                        throttledProvider = ThrottledContextDataProvider(
+                            com.absmartly.sdk.DefaultContextDataProvider(client), payloadThrottle
+                        )
+                        sdkConfig.setContextDataProvider(throttledProvider)
+                    }
+                    sdk = ABsmartly.create(sdkConfig)
+                    context = sdk.createContext(contextConfig)
+                    if (payloadThrottle <= 0) {
+                        // Block on an IO thread, not the Netty event loop: the
+                        // SDK's fetch is an HTTP request back to this server.
+                        withContext(Dispatchers.IO) {
+                            context.waitUntilReadyAsync().get(5, TimeUnit.SECONDS)
+                            // The SDK completes the ready future before logging Ready.
+                            if (!eventCollector.awaitEventCount(1, 1000)) {
+                                throw TimeoutException("Context $contextId did not log its readiness event within 1s")
+                            }
+                        }
+                    }
+                } else if (failLoad) {
                     val failingProvider = object : com.absmartly.sdk.ContextDataProvider {
                         override fun getContextData(): java.util.concurrent.CompletableFuture<ContextData> {
                             val f = java.util.concurrent.CompletableFuture<ContextData>()
-                            f.completeExceptionally(failure)
+                            f.completeExceptionally(RuntimeException("Context load failed"))
                             return f
                         }
                     }
@@ -248,53 +293,20 @@ fun Application.configureRouting() {
                         .setContextDataProvider(failingProvider)
                         .setContextPublisher(customPublisher)
                         .setContextEventLogger(eventCollector)
-                    val failingSdk = ABsmartly.create(sdkConfig)
-                    context = failingSdk.createContext(contextConfig)
-                    Thread.sleep(50)
-                } else if (deferReady) {
-                    dataProvider = null
-                    val dataFuture = java.util.concurrent.CompletableFuture<ContextData>()
-                    val deferredProvider = object : com.absmartly.sdk.ContextDataProvider {
-                        override fun getContextData(): java.util.concurrent.CompletableFuture<ContextData> = dataFuture
-                    }
-                    val sdkConfig = ABSmartlyConfig.create()
-                        .setContextDataProvider(deferredProvider)
-                        .setContextPublisher(customPublisher)
-                        .setContextEventLogger(eventCollector)
-                    val sdk = ABsmartly.create(sdkConfig)
+                    sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContext(contextConfig)
-                    val endpoint = request["endpoint"] as String
-                    Thread {
-                        try {
-                            Thread.sleep(payloadThrottle)
-                            val payloadIdMatch = Regex("context_payload/([^/]+)").find(endpoint)
-                            val asyncData = if (payloadIdMatch != null) {
-                                payloadStore[payloadIdMatch.groupValues[1]]
-                            } else {
-                                null
-                            }
-                            if (asyncData != null) {
-                                dataFuture.complete(asyncData)
-                            } else {
-                                dataFuture.completeExceptionally(RuntimeException("Context load failed"))
-                            }
-                        } catch (e: Exception) {
-                            if (e is InterruptedException) {
-                                Thread.currentThread().interrupt()
-                            }
-                            dataFuture.completeExceptionally(e)
-                        }
-                    }.start()
+                    context.waitUntilReady()
                 } else {
-                    dataProvider = DummyContextDataProvider()
-                    val sdkConfig = ABSmartlyConfig.create()
-                        .setContextDataProvider(dataProvider)
-                        .setContextPublisher(customPublisher)
-                    val sdk = ABsmartly.create(sdkConfig)
-                    context = sdk.createContextWith(contextConfig, contextData)
+                    call.respond(HttpStatusCode.BadRequest, mapOf(
+                        "error" to "One of data, endpoint or failLoad is required"
+                    ))
+                    return@post
                 }
 
-                val wrapper = ContextWrapper(context, eventCollector, dataProvider, customPublisher)
+                val wrapper = ContextWrapper(
+                    context, eventCollector, dataProvider, customPublisher, sdk, throttledProvider,
+                    fetchesFromEndpoint = endpoint != null && !request.containsKey("data")
+                )
                 contexts[contextId] = wrapper
 
                 call.respond(mapOf(
@@ -317,7 +329,13 @@ fun Application.configureRouting() {
 
         delete("/context/{contextId}") {
             val contextId = call.parameters["contextId"]!!
-            contexts.remove(contextId)
+            val removed = contexts.remove(contextId)
+            if (removed != null) {
+                // Drop a still-pending throttled fetch, and release the per-context
+                // SDK's HTTP client and scheduler (close() may wait on queued tasks).
+                removed.throttledProvider?.cancel()
+                removed.sdk?.let { sdk -> Thread { sdk.close() }.apply { isDaemon = true }.start() }
+            }
             call.respond(mapOf("result" to "deleted"))
         }
 
@@ -406,12 +424,6 @@ fun Application.configureRouting() {
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            // The kotlin SDK's getTreatment returns 0 (not an error) after
-            // close(); scenario 189 requires an error once finalized.
-            if (wrapper.context.isClosed) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Context finalized"))
-                return@post
-            }
             try {
                 val request = call.receive<Map<String, Any>>()
                 val eventsBefore = wrapper.eventCollector.getEvents().size
@@ -821,7 +833,15 @@ fun Application.configureRouting() {
                 val newData = if (request.containsKey("newData")) {
                     objectMapper.convertValue(request["newData"], ContextData::class.java)
                 } else null
-                if (wrapper.dataProvider != null && newData != null) {
+                if (newData != null && wrapper.fetchesFromEndpoint) {
+                    // Supplied data is applied as given, even on an
+                    // endpoint-backed context.
+                    wrapper.context.refresh(newData)
+                } else if (wrapper.fetchesFromEndpoint) {
+                    // No newData: the SDK re-fetches it itself (an HTTP request
+                    // back to this server, so not on the event loop).
+                    withContext(Dispatchers.IO) { wrapper.context.refresh().join() }
+                } else if (wrapper.dataProvider != null && newData != null) {
                     wrapper.dataProvider.setNextData(newData)
                     wrapper.context.refresh().join()
                 } else if (newData != null) {

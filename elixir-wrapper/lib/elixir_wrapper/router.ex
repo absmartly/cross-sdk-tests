@@ -172,9 +172,6 @@ defmodule ElixirWrapper.Router do
         ABSmartly.Context.is_finalized?(ctx) ->
           send_error(conn, 400, "Context finalized")
 
-        not ABSmartly.Context.is_ready?(ctx) ->
-          send_json(conn, 200, %{result: 0, events: []})
-
         true ->
           case ABSmartly.Context.treatment(ctx, experiment_name) do
             {:error, :finalized} ->
@@ -201,12 +198,8 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/variableValue" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"key" => key, "defaultValue" => default_value} = conn.body_params
-      if not ABSmartly.Context.is_ready?(ctx) do
-        send_json(conn, 200, %{result: default_value, events: []})
-      else
-        result = ABSmartly.Context.variable_value(ctx, key, default_value)
-        send_action_response(conn, result, collector, eb)
-      end
+      result = ABSmartly.Context.variable_value(ctx, key, default_value)
+      send_action_response(conn, result, collector, eb)
     end)
   end
 
@@ -220,11 +213,9 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/variableKeys" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      if not ABSmartly.Context.is_ready?(ctx) do
-        send_json(conn, 200, %{result: [], events: []})
-      else
-        result = ABSmartly.Context.variable_keys(ctx) |> Map.keys()
-        send_action_response(conn, result, collector, eb)
+      case ABSmartly.Context.variable_keys(ctx) do
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+        keys -> send_action_response(conn, Map.keys(keys), collector, eb)
       end
     end)
   end
@@ -345,8 +336,10 @@ defmodule ElixirWrapper.Router do
 
   get "/context/:context_id/experiments" do
     with_context_action(conn, fn {ctx, _collector, _eb} ->
-      result = ABSmartly.Context.experiments(ctx)
-      send_json(conn, 200, %{result: result, events: []})
+      case ABSmartly.Context.experiments(ctx) do
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+        result -> send_json(conn, 200, %{result: result, events: []})
+      end
     end)
   end
 
@@ -454,6 +447,24 @@ defmodule ElixirWrapper.Router do
     send_resp(conn, 404, "Not found")
   end
 
+  # Contexts must outlive the short-lived HTTP request process that creates them.
+  # Context.start_link/3 and start_link_async/3 link the context to the caller, and
+  # the context traps exits and shuts down when its parent exits (so it can publish
+  # pending events), so a context started from the request process is gone before
+  # the next request. Start it under the SDK's own ContextSupervisor instead, exactly
+  # like ABSmartly.SDK.create_context*/3 does.
+  defp start_supervised_context(sdk_config, context_config, start_mfa_args, start_fun) do
+    child_spec = %{
+      id: ABSmartly.Context,
+      start: {ABSmartly.Context, start_fun, start_mfa_args},
+      type: :worker,
+      restart: :temporary,
+      shutdown: ABSmartly.Context.shutdown_timeout(sdk_config)
+    }
+
+    DynamicSupervisor.start_child(ABSmartly.ContextSupervisor, child_spec)
+  end
+
   defp create_context_sync(conn, data, units, options) do
     collector = EventCollector.new()
 
@@ -479,7 +490,7 @@ defmodule ElixirWrapper.Router do
       |> Map.put(:event_handler, event_handler)
       |> ABSmartly.Types.ContextConfig.from_options()
 
-    case ABSmartly.Context.start_link(sdk_config, context_data, context_config) do
+    case start_supervised_context(sdk_config, context_config, [sdk_config, context_data, context_config], :start_link) do
       {:ok, ctx} ->
         context_id = UUID.uuid4()
         ContextStore.store_context(context_id, ctx, collector)
@@ -545,7 +556,7 @@ defmodule ElixirWrapper.Router do
       end
     end
 
-    case ABSmartly.Context.start_link_async(sdk_config, context_config, data_fetcher: data_fetcher) do
+    case start_supervised_context(sdk_config, context_config, [sdk_config, context_config, [data_fetcher: data_fetcher]], :start_link_async) do
       {:ok, ctx} ->
         if payload_throttle == 0 do
           ABSmartly.Context.wait_until_ready(ctx, 10000)
@@ -602,7 +613,7 @@ defmodule ElixirWrapper.Router do
     # does not fabricate events, and reports SDK-observed state verbatim.
     data_fetcher = fn -> {:error, "Context load failed"} end
 
-    case ABSmartly.Context.start_link_async(sdk_config, context_config, data_fetcher: data_fetcher) do
+    case start_supervised_context(sdk_config, context_config, [sdk_config, context_config, [data_fetcher: data_fetcher]], :start_link_async) do
       {:ok, ctx} ->
         # wait_until_ready replies {:error, reason} once the SDK processes the
         # failed fetch (or immediately if it already has).
@@ -660,7 +671,7 @@ defmodule ElixirWrapper.Router do
 
       context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
 
-      case ABSmartly.Context.start_link_async(sdk_config, context_config) do
+      case start_supervised_context(sdk_config, context_config, [sdk_config, context_config], :start_link_async) do
         {:ok, ctx} ->
           ABSmartly.Context.wait_until_ready(ctx, 10000)
 
@@ -709,6 +720,12 @@ defmodule ElixirWrapper.Router do
       {:error, _} ->
         send_error(conn, 404, "Context not found")
     end
+  end
+
+  # SDK read methods return {:error, message} (e.g. "ABsmartly Context is not
+  # yet ready.") instead of raising; surface it as the normal 400 error.
+  defp send_action_response(conn, {:error, reason}, _collector, _events_before) do
+    send_error(conn, 400, error_message(reason))
   end
 
   defp send_action_response(conn, result, collector, events_before) do

@@ -2,9 +2,12 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
-from typing import Any, Dict, List, Tuple
+import uuid
+from collections import Counter
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -17,6 +20,77 @@ import requests
 # so main() prints a loud warning at startup when the name is absent.
 CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
 
+# Checked-in capability policy: which `requires:` capabilities each SDK must
+# advertise, and which are reviewed exceptions (see the file's _comment).
+DEFAULT_POLICY_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "expected-capabilities.json"
+)
+
+# Result lists whose order is not part of the contract. Every other list is
+# compared positionally (a scenario can still force ordering with
+# orderedResult: true, which also overrides this allowlist).
+UNORDERED_RESULT_ACTIONS = frozenset(
+    {"variableKeys", "customFieldKeys", "globalCustomFieldKeys", "experiments"}
+)
+# Actions whose result is a map of key -> list, where each list is unordered.
+UNORDERED_MAP_VALUE_ACTIONS = frozenset({"variableKeysMap"})
+
+# Exposure fields every wrapper reports (scenarios assert all of them in 90+
+# steps), compared across SDKs even where a scenario only asserts the event type.
+EXPOSURE_CONSISTENCY_KEYS = (
+    "id",
+    "name",
+    "unit",
+    "variant",
+    "assigned",
+    "eligible",
+    "overridden",
+    "fullOn",
+    "custom",
+    "audienceMismatch",
+)
+
+# Keys of a /capabilities response that are not capability flags but are read
+# by the harness, with the JSON type each must have when present.
+CAPABILITY_METADATA_TYPES = {
+    "isWrapper": bool,
+    "wrapsSDK": str,
+    "passThroughOperations": list,
+}
+
+CONTEXT_CREATE_ACTIONS = ("createContext", "createContextWith", "createContextFailed")
+
+
+class _Missing:
+    """Sentinel for a JSON key that is absent (distinct from an explicit null)."""
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "<missing>"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+MISSING = _Missing()
+
+
+def describe(value: Any) -> Any:
+    """Make a value safe for the JSON report (MISSING is not serializable)."""
+    if value is MISSING:
+        return "<missing>"
+    return value
+
+
+class ConfigError(Exception):
+    """A scenario file or capability policy that cannot be used as-is."""
+
 
 class Colors:
     GREEN = "\033[92m"
@@ -25,29 +99,294 @@ class Colors:
     RESET = "\033[0m"
 
 
+# ---------------------------------------------------------------------------
+# Capability policy
+# ---------------------------------------------------------------------------
+
+
+def validate_capability_policy(policy: Any) -> List[str]:
+    """Return a list of problems with a capability policy (empty if valid)."""
+    errors: List[str] = []
+    if not isinstance(policy, dict):
+        return ["policy must be a JSON object"]
+
+    capabilities = policy.get("capabilities")
+    if not isinstance(capabilities, dict) or not capabilities:
+        errors.append("'capabilities' must be a non-empty object of name -> description")
+        capabilities = {}
+    for name, desc in capabilities.items():
+        if not isinstance(desc, str) or not desc.strip():
+            errors.append(f"capability {name!r} needs a non-empty description")
+
+    sdks = policy.get("sdks")
+    if not isinstance(sdks, dict) or not sdks:
+        errors.append("'sdks' must be a non-empty object of sdk -> {required, unsupported}")
+        return errors
+
+    known = set(capabilities)
+    for sdk, entry in sdks.items():
+        if not isinstance(entry, dict):
+            errors.append(f"sdk {sdk!r}: entry must be an object")
+            continue
+        required = entry.get("required", [])
+        unsupported = entry.get("unsupported", {})
+        if not isinstance(required, list) or not all(isinstance(c, str) for c in required):
+            errors.append(f"sdk {sdk!r}: 'required' must be a list of capability names")
+            required = []
+        if not isinstance(unsupported, dict):
+            errors.append(f"sdk {sdk!r}: 'unsupported' must be an object of capability -> reason")
+            unsupported = {}
+        if len(set(required)) != len(required):
+            errors.append(f"sdk {sdk!r}: 'required' lists a capability twice")
+        for cap in required:
+            if cap not in known:
+                errors.append(f"sdk {sdk!r}: required capability {cap!r} is not declared in 'capabilities'")
+        for cap, reason in unsupported.items():
+            if cap not in known:
+                errors.append(f"sdk {sdk!r}: unsupported capability {cap!r} is not declared in 'capabilities'")
+            if not isinstance(reason, str) or not reason.strip():
+                errors.append(f"sdk {sdk!r}: unsupported capability {cap!r} needs a one-line reason")
+        overlap = set(required) & set(unsupported)
+        if overlap:
+            errors.append(
+                f"sdk {sdk!r}: {sorted(overlap)} listed as both required and unsupported"
+            )
+        unclassified = known - set(required) - set(unsupported)
+        if unclassified:
+            errors.append(
+                f"sdk {sdk!r}: capabilities {sorted(unclassified)} are neither required nor a "
+                f"reviewed unsupported exception"
+            )
+    return errors
+
+
+def load_capability_policy(path: str = DEFAULT_POLICY_PATH) -> Dict[str, Any]:
+    try:
+        with open(path) as src:
+            policy = json.load(src)
+    except FileNotFoundError:
+        raise ConfigError(f"capability policy not found: {path}")
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"capability policy {path} is not valid JSON: {exc}")
+    errors = validate_capability_policy(policy)
+    if errors:
+        raise ConfigError(
+            f"capability policy {path} is invalid:\n  - " + "\n  - ".join(errors)
+        )
+    return policy
+
+
+def validate_capabilities_response(payload: Any, known_capabilities) -> Optional[str]:
+    """Return an error string if a /capabilities body is malformed, else None.
+
+    Only capabilities the policy declares (and the metadata keys the harness
+    reads) are type-checked; unrelated extra keys a wrapper reports are ignored.
+    """
+    if not isinstance(payload, dict):
+        return f"/capabilities must return a JSON object, got {type(payload).__name__}"
+    for cap in sorted(known_capabilities):
+        if cap in payload and not isinstance(payload[cap], bool):
+            return f"capability {cap!r} must be a JSON boolean, got {payload[cap]!r}"
+    for key, expected_type in CAPABILITY_METADATA_TYPES.items():
+        if key in payload and not isinstance(payload[key], expected_type):
+            return f"{key!r} must be a JSON {expected_type.__name__}, got {payload[key]!r}"
+    ops = payload.get("passThroughOperations")
+    if isinstance(ops, list) and not all(isinstance(op, str) for op in ops):
+        return "'passThroughOperations' must be a list of strings"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Matching
+# ---------------------------------------------------------------------------
+
+
+def _scalar_key(value: Any) -> Tuple[str, Any]:
+    # bool must stay distinct from int/float (Python treats True == 1), but
+    # int and float of equal value compare equal (JSON has one number type).
+    if value is None:
+        return ("null", "")
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, (int, float)):
+        return ("number", value)
+    if isinstance(value, str):
+        return ("string", value)
+    return ("other", json.dumps(value, sort_keys=True))
+
+
+def _is_scalar(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def values_match(actual: Any, expected: Any, unordered: bool = False) -> bool:
+    """Compare an actual JSON value to an expected one.
+
+    * Objects are matched as a SUBSET: every expected key must be present in
+      the actual object (absent never matches, not even an expected null) and
+      match recursively; extra actual keys are allowed. Scenario payloads are
+      deliberately partial (dynamic timestamps, ids and SDK-specific fields are
+      not asserted).
+    * Arrays must have the same length. They are compared positionally unless
+      `unordered` is set and every element is a scalar, in which case they are
+      compared as multisets (duplicates still count).
+    * Scalars must have the same JSON type (bool is never a number, null is
+      never a string) and value; 1 and 1.0 are equal.
+    """
+    if actual is MISSING:
+        return False
+
+    if isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False
+        return all(
+            key in actual and values_match(actual[key], expected_value)
+            for key, expected_value in expected.items()
+        )
+
+    if isinstance(expected, list):
+        if not isinstance(actual, list) or len(actual) != len(expected):
+            return False
+        if unordered and all(_is_scalar(x) for x in expected) and all(_is_scalar(x) for x in actual):
+            return Counter(_scalar_key(x) for x in actual) == Counter(_scalar_key(x) for x in expected)
+        return all(values_match(a, e) for a, e in zip(actual, expected))
+
+    if not _is_scalar(actual):
+        return False
+    return _scalar_key(actual) == _scalar_key(expected)
+
+
+def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
+    if not ordered and action in UNORDERED_RESULT_ACTIONS:
+        return values_match(actual, expected, unordered=True)
+    if not ordered and action in UNORDERED_MAP_VALUE_ACTIONS and isinstance(expected, dict):
+        if not isinstance(actual, dict):
+            return False
+        return all(
+            key in actual and values_match(actual[key], value, unordered=True)
+            for key, value in expected.items()
+        )
+    return values_match(actual, expected)
+
+
+def _canonical(value: Any) -> Any:
+    """Normalize a JSON value for cross-SDK comparison (1.0 -> 1, MISSING marker)."""
+    if value is MISSING:
+        return "<missing>"
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, dict):
+        return {k: _canonical(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_canonical(v) for v in value]
+    return repr(value)
+
+
+def _sorted_list(values: List[Any]) -> List[Any]:
+    return sorted(values, key=lambda v: json.dumps(v, sort_keys=True))
+
+
+def _project(actual: Any, expected: Any) -> Any:
+    """Keep only the parts of `actual` the scenario asserts (recursively for objects)."""
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        return {k: _project(actual.get(k, MISSING), v) for k, v in expected.items()}
+    if isinstance(expected, list) and isinstance(actual, list) and len(expected) == len(actual):
+        return [_project(a, e) for a, e in zip(actual, expected)]
+    return actual
+
+
+def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ordered: bool = False) -> str:
+    """Normalized, comparable view of what an SDK returned for one step.
+
+    Volatile fields are left out by construction: object results are projected
+    onto the keys the scenario asserts (so contextId, readyError messages and
+    similar SDK-specific detail never participate), event timestamps and
+    publish data (publishedAt) are not included, and exposure events contribute
+    only the canonical exposure fields every wrapper reports.
+    """
+    if not isinstance(actual, dict):
+        return json.dumps({"response": _canonical(actual)}, sort_keys=True)
+
+    result = actual.get("result", MISSING)
+    expected_result = expected.get("result", MISSING)
+    if isinstance(result, dict) and isinstance(expected_result, dict):
+        result = _project(result, expected_result)
+    elif isinstance(result, dict):
+        result = {k: v for k, v in result.items() if k != "contextId"}
+    result = _canonical(result)
+    if not ordered and isinstance(result, list) and action in UNORDERED_RESULT_ACTIONS:
+        result = _sorted_list(result)
+    if not ordered and isinstance(result, dict) and action in UNORDERED_MAP_VALUE_ACTIONS:
+        result = {k: _sorted_list(v) if isinstance(v, list) else v for k, v in result.items()}
+
+    events_obs: Any = "<missing>"
+    events = actual.get("events", MISSING)
+    if isinstance(events, list):
+        events_obs = []
+        for event in events:
+            if not isinstance(event, dict):
+                events_obs.append({"invalid": _canonical(event)})
+                continue
+            entry: Dict[str, Any] = {"type": _canonical(event.get("type", MISSING))}
+            data = event.get("data")
+            if entry["type"] == "exposure" and isinstance(data, dict):
+                entry["data"] = {k: _canonical(data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
+            elif entry["type"] == "goal" and isinstance(data, dict):
+                entry["data"] = {"name": _canonical(data.get("name", MISSING))}
+            events_obs.append(entry)
+
+    return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator
+# ---------------------------------------------------------------------------
+
+
 class TestOrchestrator:
+    __test__ = False  # not a pytest test class
+
     def __init__(
         self,
         sdks: Dict[str, str],
         verbose: bool = False,
-        allow_wrapper_skip: bool = True,
+        allow_wrapper_skip: bool = False,
         loose_error_match: bool = False,
+        capability_policy: Optional[Dict[str, Any]] = None,
     ):
         self.sdks = sdks
         self.results: List[Dict[str, Any]] = []
         self.capabilities: Dict[str, Dict[str, Any]] = {}
-        # SDKs whose /capabilities endpoint errored (unreachable or non-200).
-        # Maps sdk_name -> reason. These are distinct from an SDK that answered
-        # /capabilities but simply lacks a capability (a legitimate skip).
+        # SDKs whose /capabilities endpoint errored (unreachable, non-200 or a
+        # malformed body). Maps sdk_name -> reason. These are distinct from an
+        # SDK that answered /capabilities but simply lacks a capability.
         self.capabilities_fetch_failed: Dict[str, str] = {}
+        # sdk_name -> list of human-readable capability policy violations.
+        self.capability_policy_violations: Dict[str, List[str]] = {}
         # Per-scenario actual outcome ("pass"/"fail"/"skip"/"error") per SDK,
         # used for the cross-SDK consistency pass after all SDKs have run.
         self.scenario_outcomes: Dict[str, Dict[str, str]] = {}
+        # scenario name -> sdk name -> per-step normalized observations.
+        self.step_observations: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.consistency_failures: Dict[str, List[str]] = {}
         self.consistency_report: List[Dict[str, Any]] = []
+        self.consistency_comparisons = 0
         self.verbose = verbose
+        # Pass-through skipping (a wrapper declaring an operation as a straight
+        # pass-through to another SDK under test) is OFF by default: a skipped
+        # scenario proves nothing about the wrapper. It is an explicit opt-in
+        # for fast local runs only.
         self.allow_wrapper_skip = allow_wrapper_skip
         self.loose_error_match = loose_error_match
+        self.policy = capability_policy if capability_policy is not None else load_capability_policy()
+        policy_errors = validate_capability_policy(self.policy)
+        if policy_errors:
+            raise ConfigError("capability policy is invalid:\n  - " + "\n  - ".join(policy_errors))
+        self.known_capabilities = set(self.policy["capabilities"])
 
     def wait_for_services(self) -> Tuple[Dict[str, str], List[str]]:
         print("Waiting for SDK services to be ready...")
@@ -99,25 +438,97 @@ class TestOrchestrator:
 
     def fetch_capabilities(self, sdk_name: str, base_url: str) -> None:
         try:
-            caps_response = requests.get(f"{base_url}/capabilities", timeout=1)
+            # Generous timeout: some wrappers compute capabilities lazily from a
+            # behavioral self-test on the first request.
+            caps_response = requests.get(f"{base_url}/capabilities", timeout=15)
             if caps_response.status_code == 200:
-                self.capabilities[sdk_name] = caps_response.json()
-                return
-            reason = f"HTTP {caps_response.status_code}"
+                try:
+                    payload = caps_response.json()
+                except ValueError:
+                    payload = None
+                    reason = "invalid /capabilities response: body is not JSON"
+                else:
+                    reason = validate_capabilities_response(payload, self.known_capabilities)
+                    if reason is None:
+                        self.set_capabilities(sdk_name, payload)
+                        return
+                    reason = f"invalid /capabilities response: {reason}"
+            else:
+                reason = f"HTTP {caps_response.status_code}"
         except Exception as exc:
             reason = str(exc) or exc.__class__.__name__
 
-        # The endpoint itself errored (unreachable or non-200) rather than
-        # reporting a missing capability. Default caps so `requires:` scenarios
-        # still skip instead of crashing, but record the failure loudly: the
-        # report must not silently attribute those skips to a genuinely
-        # unsupported feature, and this SDK's run must be marked failed.
-        self.capabilities[sdk_name] = {"attrsSeq": False}
+        # The endpoint itself errored (unreachable, non-200 or malformed)
+        # rather than reporting a missing capability. Record it loudly: the
+        # report must not attribute those skips to an unsupported feature, and
+        # this SDK's run is marked failed.
+        self.capabilities[sdk_name] = {}
         self.capabilities_fetch_failed[sdk_name] = reason
         print(
             f"  {Colors.RED}⚠ CAPABILITIES FETCH FAILED{Colors.RESET} {sdk_name}: {reason} - "
             f"all `requires:`-gated scenarios will be skipped and this SDK's run marked FAILED"
         )
+
+    def set_capabilities(self, sdk_name: str, payload: Dict[str, Any]) -> None:
+        """Record a validated /capabilities body and check it against the policy."""
+        self.capabilities[sdk_name] = payload
+        violations = self.policy_violations_for(sdk_name, payload)
+        if violations:
+            self.capability_policy_violations[sdk_name] = violations
+            for violation in violations:
+                print(f"  {Colors.RED}⚠ CAPABILITY POLICY{Colors.RESET} {sdk_name}: {violation}")
+
+    def policy_violations_for(self, sdk_name: str, caps: Dict[str, Any]) -> List[str]:
+        entry = self.policy["sdks"].get(sdk_name)
+        if entry is None:
+            return [
+                f"no entry in the capability policy for {sdk_name!r}; add one listing its "
+                f"required capabilities and reviewed exceptions"
+            ]
+        violations: List[str] = []
+        for cap in entry.get("required", []):
+            if caps.get(cap) is not True:
+                got = "missing" if cap not in caps else json.dumps(caps[cap])
+                violations.append(
+                    f"required capability {cap!r} is not advertised (got {got}); its scenarios "
+                    f"run anyway and are expected to fail"
+                )
+        for cap, reason in entry.get("unsupported", {}).items():
+            if caps.get(cap) is True:
+                violations.append(
+                    f"advertises {cap!r} but the policy lists it as a reviewed exception "
+                    f"({reason}); move it to 'required' in expected-capabilities.json"
+                )
+        return violations
+
+    def capability_gate(self, sdk_name: str, scenario: Dict[str, Any]) -> Optional[str]:
+        """Return a skip reason if a `requires:` scenario must not run, else None."""
+        required = scenario.get("requires") or []
+        if not required:
+            return None
+        if sdk_name in self.capabilities_fetch_failed:
+            return (
+                f"capabilities fetch failed ({self.capabilities_fetch_failed[sdk_name]}); "
+                f"cannot confirm support for: {', '.join(required)}"
+            )
+        entry = self.policy["sdks"].get(sdk_name)
+        if entry is None:
+            return f"no capability policy entry for {sdk_name}; cannot classify: {', '.join(required)}"
+
+        caps = self.capabilities.get(sdk_name, {})
+        excepted: List[str] = []
+        for cap in required:
+            if cap in entry.get("required", []):
+                continue  # must run: a missing capability is a policy violation, not a skip
+            reason = entry.get("unsupported", {}).get(cap)
+            if reason is None:
+                return f"capability {cap!r} is not classified for {sdk_name} in the policy"
+            if caps.get(cap) is True:
+                continue  # advertised despite the exception: run it (and flag the policy)
+            excepted.append(f"{cap} ({reason})")
+        if excepted:
+            return "reviewed exception: " + "; ".join(excepted)
+        return None
 
     def run_scenario(self, scenario: Dict[str, Any]) -> Dict[str, Any]:
         if self.verbose:
@@ -181,52 +592,41 @@ class TestOrchestrator:
             return False, None
 
         sdk_caps = self.capabilities.get(sdk_name, {})
-        if not sdk_caps.get("isWrapper"):
+        if sdk_caps.get("isWrapper") is not True:
             return False, None
 
         underlying_sdk = sdk_caps.get("wrapsSDK")
         if not underlying_sdk or underlying_sdk not in self.sdks:
             return False, None
 
-        pass_through_ops = set(sdk_caps.get("passThroughOperations", []))
+        pass_through_ops = set(sdk_caps.get("passThroughOperations") or [])
         if not pass_through_ops:
             return False, None
 
         scenario_actions = set()
         for step in scenario.get("steps", []):
             action = step.get("action")
-            if action and action not in ("createContext", "createContextWith", "createContextFailed"):
+            if action and action not in CONTEXT_CREATE_ACTIONS:
                 scenario_actions.add(action)
 
         if not scenario_actions:
             return False, None
 
         if scenario_actions.issubset(pass_through_ops):
-            return True, f"Pass-through to {underlying_sdk} SDK"
+            return True, f"Pass-through to {underlying_sdk} SDK (opt-in --wrapper-skip)"
 
         return False, None
 
     def run_and_validate_sdk(self, sdk_name: str, base_url: str, scenario: Dict[str, Any]) -> Dict[str, Any]:
+        # Capability eligibility first: a scenario the SDK is not eligible for
+        # is skipped for that reason, never attributed to a pass-through.
+        gate_reason = self.capability_gate(sdk_name, scenario)
+        if gate_reason:
+            return {"passed": True, "skipped": True, "reason": gate_reason}
+
         should_skip, skip_reason = self.should_skip_wrapper_test(sdk_name, scenario)
         if should_skip:
-            return {"passed": True, "skipped": True, "reason": skip_reason}
-
-        if "requires" in scenario:
-            sdk_caps = self.capabilities.get(sdk_name, {})
-            missing_caps = [cap for cap in scenario["requires"] if not sdk_caps.get(cap, False)]
-            if missing_caps:
-                if sdk_name in self.capabilities_fetch_failed:
-                    reason = (
-                        f"capabilities fetch failed ({self.capabilities_fetch_failed[sdk_name]}); "
-                        f"cannot confirm support for: {', '.join(missing_caps)}"
-                    )
-                else:
-                    reason = f"SDK does not support: {', '.join(missing_caps)}"
-                return {
-                    "passed": True,
-                    "skipped": True,
-                    "reason": reason,
-                }
+            return {"passed": True, "skipped": True, "passthrough": True, "reason": skip_reason}
 
         steps = scenario.get("steps", [])
         if not steps:
@@ -244,6 +644,8 @@ class TestOrchestrator:
         context_id = None
         payload_id = None
         failures: List[Dict[str, Any]] = []
+        observations = self.step_observations.setdefault(scenario.get("name", ""), {}).setdefault(sdk_name, {})
+        observations.clear()
 
         for step_index, step in enumerate(steps):
             action = step.get("action")
@@ -297,8 +699,6 @@ class TestOrchestrator:
                     context_id = data["result"]["contextId"]
 
                 elif action in ("createContext", "createContextWith"):
-                    import uuid
-
                     payload_id = f"payload-{uuid.uuid4()}"
                     payload_response = requests.put(
                         f"{base_url}/context_payload/{payload_id}",
@@ -361,7 +761,7 @@ class TestOrchestrator:
                         response = requests.get(f"{base_url}/context/{context_id}/isReady", timeout=5)
                         response.raise_for_status()
                         data = response.json()
-                        ready = data.get("result", False)
+                        ready = data.get("result", False) is True
                         if not ready:
                             time.sleep(poll_interval)
                             elapsed += poll_interval
@@ -391,17 +791,44 @@ class TestOrchestrator:
                 step_failures = self.validate_step(step_index, action, data, expected)
                 if step_failures:
                     failures.extend(step_failures)
+                observations[step_index] = (
+                    action,
+                    observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),
+                )
 
             except requests.HTTPError as exc:
                 error_msg = None
+                error_body = None
                 if exc.response is not None:
                     try:
                         error_body = exc.response.json()
-                        error_msg = error_body.get("error")
+                        error_msg = error_body.get("error") if isinstance(error_body, dict) else None
+                        if error_msg is not None and not isinstance(error_msg, str):
+                            error_msg = json.dumps(error_msg)
                     except Exception:
                         error_msg = exc.response.text
                 if not error_msg:
                     error_msg = str(exc)
+
+                # Error responses may carry an events window; a failed call must
+                # not emit events the scenario does not list.
+                if isinstance(error_body, dict) and "events" in error_body:
+                    error_events = error_body["events"]
+                    if error_events != expected.get("events", []):
+                        types = (
+                            [e.get("type") if isinstance(e, dict) else e for e in error_events]
+                            if isinstance(error_events, list)
+                            else error_events
+                        )
+                        failures.append(
+                            {
+                                "step": step_index,
+                                "action": action,
+                                "field": "events",
+                                "expected": describe(expected.get("events", [])),
+                                "actual": f"events on error response: {types}",
+                            }
+                        )
 
                 if "errorContains" in expected:
                     if expected["errorContains"].lower() not in error_msg.lower():
@@ -457,10 +884,21 @@ class TestOrchestrator:
         self,
         step_index: int,
         action: str,
-        actual: Dict[str, Any],
+        actual: Any,
         expected: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
+
+        def fail(field: str, expected_value: Any, actual_value: Any) -> None:
+            failures.append(
+                {
+                    "step": step_index,
+                    "action": action,
+                    "field": field,
+                    "expected": describe(expected_value),
+                    "actual": describe(actual_value),
+                }
+            )
 
         # validate_step only runs on the success path (raise_for_status did not
         # raise), so if the scenario expected an error, the call succeeding is
@@ -469,134 +907,110 @@ class TestOrchestrator:
         if "errorContains" in expected or "error" in expected:
             expected_error = expected.get("errorContains", expected.get("error"))
             http_status = actual.get("status", 200) if isinstance(actual, dict) else 200
+            fail(
+                "errorContains" if "errorContains" in expected else "error",
+                expected_error,
+                f"expected error but call succeeded (got HTTP {http_status})",
+            )
+            return failures
+
+        if not isinstance(actual, dict):
             failures.append(
                 {
                     "step": step_index,
                     "action": action,
-                    "field": "errorContains" if "errorContains" in expected else "error",
-                    "expected": expected_error,
-                    "actual": f"expected error but call succeeded (got HTTP {http_status})",
+                    "error": f"response body must be a JSON object, got {type(actual).__name__}",
                 }
             )
             return failures
 
         if "result" in expected:
-            actual_result = actual.get("result")
+            # An omitted `result` member is NOT the same as `result: null`: a
+            # wrapper that drops the key is violating the wire contract.
+            actual_result = actual.get("result", MISSING)
             expected_result = expected["result"]
-            if not self.values_match(
-                actual_result, expected_result, ordered=expected.get("orderedResult", False)
+            if not result_matches(
+                action, actual_result, expected_result, ordered=expected.get("orderedResult", False)
             ):
-                failures.append(
-                    {
-                        "step": step_index,
-                        "action": action,
-                        "field": "result",
-                        "expected": expected_result,
-                        "actual": actual_result,
-                    }
-                )
+                fail("result", expected_result, actual_result)
 
-        if "events" in expected:
-            actual_events = actual.get("events", [])
-            expected_events = expected["events"]
+        actual_events = actual.get("events", MISSING)
+        if actual_events is MISSING:
+            # The wire contract requires an `events` array on every response.
+            fail("events", expected.get("events", []), MISSING)
+            return failures
+        if "events" not in expected:
+            # A step that does not list events expects none. Any emitted event
+            # is unexpected and must not pass silently.
+            if actual_events != []:
+                if not isinstance(actual_events, list):
+                    fail("events", [], actual_events)
+                else:
+                    types = [e.get("type") if isinstance(e, dict) else e for e in actual_events]
+                    fail("events", "no events (step lists no 'events')", f"unexpected events: {types}")
+            return failures
 
-            if len(actual_events) != len(expected_events):
-                failures.append(
-                    {
-                        "step": step_index,
-                        "action": action,
-                        "field": "events.length",
-                        "expected": len(expected_events),
-                        "actual": len(actual_events),
-                    }
-                )
-            else:
-                for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
-                    if actual_event.get("type") != expected_event.get("type"):
-                        failures.append(
-                            {
-                                "step": step_index,
-                                "action": action,
-                                "field": f"events[{i}].type",
-                                "expected": expected_event.get("type"),
-                                "actual": actual_event.get("type"),
-                            }
-                        )
+        expected_events = expected["events"]
+        if not isinstance(actual_events, list):
+            fail("events", expected_events, actual_events)
+            return failures
 
-                    if "data" in expected_event:
-                        actual_data = actual_event.get("data", {})
-                        expected_data = expected_event["data"]
+        if len(actual_events) != len(expected_events):
+            failures.append(
+                {
+                    "step": step_index,
+                    "action": action,
+                    "field": "events.length",
+                    "expected": len(expected_events),
+                    "actual": len(actual_events),
+                    "actual_types": [e.get("type") if isinstance(e, dict) else e for e in actual_events],
+                }
+            )
+            return failures
 
-                        for key, expected_value in expected_data.items():
-                            actual_value = actual_data.get(key)
-                            if not self.values_match(actual_value, expected_value):
-                                failures.append(
-                                    {
-                                        "step": step_index,
-                                        "action": action,
-                                        "field": f"events[{i}].data.{key}",
-                                        "expected": expected_value,
-                                        "actual": actual_value,
-                                    }
-                                )
+        for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
+            if not isinstance(actual_event, dict):
+                fail(f"events[{i}]", expected_event, actual_event)
+                continue
+
+            actual_type = actual_event.get("type", MISSING)
+            if not values_match(actual_type, expected_event.get("type")):
+                fail(f"events[{i}].type", expected_event.get("type"), actual_type)
+
+            if "data" in expected_event:
+                actual_data = actual_event.get("data", MISSING)
+                expected_data = expected_event["data"]
+                if isinstance(expected_data, dict) and isinstance(actual_data, dict):
+                    for key, expected_value in expected_data.items():
+                        actual_value = actual_data.get(key, MISSING)
+                        # A goal's null `properties` may be omitted: the Java SDK's
+                        # GoalAchievement is @JsonInclude(NON_NULL), so omission is
+                        # that SDK's real wire output. Every other event member is
+                        # strict: an omitted member never matches an expected null.
+                        if (
+                            expected_value is None
+                            and actual_value is MISSING
+                            and expected_event.get("type") == "goal"
+                            and key == "properties"
+                        ):
+                            continue
+                        if not values_match(actual_value, expected_value):
+                            fail(f"events[{i}].data.{key}", expected_value, actual_value)
+                elif not values_match(actual_data, expected_data):
+                    fail(f"events[{i}].data", expected_data, actual_data)
 
         return failures
 
     def values_match(self, actual: Any, expected: Any, ordered: bool = False) -> bool:
-        if isinstance(expected, dict) and isinstance(actual, dict):
-            for key, expected_value in expected.items():
-                if key not in actual:
-                    return False
-                if not self.values_match(actual[key], expected_value, ordered):
-                    return False
-            return True
+        """Backwards-compatible method form of the module-level values_match.
 
-        if isinstance(expected, list) and isinstance(actual, list):
-            if len(expected) != len(actual):
-                return False
-
-            if not ordered and all(
-                isinstance(x, (str, int, float, bool, type(None))) for x in expected
-            ):
-                # Order-insensitive comparison for scalar lists. A plain
-                # sorted() raises TypeError on mixed types (e.g. [None, 'a']),
-                # so use a total-ordering key that never compares values of
-                # different types directly. Scenarios where order IS the payload
-                # (e.g. UTF-8 byte sequences, ordered JSON arrays) set
-                # orderedResult:true so they fall through to positional zip.
-                def sort_key(x: Any) -> Tuple[bool, str, Any]:
-                    # bool must stay distinct from int/float (Python treats
-                    # True == 1), but int and float of equal value must compare
-                    # equal here to agree with the terminal `actual == expected`
-                    # and the ordered/positional paths (both treat 1 == 1.0).
-                    if isinstance(x, bool):
-                        return (x is None, "bool", x)
-                    if isinstance(x, (int, float)):
-                        return (x is None, "number", x)
-                    return (x is None, str(type(x)), str(x))
-
-                # Compare the keyed representations, not the raw sorted values:
-                # sort_key buckets bool separately from numbers, so this
-                # distinguishes bool from int the same way the terminal-comparison
-                # guard below does (Python's list == would treat [1,0] and
-                # [True,False] as equal) while keeping int/float value-equal.
-                return [sort_key(x) for x in sorted(actual, key=sort_key)] == \
-                    [sort_key(x) for x in sorted(expected, key=sort_key)]
-
-            return all(self.values_match(a, e, ordered) for a, e in zip(actual, expected))
-
-        # Reject bool/int type confusion: in Python True == 1 and False == 0,
-        # so an integer variant serialized as JSON true/false (or vice versa)
-        # would otherwise pass. bool is a subclass of int, so isinstance is the
-        # correct discriminator.
-        if isinstance(actual, bool) != isinstance(expected, bool):
-            return False
-
-        return actual == expected
+        Keeps the historical signature (ordered=False compares top-level scalar
+        lists as multisets); validate_step itself uses result_matches, which
+        only relaxes ordering for the documented unordered actions.
+        """
+        return values_match(actual, expected, unordered=not ordered)
 
     def error_matches(self, actual_error: str, expected_error: str) -> bool:
-        import re
-
         def normalize(msg: str) -> str:
             msg = msg.lower().strip()
             msg = re.sub(r"[.\n\r]+$", "", msg)
@@ -643,6 +1057,15 @@ class TestOrchestrator:
         match_ratio = len(matches) / len(expected_key_words)
         return match_ratio >= 0.9
 
+    @staticmethod
+    def _majority(values: Dict[str, Any]) -> Tuple[Any, List[str]]:
+        counts = Counter(values.values())
+        max_count = counts.most_common(1)[0][1]
+        majority = [value for value, c in counts.items() if c == max_count]
+        if len(majority) == 1:
+            return majority[0], [sdk for sdk, v in values.items() if v != majority[0]]
+        return None, list(values.keys())  # tie: no majority, everyone disagrees
+
     def check_cross_sdk_consistency(self) -> None:
         """Compare each scenario's actual outcome across the SDKs that ran it.
 
@@ -651,45 +1074,77 @@ class TestOrchestrator:
         For every scenario executed (pass/fail, not skipped/errored) by 2+ SDKs,
         flag any SDK whose outcome differs from the majority. On a tie there is
         no majority, so every participating SDK is reported as disagreeing.
+
+        The comparison intentionally remains at pass/fail granularity. Expected
+        payloads are partial by contract and event timestamps/publishedAt are
+        dynamic; comparing fields the scenario did not assert would turn
+        harmless SDK serialization differences into false consistency failures.
         """
+        self.consistency_report = []
+        self.consistency_failures = {}
+        self.consistency_comparisons = 0
         if len(self.sdks) < 2:
             return
-
-        from collections import Counter
 
         for scenario_name, outcomes in self.scenario_outcomes.items():
             executed = {sdk: o for sdk, o in outcomes.items() if o in ("pass", "fail")}
             if len(executed) < 2:
                 continue
-            if len(set(executed.values())) <= 1:
-                continue  # all participating SDKs agree
+            self.consistency_comparisons += 1
+            if len(set(executed.values())) > 1:
+                majority_outcome, disagreeing = self._majority(executed)
+                self.consistency_report.append(
+                    {
+                        "kind": "outcome",
+                        "scenario": scenario_name,
+                        "outcomes": dict(executed),
+                        "majority": majority_outcome,
+                        "disagreeing": disagreeing,
+                    }
+                )
+                for sdk in disagreeing:
+                    self.consistency_failures.setdefault(sdk, []).append(scenario_name)
 
-            counts = Counter(executed.values())
-            max_count = counts.most_common(1)[0][1]
-            majority = [outcome for outcome, c in counts.items() if c == max_count]
-            if len(majority) == 1:
-                majority_outcome = majority[0]
-                disagreeing = [sdk for sdk, o in executed.items() if o != majority_outcome]
-            else:
-                majority_outcome = None  # tie: no majority, everyone disagrees
-                disagreeing = list(executed.keys())
-
-            self.consistency_report.append(
-                {
-                    "scenario": scenario_name,
-                    "outcomes": dict(executed),
-                    "majority": majority_outcome,
-                    "disagreeing": disagreeing,
+            per_sdk = self.step_observations.get(scenario_name, {})
+            step_indexes = sorted({i for sdk in executed for i in per_sdk.get(sdk, {})})
+            for step_index in step_indexes:
+                observed = {
+                    sdk: per_sdk[sdk][step_index][1]
+                    for sdk in executed
+                    if step_index in per_sdk.get(sdk, {})
                 }
-            )
-            for sdk in disagreeing:
-                self.consistency_failures.setdefault(sdk, []).append(scenario_name)
+                if len(observed) < 2:
+                    continue
+                self.consistency_comparisons += 1
+                if len(set(observed.values())) <= 1:
+                    continue
+                action = next(per_sdk[sdk][step_index][0] for sdk in observed)
+                majority_obs, disagreeing = self._majority(observed)
+                self.consistency_report.append(
+                    {
+                        "kind": "observation",
+                        "scenario": scenario_name,
+                        "step": step_index,
+                        "action": action,
+                        "observations": {sdk: json.loads(obs) for sdk, obs in observed.items()},
+                        "majority": json.loads(majority_obs) if majority_obs is not None else None,
+                        "disagreeing": disagreeing,
+                    }
+                )
+                label = f"{scenario_name} [step {step_index} {action}]"
+                for sdk in disagreeing:
+                    if label not in self.consistency_failures.get(sdk, []):
+                        self.consistency_failures.setdefault(sdk, []).append(label)
 
     def generate_report(self, output_file: str, failed_sdks: List[str] = None) -> int:
         if failed_sdks is None:
             failed_sdks = []
 
         self.check_cross_sdk_consistency()
+        # With 2+ SDKs the consistency check is part of the verdict; if it made
+        # zero comparisons (e.g. every scenario skipped on all but one SDK) the
+        # cross-SDK guarantee was never checked, which must not read as "agree".
+        consistency_unchecked = len(self.sdks) >= 2 and self.consistency_comparisons == 0
 
         total_tests = len(self.results)
         sdk_stats: Dict[str, Dict[str, Any]] = {}
@@ -699,11 +1154,14 @@ class TestOrchestrator:
             failed = 0
             errors = 0
             skipped = 0
+            passthrough_skipped = 0
 
             for scenario_result in self.results:
                 sdk_result = scenario_result["sdks"].get(sdk_name, {})
                 if sdk_result.get("skipped"):
                     skipped += 1
+                    if sdk_result.get("passthrough"):
+                        passthrough_skipped += 1
                 elif "error" in sdk_result:
                     errors += 1
                 elif sdk_result.get("passed"):
@@ -724,12 +1182,15 @@ class TestOrchestrator:
                 "failed": failed,
                 "errors": errors,
                 "skipped": skipped,
+                "passthrough_skipped": passthrough_skipped,
                 "tested": tested,
                 "total": total_tests,
                 "pass_rate": (passed / tested * 100) if tested > 0 else 0.0,
                 "consistency_failed": consistency_failed,
+                "consistency_unchecked": consistency_unchecked,
                 "capabilities_failed": capabilities_failed,
                 "capabilities_error": self.capabilities_fetch_failed.get(sdk_name),
+                "capability_policy_violations": list(self.capability_policy_violations.get(sdk_name, [])),
                 "no_tests_run": no_tests_run,
             }
 
@@ -742,12 +1203,15 @@ class TestOrchestrator:
                 "failed": 0,
                 "errors": total_tests,
                 "skipped": 0,
+                "passthrough_skipped": 0,
                 "tested": total_tests,
                 "total": total_tests,
                 "pass_rate": 0.0,
                 "consistency_failed": [],
+                "consistency_unchecked": False,
                 "capabilities_failed": False,
                 "capabilities_error": None,
+                "capability_policy_violations": [],
                 "no_tests_run": False,
                 "service_failed": True,
             }
@@ -756,17 +1220,28 @@ class TestOrchestrator:
             return bool(
                 stats.get("service_failed")
                 or stats.get("capabilities_failed")
+                or stats.get("capability_policy_violations")
                 or stats.get("no_tests_run")
                 or stats.get("consistency_failed")
+                or stats.get("consistency_unchecked")
                 or stats["failed"] > 0
                 or stats["errors"] > 0
             )
 
-        report = {"total_scenarios": total_tests, "sdk_stats": sdk_stats, "results": self.results}
+        report = {
+            "total_scenarios": total_tests,
+            "wrapper_skip_enabled": self.allow_wrapper_skip,
+            "consistency_comparisons": self.consistency_comparisons,
+            "sdk_stats": sdk_stats,
+            "results": self.results,
+        }
         if self.consistency_report:
             report["cross_sdk_consistency"] = self.consistency_report
+        output_dir = os.path.dirname(output_file)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         with open(output_file, "w") as out:
-            json.dump(report, out, indent=2)
+            json.dump(report, out, indent=2, default=describe)
 
         print(f"\n{'=' * 60}")
         print(f"{'=' * 60}")
@@ -807,16 +1282,28 @@ class TestOrchestrator:
                 if stats["consistency_failed"]
                 else ""
             )
+            policy_info = (
+                f", {len(stats['capability_policy_violations'])} capability policy violation(s)"
+                if stats["capability_policy_violations"]
+                else ""
+            )
             print(
                 f"  {sdk_name:20} {status:8} "
                 f"({stats['passed']}/{stats['tested']} tested{skipped_info}, "
-                f"{stats['pass_rate']:.1f}%{consistency_info})"
+                f"{stats['pass_rate']:.1f}%{consistency_info}{policy_info})"
             )
 
         print(f"{'=' * 60}")
 
-        # Per-SDK skip counts with reasons, so the report distinguishes genuine
-        # unsupported-capability skips from wrapper pass-through skips (and from
+        if self.capability_policy_violations:
+            print("\nCapability policy violations:")
+            print(f"{'-' * 60}")
+            for sdk_name in sorted(self.capability_policy_violations):
+                for violation in self.capability_policy_violations[sdk_name]:
+                    print(f"  {sdk_name}: {violation}")
+
+        # Per-SDK skip counts with reasons, so the report distinguishes reviewed
+        # capability exceptions from opt-in wrapper pass-through skips (and from
         # skips caused by a capabilities fetch failure, surfaced above).
         skip_reasons_by_sdk: Dict[str, Dict[str, int]] = {}
         skipped_scenarios: Dict[str, List[str]] = {}
@@ -841,24 +1328,40 @@ class TestOrchestrator:
                 for reason, count in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])):
                     print(f"    - {count}x {reason}")
 
+        if self.allow_wrapper_skip:
+            print(
+                f"\n{Colors.YELLOW}NOTE{Colors.RESET}: wrapper pass-through skipping was enabled "
+                f"(--wrapper-skip); pass-through scenarios were not run against the wrappers."
+            )
+
         if self.consistency_report:
             print("\nCross-SDK consistency:")
             print(f"{'-' * 60}")
             for entry in self.consistency_report:
-                print(f"  {entry['scenario']}")
-                outcome_str = ", ".join(
-                    f"{sdk}={outcome}" for sdk, outcome in sorted(entry["outcomes"].items())
-                )
-                print(f"    outcomes: {outcome_str}")
+                if entry.get("kind") == "observation":
+                    print(f"  {entry['scenario']} [step {entry['step']} {entry['action']}]")
+                    for sdk, obs in sorted(entry["observations"].items()):
+                        print(f"    {sdk}: {json.dumps(obs, sort_keys=True)}")
+                else:
+                    print(f"  {entry['scenario']}")
+                    outcome_str = ", ".join(
+                        f"{sdk}={outcome}" for sdk, outcome in sorted(entry["outcomes"].items())
+                    )
+                    print(f"    outcomes: {outcome_str}")
                 if entry["majority"] is None:
                     print(f"    {Colors.RED}no majority (tie){Colors.RESET} - all disagreeing")
                 else:
-                    print(
-                        f"    majority={entry['majority']}, "
-                        f"{Colors.RED}disagreeing: {', '.join(entry['disagreeing'])}{Colors.RESET}"
-                    )
+                    print(f"    {Colors.RED}disagreeing: {', '.join(entry['disagreeing'])}{Colors.RESET}")
+        elif consistency_unchecked:
+            print(
+                f"\nCross-SDK consistency: {Colors.RED}NOT CHECKED{Colors.RESET} "
+                f"(0 comparisons across {len(self.sdks)} SDKs - no scenario ran on 2+ SDKs)"
+            )
         elif len(self.sdks) > 1:
-            print(f"\nCross-SDK consistency: {Colors.GREEN}all SDKs agree{Colors.RESET}")
+            print(
+                f"\nCross-SDK consistency: {Colors.GREEN}all SDKs agree{Colors.RESET} "
+                f"({self.consistency_comparisons} comparisons)"
+            )
 
         if skipped_scenarios:
             print("\nSkipped Scenarios:")
@@ -873,7 +1376,29 @@ class TestOrchestrator:
         return 0 if all_passed else 1
 
 
+# ---------------------------------------------------------------------------
+# Scenario loading (shared by main() and run-tests.sh)
+# ---------------------------------------------------------------------------
+
+
 def discover_sdks() -> Dict[str, str]:
+    # SDK_URLS_OVERRIDE ("name=url,name=url") points the runner at explicit
+    # URLs, e.g. published localhost ports for run-tests.sh --sdk runs.
+    override = os.getenv("SDK_URLS_OVERRIDE", "")
+    if override.strip():
+        sdks: Dict[str, str] = {}
+        for entry in override.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            if "=" not in entry:
+                print(f"Error: malformed SDK_URLS_OVERRIDE entry {entry!r}: expected 'name=url'")
+                sys.exit(1)
+            name, url = entry.split("=", 1)
+            sdks[name.strip()] = url.strip().rstrip("/")
+        if sdks:
+            return sdks
+
     sdk_services_env = os.getenv("SDK_SERVICES", "")
     if not sdk_services_env:
         print("Error: SDK_SERVICES environment variable is not set.")
@@ -884,14 +1409,52 @@ def discover_sdks() -> Dict[str, str]:
     return {name: f"http://{name}-sdk:3000" for name in sdk_names}
 
 
-def validate_and_filter_scenarios(all_scenarios: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+def validate_and_filter_scenarios(
+    all_scenarios: List[Dict[str, Any]],
+    known_capabilities=None,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     valid: List[Dict[str, Any]] = []
     excluded_empty: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
 
+    if not isinstance(all_scenarios, list):
+        return [], [], [{"index": 0, "name": "<file>", "reason": "scenario file must be a JSON array"}]
+
+    seen_names = set()
     for idx, scenario in enumerate(all_scenarios):
+        if not isinstance(scenario, dict):
+            invalid.append({"index": idx + 1, "name": f"scenario-{idx + 1}", "reason": "scenario is not an object"})
+            continue
         name = scenario.get("name", f"scenario-{idx + 1}")
         steps = scenario.get("steps")
+
+        if not isinstance(scenario.get("name"), str) or not scenario["name"].strip():
+            invalid.append({"index": idx + 1, "name": name, "reason": "missing 'name'"})
+            continue
+        if name in seen_names:
+            invalid.append({"index": idx + 1, "name": name, "reason": "duplicate scenario name"})
+            continue
+        seen_names.add(name)
+
+        if "requires" in scenario:
+            requires = scenario["requires"]
+            if not isinstance(requires, list) or not requires or not all(isinstance(c, str) for c in requires):
+                invalid.append(
+                    {"index": idx + 1, "name": name, "reason": "'requires' must be a non-empty list of capability names"}
+                )
+                continue
+            if known_capabilities is not None:
+                unknown = [c for c in requires if c not in known_capabilities]
+                if unknown:
+                    invalid.append(
+                        {
+                            "index": idx + 1,
+                            "name": name,
+                            "reason": f"'requires' names unknown capability {unknown} "
+                            f"(declare it in expected-capabilities.json)",
+                        }
+                    )
+                    continue
 
         if not isinstance(steps, list):
             invalid.append({"index": idx + 1, "name": name, "reason": "steps must be an array"})
@@ -904,36 +1467,19 @@ def validate_and_filter_scenarios(all_scenarios: List[Dict[str, Any]]) -> Tuple[
         scenario_invalid = False
         normalized_steps = []
         for step_idx, step in enumerate(steps):
+            reason = None
             if not isinstance(step, dict):
-                invalid.append(
-                    {
-                        "index": idx + 1,
-                        "name": name,
-                        "reason": f"step {step_idx} is not an object",
-                    }
-                )
-                scenario_invalid = True
-                break
-
-            if "action" not in step:
-                invalid.append(
-                    {
-                        "index": idx + 1,
-                        "name": name,
-                        "reason": f"step {step_idx} missing 'action'",
-                    }
-                )
-                scenario_invalid = True
-                break
-
-            if "expect" not in step:
-                invalid.append(
-                    {
-                        "index": idx + 1,
-                        "name": name,
-                        "reason": f"step {step_idx} missing 'expect'",
-                    }
-                )
+                reason = f"step {step_idx} is not an object"
+            elif "action" not in step:
+                reason = f"step {step_idx} missing 'action'"
+            elif "expect" not in step:
+                reason = f"step {step_idx} missing 'expect'"
+            elif not isinstance(step["expect"], dict):
+                reason = f"step {step_idx} 'expect' must be an object"
+            elif "events" in step["expect"] and not isinstance(step["expect"]["events"], list):
+                reason = f"step {step_idx} 'expect.events' must be an array"
+            if reason:
+                invalid.append({"index": idx + 1, "name": name, "reason": reason})
                 scenario_invalid = True
                 break
 
@@ -951,26 +1497,71 @@ def validate_and_filter_scenarios(all_scenarios: List[Dict[str, Any]]) -> Tuple[
     return valid, excluded_empty, invalid
 
 
-def main() -> None:
-    all_sdks = discover_sdks()
+def load_scenarios(
+    path: str, known_capabilities=None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Load and validate a scenario file. The one loader every entry point uses."""
+    try:
+        with open(path) as src:
+            all_scenarios = json.load(src)
+    except FileNotFoundError:
+        raise ConfigError(f"scenario file not found: {path}")
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"scenario file {path} is not valid JSON: {exc}")
+    return validate_and_filter_scenarios(all_scenarios, known_capabilities)
 
+
+def default_scenarios_path() -> str:
+    path = os.getenv("TEST_SCENARIOS_PATH", "/test_scenarios_complete.json")
+    if not os.path.exists(path):
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "test_scenarios_complete.json"
+        )
+    return path
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run cross-SDK tests")
     parser.add_argument("--sdk", type=str, help="Comma-separated list of SDKs to test (e.g., rust,go,javascript)")
-    parser.add_argument(
-        "--no-wrapper-skip",
+    skip_group = parser.add_mutually_exclusive_group()
+    skip_group.add_argument(
+        "--wrapper-skip",
+        dest="wrapper_skip",
         action="store_true",
-        help="Disable skipping wrapper pass-through scenarios (by default, pass-through scenarios are skipped)",
+        help=(
+            "Opt in to skipping scenarios a wrapper declares as pure pass-through to another SDK "
+            "under test. Fast local runs only: skipped scenarios prove nothing about the wrapper."
+        ),
+    )
+    skip_group.add_argument(
+        "--no-wrapper-skip",
+        dest="no_wrapper_skip",
+        action="store_true",
+        help="Run every scenario against every wrapper (the default; kept for compatibility)",
     )
     parser.add_argument(
         "--loose-error-match",
         action="store_true",
         help="Use relaxed error message matching instead of strict normalized equality",
     )
+    parser.add_argument("--scenarios", type=str, default=None, help="Scenario file (default: TEST_SCENARIOS_PATH or repo file)")
+    parser.add_argument(
+        "--capability-policy",
+        type=str,
+        default=os.getenv("CAPABILITY_POLICY_PATH", DEFAULT_POLICY_PATH),
+        help="Capability policy file (default: orchestrator/expected-capabilities.json)",
+    )
+    parser.add_argument("--report", type=str, default="/results/report.json", help="Where to write report.json")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output with full test details")
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> None:
+    args = build_arg_parser().parse_args(argv)
+    all_sdks = discover_sdks()
 
     if args.sdk:
-        sdk_names = [s.strip() for s in args.sdk.split(",")]
+        sdk_names = [s.strip() for s in args.sdk.split(",") if s.strip()]
         sdks = {name: all_sdks[name] for name in sdk_names if name in all_sdks}
         invalid_sdks = [name for name in sdk_names if name not in all_sdks]
         if invalid_sdks:
@@ -981,19 +1572,20 @@ def main() -> None:
     else:
         sdks = all_sdks
 
-    scenarios_path = os.getenv("TEST_SCENARIOS_PATH", "/test_scenarios_complete.json")
-    if not os.path.exists(scenarios_path):
-        scenarios_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_scenarios_complete.json")
+    try:
+        policy = load_capability_policy(args.capability_policy)
+        scenarios_path = args.scenarios or default_scenarios_path()
+        scenarios, excluded_empty, invalid = load_scenarios(scenarios_path, set(policy["capabilities"]))
+    except ConfigError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
 
-    with open(scenarios_path) as src:
-        all_scenarios = json.load(src)
-
-    scenarios, excluded_empty, invalid = validate_and_filter_scenarios(all_scenarios)
+    total_loaded = len(scenarios) + len(excluded_empty) + len(invalid)
 
     # CREATE_WITH_SCENARIO is coupled to run_scenario by exact name. If it was
     # renamed in the scenario file, the createContextWith coverage silently
     # reroutes to live-fetch; warn loudly so the rename is caught.
-    if not any(s.get("name") == CREATE_WITH_SCENARIO for s in all_scenarios):
+    if not any(s.get("name") == CREATE_WITH_SCENARIO for s in scenarios):
         print(
             f"{Colors.YELLOW}WARNING{Colors.RESET}: scenario "
             f"{CREATE_WITH_SCENARIO!r} not found — the createContextWith "
@@ -1002,7 +1594,7 @@ def main() -> None:
             f"the scenario was renamed."
         )
 
-    print(f"Loaded {len(all_scenarios)} total scenarios")
+    print(f"Loaded {total_loaded} total scenarios from {scenarios_path}")
     print(f"Running {len(scenarios)} executable scenarios")
     if excluded_empty:
         print(f"Excluded {len(excluded_empty)} empty scenarios (no steps)")
@@ -1013,13 +1605,16 @@ def main() -> None:
         if len(invalid) > 10:
             print(f"  ... and {len(invalid) - 10} more")
         sys.exit(1)
+    if args.wrapper_skip:
+        print(f"{Colors.YELLOW}Wrapper pass-through skipping ENABLED (--wrapper-skip){Colors.RESET}")
     print()
 
     orchestrator = TestOrchestrator(
         sdks,
         verbose=args.verbose,
-        allow_wrapper_skip=not args.no_wrapper_skip,
+        allow_wrapper_skip=args.wrapper_skip,
         loose_error_match=args.loose_error_match,
+        capability_policy=policy,
     )
 
     working_sdks, failed_sdks = orchestrator.wait_for_services()
@@ -1027,11 +1622,14 @@ def main() -> None:
         print("No SDK services available - all failed to start")
         sys.exit(1)
 
+    # Drive only the SDKs that came up, so a down SDK isn't run through every
+    # scenario at a 5s timeout each. The failed set is still passed to
+    # generate_report() below, so a down SDK fails the run rather than vanishing.
     orchestrator.sdks = working_sdks
     for scenario in scenarios:
         orchestrator.run_scenario(scenario)
 
-    exit_code = orchestrator.generate_report("/results/report.json", failed_sdks)
+    exit_code = orchestrator.generate_report(args.report, failed_sdks)
     sys.exit(exit_code)
 
 

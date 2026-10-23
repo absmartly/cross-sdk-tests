@@ -313,13 +313,6 @@ app.post('/context/:contextId/treatment', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (context.isFinalized()) {
-    return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
-  }
-
-  if (!context.isReady()) {
-    return res.json({ result: 0, events: [] });
-  }
 
   try {
     const variant = context.treatment(req.body.experimentName);
@@ -352,10 +345,6 @@ app.post('/context/:contextId/variableValue', (req, res) => {
 
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
-
-  if (!context.isReady()) {
-    return res.json({ result: req.body.defaultValue, events: [] });
-  }
 
   try {
     const value = context.variableValue(req.body.key, req.body.defaultValue);
@@ -481,10 +470,6 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (!context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
-
   try {
     const keys = context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -558,9 +543,6 @@ app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  if (!data.context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
 
   try {
     const experiments = data.context.experiments();

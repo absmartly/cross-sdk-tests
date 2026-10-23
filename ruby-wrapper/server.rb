@@ -10,6 +10,7 @@ require 'client'
 require 'client_config'
 require 'context_config'
 require 'context_data_provider'
+require 'default_context_data_provider'
 require 'context_publisher'
 require 'context_event_logger'
 
@@ -45,11 +46,11 @@ class EventCollector
     }
   end
 
+  # Serialization failures propagate: a dropped (nil) payload would let an
+  # event pass with its data silently missing.
   def deep_copy(obj)
     obj = convert_to_serializable(obj)
     JSON.parse(JSON.generate(obj))
-  rescue => e
-    nil
   end
 
   def convert_to_serializable(obj)
@@ -160,26 +161,31 @@ class FailingDataProvider < ContextDataProvider
   end
 end
 
+# Delays the SDK's own context-data fetch by throttle_ms. Fetch and
+# deserialization are delegated to the SDK's DefaultContextDataProvider over a
+# real Client, so a throttled context exercises the same HTTP + parse path as
+# a non-throttled one.
 class DeferredDataProvider < ContextDataProvider
-  def initialize(endpoint, throttle_ms)
-    @endpoint = endpoint
+  def initialize(client, throttle_ms)
+    @delegate = DefaultContextDataProvider.new(client)
     @throttle_ms = throttle_ms
   end
 
   def context_data
     sleep(@throttle_ms / 1000.0) if @throttle_ms > 0
-    begin
-      uri = URI(@endpoint)
-      response = Net::HTTP.get_response(uri)
-      data = JSON.parse(response.body, symbolize_names: false)
-      DataWrapper.new(data)
-    rescue => e
-      # Surface fetch/parse failures so the SDK's failed-load path runs
-      # (context becomes FAILED, readyError reports the error) instead of
-      # swallowing them into empty-but-ready data.
-      FailingDataWrapper.new(e)
-    end
+    @delegate.context_data
   end
+end
+
+# Return the caller's original JSON value for a unit when the SDK's stored
+# string is exactly its string form (so 125 / 125.75 round-trip as numbers);
+# otherwise return the SDK's string, so a string UID that merely looks numeric
+# (e.g. "123") is never retyped.
+def restore_unit_type(ctx_data, unit_type, sdk_value)
+  return nil if sdk_value.nil?
+  original = (ctx_data[:unitInputs] || {})[unit_type.to_s]
+  return original if original.is_a?(Numeric) && original.to_s == sdk_value.to_s
+  sdk_value
 end
 
 class CustomPublisher < ContextPublisher
@@ -245,8 +251,12 @@ get '/context_payload/:payload_id' do
 end
 
 get '/context_payload/:payload_id/context' do
-  data = $payload_store[params['payload_id']] || { experiments: [] }
+  # A never-stored payload id is a missing collector payload: answer 404 so the
+  # SDK's own fetch fails the context, instead of serving an empty-but-valid
+  # payload that would make it silently ready.
   content_type :json
+  data = $payload_store[params['payload_id']]
+  halt 404, { error: 'Payload not found' }.to_json if data.nil?
   data.to_json
 end
 
@@ -345,85 +355,32 @@ post '/context' do
   payload_throttle = options[:payloadThrottle] || 0
 
   if req_data[:data]
-    data_wrapper = DataWrapper.new(req_data[:data])
-    context = sdk.create_context_with(context_config, data_wrapper)
-    $contexts[context_id] = {
-      context: context,
-      eventCollector: event_collector,
-      publisher: publisher
-    }
-    content_type :json
-    return {
-      result: {
-        contextId: context_id,
-        ready: context.ready?,
-        failed: context.failed? || false,
-        finalized: context.closed?
-      },
-      events: event_collector.events
-    }.to_json
+    context = sdk.create_context_with(context_config, DataWrapper.new(req_data[:data]))
   elsif req_data[:failLoad]
-    failing_provider = FailingDataProvider.new
     failing_sdk_config = ABSmartlyConfig.new
-    failing_sdk_config.context_data_provider = failing_provider
+    failing_sdk_config.context_data_provider = FailingDataProvider.new
     failing_sdk_config.context_event_handler = publisher
     failing_sdk_config.context_event_logger = event_collector
-    failing_sdk = ABSmartly.new(failing_sdk_config)
-    context = failing_sdk.create_context(context_config)
-    50.times do
-      break unless event_collector.events.empty?
-      sleep 0.01
-    end
-    $contexts[context_id] = {
-      context: context,
-      eventCollector: event_collector,
-      publisher: publisher
-    }
-    content_type :json
-    return {
-      result: {
-        contextId: context_id,
-        ready: false,
-        failed: context.failed? || false,
-        finalized: context.closed?
-      },
-      events: event_collector.events
-    }.to_json
+    context = ABSmartly.new(failing_sdk_config).create_context(context_config)
   elsif payload_throttle.to_i > 0
-    deferred_provider = DeferredDataProvider.new(translated_endpoint, payload_throttle.to_i)
+    # Delay the SDK's own fetch; the context stays not-ready until it lands.
     deferred_sdk_config = ABSmartlyConfig.new
-    deferred_sdk_config.context_data_provider = deferred_provider
+    deferred_sdk_config.context_data_provider = DeferredDataProvider.new(client, payload_throttle.to_i)
     deferred_sdk_config.context_event_handler = publisher
     deferred_sdk_config.context_event_logger = event_collector
     deferred_sdk_config.client = client
-    deferred_sdk = ABSmartly.new(deferred_sdk_config)
-    context = deferred_sdk.create_context_async(context_config)
-    $contexts[context_id] = {
-      context: context,
-      eventCollector: event_collector
-    }
-    content_type :json
-    return {
-      result: {
-        contextId: context_id,
-        ready: context.ready?,
-        failed: context.failed? || false,
-        finalized: context.closed?
-      },
-      events: []
-    }.to_json
+    context = ABSmartly.new(deferred_sdk_config).create_context_async(context_config)
   else
+    # The SDK's Client fetches <endpoint>/context synchronously; the ready or
+    # error event is logged before create_context returns.
     context = sdk.create_context(context_config)
-    50.times do
-      break unless event_collector.events.empty?
-      sleep 0.01
-    end
   end
 
   $contexts[context_id] = {
     context: context,
     eventCollector: event_collector,
-    publisher: publisher
+    publisher: publisher,
+    unitInputs: req_data[:units].transform_keys(&:to_s)
   }
 
   content_type :json
@@ -434,7 +391,7 @@ post '/context' do
       failed: context.failed? || false,
       finalized: context.closed?
     },
-    events: event_collector.events
+    events: event_collector.events.dup
   }.to_json
 end
 
@@ -554,10 +511,6 @@ post '/context/:context_id/override' do
     content_type :json
     { result: nil, events: [] }.to_json
   rescue => e
-    if translate_error_message(e.message) == 'Context finalized'
-      content_type :json
-      return({ result: nil, events: [] }.to_json)
-    end
     halt 400, { error: translate_error_message(e.message) }.to_json
   end
 end
@@ -642,17 +595,9 @@ post '/context/:context_id/getUnits' do
   events_before = collector.events.length
 
   begin
-    raw_units = context.get_units
     units = {}
-    raw_units.each do |k, v|
-      val = v.to_s
-      if val.match?(/^\d+$/)
-        units[k.to_s] = val.to_i
-      elsif val.match?(/^\d+\.\d+$/)
-        units[k.to_s] = val.to_f
-      else
-        units[k.to_s] = val
-      end
+    context.get_units.each do |k, v|
+      units[k.to_s] = restore_unit_type(ctx_data, k, v)
     end
     new_events = collector.events[events_before..-1] || []
     content_type :json
@@ -800,6 +745,7 @@ post '/context/:context_id/setUnit' do
 
   begin
     context.set_unit(req_data[:unitType].to_sym, req_data[:uid].to_s)
+    (ctx_data[:unitInputs] ||= {})[req_data[:unitType].to_s] ||= req_data[:uid]
     new_events = collector.events[events_before..-1] || []
     content_type :json
     { result: nil, events: new_events }.to_json
@@ -825,15 +771,7 @@ post '/context/:context_id/getUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    result = context.get_unit(req_data[:unitType].to_sym)
-
-    if result
-      if result.to_s.match?(/^\d+\.\d+$/)
-        result = result.to_f
-      elsif result.to_s.match?(/^\d+$/)
-        result = result.to_i
-      end
-    end
+    result = restore_unit_type(ctx_data, req_data[:unitType], context.get_unit(req_data[:unitType].to_sym))
 
     new_events = collector.events[events_before..-1] || []
     content_type :json
@@ -1013,10 +951,6 @@ post '/context/:context_id/setOverride' do
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    if translate_error_message(e.message) == 'Context finalized'
-      content_type :json
-      return({ result: nil, events: [] }.to_json)
-    end
     halt 400, { error: translate_error_message(e.message) }.to_json
   end
 end
