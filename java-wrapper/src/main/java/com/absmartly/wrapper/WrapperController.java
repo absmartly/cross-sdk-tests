@@ -569,13 +569,6 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
-        // The java SDK's getTreatment returns 0 (not an error) after close();
-        // scenario 189 requires an error once the context is finalized.
-        if (data.getContext().isClosed()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", "Context finalized"));
-        }
-
         try {
             int eventsBefore = data.getEventCollector().getEvents().size();
 

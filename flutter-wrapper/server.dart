@@ -42,7 +42,7 @@ class EventCollector implements ContextEventLogger {
       case EventType.goal:
         eventType = 'goal';
         break;
-      case EventType.close:
+      case EventType.finalize:
         eventType = 'finalize';
         break;
     }
@@ -657,6 +657,12 @@ Future<void> startServer() async {
         );
       }
 
+      // The Treatment widget waits for readiness instead of reading; a direct
+      // read before ready goes through the SDK so its not-ready error surfaces.
+      if (!ctxData.context.isReady()) {
+        ctxData.context.getTreatment(body['experimentName'] as String);
+      }
+
       final widgetRequest = WidgetTestRequest(
         type: WidgetTestRequestType.treatment,
         experimentName: body['experimentName'] as String,
@@ -716,10 +722,7 @@ Future<void> startServer() async {
       final eventsBefore = ctxData.eventCollector.events.length;
 
       if (!ctxData.context.isReady()) {
-        return shelf.Response.ok(
-          jsonEncode({'result': body['defaultValue'], 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
+        ctxData.context.getVariableValue(body['key'] as String, body['defaultValue']);
       }
 
       final widgetRequest = WidgetTestRequest(

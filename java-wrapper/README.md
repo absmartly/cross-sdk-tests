@@ -27,7 +27,7 @@ worktree) without touching the default CI path:
 
    `SDK_SOURCE_DIR` defaults to `java-sdk` (the Dockerfile's `ARG`), so the override
    only changes which sibling directory gets `COPY`'d into the build — the wrapper's
-   own `build.gradle` dependency version (`core-api:1.6.3`) does not need to change,
+   own `build.gradle` dependency version (`core-api:2.0.0`) does not need to change,
    since `mavenLocal()` is checked first and the build installs the jar under that
    same coordinate.
 3. Run the orchestrator as usual (see `README_HOW_TO_RUN.md`); only the `java-sdk`

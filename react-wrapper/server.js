@@ -301,13 +301,12 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   const eventsBefore = eventCollector.events.length;
   const experimentName = req.body.experimentName;
 
-  if (context.isFinalized()) {
-    return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
-  }
-
-  // No wrapper-side not-ready shortcut: when the context is not ready the SDK's
-  // <Treatment> renders its loading state (first child) itself.
+  // No wrapper-side not-ready/finalized shortcut: when the context is not ready
+  // the SDK's <Treatment> renders its loading state, which performs no SDK read.
   try {
+    if (context.isFinalized()) {
+      context.treatment(experimentName);
+    }
     // Each TreatmentVariant child contains a marker element that exists in the
     // committed DOM only if the SDK's <Treatment> actually rendered that variant.
     // No default: if the SDK renders no variant child, that is an error, not variant 0.
@@ -324,11 +323,24 @@ app.post('/context/:contextId/treatment', async (req, res) => {
 
     const container = await renderCommitted(React.createElement(Treatment, {
       name: experimentName,
-      context: context
+      context: context,
+      loadingComponent: React.createElement('span', { 'data-loading': 'true' })
     }, ...variants));
 
     const rendered = Array.from(container.committedSnapshot.querySelectorAll('[data-variant]'))
       .map((el) => Number(el.getAttribute('data-variant')));
+    const renderedLoading = container.committedSnapshot.querySelector('[data-loading]') !== null;
+
+    if (renderedLoading) {
+      // <Treatment> rendered its loading state, which performs no SDK read.
+      // Ask the SDK for the treatment so its own not-ready error reaches the
+      // harness; a loading state on a ready context is an error.
+      if (context.isReady()) {
+        throw new Error('React SDK <Treatment> rendered its loading state for a ready context');
+      }
+      const variant = context.treatment(experimentName);
+      return res.json({ result: variant, events: eventCollector.events.slice(eventsBefore) });
+    }
 
     if (rendered.length !== 1) {
       return res.status(500).json({
@@ -352,13 +364,13 @@ app.post('/context/:contextId/peek', async (req, res) => {
   const experimentName = req.body.experimentName;
 
   try {
-    await context.ready();
-
     let capturedVariant = null;
+    let capturedLoading = false;
 
     const PeekWrapper = () => {
-      const { variant } = useTreatment(experimentName, true);
+      const { variant, loading } = useTreatment(experimentName, true);
       capturedVariant = variant;
+      capturedLoading = loading;
       return React.createElement('span', { 'data-variant': variant }, `Variant ${variant}`);
     };
 
@@ -367,6 +379,12 @@ app.post('/context/:contextId/peek', async (req, res) => {
         React.createElement(PeekWrapper)
       )
     );
+
+    if (capturedLoading && !context.isReady()) {
+      // useTreatment performs no SDK read while loading; ask the SDK so its
+      // own not-ready error reaches the harness.
+      capturedVariant = context.peek(experimentName);
+    }
 
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: capturedVariant, events: newEvents });
@@ -413,10 +431,6 @@ app.post('/context/:contextId/variableValue', (req, res) => {
 
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
-
-  if (!context.isReady()) {
-    return res.json({ result: req.body.defaultValue, events: [] });
-  }
 
   try {
     const value = context.variableValue(req.body.key, req.body.defaultValue);
@@ -494,10 +508,6 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (!context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
-
   try {
     const keys = context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -571,9 +581,6 @@ app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  if (!data.context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
 
   try {
     const experiments = data.context.experiments();

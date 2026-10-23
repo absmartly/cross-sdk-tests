@@ -99,15 +99,15 @@ class CustomPublisher extends absmartly.ContextPublisher {
 const contexts = new Map();
 
 // The SDK's <Treatment> renders the 'loading' slot while the context is not
-// ready. An app shows control there, so that render reports variant 0. The
-// loading slot rendering for a ready context is a component bug, not variant 0.
+// ready; that render performs no SDK read. Ask the SDK itself for the
+// treatment so its own not-ready error reaches the harness (no fabricated 0).
 const LOADING_SLOT = 'loading';
-function loadingSlotVariant(slot, context) {
+function loadingSlotVariant(slot, context, experimentName) {
   if (slot !== LOADING_SLOT) return slot;
   if (context.isReady()) {
     throw new Error('SDK <Treatment> rendered its loading slot for a ready context');
   }
-  return 0;
+  return context.treatment(experimentName);
 }
 
 const payloadStore = {};
@@ -312,7 +312,8 @@ app.post('/context/:contextId/treatment', async (req, res) => {
   const experimentName = req.body.experimentName;
 
   if (context.isFinalized()) {
-    return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
+    // Let the SDK raise its own finalized error.
+    try { context.treatment(experimentName); } catch (e) { return res.status(400).json({ error: e.message }); }
   }
 
   // No wrapper-side not-ready shortcut: the SDK's <Treatment> renders its
@@ -361,7 +362,7 @@ app.post('/context/:contextId/treatment', async (req, res) => {
         error: `Vue3 SDK <Treatment> rendered ${distinct.length} distinct variant slots (expected exactly 1): [${distinct.join(', ')}]`
       });
     }
-    const variant = loadingSlotVariant(distinct[0], context);
+    const variant = loadingSlotVariant(distinct[0], context, experimentName);
 
     const newEvents = eventCollector.events.slice(eventsBefore);
     res.json({ result: variant, events: newEvents });
@@ -425,10 +426,6 @@ app.post('/context/:contextId/variableValue', (req, res) => {
 
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
-
-  if (!context.isReady()) {
-    return res.json({ result: req.body.defaultValue, events: [] });
-  }
 
   try {
     const value = context.variableValue(req.body.key, req.body.defaultValue);
@@ -506,10 +503,6 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (!context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
-
   try {
     const keys = context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -583,9 +576,6 @@ app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  if (!data.context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
 
   try {
     const experiments = data.context.experiments();

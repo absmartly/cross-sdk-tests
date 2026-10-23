@@ -88,7 +88,7 @@ class EventCollector implements ContextEventLogger {
       case EventType.goal:
         eventType = 'goal';
         break;
-      case EventType.close:
+      case EventType.finalize:
         eventType = 'finalize';
         break;
     }

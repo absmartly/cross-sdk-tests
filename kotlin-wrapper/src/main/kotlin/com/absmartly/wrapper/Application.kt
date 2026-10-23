@@ -424,12 +424,6 @@ fun Application.configureRouting() {
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            // The kotlin SDK's getTreatment returns 0 (not an error) after
-            // close(); scenario 189 requires an error once finalized.
-            if (wrapper.context.isClosed) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Context finalized"))
-                return@post
-            }
             try {
                 val request = call.receive<Map<String, Any>>()
                 val eventsBefore = wrapper.eventCollector.getEvents().size

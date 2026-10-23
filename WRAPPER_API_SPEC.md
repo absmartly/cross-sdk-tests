@@ -703,6 +703,11 @@ these errors natively, the wrapper must implement the check itself:
 3. **Unit UID rules** — `setUnit` with a blank UID must return 400 with
    `UID must not be blank`; re-setting an already-set unit type to a different
    value must return 400 with `Unit '<type>' UID already set.`
+4. **Reads before ready** — `treatment`, `peek`, `variableValue`,
+   `peekVariableValue`, `variableKeys`, `experiments` and custom-field reads on
+   a context that is not yet ready must return the SDK's own not-ready error
+   (`ABsmartly Context is not yet ready.`) as a 400. Wrappers must not check
+   readiness themselves and substitute defaults (`0`, the default value, `[]`).
 
 ### Context Lifecycle
 

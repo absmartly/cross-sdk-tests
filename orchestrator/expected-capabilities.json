@@ -71,11 +71,8 @@
       }
     },
     "java": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
-      "unsupported": {
-        "holdouts": "wrapper advertises this from a behavioral self-test, which fails against the pinned java-sdk branch (no holdout resolution)",
-        "holdout_arms": "behavioral self-test short-circuits to false without the holdouts foundation on the pinned java-sdk branch"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
     },
     "kotlin": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],

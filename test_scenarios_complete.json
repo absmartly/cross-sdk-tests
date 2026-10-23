@@ -18574,8 +18574,8 @@
     ]
   },
   {
-    "name": "201 - Not Ready - Read Methods Return Defaults",
-    "description": "treatment() called before context is ready must return 0 without throwing; variableValue() must return the provided default",
+    "name": "201 - Not Ready - Read Methods Throw",
+    "description": "Read methods (treatment, peek, variableValue, peekVariableValue, variableKeys, experiments) called before the context is ready must raise the SDK not-ready error (\"ABsmartly Context is not yet ready.\") and must not queue exposures",
     "contextData": {
       "experiments": [
         {
@@ -18644,7 +18644,17 @@
           "experimentName": "exp_test_ab"
         },
         "expect": {
-          "result": 0,
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18655,7 +18665,18 @@
           "defaultValue": "blue"
         },
         "expect": {
-          "result": "blue",
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "banner.color",
+          "defaultValue": "blue"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18663,7 +18684,7 @@
         "action": "variableKeys",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18671,7 +18692,7 @@
         "action": "experiments",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
           "events": []
         }
       }

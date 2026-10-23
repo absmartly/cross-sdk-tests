@@ -286,6 +286,28 @@ int main() {
     // Endpoint-mode contexts fetch from this same server and finalize/publish
     // may block on HTTP, so leave headroom beyond the default thread count.
     svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
+    // SDK lifecycle errors (not ready / finalized) thrown from handlers without
+    // their own try/catch are surfaced as 400 with the SDK's message.
+    svr.set_exception_handler([](const httplib::Request&, httplib::Response& res,
+                                 std::exception_ptr ep) {
+        try {
+            std::rethrow_exception(ep);
+        } catch (const absmartly::ContextNotReadyException& e) {
+            res.status = 400;
+            res.set_content(make_error_response(e.what(), "NOT_READY").dump(),
+                            "application/json");
+        } catch (const absmartly::ContextFinalizedException& e) {
+            res.status = 400;
+            res.set_content(make_error_response(e.what(), "FINALIZED").dump(),
+                            "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(make_error_response(e.what(), "INTERNAL_ERROR").dump(),
+                            "application/json");
+        } catch (...) {
+            res.status = 500;
+        }
+    });
 
     svr.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         json resp = {{"status", "healthy"}, {"sdk", "cpp"}, {"version", "1.0.0"}};
@@ -1275,15 +1297,22 @@ int main() {
                      return;
                  }
 
-                 auto var_keys = entry->context->variable_keys();
-                 json result = json::array();
-                 for (const auto& [key, _] : var_keys) {
-                     result.push_back(key);
-                 }
+                 try {
+                     auto var_keys = entry->context->variable_keys();
+                     json result = json::array();
+                     for (const auto& [key, _] : var_keys) {
+                         result.push_back(key);
+                     }
 
-                 std::vector<Event> empty;
-                 json resp = make_response(result, empty);
-                 res.set_content(resp.dump(), "application/json");
+                     std::vector<Event> empty;
+                     json resp = make_response(result, empty);
+                     res.set_content(resp.dump(), "application/json");
+                 } catch (const std::exception& e) {
+                     res.status = 400;
+                     res.set_content(
+                         make_error_response(e.what(), "VARIABLE_KEYS_ERROR").dump(),
+                         "application/json");
+                 }
              });
 
     svr.Post(R"(/context/([^/]+)/customFieldKeys)",

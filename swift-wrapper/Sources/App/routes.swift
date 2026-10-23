@@ -84,7 +84,7 @@ class EventCollector: ContextEventLogger {
                 "data": convertGoalToDict(goal),
                 "timestamp": timestamp
             ]
-        case .close:
+        case .finalize:
             eventRecord = [
                 "type": "finalize",
                 "data": NSNull(),
@@ -598,7 +598,7 @@ func routes(_ app: VaporApplication) throws {
 
             if let attributes = request.attributes {
                 for (key, value) in attributes {
-                    context.setAttribute(name: key, value: JSON(value.value))
+                    do { try context.setAttribute(name: key, value: JSON(value.value)) } catch { return try sdkErrorResponse(error) }
                 }
             }
 
@@ -805,29 +805,10 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(SetUnitRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        // The swift SDK's setUnit() silently no-ops on a finalized context, so
-        // enforce the spec's "finalized => error" here (scenario 149).
-        if storage.context.isFinalized() {
-            let errorResult: [String: Any] = ["error": "Context finalized"]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
-
         let newUID = "\(request.uid.value)"
 
-        // The swift SDK's setUnit() silently no-ops (Logger.error only) on a
-        // blank UID, so enforce the spec's "blank => error" here (scenario 34).
-        // Trim to match the SDK's own whitespace handling.
-        if newUID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let errorResult: [String: Any] = ["error": "Unit '\(request.unitType)' UID must not be blank."]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
-
-        let existingUID = storage.context.getUnit(unitType: request.unitType)
-        if let existing = existingUID, existing != newUID {
-            let errorResult: [String: Any] = ["error": "Unit '\(request.unitType)' UID already set."]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
-        storage.context.setUnit(unitType: request.unitType, uid: newUID)
+        // The SDK enforces finalized / blank / already-set itself and throws.
+        do { try storage.context.setUnit(unitType: request.unitType, uid: newUID) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -888,14 +869,7 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(AttributeRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        // The swift SDK's setAttribute() silently no-ops on a finalized context,
-        // so enforce the spec's "finalized => error" here (scenarios 148, 188).
-        if storage.context.isFinalized() {
-            let errorResult: [String: Any] = ["error": "Context finalized"]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
-
-        storage.context.setAttribute(name: request.name, value: JSON(request.value.value))
+        do { try storage.context.setAttribute(name: request.name, value: JSON(request.value.value)) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -951,24 +925,18 @@ func routes(_ app: VaporApplication) throws {
         // The swift SDK's getTreatment() guards neither a finalized nor a
         // not-ready context (unlike python's, which returns 0 internally). So:
         //  - finalized  => spec requires an error (scenario 189)
-        //  - not ready  => spec requires result 0 with NO events (scenario 201).
-        //                  Calling getTreatment here would queue a spurious
-        //                  exposure, so short-circuit to the SDK's would-be
-        //                  default (0) without invoking it.
+        //  - not ready  => the SDK throws "not yet ready"; it is returned as the
+        //                  normal 400 error below (scenario 201).
         // A ready, non-finalized context is delegated straight to the SDK.
         if storage.context.isFinalized() {
             let errorResult: [String: Any] = ["error": "Context finalized"]
             return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
         }
 
-        if !storage.context.isReady() {
-            let result: [String: Any] = ["result": 0, "events": [Any]()]
-            return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: result, options: [])))
-        }
-
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant = storage.context.getTreatment(request.experimentName)
+        let variant: Int
+        do { variant = try storage.context.getTreatment(request.experimentName) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -992,7 +960,8 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(PeekRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let variant = storage.context.peekTreatment(request.experimentName)
+        let variant: Int
+        do { variant = try storage.context.peekTreatment(request.experimentName) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -1018,7 +987,8 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = storage.context.getVariableValue(request.key, defaultValue: defaultJSON)
+        let value: JSON?
+        do { value = try storage.context.getVariableValue(request.key, defaultValue: defaultJSON) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -1050,7 +1020,8 @@ func routes(_ app: VaporApplication) throws {
         let eventsBefore = storage.eventCollector.events.count
 
         let defaultJSON = request.defaultValue.map { JSON($0.value) }
-        let value = storage.context.peekVariableValue(request.key, defaultValue: defaultJSON)
+        let value: JSON?
+        do { value = try storage.context.peekVariableValue(request.key, defaultValue: defaultJSON) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
 
@@ -1081,13 +1052,6 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(TrackRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        // The swift SDK's track() silently no-ops on a finalized context, so
-        // enforce the spec's "finalized => error" here (scenario 147).
-        if storage.context.isFinalized() {
-            let errorResult: [String: Any] = ["error": "Context finalized"]
-            return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
-        }
-
         var props: [String: JSON]? = nil
         if let properties = request.properties {
             if let dict = properties.value as? [String: Any] {
@@ -1102,7 +1066,7 @@ func routes(_ app: VaporApplication) throws {
             }
         }
 
-        storage.context.track(request.goalName, properties: props)
+        do { try storage.context.track(request.goalName, properties: props) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -1152,7 +1116,7 @@ func routes(_ app: VaporApplication) throws {
 
         let request = try req.content.decode(CustomAssignmentRequest.self)
 
-        storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant)
+        do { try storage.context.setCustomAssignment(experimentName: request.experimentName, variant: request.variant) } catch { return try sdkErrorResponse(error) }
 
         let result: [String: Any] = [
             "result": NSNull(),
@@ -1178,7 +1142,8 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(CustomFieldValueRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let value = storage.context.getCustomFieldValue(experimentName: request.experimentName, key: request.fieldName)
+        let value: Any?
+        do { value = try storage.context.getCustomFieldValue(experimentName: request.experimentName, key: request.fieldName) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -1197,7 +1162,8 @@ func routes(_ app: VaporApplication) throws {
 
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = storage.context.getVariableKeys()
+        let keys: [String: [String]]
+        do { keys = try storage.context.getVariableKeys() } catch { return try sdkErrorResponse(error) }
         let keyList = Array(keys.keys)
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
@@ -1217,7 +1183,8 @@ func routes(_ app: VaporApplication) throws {
 
         let eventsBefore = storage.eventCollector.events.count
 
-        let keys = Array(storage.context.getCustomFieldKeys()).sorted()
+        let keys: [String]
+        do { keys = Array(try storage.context.getCustomFieldKeys()).sorted() } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -1242,7 +1209,8 @@ func routes(_ app: VaporApplication) throws {
         let request = try req.content.decode(CustomFieldValueTypeRequest.self)
         let eventsBefore = storage.eventCollector.events.count
 
-        let valueType = storage.context.getCustomFieldValueType(experimentName: request.experimentName, key: request.fieldName)
+        let valueType: String?
+        do { valueType = try storage.context.getCustomFieldValueType(experimentName: request.experimentName, key: request.fieldName) } catch { return try sdkErrorResponse(error) }
 
         let newEvents = Array(storage.eventCollector.events.suffix(from: eventsBefore))
         let result: [String: Any] = [
@@ -1323,7 +1291,8 @@ func routes(_ app: VaporApplication) throws {
             throw Abort(.notFound, reason: "Context not found")
         }
 
-        let experiments = storage.context.getExperiments()
+        let experiments: [String]
+        do { experiments = try storage.context.getExperiments() } catch { return try sdkErrorResponse(error) }
 
         let result: [String: Any] = [
             "result": experiments,
@@ -1379,7 +1348,8 @@ func routes(_ app: VaporApplication) throws {
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
         }
-        let keys = storage.context.getVariableKeys()
+        let keys: [String: [String]]
+        do { keys = try storage.context.getVariableKeys() } catch { return try sdkErrorResponse(error) }
         let response: [String: Any] = ["result": keys, "events": [] as [Any]]
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
     }
@@ -1389,7 +1359,8 @@ func routes(_ app: VaporApplication) throws {
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
         }
-        let keys = Array(storage.context.getCustomFieldKeys()).sorted()
+        let keys: [String]
+        do { keys = Array(try storage.context.getCustomFieldKeys()).sorted() } catch { return try sdkErrorResponse(error) }
         let response: [String: Any] = ["result": keys, "events": [] as [Any]]
         return try HTTPResponse(status: .ok, body: .init(data: JSONSerialization.data(withJSONObject: response, options: [])))
     }
@@ -1736,4 +1707,11 @@ struct ContextOptionsDTO: Codable {
     let publishDelay: TimeInterval?
     let refreshPeriod: TimeInterval?
     let payloadThrottle: Int?
+}
+
+/// SDK read methods throw (e.g. "ABsmartly Context is not yet ready.") instead
+/// of returning defaults; surface the SDK's message as the normal 400 error.
+func sdkErrorResponse(_ error: Error) throws -> HTTPResponse {
+    let errorResult: [String: Any] = ["error": error.localizedDescription]
+    return try HTTPResponse(status: .badRequest, body: .init(data: JSONSerialization.data(withJSONObject: errorResult, options: [])))
 }

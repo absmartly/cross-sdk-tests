@@ -172,9 +172,6 @@ defmodule ElixirWrapper.Router do
         ABSmartly.Context.is_finalized?(ctx) ->
           send_error(conn, 400, "Context finalized")
 
-        not ABSmartly.Context.is_ready?(ctx) ->
-          send_json(conn, 200, %{result: 0, events: []})
-
         true ->
           case ABSmartly.Context.treatment(ctx, experiment_name) do
             {:error, :finalized} ->
@@ -201,12 +198,8 @@ defmodule ElixirWrapper.Router do
   post "/context/:context_id/variableValue" do
     with_context_action(conn, fn {ctx, collector, eb} ->
       %{"key" => key, "defaultValue" => default_value} = conn.body_params
-      if not ABSmartly.Context.is_ready?(ctx) do
-        send_json(conn, 200, %{result: default_value, events: []})
-      else
-        result = ABSmartly.Context.variable_value(ctx, key, default_value)
-        send_action_response(conn, result, collector, eb)
-      end
+      result = ABSmartly.Context.variable_value(ctx, key, default_value)
+      send_action_response(conn, result, collector, eb)
     end)
   end
 
@@ -220,11 +213,9 @@ defmodule ElixirWrapper.Router do
 
   post "/context/:context_id/variableKeys" do
     with_context_action(conn, fn {ctx, collector, eb} ->
-      if not ABSmartly.Context.is_ready?(ctx) do
-        send_json(conn, 200, %{result: [], events: []})
-      else
-        result = ABSmartly.Context.variable_keys(ctx) |> Map.keys()
-        send_action_response(conn, result, collector, eb)
+      case ABSmartly.Context.variable_keys(ctx) do
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+        keys -> send_action_response(conn, Map.keys(keys), collector, eb)
       end
     end)
   end
@@ -345,8 +336,10 @@ defmodule ElixirWrapper.Router do
 
   get "/context/:context_id/experiments" do
     with_context_action(conn, fn {ctx, _collector, _eb} ->
-      result = ABSmartly.Context.experiments(ctx)
-      send_json(conn, 200, %{result: result, events: []})
+      case ABSmartly.Context.experiments(ctx) do
+        {:error, reason} -> send_error(conn, 400, error_message(reason))
+        result -> send_json(conn, 200, %{result: result, events: []})
+      end
     end)
   end
 
@@ -727,6 +720,12 @@ defmodule ElixirWrapper.Router do
       {:error, _} ->
         send_error(conn, 404, "Context not found")
     end
+  end
+
+  # SDK read methods return {:error, message} (e.g. "ABsmartly Context is not
+  # yet ready.") instead of raising; surface it as the normal 400 error.
+  defp send_action_response(conn, {:error, reason}, _collector, _events_before) do
+    send_error(conn, 400, error_message(reason))
   end
 
   defp send_action_response(conn, result, collector, events_before) do

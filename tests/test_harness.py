@@ -278,7 +278,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["javascript"])
+        self.assertEqual(holders, ["java", "javascript"])
         for sdk, entry in policy["sdks"].items():
             for cap, reason in entry["unsupported"].items():
                 self.assertTrue(reason.strip(), f"{sdk}.{cap} needs a reason")

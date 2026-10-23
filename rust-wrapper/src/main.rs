@@ -73,11 +73,16 @@ fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher 
             tokio::runtime::Handle::current().block_on(async {
                 sdk.create_context(HashMap::<String, String>::new(), None)
                     .await
-                    .map(|c| c.data().clone())
                     .map_err(|e| format!("Refresh fetch failed: {}", e))
+                    .and_then(|c| c.data().map(|d| d.clone()))
             })
         })
     })
+}
+
+/// SDK errors become the wrapper's normal 400 error response.
+fn sdk_err(e: String) -> (StatusCode, Json<Value>) {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": e})))
 }
 
 fn now_millis() -> i64 {
@@ -561,7 +566,8 @@ async fn create_context_handler(
                 let fetched = sdk
                     .create_context(HashMap::<String, String>::new(), None)
                     .await
-                    .map(|c| c.data().clone());
+                    .map_err(|e| e.to_string())
+                    .and_then(|c| c.data().map(|d| d.clone()));
                 let mut context = context_data_clone.context.lock().unwrap();
                 match fetched {
                     Ok(data) => context.become_ready(data),
@@ -774,18 +780,13 @@ async fn treatment_handler(
         ));
     }
 
-    let (variant, is_ready) = {
+    let variant = {
         let mut context = ctx_data.context.lock().unwrap();
-        let ready = context.is_ready();
-        let v = if ready { context.treatment(&req.experiment_name) } else { 0 };
-        (v, ready)
-    };
+        context.treatment(&req.experiment_name)
+    }
+    .map_err(sdk_err)?;
 
-    let new_events = if is_ready {
-        ctx_data.event_collector.get_events_since(events_before)
-    } else {
-        vec![]
-    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
 
     Ok(Json(ApiResponse {
         result: Value::Number(variant.into()),
@@ -805,7 +806,8 @@ async fn peek_handler(
     let variant = {
         let mut context = ctx_data.context.lock().unwrap();
         context.peek(&req.experiment_name)
-    };
+    }
+    .map_err(sdk_err)?;
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
 
@@ -824,22 +826,13 @@ async fn variable_value_handler(
     let ctx_data = get_context(&state, &context_id)?;
     let events_before = ctx_data.event_collector.len();
 
-    let (value, is_ready) = {
+    let value = {
         let mut context = ctx_data.context.lock().unwrap();
-        let ready = context.is_ready();
-        let v = if ready {
-            context.variable_value(&req.key, req.default_value.clone())
-        } else {
-            req.default_value
-        };
-        (v, ready)
-    };
+        context.variable_value(&req.key, req.default_value)
+    }
+    .map_err(sdk_err)?;
 
-    let new_events = if is_ready {
-        ctx_data.event_collector.get_events_since(events_before)
-    } else {
-        vec![]
-    };
+    let new_events = ctx_data.event_collector.get_events_since(events_before);
 
     Ok(Json(ApiResponse {
         result: value,
@@ -859,7 +852,8 @@ async fn peek_variable_value_handler(
     let value = {
         let mut context = ctx_data.context.lock().unwrap();
         context.peek_variable_value(&req.key, req.default_value)
-    };
+    }
+    .map_err(sdk_err)?;
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
 
@@ -964,7 +958,8 @@ async fn custom_field_value_handler(
     let value = {
         let context = ctx_data.context.lock().unwrap();
         context.custom_field_value(&req.experiment_name, &req.field_name)
-    };
+    }
+    .map_err(sdk_err)?;
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
 
@@ -984,15 +979,9 @@ async fn variable_keys_handler(
 
     let keys = {
         let context = ctx_data.context.lock().unwrap();
-        if !context.is_ready() {
-            return Ok(Json(ApiResponse {
-                result: Value::Array(vec![]),
-                events: vec![],
-                error: None,
-            }));
-        }
         context.variable_keys()
-    };
+    }
+    .map_err(sdk_err)?;
 
     let keys_list: Vec<String> = keys.keys().cloned().collect();
 
@@ -1015,7 +1004,8 @@ async fn custom_field_keys_handler(
     let keys = {
         let context = ctx_data.context.lock().unwrap();
         context.custom_field_keys()
-    };
+    }
+    .map_err(sdk_err)?;
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
 
@@ -1045,7 +1035,8 @@ async fn custom_field_value_type_handler(
     let value_type = {
         let context = ctx_data.context.lock().unwrap();
         context.custom_field_value_type(&req.experiment_name, &req.field_name)
-    };
+    }
+    .map_err(sdk_err)?;
 
     let new_events = ctx_data.event_collector.get_events_since(events_before);
 
@@ -1136,15 +1127,9 @@ async fn experiments_handler(
 
     let experiments = {
         let context = ctx_data.context.lock().unwrap();
-        if !context.is_ready() {
-            return Ok(Json(ApiResponse {
-                result: Value::Array(vec![]),
-                events: vec![],
-                error: None,
-            }));
-        }
         context.experiments()
-    };
+    }
+    .map_err(sdk_err)?;
 
     Ok(Json(ApiResponse {
         result: serde_json::to_value(experiments).unwrap_or(Value::Array(vec![])),
@@ -1216,7 +1201,8 @@ async fn variable_keys_map_handler(
     let keys = {
         let context = ctx_data.context.lock().unwrap();
         context.variable_keys()
-    };
+    }
+    .map_err(sdk_err)?;
     let new_events = ctx_data.event_collector.get_events_since(events_before);
     Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Object(serde_json::Map::new())), events: new_events, error: None }))
 }
@@ -1230,7 +1216,8 @@ async fn global_custom_field_keys_handler(
     let keys = {
         let context = ctx_data.context.lock().unwrap();
         context.custom_field_keys()
-    };
+    }
+    .map_err(sdk_err)?;
     let new_events = ctx_data.event_collector.get_events_since(events_before);
     Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Array(vec![])), events: new_events, error: None }))
 }
@@ -1296,8 +1283,7 @@ async fn refresh_handler(
         if let Some(new_data) = req.new_data {
             // Supplied data is applied as given, so direct callers get the
             // data they sent even on endpoint-backed contexts.
-            context.refresh_with(new_data);
-            Ok(())
+            context.refresh_with(new_data)
         } else if ctx_data.fetches_from_endpoint {
             // No newData: the SDK re-fetches through its own client (its
             // data fetcher), as a real refresh does.
