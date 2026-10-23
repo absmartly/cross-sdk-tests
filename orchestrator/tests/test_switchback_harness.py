@@ -5,9 +5,11 @@ Run from the repository root:  python3 -m pytest orchestrator/tests -q
 """
 
 import copy
+import hashlib
 import json
 import os
 import sys
+import time
 
 import pytest
 import requests
@@ -359,3 +361,141 @@ def test_generation_fails_when_bucket_of_disagrees_with_the_vectors(monkeypatch)
     monkeypatch.setattr(generator, "bucket_of", lambda key, seed, count: 0)
     with pytest.raises(SystemExit):
         generator.verify_bucket_reference(*generator.load_bucket_fixtures())
+
+
+# ---------------------------------------------------------------------------
+# Discrimination: replay the canonical context scenarios against mutant SDK models
+# ---------------------------------------------------------------------------
+
+BASE_MUTANTS = ("per_value", "sticky", "le", "count_10", "count_50", "count_100")
+ATTRIBUTE_MUTANTS = ("lax_attr", "unit_fallback")
+
+# Mutants that cannot change what a scenario serves, by scenario name suffix.
+EXEMPT = {
+    # Every experiment is ineligible or unassigned before any draw; only sticky reaches a variant.
+    "Ineligible - exp_switchback_pre_anchor": {"per_value", "le", "count_10", "count_50", "count_100"},
+    "Ineligible - exp_switchback_no_anchor": {"per_value", "le", "count_10", "count_50", "count_100"},
+    "Unassigned - Cluster Unit Not Set": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
+    # The count is rejected before any draw, so only a count or sticky mutant reaches a variant.
+    "Ineligible - Cluster Count Not 10, 50 Or 100": {"per_value", "le"},
+    # fullOnVariant and an override are served ahead of any draw.
+    "Full-On Serves The Full-On Variant": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
+    "Override Wins Over The Switchback Draw": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
+    # The served variant is 0 (ineligible) either way; only a mutant that finds a key draws.
+    "No Bucket Key Is Ineligible": {"per_value", "le", "count_10", "count_50", "count_100"},
+    "Does Not Reassign Within The Period": {"per_value", "le", "count_10", "count_50", "count_100", "lax_attr"},
+    # Every attribute is set before the first read, so a unit fallback never triggers; 255's values
+    # are plain strings, which a lax reader keys identically.
+    "String, Whole Number, Nested And Array-Index Paths": {"unit_fallback"},
+    "Mid-Period setAttribute Keeps The Bucket": {"lax_attr", "unit_fallback"},
+}
+
+
+def lax_attribute_key(attributes, path):
+    """Any segment position, Python int() indices (+0, \\u0660, -1), and str()/JSON of any value."""
+    current = attributes
+    for segment in (s.strip("'\"") for s in path.split("/") if s):
+        if isinstance(current, list):
+            try:
+                current = current[int(segment)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            current = current.get(segment) if isinstance(current, dict) else None
+        if current is None:
+            return None
+    if isinstance(current, bool):
+        return str(current).lower()
+    if isinstance(current, int) and abs(current) >= 1 << 31:
+        return str(float(current))
+    return json.dumps(current, separators=(",", ":")) if isinstance(current, (dict, list)) else str(current)
+
+
+def model_variant(exp, units, attributes, mutant, now):
+    split = exp["split"]
+    uid = units.get(exp.get("switchbackClusterUnitType", exp["unitType"]))
+    if uid is None:
+        return 0
+    if exp["fullOnVariant"]:
+        return exp["fullOnVariant"]
+    if mutant == "sticky" or exp.get("randomizationType") != "switchback":
+        return generator.unit_variant(uid, split, exp["seedHi"], exp["seedLo"])
+    start, count = exp.get("switchbackStartAt"), exp.get("switchbackClusterCount")
+    count = int(mutant[6:]) if mutant.startswith("count_") else count
+    if start is None or now < start or count not in generator.CLUSTER_COUNTS:
+        return 0
+    key, path = generator.hash_unit(uid), exp.get("switchbackClusterAttribute")
+    if path is not None:
+        segments = generator.supported_attribute_path(path)
+        key = (lax_attribute_key(attributes, path) if mutant == "lax_attr" else
+               segments and generator.normalize_attribute(generator.resolve_attribute_path(attributes, segments)))
+        key = generator.hash_unit(uid) if key is None and mutant == "unit_fallback" else key
+        if key is None:
+            return 0
+    seed = generator.experiment_seed(exp["seedHi"], exp["seedLo"])
+    digest = hashlib.md5(f"sbcluster\x1f{exp['seedHi']}:{exp['seedLo']}\x1f{key}".encode()).digest()
+    bucket = int.from_bytes(digest[:4], "little" if mutant == "le" else "big") % count
+    cluster = key if mutant == "per_value" else str(bucket)
+    return generator.assign_switchback(cluster, (now - start) // generator.PERIOD_MS, seed, len(split))
+
+
+def failing_steps(scenario, mutant):
+    """Treatment steps whose expected result the model misses; each slot is read once, as in the SDK."""
+    create = scenario["steps"][0]
+    units, attributes, served, failures = create["params"]["units"], {}, {}, 0
+    experiments = {e["name"]: e for e in scenario["contextData"]["experiments"]}
+    now = int(time.time() * 1000)
+    for step in scenario["steps"][1:]:
+        params = step["params"]
+        if step["action"] == "attribute":
+            attributes[params["name"]] = params["value"]
+        elif step["action"] == "override":
+            served[params["experimentName"]] = params["variant"]
+        elif step["action"] == "treatment":
+            name = params["experimentName"]
+            if name not in served:
+                served[name] = model_variant(experiments[name], units, attributes, mutant, now)
+            failures += served[name] != step["expect"]["result"]
+    return failures
+
+
+def context_scenarios(scenarios):
+    return [s for s in scenarios if generator.GROUP_MARKER in s["name"] and "requires" in s
+            and s["steps"][0]["action"] == "createContextWith"]
+
+
+def applicable_mutants(scenario):
+    experiments = [e for e in scenario["contextData"]["experiments"] if e.get("randomizationType") == "switchback"]
+    has_attribute = any("switchbackClusterAttribute" in e for e in experiments)
+    mutants = [*BASE_MUTANTS, *(ATTRIBUTE_MUTANTS if has_attribute else ())]
+    configured = {e.get("switchbackClusterCount") for e in experiments}
+    mutants = [m for m in mutants if not (m.startswith("count_") and configured == {int(m[6:])})]
+    exempt = next((v for k, v in EXEMPT.items() if scenario["name"].endswith(k)), set())
+    return [m for m in mutants if m not in exempt]
+
+
+def test_every_context_scenario_fails_under_each_applicable_mutant():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        scenarios = context_scenarios(json.load(src))
+    numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
+    assert numbers == list(range(237, 257))
+    assert [s["name"] for s in scenarios if failing_steps(s, "correct")] == []
+    survivors = [(s["name"], m) for s in scenarios for m in applicable_mutants(s) if failing_steps(s, m) == 0]
+    assert survivors == []
+
+
+def test_every_exemption_names_a_scenario():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        names = [s["name"] for s in context_scenarios(json.load(src))]
+    assert all(sum(n.endswith(k) for n in names) == 1 for k in EXEMPT)
+
+
+# The 227 scenarios inherited from main, serialized with sort_keys=True.
+MAIN_SHA256 = "2be3dae29101b58f3e55cb4c1fbd38c03f2feb5f10417083c7b1ae72d04c3d2c"
+
+
+def test_main_scenarios_are_untouched():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        kept = [s for s in json.load(src) if generator.GROUP_MARKER not in s["name"]]
+    assert len(kept) == 227
+    assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256

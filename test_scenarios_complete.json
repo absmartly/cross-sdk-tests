@@ -56791,7 +56791,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-11"
+            "store_id": "eligibility-0"
           },
           "options": {
             "publishDelay": -1,
@@ -56944,7 +56944,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-11"
+            "store_id": "eligibility-0"
           },
           "options": {
             "publishDelay": -1,
@@ -57098,7 +57098,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-11"
+            "store_id": "eligibility-0"
           },
           "options": {
             "publishDelay": -1,
@@ -57180,7 +57180,7 @@
   },
   {
     "name": "247 - Switchback - Ineligible - Cluster Count Not 10, 50 Or 100",
-    "description": "switchbackClusterCount absent, and switchbackClusterCount 1000: only 10, 50 and 100 are servable, so each experiment is ineligible (variant 0, assigned=true, eligible=false, exposed once) and never falls back to per-value clustering or to another count. The uid's count-100 draw is nonzero.",
+    "description": "switchbackClusterCount absent, and switchbackClusterCount 1000: only 10, 50 and 100 are servable, so each experiment is ineligible (variant 0, assigned=true, eligible=false, exposed once) and never falls back to per-value clustering or to another count. The uid draws nonzero under every allowed count and under sticky unit assignment.",
     "contextData": {
       "experiments": [
         {
@@ -57293,7 +57293,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-11"
+            "store_id": "eligibility-0"
           },
           "options": {
             "publishDelay": -1,

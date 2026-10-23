@@ -632,7 +632,10 @@ def eligibility_scenarios(_golden: dict, _buckets: dict) -> list:
     no_count = switchback_experiment(113, "exp_switchback_no_cluster_count", "store_id", 3, ANCHOR_PERIOD_0, None)
     bad_count = switchback_experiment(114, "exp_switchback_cluster_count_1000", "store_id", 3, ANCHOR_PERIOD_0,
                                       1000)
-    uid = pick_uid("eligibility", 0, 3, 100)
+    # Every ineligible case must differ from what a sticky SDK, or one falling back to any allowed
+    # count, would serve.
+    uid = next(uid for uid in (f"eligibility-{k}" for k in range(10_000))
+               if sticky_variant(uid, 3) != 0 and all(switchback_variant(uid, 0, 3, c) for c in CLUSTER_COUNTS))
 
     def ineligible_steps(experiments):
         steps = []
@@ -666,8 +669,8 @@ def eligibility_scenarios(_golden: dict, _buckets: dict) -> list:
             "Ineligible - Cluster Count Not 10, 50 Or 100",
             ("switchbackClusterCount absent, and switchbackClusterCount 1000: only 10, 50 and 100 are servable, "
              "so each experiment is ineligible (variant 0, assigned=true, eligible=false, exposed once) and "
-             "never falls back to per-value clustering or to another count. The uid's count-100 draw is "
-             "nonzero."),
+             "never falls back to per-value clustering or to another count. The uid draws nonzero under every "
+             "allowed count and under sticky unit assignment."),
             [no_count, bad_count],
             {"store_id": uid},
             ineligible_steps([no_count, bad_count])),
