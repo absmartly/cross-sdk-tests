@@ -18,7 +18,13 @@ sys.path.insert(0, os.path.join(REPO, "orchestrator"))
 sys.path.insert(0, REPO)
 
 import generate_switchback_scenarios as generator  # noqa: E402
+from test_runner import SWITCHBACK_ACTIONS  # noqa: E402
 from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
+
+
+def load_fixtures():
+    buckets, _ = generator.load_bucket_fixtures()
+    return generator.load_golden(), buckets
 
 
 @pytest.fixture
@@ -195,7 +201,7 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
 
     with open(generator.CANONICAL, encoding="utf-8") as src:
         gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
-    assert len(gated) == 19
+    assert len(gated) == len(generator.build_group(*load_fixtures(), 1)) - 1 == 29
 
     runner.capabilities = {"sdk": {"switchback": False}}
     for scenario in gated:
@@ -221,7 +227,8 @@ def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail(
     assert numbers == list(range(1, len(scenarios) + 1))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(len(scenarios) - 20, len(scenarios)))
+    assert group == list(range(227, len(scenarios)))
+    assert len(group) == 30
 
 
 # ---------------------------------------------------------------------------
@@ -283,3 +290,67 @@ def test_check_fails_on_omitted_scenario(canonical_copy):
     scenarios, write = canonical_copy
     write([s for s in scenarios if "Switchback - Inertness" not in s["name"]])
     assert generator.main() == 1
+
+
+# ---------------------------------------------------------------------------
+# Bucket reference
+# ---------------------------------------------------------------------------
+
+
+def test_bucket_of_matches_every_copied_bucket_vector():
+    buckets, _ = generator.load_bucket_fixtures()
+    assert len(buckets["buckets"]) == 702
+    mismatches = [c for c in buckets["buckets"]
+                  if generator.bucket_of(c["key"], generator.exact_long(c["seed"]), c["count"]) != c["expectedBucket"]]
+    assert mismatches == []
+
+
+@pytest.mark.parametrize("key, seed, count, bucket", [
+    ("1tdwU5K8evYzMovqjExpBA", 0, 10, 6),
+    ("\u6771\u4eac", -123456789012345, 50, 19),
+    ("a\x1fb", -(1 << 63), 100, 43),
+])
+def test_bucket_of_matches_the_independent_hashlib_vectors(key, seed, count, bucket):
+    assert generator.bucket_of(key, seed, count) == bucket
+
+
+@pytest.mark.parametrize("count", [1000, 0, 20])
+def test_bucket_of_rejects_disallowed_counts(count):
+    with pytest.raises(ValueError):
+        generator.bucket_of("k", 0, count)
+
+
+def test_attribute_reference_matches_the_copied_key_and_path_vectors():
+    buckets, paths = generator.load_bucket_fixtures()
+    for case in buckets["attributeKeys"]:
+        assert generator.normalize_attribute(case["value"]) == case["key"], case
+    for case in paths["cases"]:
+        supported = generator.supported_attribute_path(case["path"]) is not None
+        value = generator.resolve_attribute_path(paths["attributes"], generator.parse_attribute_path(case["path"]))
+        assert (supported, value) == (case["supported"], case["value"]), case
+
+
+def test_bucket_vector_scenarios_replay_every_vector_through_the_bucket_endpoint():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        steps = [st for s in json.load(src) for st in s["steps"] if st["action"] == "switchbackBucket"]
+    buckets, _ = generator.load_bucket_fixtures()
+    replayed = sorted((st["params"]["key"], st["params"]["seed"], st["params"]["count"], st["expect"]["result"])
+                      for st in steps)
+    fixture = sorted((c["key"], c["seed"], c["count"], c["expectedBucket"]) for c in buckets["buckets"])
+    assert replayed == fixture
+    assert SWITCHBACK_ACTIONS["switchbackBucket"] == "/switchback/bucket"
+
+
+def test_check_fails_on_stale_bucket_expectation(canonical_copy):
+    scenarios, write = canonical_copy
+    mutated = copy.deepcopy(scenarios)
+    scenario = next(s for s in mutated if "Bucket Vectors - bucketOf - 50 Buckets" in s["name"])
+    scenario["steps"][0]["expect"]["result"] = (scenario["steps"][0]["expect"]["result"] + 1) % 50
+    write(mutated)
+    assert generator.main() == 1
+
+
+def test_generation_fails_when_bucket_of_disagrees_with_the_vectors(monkeypatch):
+    monkeypatch.setattr(generator, "bucket_of", lambda key, seed, count: 0)
+    with pytest.raises(SystemExit):
+        generator.verify_bucket_reference(*generator.load_bucket_fixtures())
