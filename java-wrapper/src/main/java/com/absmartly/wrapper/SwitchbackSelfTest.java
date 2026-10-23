@@ -166,6 +166,9 @@ final class SwitchbackSelfTest {
         experiments.add(switchback(508, "sb_no_anchor", "unit_store", -559038737, 1234567890, 3, null, 0, 100));
         experiments.add(switchback(509, "sb_no_cluster_unit", "unit_absent", -559038737, 1234567890, 3,
             ANCHOR_PERIOD_0, 0, 100));
+        // eligibility-0 draws 2 under every allowed count, so a fallback from 1000 to any of them fails.
+        experiments.add(switchback(517, "sb_cluster_count_1000", "unit_store", -559038737, 1234567890, 3,
+            ANCHOR_PERIOD_0, 0, 1000));
         experiments.add(switchback(510, "sb_dedup", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
         experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 2, 100));
         experiments.add(switchback(512, "sb_override", "unit_serving", -559038737, 1234567890, 3,
@@ -204,7 +207,7 @@ final class SwitchbackSelfTest {
             .setUnit("unit_p1_a2", "p1-a2-a-64")
             .setUnit("unit_p1_a3", "p1-a3-a-2")
             .setUnit("unit_p1_a10", "p1-a10-a-4")
-            .setUnit("unit_store", "eligibility-5")
+            .setUnit("unit_store", "eligibility-0")
             .setUnit("unit_serving", "serving-9")
             .setPublishDelay(-1)
             .setRefreshInterval(0);
@@ -240,6 +243,9 @@ final class SwitchbackSelfTest {
                     new Exposure(508, "sb_no_anchor", "unit_store", 0, 0, true, false, false, false, false, false))
                 && expect(context, exposures, "cluster unit not set", "sb_no_cluster_unit", 0,
                     new Exposure(509, "sb_no_cluster_unit", "unit_absent", 0, 0, false, true, false, false, false,
+                        false))
+                && expect(context, exposures, "cluster count 1000", "sb_cluster_count_1000", 0,
+                    new Exposure(517, "sb_cluster_count_1000", "unit_store", 0, 0, true, false, false, false, false,
                         false))
                 && expect(context, exposures, "same period", "sb_dedup", 2,
                     new Exposure(510, "sb_dedup", "unit_serving", 2, 0, true, true, false, false, false, false))

@@ -1116,6 +1116,9 @@ semantic the group's scenarios exercise:
   `assigned: true, eligible: false`, exposed once;
 - a cluster unit absent from the context resolving to variant 0 with
   `assigned: false`;
+- a `switchbackClusterCount` other than 10, 50 or 100 (e.g. 1000) resolving
+  to variant 0 with `assigned: true, eligible: false`, on a unit that would
+  draw nonzero under every allowed count;
 - two treatments in one period exposing once;
 - a full-on switchback serving `fullOnVariant` with `fullOn: true`;
 - an override winning over the switchback draw;
