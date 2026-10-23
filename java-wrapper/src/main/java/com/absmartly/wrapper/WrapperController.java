@@ -154,7 +154,7 @@ public class WrapperController {
     }
 
     // key is the cluster key hashed as-is (a hashed unit or a normalized attribute value); seed is
-    // the 64-bit experiment seed as a decimal string. The SDK rejects a count outside {10, 50, 100}.
+    // the 64-bit experiment seed as a decimal string. The wrapper rejects a count outside {10, 50, 100}.
     @PostMapping("/switchback/bucket")
     public ResponseEntity<?> switchbackBucket(@RequestBody Map<String, Object> request) {
         if (!switchback.isBucketAvailable()) {
@@ -162,7 +162,7 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "linked SDK has no switchback bucket function"));
         }
         return switchbackCall(() -> switchback.bucketOf(stringParam(request, "key"), longParam(request, "seed"),
-            intParam(request, "count")));
+            countParam(request)));
     }
 
     // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
@@ -203,6 +203,14 @@ public class WrapperController {
             throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
         }
         return armCount;
+    }
+
+    private static int countParam(Map<String, Object> request) {
+        int count = intParam(request, "count");
+        if (count != 10 && count != 50 && count != 100) {
+            throw new IllegalArgumentException("count must be 10, 50 or 100, got " + count);
+        }
+        return count;
     }
 
     private static int intParam(Map<String, Object> request, String name) {

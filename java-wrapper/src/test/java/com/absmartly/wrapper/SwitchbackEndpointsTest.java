@@ -224,6 +224,29 @@ class SwitchbackEndpointsTest {
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     }
 
+    // The wrapper enforces the {10, 50, 100} count contract itself: a bucket function that accepts
+    // any count must never be called, and the response is 400.
+    @ParameterizedTest
+    @ValueSource(ints = {1000, 0, 20, -10, 1})
+    void rejectsDisallowedCountsWith400WithoutCallingTheBucketFunction(int count) {
+        AtomicInteger calls = new AtomicInteger();
+        WrapperController controller = new WrapperController(new FixedFunctions() {
+            @Override
+            public boolean isBucketAvailable() {
+                return true;
+            }
+
+            @Override
+            public int bucketOf(String key, long seed, int count) {
+                calls.incrementAndGet();
+                return 0;
+            }
+        });
+        assertEquals(HttpStatus.BAD_REQUEST,
+            controller.switchbackBucket(bucketRequest("k", "0", count)).getStatusCode());
+        assertEquals(0, calls.get());
+    }
+
     @Test
     void bucketEndpointRejectsBadInputWith400() {
         WrapperController controller = new WrapperController(new FixedFunctions() {
