@@ -1231,9 +1231,10 @@ int main() {
                     return;
                 }
 
+                size_t events_before = entry->collector->size();
                 bool ready = entry->context->is_ready();
-                std::vector<Event> empty;
-                json resp = make_response(ready, empty);
+                auto new_events = entry->collector->get_new_events(events_before);
+                json resp = make_response(ready, new_events);
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1253,10 +1254,11 @@ int main() {
                 // The SDK's is_failed()/ready_error() only read state; the
                 // non-blocking is_ready() is what resolves a load future that
                 // has completed (e.g. a throttled fetch that failed).
+                size_t events_before = entry->collector->size();
                 entry->context->is_ready();
                 bool failed = entry->context->is_failed();
-                std::vector<Event> empty;
-                json resp = make_response(failed, empty);
+                auto new_events = entry->collector->get_new_events(events_before);
+                json resp = make_response(failed, new_events);
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1429,10 +1431,12 @@ int main() {
                      res.set_content(make_error_response("Context not found", "NOT_FOUND").dump(), "application/json");
                      return;
                  }
+                 size_t eb = entry->collector->size();
                  entry->context->is_ready();  // resolve a completed load future (see isFailed)
                  auto error = entry->context->ready_error();
                  json result = error.empty() ? json(nullptr) : json{{"isError", true}, {"message", error}};
-                 res.set_content(make_response(result, {}).dump(), "application/json");
+                 auto ne = entry->collector->get_new_events(eb);
+                 res.set_content(make_response(result, ne).dump(), "application/json");
              });
 
     svr.Post(R"(/context/([^/]+)/variableKeysMap)",
