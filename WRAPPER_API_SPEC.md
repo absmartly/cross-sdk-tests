@@ -1192,7 +1192,11 @@ All three endpoints are pure functions with no context. Request rules:
   `hashUnit(uid)` (the base64url, no padding, MD5 of the UTF-8 uid, as
   published in `units[].uid`) for a unit-sourced switchback, or the attribute
   at `switchbackClusterAttribute` (a non-empty string as-is, an integer in
-  base 10, anything else ineligible) for an attribute-sourced one. Its bucket,
+  base 10, anything else ineligible) for an attribute-sourced one. The
+  scenarios never send an integral float such as `2.0`: JavaScript-family
+  runtimes decode it to the same number as `2`, and the platform stores it as
+  `"2"` for them. The integral-float rule is covered by the `attributeKeys` of
+  `bucket-golden-vectors.json` and by each typed SDK's own suite. Its bucket,
   written in base 10 (`"0"`..`"99"`), is the `clusterUnit` the assigner
   receives. Integer cluster units in the golden vectors are sent as their
   decimal string.

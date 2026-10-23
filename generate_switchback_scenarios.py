@@ -764,7 +764,6 @@ def attribute_ineligible_scenarios(_golden: dict, _buckets: dict) -> list:
     cases = [
         ("missing", "absent_attr", None, "absent_attr", []),
         ("empty", "empty_attr", "", "empty_attr", [""]),
-        ("float", "float_attr", 2.0, "float_attr", ["2", "2.0"]),
         ("fraction", "fraction_attr", 1.5, "fraction_attr", ["1.5", "1"]),
         ("bool", "bool_attr", True, "bool_attr", ["true", "True", "1"]),
         ("object", "object_attr", {"city": "Porto"}, "object_attr", ['{"city":"Porto"}', "Porto"]),
@@ -788,11 +787,14 @@ def attribute_ineligible_scenarios(_golden: dict, _buckets: dict) -> list:
     steps.append(publish_step(exposed))
     return [context_scenario(
         "Attribute Source - No Bucket Key Is Ineligible",
-        ("Attribute-sourced switchbacks whose key is missing (never set), an empty string, a float (2.0 and "
-         "1.5), a boolean, an object, or behind the unsupported path \"items/-1/city\" (a negative index). Each "
-         "serves variant 0 with assigned=true and eligible=false, exposed once, and never falls back to the "
-         "unit. Count and arms per experiment are chosen so that the unit-sourced draw and every lax reading "
-         "of the value (\"2\", \"true\", the last array element, ...) would serve a nonzero variant."),
+        ("Attribute-sourced switchbacks whose key is missing (never set), an empty string, a non-integral "
+         "number (1.5), a boolean, an object, or behind the unsupported path \"items/-1/city\" (a negative "
+         "index). Each serves variant 0 with assigned=true and eligible=false, exposed once, and never falls "
+         "back to the unit. Count and arms per experiment are chosen so that the unit-sourced draw and every "
+         "lax reading of the value (\"1.5\", \"true\", the last array element, ...) would serve a nonzero "
+         "variant. An integral float such as 2.0 is not a case here: JSON-number runtimes (JavaScript and its "
+         "frameworks) cannot tell 2.0 from 2. The integral-float rule is covered by bucket-golden-vectors.json "
+         "attributeKeys and each typed SDK's own suite."),
         experiments,
         {"store_id": uid},
         steps)]
