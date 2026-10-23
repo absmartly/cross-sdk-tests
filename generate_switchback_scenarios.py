@@ -28,7 +28,7 @@ import json
 import math
 import os
 import sys
-from typing import Optional
+from typing import NamedTuple, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
@@ -298,7 +298,7 @@ def verify_bucket_reference(buckets: dict, paths: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def golden_scenarios(golden: dict, _buckets: dict) -> list:
+def golden_scenarios(golden: dict) -> list:
     """One scenario per (function, armCount): 294 assign and 168 permutation steps each."""
     scenarios = []
     for arm_count in (2, 3, 10):
@@ -541,7 +541,7 @@ def context_scenario(name: str, description: str, experiments: list, units: dict
     }
 
 
-def bucket_vector_scenarios(_golden: dict, buckets: dict) -> list:
+def bucket_vector_scenarios(buckets: dict) -> list:
     """One scenario per bucket count: every bucket vector of that count through /switchback/bucket."""
     scenarios = []
     for count in CLUSTER_COUNTS:
@@ -567,7 +567,7 @@ def bucket_vector_scenarios(_golden: dict, buckets: dict) -> list:
 LETTER_COUNTS = {"a": 10, "b": 50, "c": 100}
 
 
-def period_scenarios(_golden: dict, _buckets: dict) -> list:
+def period_scenarios() -> list:
     scenarios = []
     for period, anchor in ((0, ANCHOR_PERIOD_0), (1, ANCHOR_PERIOD_1)):
         for arm_count in (2, 3, 10):
@@ -596,7 +596,7 @@ def period_scenarios(_golden: dict, _buckets: dict) -> list:
     return scenarios
 
 
-def shared_bucket_scenarios(_golden: dict, _buckets: dict) -> list:
+def shared_bucket_scenarios() -> list:
     """Two units in one bucket share the variant although their per-value draws differ."""
     count, arm_count = 10, 3
     seed_hi, seed_lo, _ = ARMS[arm_count]
@@ -625,7 +625,7 @@ def shared_bucket_scenarios(_golden: dict, _buckets: dict) -> list:
         ])]
 
 
-def eligibility_scenarios(_golden: dict, _buckets: dict) -> list:
+def eligibility_scenarios() -> list:
     pre_anchor = switchback_experiment(110, "exp_switchback_pre_anchor", "store_id", 3, ANCHOR_FUTURE, 100)
     no_anchor = switchback_experiment(111, "exp_switchback_no_anchor", "store_id", 3, None, 100)
     no_unit = switchback_experiment(112, "exp_switchback_no_cluster_unit", "warehouse_id", 3, ANCHOR_PERIOD_0, 100)
@@ -677,7 +677,7 @@ def eligibility_scenarios(_golden: dict, _buckets: dict) -> list:
     ]
 
 
-def serving_scenarios(_golden: dict, _buckets: dict) -> list:
+def serving_scenarios() -> list:
     uid = pick_uid("serving", 0, 3, 100)
     variant = switchback_variant(uid, 0, 3, 100)
     dedup = switchback_experiment(120, "exp_switchback_dedup", "store_id", 3, ANCHOR_PERIOD_0, 100)
@@ -747,7 +747,7 @@ def serving_scenarios(_golden: dict, _buckets: dict) -> list:
     ]
 
 
-def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
+def attribute_source_scenarios() -> list:
     """Bucket keys read from context attributes through switchbackClusterAttribute."""
     uid = pick_uid("attribute", 0, 3, 100)
     city = pick_value(lambda k: f"city-{k}", uid, 0, 3, 100)
@@ -791,7 +791,7 @@ def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
         steps)]
 
 
-def attribute_ineligible_scenarios(_golden: dict, _buckets: dict) -> list:
+def attribute_ineligible_scenarios() -> list:
     """No bucket key: variant 0, assigned=true, eligible=false. Each experiment's count and arms are
     chosen so every lax reading of its value (and the unit hash) would draw nonzero."""
     uid = pick_uid("attribute-ineligible", 0, 3, 100)
@@ -848,14 +848,12 @@ def index_position_cases() -> tuple:
     return attributes, cases
 
 
-def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
+def attribute_path_case_scenarios(paths: dict) -> list:
     """Every case of fixtures/switchback/attribute-path-cases.json plus the index-position cases: a
     supported path with a value is served from that value's bucket, anything else is ineligible."""
-    with open(PATH_CASES, encoding="utf-8") as src:
-        fixture = json.load(src)
     extra_attributes, extra_cases = index_position_cases()
-    attributes = {**fixture["attributes"], **extra_attributes}
-    cases = fixture["cases"] + extra_cases
+    attributes = {**paths["attributes"], **extra_attributes}
+    cases = paths["cases"] + extra_cases
     uid = pick_uid("attribute-path", 0, 3, 100)
     leaves = sorted({v for case in cases if case["value"] is not None for v in [case["value"]]}
                     | {"Lisbon", "Faro", "Porto", "minus-one-key", "plus-one-key"})
@@ -914,7 +912,7 @@ def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
         steps)]
 
 
-def attribute_timing_scenarios(_golden: dict, _buckets: dict) -> list:
+def attribute_timing_scenarios() -> list:
     """The cluster key is read once per period slot; wrappers cannot advance the clock, so the
     next-period re-read stays in the SDKs' own suites."""
     uid = pick_uid("attribute-timing", 0, 10, 100)
@@ -971,7 +969,7 @@ def attribute_timing_scenarios(_golden: dict, _buckets: dict) -> list:
     ]
 
 
-def inertness_scenarios(_golden: dict, _buckets: dict) -> list:
+def inertness_scenarios() -> list:
     """Ungated: must pass on every SDK. Unit experiments are served exactly as without any
     switchback data; the switchback experiment itself is never queried, because a non-capable
     SDK serves it a sticky unit assignment whose value differs per SDK."""
@@ -1036,18 +1034,39 @@ def inertness_scenarios(_golden: dict, _buckets: dict) -> list:
     return [scenario]
 
 
-def build_group(golden: dict, buckets: dict, first_number: int) -> list:
+class Fixtures(NamedTuple):
+    golden: dict
+    buckets: dict
+    paths: dict
+
+
+def load_fixtures() -> Fixtures:
+    """Every copied fixture, each verified against the reference; builders read only these."""
+    golden = load_golden()
+    verify_reference(golden)
+    buckets, paths = load_bucket_fixtures()
+    verify_bucket_reference(buckets, paths)
+    return Fixtures(golden, buckets, paths)
+
+
+def builders(fixtures: Fixtures) -> list:
+    return [
+        lambda: golden_scenarios(fixtures.golden),
+        lambda: bucket_vector_scenarios(fixtures.buckets),
+        period_scenarios, shared_bucket_scenarios, eligibility_scenarios, serving_scenarios,
+        attribute_source_scenarios, attribute_ineligible_scenarios,
+        lambda: attribute_path_case_scenarios(fixtures.paths),
+        attribute_timing_scenarios, inertness_scenarios,
+    ]
+
+
+def build_group(fixtures: Fixtures, first_number: int) -> list:
     scenarios = []
-    for builder in BUILDERS:
-        for scenario in builder(golden, buckets):
+    for builder in builders(fixtures):
+        for scenario in builder():
             scenario["name"] = f"{first_number + len(scenarios)} - Switchback - {scenario['name']}"
             scenarios.append(scenario)
     return scenarios
-
-
-BUILDERS = [golden_scenarios, bucket_vector_scenarios, period_scenarios, shared_bucket_scenarios,
-            eligibility_scenarios, serving_scenarios, attribute_source_scenarios, attribute_ineligible_scenarios,
-            attribute_path_case_scenarios, attribute_timing_scenarios, inertness_scenarios]
 
 
 def write(scenarios: list, path: str) -> None:
@@ -1060,15 +1079,12 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
     args = parser.parse_args()
 
-    golden = load_golden()
-    verify_reference(golden)
-    buckets, paths = load_bucket_fixtures()
-    verify_bucket_reference(buckets, paths)
+    fixtures = load_fixtures()
 
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
     kept = [s for s in existing if GROUP_MARKER not in s["name"]]
-    group = build_group(golden, buckets, len(kept) + 1)
+    group = build_group(fixtures, len(kept) + 1)
     updated = kept + group
 
     if args.check:

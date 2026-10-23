@@ -24,11 +24,6 @@ from test_runner import SWITCHBACK_ACTIONS  # noqa: E402
 from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
 
 
-def load_fixtures():
-    buckets, _ = generator.load_bucket_fixtures()
-    return generator.load_golden(), buckets
-
-
 @pytest.fixture
 def runner():
     return Orchestrator({}, verbose=False)
@@ -203,7 +198,7 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
 
     with open(generator.CANONICAL, encoding="utf-8") as src:
         gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
-    assert len(gated) == len(generator.build_group(*load_fixtures(), 1)) - 1 == 29
+    assert len(gated) == len(generator.build_group(generator.load_fixtures(), 1)) - 1 == 29
 
     runner.capabilities = {"sdk": {"switchback": False}}
     for scenario in gated:
