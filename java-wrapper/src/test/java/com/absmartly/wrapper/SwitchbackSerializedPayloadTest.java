@@ -15,13 +15,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 // even when the captured PublishEvent object and the serialized key structure are both correct.
 class SwitchbackSerializedPayloadTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Exposure SERVED = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false,
+    private static final Exposure SERVED = new Exposure(513, "sb_payload", "unit_serving", 2, 0, true, true, false,
         false, false, false);
 
     private static ObjectNode correctEvent() throws Exception {
         return (ObjectNode) MAPPER.readTree("{\"hashed\":true,"
             + "\"units\":[{\"type\":\"unit_serving\",\"uid\":\"r5uxZRoi-JuM5yYJa0kmSQ\"}],"
-            + "\"exposures\":[{\"id\":513,\"name\":\"sb_payload\",\"unit\":\"unit_serving\",\"variant\":1,"
+            + "\"exposures\":[{\"id\":513,\"name\":\"sb_payload\",\"unit\":\"unit_serving\",\"variant\":2,"
             + "\"exposedAt\":1700000000000,\"assigned\":true,\"eligible\":true,\"overridden\":false,"
             + "\"fullOn\":false,\"custom\":false,\"audienceMismatch\":false}]}");
     }

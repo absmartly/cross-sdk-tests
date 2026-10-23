@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Generate the Switchback scenario group of test_scenarios_complete.json.
 
-The group is derived, never hand-edited:
+The group is derived, never hand-edited. Its inputs are byte-for-byte copies of the platform's
+lib/utils/src/test/resources/switchback/ fixtures in fixtures/switchback/:
+golden-vectors.json (assignSwitchback and fisherYatesPermutation), bucket-golden-vectors.json
+(bucketOf, the unit key and attribute keys) and attribute-path-cases.json (the attribute path
+grammar). The reference below must reproduce every one of them before anything is written.
 
-  * Golden-vector scenarios drive every case in fixtures/switchback/golden-vectors.json (a
-    byte-for-byte copy of the platform's lib/utils/src/test/resources/switchback/
-    golden-vectors.json) through the wrapper's /switchback/assign and /switchback/permutation
-    endpoints.
+  * Golden-vector scenarios drive every assign and permutation case through the wrapper's
+    /switchback/assign and /switchback/permutation endpoints.
+  * Bucket-vector scenarios drive every bucketOf case through /switchback/bucket.
   * Context scenarios exercise switchback serving through createContextWith/treatment/publish.
-    Their expected variants come from the reference below applied to the SDK's hashed unit,
-    and the reference must reproduce every golden vector before anything is written.
+    Each cluster key is the SDK's hashed unit or, with switchbackClusterAttribute, the context
+    attribute at that path; its bucketOf bucket is the cluster unit of assignSwitchback. Uids and
+    attribute values are chosen so the expected variant differs from what sticky assignment,
+    per-value clustering, another bucket count or a little-endian bucket would serve.
   * The inertness scenario is ungated: every SDK, switchback-aware or not, must serve its unit
     experiments unchanged when switchback experiments and fields are present in the payload.
 
