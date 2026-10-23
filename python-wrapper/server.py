@@ -831,8 +831,12 @@ def refresh(context_id):
     try:
         context.refresh()
         # The SDK resolves the refresh future just before logging the refresh
-        # event; wait for it (or fail loudly) instead of a fixed poll.
-        new_events = collector.await_event(events_before, ('refresh',), 2.0)
+        # event; wait for it (or fail loudly) instead of a fixed poll. On a
+        # failed context the SDK's refresh is a successful no-op with no event.
+        if context.is_failed():
+            new_events = collector.since(events_before)
+        else:
+            new_events = collector.await_event(events_before, ('refresh',), 2.0)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -244,6 +244,38 @@ class ConstructorStateTests(unittest.TestCase):
         self.assertIn("sdks", result)
 
 
+class ErrorPathEventTests(unittest.TestCase):
+    """An expected error must not hide events emitted by the failed call."""
+
+    def run_error_step(self, body):
+        import requests
+
+        resp = requests.Response()
+        resp.status_code = 400
+        resp._content = json.dumps(body).encode()
+        resp.url = "http://alpha/context/x/treatment"
+        orch = make_orchestrator(policy=make_policy({"alpha": {"required": ["diagnostics", "holdouts"], "unsupported": {}}}))
+        scenario = {
+            "name": "err",
+            "steps": [{"action": "treatment", "params": {"experimentName": "e"}, "expect": {"error": "not yet ready", "events": []}}],
+        }
+        with mock.patch.object(test_runner.requests, "post", return_value=resp), mock.patch.object(
+            test_runner.requests, "delete"
+        ):
+            return orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+
+    def test_events_on_error_response_fail(self):
+        result = self.run_error_step(
+            {"error": "ABsmartly Context is not yet ready.", "events": [{"type": "exposure", "data": {}}]}
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["failures"][0]["field"], "events")
+
+    def test_error_only_response_passes(self):
+        result = self.run_error_step({"error": "ABsmartly Context is not yet ready."})
+        self.assertTrue(result["passed"], result)
+
+
 class ErrorMatchTests(unittest.TestCase):
     def test_existing_rules_unchanged(self):
         orch = make_orchestrator()

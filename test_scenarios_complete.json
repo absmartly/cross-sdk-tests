@@ -18695,6 +18695,14 @@
           "error": "not yet ready",
           "events": []
         }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
       }
     ]
   },

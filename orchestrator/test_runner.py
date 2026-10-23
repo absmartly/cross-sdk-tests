@@ -798,6 +798,7 @@ class TestOrchestrator:
 
             except requests.HTTPError as exc:
                 error_msg = None
+                error_body = None
                 if exc.response is not None:
                     try:
                         error_body = exc.response.json()
@@ -808,6 +809,26 @@ class TestOrchestrator:
                         error_msg = exc.response.text
                 if not error_msg:
                     error_msg = str(exc)
+
+                # Error responses may carry an events window; a failed call must
+                # not emit events the scenario does not list.
+                if isinstance(error_body, dict) and "events" in error_body:
+                    error_events = error_body["events"]
+                    if error_events != expected.get("events", []):
+                        types = (
+                            [e.get("type") if isinstance(e, dict) else e for e in error_events]
+                            if isinstance(error_events, list)
+                            else error_events
+                        )
+                        failures.append(
+                            {
+                                "step": step_index,
+                                "action": action,
+                                "field": "events",
+                                "expected": describe(expected.get("events", [])),
+                                "actual": f"events on error response: {types}",
+                            }
+                        )
 
                 if "errorContains" in expected:
                     if expected["errorContains"].lower() not in error_msg.lower():
