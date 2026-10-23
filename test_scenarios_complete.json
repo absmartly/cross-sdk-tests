@@ -54397,7 +54397,7 @@
   },
   {
     "name": "237 - Switchback - Period 0 - 2 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 2) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 2) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -54548,7 +54548,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "p0-a2-a-28",
+            "store_a": "p0-a2-a-86",
             "store_b": "p0-a2-b-86",
             "store_c": "p0-a2-c-8"
           },
@@ -54702,7 +54702,7 @@
   },
   {
     "name": "238 - Switchback - Period 0 - 3 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 3) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 3) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -54868,9 +54868,9 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "p0-a3-a-15",
+            "store_a": "p0-a3-a-46",
             "store_b": "p0-a3-b-8",
-            "store_c": "p0-a3-c-50"
+            "store_c": "p0-a3-c-156"
           },
           "options": {
             "publishDelay": -1,
@@ -54964,7 +54964,7 @@
           "experimentName": "exp_switchback_c"
         },
         "expect": {
-          "result": 1,
+          "result": 2,
           "events": [
             {
               "type": "exposure",
@@ -54972,7 +54972,7 @@
                 "id": 102,
                 "name": "exp_switchback_c",
                 "unit": "store_c",
-                "variant": 1,
+                "variant": 2,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -55007,7 +55007,7 @@
                   {
                     "id": 102,
                     "name": "exp_switchback_c",
-                    "variant": 1
+                    "variant": 2
                   }
                 ]
               }
@@ -55022,7 +55022,7 @@
   },
   {
     "name": "239 - Switchback - Period 0 - 10 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 10) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 1704067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 0 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 0, seed, 10) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -55293,7 +55293,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "p0-a10-a-2",
+            "store_a": "p0-a10-a-3",
             "store_b": "p0-a10-b-0",
             "store_c": "p0-a10-c-1"
           },
@@ -55337,7 +55337,7 @@
           "experimentName": "exp_switchback_a"
         },
         "expect": {
-          "result": 1,
+          "result": 3,
           "events": [
             {
               "type": "exposure",
@@ -55345,7 +55345,7 @@
                 "id": 100,
                 "name": "exp_switchback_a",
                 "unit": "store_a",
-                "variant": 1,
+                "variant": 3,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -55422,7 +55422,7 @@
                   {
                     "id": 100,
                     "name": "exp_switchback_a",
-                    "variant": 1
+                    "variant": 3
                   },
                   {
                     "id": 101,
@@ -55447,7 +55447,7 @@
   },
   {
     "name": "240 - Switchback - Period 1 - 2 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 2) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 2) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -55752,7 +55752,7 @@
   },
   {
     "name": "241 - Switchback - Period 1 - 3 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 3) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 3) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -55918,7 +55918,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "p1-a3-a-2",
+            "store_a": "p1-a3-a-31",
             "store_b": "p1-a3-b-0",
             "store_c": "p1-a3-c-16"
           },
@@ -56072,7 +56072,7 @@
   },
   {
     "name": "242 - Switchback - Period 1 - 10 Arms - Unit Buckets 10, 50, 100",
-    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 10) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from the other two counts.",
+    "description": "switchbackStartAt 264067200000 with switchbackPeriodMs 1440000000000 (400,000 h) puts now in period 1 until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), 1, seed, 10) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from the other two counts and from a little-endian bucket.",
     "contextData": {
       "experiments": [
         {
@@ -56343,8 +56343,8 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "p1-a10-a-4",
-            "store_b": "p1-a10-b-0",
+            "store_a": "p1-a10-a-7",
+            "store_b": "p1-a10-b-4",
             "store_c": "p1-a10-c-1"
           },
           "options": {
@@ -56387,7 +56387,7 @@
           "experimentName": "exp_switchback_a"
         },
         "expect": {
-          "result": 3,
+          "result": 9,
           "events": [
             {
               "type": "exposure",
@@ -56395,7 +56395,7 @@
                 "id": 100,
                 "name": "exp_switchback_a",
                 "unit": "store_a",
-                "variant": 3,
+                "variant": 9,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -56413,7 +56413,7 @@
           "experimentName": "exp_switchback_b"
         },
         "expect": {
-          "result": 3,
+          "result": 5,
           "events": [
             {
               "type": "exposure",
@@ -56421,7 +56421,7 @@
                 "id": 101,
                 "name": "exp_switchback_b",
                 "unit": "store_b",
-                "variant": 3,
+                "variant": 5,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -56472,12 +56472,12 @@
                   {
                     "id": 100,
                     "name": "exp_switchback_a",
-                    "variant": 3
+                    "variant": 9
                   },
                   {
                     "id": 101,
                     "name": "exp_switchback_b",
-                    "variant": 3
+                    "variant": 5
                   },
                   {
                     "id": 102,
@@ -56611,8 +56611,8 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_a": "shared-a-7",
-            "store_b": "shared-b-15"
+            "store_a": "shared-a-69",
+            "store_b": "shared-b-26"
           },
           "options": {
             "publishDelay": -1,
@@ -56791,7 +56791,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-5"
+            "store_id": "eligibility-11"
           },
           "options": {
             "publishDelay": -1,
@@ -56944,7 +56944,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-5"
+            "store_id": "eligibility-11"
           },
           "options": {
             "publishDelay": -1,
@@ -57098,7 +57098,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-5"
+            "store_id": "eligibility-11"
           },
           "options": {
             "publishDelay": -1,
@@ -57293,7 +57293,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "eligibility-5"
+            "store_id": "eligibility-11"
           },
           "options": {
             "publishDelay": -1,
@@ -58150,7 +58150,7 @@
   },
   {
     "name": "252 - Switchback - Attribute Source - String, Whole Number, Nested And Array-Index Paths",
-    "description": "Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, from per-value clustering on the key and from the other counts, and items[1].city would draw differently from items[0].city.",
+    "description": "Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, from the sticky unit assignment, from per-value clustering on the key, from the other counts and from a little-endian bucket, and items[1].city would draw differently from items[0].city.",
     "contextData": {
       "experiments": [
         {
@@ -58492,7 +58492,7 @@
         "action": "attribute",
         "params": {
           "name": "store_number",
-          "value": 4000000006
+          "value": 4000000029
         },
         "expect": {
           "result": null,
@@ -58731,7 +58731,7 @@
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect",
           "switchbackStartAt": 1704067200000,
-          "switchbackClusterCount": 50,
+          "switchbackClusterCount": 100,
           "switchbackClusterAttribute": "absent_attr"
         },
         {
@@ -58872,7 +58872,7 @@
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect",
           "switchbackStartAt": 1704067200000,
-          "switchbackClusterCount": 50,
+          "switchbackClusterCount": 100,
           "switchbackClusterAttribute": "fraction_attr"
         },
         {
@@ -59111,7 +59111,7 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "store_id": "attribute-ineligible-27"
+            "store_id": "attribute-ineligible-101"
           },
           "options": {
             "publishDelay": -1,
@@ -59492,7 +59492,7 @@
   },
   {
     "name": "254 - Switchback - Attribute Source - Platform Attribute Path Cases",
-    "description": "Every case of the platform's attribute-path-cases.json, one experiment per path, with the fixture's attributes set as top-level attributes. A supported path that resolves to a value is served from that value's bucket; an unsupported path (a negative index) or a path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) is ineligible. Count and arms per experiment are chosen so an eligible case draws nonzero and unlike the unit-sourced draw, and unlike as many other leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero.",
+    "description": "Every case of the platform's attribute-path-cases.json, one experiment per path, with the fixture's attributes set as top-level attributes. A supported path that resolves to a value is served from that value's bucket; an unsupported path (a negative index) or a path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) is ineligible. Count and arms per experiment are chosen so an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit assignment, per-value clustering, the other counts and a little-endian bucket, and unlike as many other leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero.",
     "contextData": {
       "experiments": [
         {
@@ -59500,8 +59500,8 @@
           "name": "exp_switchback_path_0",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": 2147483647,
-          "seedLo": -1,
+          "seedHi": 1234567,
+          "seedLo": 2,
           "split": [
             0.1,
             0.1,
@@ -59580,7 +59580,7 @@
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect",
           "switchbackStartAt": 1704067200000,
-          "switchbackClusterCount": 50,
+          "switchbackClusterCount": 100,
           "switchbackClusterAttribute": "items/0/city"
         },
         {
@@ -59852,8 +59852,8 @@
           "name": "exp_switchback_path_4",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": 2147483647,
-          "seedLo": -1,
+          "seedHi": 1234567,
+          "seedLo": 1,
           "split": [
             0.1,
             0.1,
@@ -59932,7 +59932,7 @@
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect",
           "switchbackStartAt": 1704067200000,
-          "switchbackClusterCount": 10,
+          "switchbackClusterCount": 100,
           "switchbackClusterAttribute": "geo/+1"
         },
         {
@@ -60028,8 +60028,8 @@
           "name": "exp_switchback_path_6",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": 2147483647,
-          "seedLo": -1,
+          "seedHi": 1234567,
+          "seedLo": 1,
           "split": [
             0.1,
             0.1,
@@ -60313,7 +60313,7 @@
           "experimentName": "exp_switchback_path_4"
         },
         "expect": {
-          "result": 3,
+          "result": 2,
           "events": [
             {
               "type": "exposure",
@@ -60321,7 +60321,7 @@
                 "id": 164,
                 "name": "exp_switchback_path_4",
                 "unit": "store_id",
-                "variant": 3,
+                "variant": 2,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -60365,7 +60365,7 @@
           "experimentName": "exp_switchback_path_6"
         },
         "expect": {
-          "result": 1,
+          "result": 3,
           "events": [
             {
               "type": "exposure",
@@ -60373,7 +60373,7 @@
                 "id": 166,
                 "name": "exp_switchback_path_6",
                 "unit": "store_id",
-                "variant": 1,
+                "variant": 3,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -60418,7 +60418,7 @@
                   {
                     "id": 164,
                     "name": "exp_switchback_path_4",
-                    "variant": 3
+                    "variant": 2
                   },
                   {
                     "id": 165,
@@ -60428,7 +60428,7 @@
                   {
                     "id": 166,
                     "name": "exp_switchback_path_6",
-                    "variant": 1
+                    "variant": 3
                   }
                 ]
               }
@@ -60443,7 +60443,7 @@
   },
   {
     "name": "255 - Switchback - Attribute Source - Mid-Period setAttribute Keeps The Bucket",
-    "description": "city='first-5' draws variant 4. setAttribute(city, 'second-0') later in the same period would draw 3, but the period's bucket is already fixed: the treatment stays the same with no new exposure. A non-strict audience flip (tier gold → silver) then re-resolves the slot and re-exposes with audienceMismatch=true, still on the first bucket. The next period reads the attribute again (not testable without clock control).",
+    "description": "city='first-13' draws variant 7. setAttribute(city, 'second-0') later in the same period would draw 3, but the period's bucket is already fixed: the treatment stays the same with no new exposure. A non-strict audience flip (tier gold → silver) then re-resolves the slot and re-exposes with audienceMismatch=true, still on the first bucket. The next period reads the attribute again (not testable without clock control).",
     "contextData": {
       "experiments": [
         {
@@ -60584,7 +60584,7 @@
         "action": "attribute",
         "params": {
           "name": "city",
-          "value": "first-5"
+          "value": "first-13"
         },
         "expect": {
           "result": null,
@@ -60597,7 +60597,7 @@
           "experimentName": "exp_switchback_attr_mid_period"
         },
         "expect": {
-          "result": 4,
+          "result": 7,
           "events": [
             {
               "type": "exposure",
@@ -60605,7 +60605,7 @@
                 "id": 170,
                 "name": "exp_switchback_attr_mid_period",
                 "unit": "store_id",
-                "variant": 4,
+                "variant": 7,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -60634,7 +60634,7 @@
           "experimentName": "exp_switchback_attr_mid_period"
         },
         "expect": {
-          "result": 4,
+          "result": 7,
           "events": []
         }
       },
@@ -60655,7 +60655,7 @@
           "experimentName": "exp_switchback_attr_mid_period"
         },
         "expect": {
-          "result": 4,
+          "result": 7,
           "events": [
             {
               "type": "exposure",
@@ -60663,7 +60663,7 @@
                 "id": 170,
                 "name": "exp_switchback_attr_mid_period",
                 "unit": "store_id",
-                "variant": 4,
+                "variant": 7,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -60688,12 +60688,12 @@
                   {
                     "id": 170,
                     "name": "exp_switchback_attr_mid_period",
-                    "variant": 4
+                    "variant": 7
                   },
                   {
                     "id": 170,
                     "name": "exp_switchback_attr_mid_period",
-                    "variant": 4
+                    "variant": 7
                   }
                 ]
               }
@@ -60707,7 +60707,7 @@
     ]
   },
   {
-    "name": "256 - Switchback - Attribute Source - Attribute Set After An Ineligible Read Waits For The Next Period",
+    "name": "256 - Switchback - Attribute Source - Attribute Set After An Ineligible Read Does Not Reassign Within The Period",
     "description": "zone is unset at the first treatment, so the period resolves ineligible (variant 0, eligible=false). setAttribute(zone, 'zone-12'), which would draw 9, does not reassign within the period: the treatment stays 0 with no new exposure.",
     "contextData": {
       "experiments": [

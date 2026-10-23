@@ -362,11 +362,15 @@ ARMS = {
     10: (2147483647, -1, [0.1] * 10),
 }
 
+# Path cases whose key collides with a mutant under every (arms, count) at ARMS' seeds use
+# (PATH_SEED_HI, k) for the first k that discriminates.
+PATH_SEED_HI = 1_234_567
 
-def key_variant(key: str, period: int, arm_count: int, count: int) -> int:
-    """The switchback draw for a cluster key: its bucket is the cluster unit of assignSwitchback."""
-    seed_hi, seed_lo, _ = ARMS[arm_count]
-    seed = experiment_seed(seed_hi, seed_lo)
+
+def key_variant(key: str, period: int, arm_count: int, count: int, seeds: Optional[tuple] = None) -> int:
+    """The switchback draw for a cluster key: its bucket is the cluster unit of assignSwitchback.
+    seeds is (seedHi, seedLo), ARMS[arm_count]'s by default."""
+    seed = experiment_seed(*(seeds or ARMS[arm_count][:2]))
     return assign_switchback(str(bucket_of(key, seed, count)), period, seed, arm_count)
 
 
@@ -374,13 +378,26 @@ def switchback_variant(uid: str, period: int, arm_count: int, count: int) -> int
     return key_variant(hash_unit(uid), period, arm_count, count)
 
 
-def wrong_key_variants(key: str, period: int, arm_count: int, count: int) -> set:
-    """What an SDK that drew from the key itself (per-value clustering) or applied another bucket
-    count would serve."""
-    seed_hi, seed_lo, _ = ARMS[arm_count]
-    wrong = {assign_switchback(key, period, experiment_seed(seed_hi, seed_lo), arm_count)}
-    wrong |= {key_variant(key, period, arm_count, other) for other in CLUSTER_COUNTS if other != count}
+def bucket_of_little_endian(key: str, seed: int, count: int) -> int:
+    """bucket_of with the first four digest bytes read little-endian: a byte-order mutant."""
+    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
+    return int.from_bytes(hashlib.md5((prefix + key).encode("utf-8")).digest()[:4], "little") % count
+
+
+def wrong_key_variants(key: str, period: int, arm_count: int, count: int, seeds: Optional[tuple] = None) -> set:
+    """What an SDK that drew from the key itself (per-value clustering), applied another bucket
+    count or read the digest little-endian would serve."""
+    seed = experiment_seed(*(seeds or ARMS[arm_count][:2]))
+    wrong = {assign_switchback(key, period, seed, arm_count)}
+    wrong |= {key_variant(key, period, arm_count, other, seeds) for other in CLUSTER_COUNTS if other != count}
+    wrong.add(assign_switchback(str(bucket_of_little_endian(key, seed, count)), period, seed, arm_count))
     return wrong
+
+
+def sticky_variant(uid: str, arm_count: int, seeds: Optional[tuple] = None) -> int:
+    """What an SDK ignoring randomizationType would serve: the ordinary unit assignment."""
+    seed_hi, seed_lo = seeds or ARMS[arm_count][:2]
+    return unit_variant(uid, ARMS[arm_count][2], seed_hi, seed_lo)
 
 
 def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
@@ -399,15 +416,16 @@ def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
 
 def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=()):
     """First make(k) whose attribute-source variant is nonzero and differs from the unit-source
-    draw for uid, from per-value clustering, from every other bucket count and from `avoid`."""
-    unit_draw = switchback_variant(uid, period, arm_count, count)
+    draw for uid, from the sticky unit assignment of uid, from per-value clustering, from every
+    other bucket count, from a little-endian bucket and from `avoid`."""
+    unit_draws = (0, switchback_variant(uid, period, arm_count, count), sticky_variant(uid, arm_count))
     for k in range(10_000):
         value = make(k)
         key = normalize_attribute(value)
         if key is None:
             raise SystemExit(f"attribute value {value!r} has no bucket key")
         variant = key_variant(key, period, arm_count, count)
-        if (variant not in (0, unit_draw) and variant not in avoid
+        if (variant not in unit_draws and variant not in avoid
                 and variant not in wrong_key_variants(key, period, arm_count, count)):
             return value
     raise SystemExit(f"no discriminating attribute value for {make(0)!r}")
@@ -561,8 +579,8 @@ def period_scenarios(_golden: dict, _buckets: dict) -> list:
                  f"{period} until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: "
                  f"each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), {period}, seed, "
                  f"{arm_count}) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero "
-                 "and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid) and from "
-                 "the other two counts."),
+                 "and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from "
+                 "the other two counts and from a little-endian bucket."),
                 experiments, units, steps))
     return scenarios
 
@@ -750,8 +768,8 @@ def attribute_source_scenarios(_golden: dict, _buckets: dict) -> list:
          "string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index "
          "between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, "
          "seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, "
-         "from per-value clustering on the key and from the other counts, and items[1].city would draw "
-         "differently from items[0].city."),
+         "from the sticky unit assignment, from per-value clustering on the key, from the other counts and from "
+         "a little-endian bucket, and items[1].city would draw differently from items[0].city."),
         [exp for exp, _, _, _ in sources],
         {"store_id": uid},
         steps)]
@@ -814,26 +832,35 @@ def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
         key = case["value"] if case["supported"] else None
         unit_key = hash_unit(uid)
 
-        # Hard: an eligible case draws nonzero and unlike the unit; an ineligible one sits where every
-        # leaf and the unit would draw nonzero. Soft: the most other leaves drawing differently.
-        def score(arms, count):
-            served = 0 if key is None else key_variant(key, 0, arms, count)
-            others = [key_variant(c, 0, arms, count) for c in candidates if c != key]
+        # Hard: an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit
+        # assignment, per-value clustering, the other counts and a little-endian bucket; an ineligible
+        # one sits where every leaf and the unit would draw nonzero. Soft: the most other leaves
+        # drawing differently.
+        def score(arms, count, seeds):
+            served = 0 if key is None else key_variant(key, 0, arms, count, seeds)
+            others = [key_variant(c, 0, arms, count, seeds) for c in candidates if c != key]
             if key is None:
                 return 0 if 0 not in others else None
-            if served == 0 or served == key_variant(unit_key, 0, arms, count):
+            if (served in (0, key_variant(unit_key, 0, arms, count, seeds), sticky_variant(uid, arms, seeds))
+                    or served in wrong_key_variants(key, 0, arms, count, seeds)):
                 return None
             return sum(other != served for other in others)
 
-        scored = [(score(arms, count), arms, count) for arms in (10, 3, 2) for count in CLUSTER_COUNTS]
-        scored = [entry for entry in scored if entry[0] is not None]
-        if not scored:
+        # The arm count's own seeds first; with 2 to 10 arms some keys collide with a mutant under
+        # every count, and only then is the seed varied.
+        for seeds in [None] + [(PATH_SEED_HI, k) for k in range(1, 100)]:
+            scored = [(score(arms, count, seeds), arms, count) for arms in (10, 3, 2) for count in CLUSTER_COUNTS]
+            scored = [entry for entry in scored if entry[0] is not None]
+            if scored:
+                break
+        else:
             raise SystemExit(f"no discriminating configuration for path case {case}")
-        config = max(scored, key=lambda entry: entry[0])[1:]
-        exp = switchback_experiment(160 + i, f"exp_switchback_path_{i}", "store_id", config[0], ANCHOR_PERIOD_0,
-                                    config[1], case["path"])
+        _, arms, count = max(scored, key=lambda entry: entry[0])
+        overrides = {} if seeds is None else {"seedHi": seeds[0], "seedLo": seeds[1]}
+        exp = switchback_experiment(160 + i, f"exp_switchback_path_{i}", "store_id", arms, ANCHOR_PERIOD_0,
+                                    count, case["path"], **overrides)
         experiments.append(exp)
-        variant = 0 if key is None else key_variant(key, 0, *config)
+        variant = 0 if key is None else key_variant(key, 0, arms, count, seeds)
         exposed.append(exposure(exp, variant, eligible=key is not None))
         steps.append(treatment_step(exp, variant, exposed[-1]))
     steps.append(publish_step(exposed))
@@ -843,8 +870,9 @@ def attribute_path_case_scenarios(_golden: dict, _buckets: dict) -> list:
          "attributes set as top-level attributes. A supported path that resolves to a value is served from "
          "that value's bucket; an unsupported path (a negative index) or a path that resolves to nothing "
          "(\"+0\" and \"\\u0660\" are keys, not indices) is ineligible. Count and arms per experiment are "
-         "chosen so an eligible case draws nonzero and unlike the unit-sourced draw, and unlike as many other "
-         "leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero."),
+         "chosen so an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit "
+         "assignment, per-value clustering, the other counts and a little-endian bucket, and unlike as many "
+         "other leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero."),
         experiments,
         {"store_id": uid},
         steps)]
@@ -884,7 +912,7 @@ def attribute_timing_scenarios(_golden: dict, _buckets: dict) -> list:
                               exposure(moved, first_variant, audience_mismatch=True)]),
             ]),
         context_scenario(
-            "Attribute Source - Attribute Set After An Ineligible Read Waits For The Next Period",
+            "Attribute Source - Attribute Set After An Ineligible Read Does Not Reassign Within The Period",
             (f"zone is unset at the first treatment, so the period resolves ineligible (variant 0, "
              f"eligible=false). setAttribute(zone, {late_value!r}), which would draw "
              f"{key_variant(late_value, 0, 10, 100)}, does not reassign within the period: the treatment stays "
