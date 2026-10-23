@@ -192,13 +192,18 @@ def signed32(value: int) -> int:
     return ((value + (1 << 31)) & MASK32) - (1 << 31)
 
 
+def cluster_digest(key: str, seed: int) -> bytes:
+    """MD5(utf8("sbcluster␟<seedHi>:<seedLo>␟" + key)), where seedHi and seedLo are the signed
+    32-bit halves of the 64-bit experiment seed in base 10."""
+    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
+    return hashlib.md5((prefix + key).encode("utf-8")).digest()
+
+
 def bucket_of(key: str, seed: int, count: int) -> int:
-    """int(MD5_HEX(utf8("sbcluster␟<seedHi>:<seedLo>␟" + key))[:8], 16) % count, where seedHi and
-    seedLo are the signed 32-bit halves of the 64-bit experiment seed in base 10."""
+    """The first four bytes of cluster_digest(key, seed), big-endian, mod count."""
     if count not in CLUSTER_COUNTS:
         raise ValueError(f"cluster count must be one of {CLUSTER_COUNTS}, got {count}")
-    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
-    return int(hashlib.md5((prefix + key).encode("utf-8")).hexdigest()[:8], 16) % count
+    return int.from_bytes(cluster_digest(key, seed)[:4], "big") % count
 
 
 def normalize_attribute(value) -> Optional[str]:
@@ -385,8 +390,7 @@ def switchback_variant(uid: str, period: int, arm_count: int, count: int) -> int
 
 def bucket_of_little_endian(key: str, seed: int, count: int) -> int:
     """bucket_of with the first four digest bytes read little-endian: a byte-order mutant."""
-    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
-    return int.from_bytes(hashlib.md5((prefix + key).encode("utf-8")).digest()[:4], "little") % count
+    return int.from_bytes(cluster_digest(key, seed)[:4], "little") % count
 
 
 def wrong_key_variants(key: str, period: int, arm_count: int, count: int, seeds: Optional[tuple] = None) -> set:
@@ -409,12 +413,11 @@ def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
     """First '<prefix>-<k>' whose switchback variant is nonzero and differs from the sticky unit
     variant, from per-value clustering and from every other bucket count, so neither an ineligible
     fallback, plain unit assignment nor the wrong cluster model can pass by accident."""
-    seed_hi, seed_lo, split = ARMS[arm_count]
     for k in range(10_000):
         uid = f"{prefix}-{k}"
         variant = switchback_variant(uid, period, arm_count, count)
-        wrong = wrong_key_variants(hash_unit(uid), period, arm_count, count)
-        if variant != 0 and variant != unit_variant(uid, split, seed_hi, seed_lo) and variant not in wrong:
+        if (variant not in (0, sticky_variant(uid, arm_count))
+                and variant not in wrong_key_variants(hash_unit(uid), period, arm_count, count)):
             return uid
     raise SystemExit(f"no discriminating uid for {prefix}")
 
@@ -860,13 +863,13 @@ def attribute_path_case_scenarios(paths: dict) -> list:
     attributes = {**paths["attributes"], **extra_attributes}
     cases = paths["cases"] + extra_cases
     uid = pick_uid("attribute-path", 0, 3, 100)
-    leaves = sorted({v for case in cases if case["value"] is not None for v in [case["value"]]}
+    unit_key = hash_unit(uid)
+    leaves = sorted({case["value"] for case in cases if case["value"] is not None}
                     | {"Lisbon", "Faro", "Porto", "minus-one-key", "plus-one-key"})
-    candidates = leaves + [hash_unit(uid)]
+    candidates = leaves + [unit_key]
     experiments, exposed, steps = [], [], [attribute_step(n, v) for n, v in attributes.items()]
     for i, case in enumerate(cases):
         key = case["value"] if case["supported"] else None
-        unit_key = hash_unit(uid)
 
         # Hard: an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit
         # assignment, per-value clustering, the other counts and a little-endian bucket; an ineligible
