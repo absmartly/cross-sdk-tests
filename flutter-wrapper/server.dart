@@ -1,21 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart' as shelf_router;
 import 'package:absmartly_sdk/absmartly_sdk.dart';
+import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 import 'lib/widget_test_queue.dart';
-
-String translateErrorMessage(String msg) {
-  if (msg.contains('closed') || msg.contains('closing')) {
-    return 'Context finalized';
-  }
-  return msg;
-}
 
 class EventCollector implements ContextEventLogger {
   final List<Map<String, dynamic>> events = [];
@@ -191,6 +186,34 @@ class ContextStore {
 }
 
 final Map<String, ContextStore> contexts = {};
+
+// Every response on a /context/<id>/... route, success or error, carries the
+// events the SDK's event logger emitted while the request was handled.
+shelf.Handler withEventsWindow(shelf.Handler inner) {
+  return (shelf.Request request) async {
+    final segments = request.url.pathSegments;
+    final store = segments.length >= 2 && segments[0] == 'context'
+        ? contexts[segments[1]]
+        : null;
+    if (store == null) return inner(request);
+
+    final eventsBefore = store.eventCollector.events.length;
+    final response = await inner(request);
+    final body = await response.readAsString();
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {
+      return response.change(body: body);
+    }
+    if (decoded is Map<String, dynamic>) {
+      decoded['events'] = store.eventCollector.getNewEvents(eventsBefore);
+      return response.change(body: jsonEncode(decoded));
+    }
+    return response.change(body: body);
+  };
+}
+
 // Raw payloads exactly as the orchestrator sent them. Served back verbatim so
 // the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
 final Map<String, Map<String, dynamic>> payloadStore = {};
@@ -264,25 +287,14 @@ Future<void> startServer() async {
         case 'hashUnit':
           result = String.fromCharCodes(Hashing.hashUnit(text));
           break;
-        case 'base64UrlNoPadding':
-          result = base64Url.encode(utf8.encode(text)).replaceAll('=', '');
-          break;
         case 'utf8Bytes':
-          result = utf8.encode(text);
-          break;
-        case 'isObject':
-          result = value is Map;
-          break;
-        case 'isNumeric':
-          result = value is num;
-          break;
-        case 'isPromise':
-          result = false;
+          final buffer = Uint8List(text.length * 4);
+          result = buffer.sublist(0, Buffers.encodeUTF8(buffer, 0, text));
           break;
         default:
           return shelf.Response(
             400,
-            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op'}),
+            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op', 'events': []}),
             headers: {'Content-Type': 'application/json'},
           );
       }
@@ -312,7 +324,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -337,7 +349,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -395,24 +407,17 @@ Future<void> startServer() async {
 
         final e2eSdk = ABSmartly(sdkConfig);
 
-        final unitsMap = Map<String, String>.from(
-          units.map((key, value) => MapEntry(key.toString(), value.toString()))
-        );
+        final unitsMap = Map<String, Object>.from(units);
 
         final contextConfig = ContextConfig();
         contextConfig.setUnits(unitsMap);
-        // e2e: disable auto-publish timer and auto-refresh so no background
-        // HTTP fires mid-test; tests drive publish/refresh explicitly. A
-        // negative delay fires the Timer immediately, so disabling means a
-        // very large delay, matching the non-e2e path below.
-        contextConfig.setPublishDelay(999999999);
+        // e2e: no auto-publish (negative delay) and no auto-refresh; tests
+        // drive publish/refresh explicitly.
+        contextConfig.setPublishDelay(-1);
         contextConfig.setRefreshInterval(0);
 
         final context = e2eSdk.createContext(contextConfig);
         await context.waitUntilReady();
-        for (int i = 0; i < 50 && eventCollector.events.isEmpty; i++) {
-          await Future.delayed(Duration(milliseconds: 10));
-        }
 
         final attributes = body['attributes'] as Map<String, dynamic>?;
         if (attributes != null) {
@@ -478,17 +483,12 @@ Future<void> startServer() async {
 
       final sdk = ABSmartly(sdkConfig);
 
-      final unitsMap = Map<String, String>.from(
-        units.map((key, value) => MapEntry(key.toString(), value.toString()))
-      );
+      final unitsMap = Map<String, Object>.from(units);
 
       final contextConfig = ContextConfig();
       contextConfig.setUnits(unitsMap);
 
-      final publishDelay = options['publishDelay'] as int? ?? -1;
-      contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
-      // Auto-refresh disabled (0); tests drive refresh explicitly. A negative
-      // interval fires the refresh Timer immediately, so 0 is the off value.
+      contextConfig.setPublishDelay(options['publishDelay'] as int? ?? -1);
       contextConfig.setRefreshInterval(0);
 
       final Context context = contextDataForCreation != null && !failLoad
@@ -497,10 +497,6 @@ Future<void> startServer() async {
 
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
-        // Wait for events to be collected (like Go/Java wrappers)
-        for (int i = 0; i < 50 && eventCollector.events.isEmpty; i++) {
-          await Future.delayed(Duration(milliseconds: 10));
-        }
       }
 
       contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {}, publisher,
@@ -522,7 +518,7 @@ Future<void> startServer() async {
       print('Error creating context: $e');
       print(stackTrace);
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -540,7 +536,7 @@ Future<void> startServer() async {
     try {
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      ctxData.context.setUnit(unitType, body['uid'].toString());
+      ctxData.context.setUnit(unitType, body['uid'] as Object);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -548,12 +544,8 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      var errorMsg = e.toString();
-      if (errorMsg.contains('already set')) {
-        errorMsg = "Unit '$unitType' UID already set.";
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(errorMsg)}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -569,15 +561,7 @@ Future<void> startServer() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final unitStr = ctxData.context.getUnit(body['unitType'] as String);
-
-      dynamic result = unitStr;
-      if (unitStr != null) {
-        final numValue = num.tryParse(unitStr);
-        if (numValue != null) {
-          result = numValue;
-        }
-      }
+      final result = ctxData.context.getUnit(body['unitType'] as String);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -586,7 +570,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -611,7 +595,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -636,7 +620,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -652,18 +636,12 @@ Future<void> startServer() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      // The widget path peeks 0 after finalize rather than throwing, so guard the
-      // finalized state explicitly (scenario 189).
-      if (ctxData.context.isClosed()) {
-        return shelf.Response(400,
-          body: jsonEncode({'error': 'Context finalized'}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
-
-      // The Treatment widget waits for readiness instead of reading; a direct
-      // read before ready goes through the SDK so its not-ready error surfaces.
-      if (!ctxData.context.isReady()) {
+      // The Treatment widget renders control without surfacing the SDK's
+      // error before ready (it waits) and after finalize (it catches the
+      // error). In those states read through the SDK directly so its own
+      // error surfaces; if the SDK stops throwing, the read returns a variant
+      // and the scenario sees it.
+      if (!ctxData.context.isReady() || ctxData.context.isClosed()) {
         ctxData.context.getTreatment(body['experimentName'] as String);
       }
 
@@ -684,7 +662,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -709,7 +687,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -725,7 +703,9 @@ Future<void> startServer() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      if (!ctxData.context.isReady()) {
+      // Same as /treatment: the VariableValue widget hides the SDK's
+      // not-ready and finalized errors behind the default value.
+      if (!ctxData.context.isReady() || ctxData.context.isClosed()) {
         ctxData.context.getVariableValue(body['key'] as String, body['defaultValue']);
       }
 
@@ -748,7 +728,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -777,7 +757,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Error in peekVariableValue handler: $e');
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -811,24 +791,13 @@ Future<void> startServer() async {
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
 
-      if (properties == null) {
-        for (final event in newEvents) {
-          if (event['type'] == 'goal' && event['data'] is Map) {
-            final data = event['data'] as Map<String, dynamic>;
-            if (data['properties'] is Map && (data['properties'] as Map).isEmpty) {
-              data['properties'] = null;
-            }
-          }
-        }
-      }
-
       return shelf.Response.ok(
         jsonEncode({'result': null, 'events': newEvents}),
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -853,14 +822,8 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -886,7 +849,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -911,7 +874,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -935,7 +898,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -961,7 +924,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -989,7 +952,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1016,14 +979,8 @@ Future<void> startServer() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1051,7 +1008,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1134,7 +1091,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1158,7 +1115,7 @@ Future<void> startServer() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1192,7 +1149,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Refresh error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1217,7 +1174,7 @@ Future<void> startServer() async {
     } catch (e) {
       print('Finalize error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1288,21 +1245,7 @@ Future<void> startServer() async {
 
     try {
       final eventsBefore = ctxData.eventCollector.events.length;
-      final units = ctxData.context.getUnits();
-      final result = <String, dynamic>{};
-      units.forEach((k, v) {
-        final intVal = int.tryParse(v);
-        if (intVal != null) {
-          result[k] = intVal;
-        } else {
-          final dblVal = double.tryParse(v);
-          if (dblVal != null) {
-            result[k] = dblVal;
-          } else {
-            result[k] = v;
-          }
-        }
-      });
+      final result = ctxData.context.getUnits();
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
         jsonEncode({'result': result, 'events': newEvents}),
@@ -1371,7 +1314,7 @@ Future<void> startServer() async {
 
   final handler = shelf.Pipeline()
       .addMiddleware(shelf.logRequests())
-      .addHandler(router);
+      .addHandler(withEventsWindow(router));
 
   final port = int.parse(Platform.environment['PORT'] ?? '3000');
   final server = await shelf_io.serve(handler, '0.0.0.0', port);

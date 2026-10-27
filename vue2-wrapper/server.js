@@ -8,6 +8,7 @@ if (typeof self === 'undefined') {
 const Vue = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
+const holdoutSelfTest = require('./holdoutSelfTest');
 const vue2sdk = require('@absmartly/vue2-sdk');
 
 process.on('uncaughtException', (err) => {
@@ -43,6 +44,22 @@ async function flushVueCleanup() {
 
 const app = express();
 app.use(express.json());
+
+// Every response on a context route, success or error, carries the events the
+// SDK's event logger emitted while the request was handled.
+app.use('/context/:contextId', (req, res, next) => {
+  const entry = contexts.get(req.params.contextId);
+  if (!entry) return next();
+  const eventsBefore = entry.eventCollector.events.length;
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      body = { ...body, events: entry.eventCollector.events.slice(eventsBefore) };
+    }
+    return json(body);
+  };
+  next();
+});
 
 class EventCollector {
   constructor() {
@@ -121,8 +138,15 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/capabilities', (req, res) => {
-  res.json({diagnostics: true,
+app.get('/capabilities', async (req, res) => {
+  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  res.json({diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: true,
+    holdouts,
+    holdout_arms: holdoutArms,
+    diagnostics: true,
     attrsSeq: true,
     isWrapper: true,
     wrapsSDK: 'javascript',
@@ -248,8 +272,7 @@ app.post('/context', async (req, res) => {
         failedData,
         { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
-      try { await context.ready(); } catch (e) {}
-      await new Promise(r => setTimeout(r, 50));
+      await context.ready();
     } else if (payloadThrottle > 0 && endpoint) {
       const deferredData = new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -461,7 +484,7 @@ app.post('/context/:contextId/override', (req, res) => {
 
   try {
     context.override(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -475,7 +498,7 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
 
   try {
     context.customAssignment(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -549,28 +572,28 @@ app.get('/context/:contextId/pending', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.pending(), events: [] });
+  res.json({ result: data.context.pending() });
 });
 
 app.get('/context/:contextId/isFinalized', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFinalized(), events: [] });
+  res.json({ result: data.context.isFinalized() });
 });
 
 app.get('/context/:contextId/isReady', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isReady(), events: [] });
+  res.json({ result: data.context.isReady() });
 });
 
 app.get('/context/:contextId/isFailed', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFailed(), events: [] });
+  res.json({ result: data.context.isFailed() });
 });
 
 app.get('/context/:contextId/experiments', (req, res) => {
@@ -580,7 +603,7 @@ app.get('/context/:contextId/experiments', (req, res) => {
 
   try {
     const experiments = data.context.experiments();
-    res.json({ result: experiments, events: [] });
+    res.json({ result: experiments });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -589,14 +612,14 @@ app.get('/context/:contextId/experiments', (req, res) => {
 app.post('/context/:contextId/getUnits', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
-  try { res.json({ result: data.context.getUnits(), events: [] }); }
+  try { res.json({ result: data.context.getUnits() }); }
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.post('/context/:contextId/getAttributes', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
-  try { res.json({ result: data.context.getAttributes(), events: [] }); }
+  try { res.json({ result: data.context.getAttributes() }); }
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
@@ -604,20 +627,20 @@ app.post('/context/:contextId/readyError', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
   const error = data.context.readyError();
-  res.json({ result: error ? { isError: true, message: error.message || String(error) } : null, events: [] });
+  res.json({ result: error ? { isError: true, message: error.message || String(error) } : null });
 });
 
 app.post('/context/:contextId/variableKeysMap', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
-  try { res.json({ result: data.context.variableKeys(), events: [] }); }
+  try { res.json({ result: data.context.variableKeys() }); }
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.post('/context/:contextId/globalCustomFieldKeys', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
-  try { res.json({ result: data.context.customFieldKeys(), events: [] }); }
+  try { res.json({ result: data.context.customFieldKeys() }); }
   catch (error) { res.status(400).json({ error: error.message }); }
 });
 
@@ -625,7 +648,7 @@ app.post('/context/:contextId/publishFail', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
   data.customPublisher._shouldFail = true;
-  res.json({ result: null, events: [] });
+  res.json({ result: null });
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

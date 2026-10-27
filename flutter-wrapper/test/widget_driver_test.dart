@@ -50,7 +50,7 @@ Future<Context> _readyContext(WidgetTester tester) async {
       .setContextPublisher(_NoopPublisher()));
   final config = ContextConfig()
     ..setUnits({'session_id': 'driver-test'})
-    ..setPublishDelay(999999999)
+    ..setPublishDelay(-1)
     ..setRefreshInterval(0);
   final context =
       sdk.createContextWith(config, ContextData.fromMap(_payload()));

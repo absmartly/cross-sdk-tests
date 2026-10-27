@@ -27,7 +27,7 @@ final class EventCollectorTests: XCTestCase {
 
         for i in 0..<250 {
             let before = collector.events.count
-            context.track("goal_\(i)", properties: nil)
+            try context.track("goal_\(i)", properties: nil)
             let window = Array(collector.events.suffix(from: before))
             XCTAssertEqual(window.count, 1, "track #\(i) should yield exactly its own event")
             XCTAssertEqual(window.first?["type"] as? String, "goal")

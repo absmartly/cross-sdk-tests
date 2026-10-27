@@ -62,16 +62,24 @@ object Server extends IOApp {
       publisher = Some(publisher)
     )
 
-  private def parseUnitsMap(cursor: io.circe.ACursor): Map[String, String] = {
-    cursor.focus.flatMap(_.asObject).map { obj =>
-      obj.toMap.flatMap { case (key, value) =>
-        val strVal = value.asString
-          .orElse(value.asNumber.map(_.toString))
-          .orElse(Some(value.noSpaces))
-        strVal.map(key -> _)
+  private def unitsObject(cursor: io.circe.ACursor): List[(String, Json)] =
+    cursor.focus.flatMap(_.asObject).map(_.toList).getOrElse(Nil)
+
+  /** String units go to the SDK's create call; numeric ones are set with the SDK's numeric setUnit. */
+  private def parseUnitsMap(cursor: io.circe.ACursor): Map[String, String] =
+    unitsObject(cursor).collect { case (k, v) if v.isString => k -> v.asString.get }.toMap
+
+  private def setUnitJson(context: Context, unitType: String, uid: Json): Unit =
+    uid.asNumber match {
+      case Some(n) => n.toLong match {
+        case Some(l) => context.setUnit(unitType, l)
+        case None    => context.setUnit(unitType, n.toDouble)
       }
-    }.getOrElse(Map.empty)
-  }
+      case None => context.setUnit(unitType, uid.asString.getOrElse(uid.noSpaces))
+    }
+
+  private def applyNumericUnits(context: Context, cursor: io.circe.ACursor): Unit =
+    unitsObject(cursor).filterNot(_._2.isString).foreach { case (k, v) => setUnitJson(context, k, v) }
 
   val routes = HttpRoutes.of[IO] {
 
@@ -84,14 +92,16 @@ object Server extends IOApp {
 
     case GET -> Root / "capabilities" =>
       Ok(Json.obj("diagnostics" -> Json.fromBoolean(true),
+        "diagnosticsUtf8" -> Json.fromBoolean(true),
+        "diagnosticsBase64" -> Json.fromBoolean(true),
+        "diagnosticsTypeChecks" -> Json.fromBoolean(true),
+        "diagnosticsIsPromise" -> Json.fromBoolean(true),
         "publishFail" -> Json.fromBoolean(true),
         "variableKeysMap" -> Json.fromBoolean(true),
         "globalCustomFieldKeys" -> Json.fromBoolean(true),
         "getUnits" -> Json.fromBoolean(true),
         "getAttributes" -> Json.fromBoolean(true),
-        // readyError withdrawn: Scala SDK has no public path to a failed
-        // Context from a failing fetch and emits no "error" event.
-        "readyError" -> Json.fromBoolean(false)
+        "readyError" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -103,26 +113,24 @@ object Server extends IOApp {
 
         val result: Either[String, Json] = op match {
           case "hashUnit" =>
-            Right(Json.fromString(Utils.hashUnit(text)))
+            Right(Json.fromString(value.asNumber.fold(Utils.hashUnit(text))(n => Utils.hashUnit(n.toDouble))))
           case "base64UrlNoPadding" =>
-            val encoded = java.util.Base64.getUrlEncoder.withoutPadding.encodeToString(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-            Right(Json.fromString(encoded))
+            Right(Json.fromString(Utils.base64UrlNoPadding(Utils.utf8Bytes(text))))
           case "utf8Bytes" =>
-            val bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8).map(b => Json.fromInt(b & 0xff))
-            Right(Json.arr(bytes: _*))
+            Right(Json.arr(Utils.utf8Bytes(text).map(b => Json.fromInt(b & 0xff)).toIndexedSeq: _*))
           case "isObject" =>
-            Right(Json.fromBoolean(value.isObject))
+            Right(Json.fromBoolean(Utils.isObject(value)))
           case "isNumeric" =>
-            Right(Json.fromBoolean(value.isNumber))
+            Right(Json.fromBoolean(Utils.isNumeric(value)))
           case "isPromise" =>
-            Right(Json.fromBoolean(false))
+            Right(Json.fromBoolean(Utils.isPromise(value)))
           case _ =>
             Left(s"Unsupported diagnostic operation: $op")
         }
 
         result match {
-          case Right(v) => Ok(wrapperResponse(v, List.empty))
-          case Left(err) => BadRequest(Json.obj("error" -> Json.fromString(err)))
+          case Right(v) => Ok(wrapperResponse(v, List.empty)) // no context, so no SDK events
+          case Left(err) => BadRequest(errorBody(err))
         }
       }
 
@@ -134,20 +142,20 @@ object Server extends IOApp {
             payloads(payloadId) = data
             Ok(Json.obj("success" -> Json.fromBoolean(true)))
           case None =>
-            BadRequest(Json.obj("error" -> Json.fromString("Missing data")))
+            BadRequest(errorBody("Missing data"))
         }
       }
 
     case GET -> Root / "context_payload" / payloadId / "context" :? _ =>
       payloads.get(payloadId) match {
         case Some(data) => Ok(data)
-        case None => NotFound(Json.obj("error" -> Json.fromString("Payload not found")))
+        case None => NotFound(errorBody("Payload not found"))
       }
 
     case req @ POST -> Root / "context_payload" / payloadId / "context" =>
       payloads.get(payloadId) match {
         case Some(data) => Ok(data)
-        case None => NotFound(Json.obj("error" -> Json.fromString("Payload not found")))
+        case None => NotFound(errorBody("Payload not found"))
       }
 
     case req @ POST -> Root / "context" =>
@@ -180,6 +188,7 @@ object Server extends IOApp {
                 val publisher = new ArmablePublisher(Some(new DefaultContextPublisher(baseConfig)))
                 val sdk = new SDK(baseConfig.copy(publisher = Some(publisher)))
                 sdk.createContext(units).map { context =>
+                  applyNumericUnits(context, cursor.downField("units"))
                   attrs.foreach { case (name, value) => context.setAttribute(name, value) }
                   (context, collector, publisher)
                 }
@@ -197,11 +206,11 @@ object Server extends IOApp {
                   collector.getEvents()
                 ))
               }.handleErrorWith { err =>
-                InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+                InternalServerError(errorBody(err.getMessage))
               }
 
             case _ =>
-              NotImplemented(Json.obj("error" -> Json.fromString("e2e mode not configured")))
+              NotImplemented(errorBody("e2e mode not configured"))
           }
         } else {
 
@@ -222,12 +231,16 @@ object Server extends IOApp {
         // Returns the context plus, for a throttled context, the SDK fetch to
         // start once the context is registered.
         val createContext: IO[(Context, WrapperEventCollector, Option[IO[Unit]])] = if (failLoad) {
-          // readyError capability is withdrawn: the Scala SDK has no public
-          // creation path that yields a failed Context from a failing fetch
-          // (SDK.createContext fails the Future instead) and never emits an
-          // "error" event. Refuse rather than fabricate failed state.
-          IO.raiseError(new UnsupportedOperationException(
-            "failLoad unsupported: Scala SDK cannot produce a failed context from a failing data fetch"))
+          // The SDK's own fetch against a closed port fails like a real
+          // network failure; SDK.createContext then yields a failed context.
+          IO.fromFuture(IO {
+            val collector = new WrapperEventCollector()
+            val sdk = new SDK(SDKConfig(
+              endpoint = "http://127.0.0.1:1", apiKey = "test-key", application = "test-app",
+              environment = "test", retries = 0, timeout = 1000,
+              eventLogger = collector, publisher = Some(publisher)))
+            sdk.createContext(units, options).map(context => (context, collector, None))
+          })
         } else dataJson match {
           case Some(js) =>
             js.as[ContextData] match {
@@ -277,6 +290,7 @@ object Server extends IOApp {
         }
 
         createContext.flatMap { case (context, collector, deferredFetch) =>
+          applyNumericUnits(context, cursor.downField("units"))
           val contextId = s"ctx-${contextCounter.getAndIncrement()}"
           contexts(contextId) = (context, collector)
           publishers(contextId) = publisher
@@ -297,11 +311,11 @@ object Server extends IOApp {
           ))
         }.handleErrorWith {
           case err: UnsupportedOperationException =>
-            NotImplemented(Json.obj("error" -> Json.fromString(err.getMessage)))
+            NotImplemented(errorBody(err.getMessage))
           case err: InvalidRequest =>
-            BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
+            BadRequest(errorBody(err.getMessage))
           case err =>
-            InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
+            InternalServerError(errorBody(err.getMessage))
         }
         }
       }
@@ -318,17 +332,15 @@ object Server extends IOApp {
         req.as[Json].flatMap { json =>
           val cursor = json.hcursor
           val unitTypeOpt = cursor.downField("unitType").as[String].toOption
-          val uidOpt = cursor.downField("uid").focus.map { v =>
-            v.asString.getOrElse(v.asNumber.map(_.toString).getOrElse(v.noSpaces))
-          }
+          val uidOpt = cursor.downField("uid").focus
           (unitTypeOpt, uidOpt) match {
             case (Some(unitType), Some(uid)) =>
               respondWithEvents(collector) {
-                context.setUnit(unitType, uid)
+                setUnitJson(context, unitType, uid)
                 Json.Null
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing unitType or uid")))
+              BadRequest(errorBody("Missing unitType or uid"))
           }
         }
       }
@@ -339,15 +351,10 @@ object Server extends IOApp {
           json.hcursor.downField("unitType").as[String] match {
             case Right(unitType) =>
               respondWithEvents(collector) {
-                context.getUnit(unitType).map { v =>
-                  v.toIntOption.map(Json.fromInt)
-                    .orElse(v.toLongOption.map(Json.fromLong))
-                    .orElse(v.toDoubleOption.map(Json.fromDoubleOrNull))
-                    .getOrElse(Json.fromString(v))
-                }.getOrElse(Json.Null)
+                context.getUnitValue(unitType).getOrElse(Json.Null)
               }
             case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing unitType")))
+              BadRequest(errorBody("Missing unitType"))
           }
         }
       }
@@ -363,7 +370,7 @@ object Server extends IOApp {
                 Json.Null
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing name or value")))
+              BadRequest(errorBody("Missing name or value"))
           }
         }
       }
@@ -375,7 +382,7 @@ object Server extends IOApp {
             case Right(name) =>
               respondWithEvents(collector)(context.getAttribute(name).getOrElse(Json.Null))
             case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing name")))
+              BadRequest(errorBody("Missing name"))
           }
         }
       }
@@ -385,16 +392,9 @@ object Server extends IOApp {
         req.as[Json].flatMap { json =>
           json.hcursor.downField("experimentName").as[String] match {
             case Right(experimentName) =>
-              // The scala SDK's treatment() returns 0 on a finalized context
-              // (Context.scala:196) instead of failing, so enforce the spec's
-              // "finalized => error" here before delegating (scenario 189).
-              if (context.isFinalized()) {
-                BadRequest(Json.obj("error" -> Json.fromString("Context finalized")))
-              } else {
-                respondWithEvents(collector)(Json.fromInt(context.treatment(experimentName)))
-              }
+              respondWithEvents(collector)(Json.fromInt(context.treatment(experimentName)))
             case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName")))
+              BadRequest(errorBody("Missing experimentName"))
           }
         }
       }
@@ -406,7 +406,7 @@ object Server extends IOApp {
             case Right(experimentName) =>
               respondWithEvents(collector)(Json.fromInt(context.peek(experimentName)))
             case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName")))
+              BadRequest(errorBody("Missing experimentName"))
           }
         }
       }
@@ -421,7 +421,7 @@ object Server extends IOApp {
                 variableResult(context.variableValue(key, defaultValue.noSpaces))
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing key or defaultValue")))
+              BadRequest(errorBody("Missing key or defaultValue"))
           }
         }
       }
@@ -436,7 +436,7 @@ object Server extends IOApp {
                 variableResult(context.peekVariableValue(key, defaultValue.noSpaces))
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing key or defaultValue")))
+              BadRequest(errorBody("Missing key or defaultValue"))
           }
         }
       }
@@ -447,13 +447,11 @@ object Server extends IOApp {
           val cursor = json.hcursor
           cursor.downField("goalName").as[String] match {
             case Right(goalName) =>
-              // The SDK decodes non-object properties to None and tracks
-              // anyway, so enforce the spec's type check here: a present
-              // properties value that is not a JSON object (number, string,
-              // array) must fail (scenarios 37/38/39).
+              // The SDK's track takes Option[Map[String, Json]], so a non-object
+              // cannot reach it: reject at the JSON-to-type boundary.
               cursor.downField("properties").focus match {
                 case Some(js) if !js.isNull && !js.isObject =>
-                  BadRequest(Json.obj("error" -> Json.fromString(s"Goal '$goalName' properties must be of type object.")))
+                  BadRequest(errorBody(s"Goal '$goalName' properties must be of type object."))
                 case _ =>
                   val properties = cursor.downField("properties").as[Map[String, Json]].toOption
                   respondWithEvents(collector) {
@@ -462,7 +460,7 @@ object Server extends IOApp {
                   }
               }
             case Left(_) =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing goalName")))
+              BadRequest(errorBody("Missing goalName"))
           }
         }
       }
@@ -473,22 +471,12 @@ object Server extends IOApp {
           val cursor = json.hcursor
           (cursor.downField("experimentName").as[String], cursor.downField("variant").as[Int]) match {
             case (Right(experimentName), Right(variant)) =>
-              val prevCount = collector.count()
-              try {
+              respondWithEvents(collector) {
                 context.setOverride(experimentName, variant)
-                Ok(wrapperResponse(Json.Null, collector.getEventsSince(prevCount)))
-              } catch {
-                case e: Exception =>
-                  val msg = Option(e.getMessage).getOrElse("")
-                  val lower = msg.toLowerCase
-                  if (lower.contains("closed") || lower.contains("closing") || lower.contains("finalized")) {
-                    Ok(wrapperResponse(Json.Null, collector.getEventsSince(prevCount)))
-                  } else {
-                    BadRequest(Json.obj("error" -> Json.fromString(msg)))
-                  }
+                Json.Null
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName or variant")))
+              BadRequest(errorBody("Missing experimentName or variant"))
           }
         }
       }
@@ -504,7 +492,7 @@ object Server extends IOApp {
                 Json.Null
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName or variant")))
+              BadRequest(errorBody("Missing experimentName or variant"))
           }
         }
       }
@@ -517,7 +505,7 @@ object Server extends IOApp {
             case (Right(experimentName), Right(fieldName)) =>
               respondWithEvents(collector)(context.customFieldValue(experimentName, fieldName).getOrElse(Json.Null))
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName or fieldName")))
+              BadRequest(errorBody("Missing experimentName or fieldName"))
           }
         }
       }
@@ -537,7 +525,7 @@ object Server extends IOApp {
                 context.customFieldValueType(experimentName, fieldName).map(Json.fromString).getOrElse(Json.Null)
               }
             case _ =>
-              BadRequest(Json.obj("error" -> Json.fromString("Missing experimentName or fieldName")))
+              BadRequest(errorBody("Missing experimentName or fieldName"))
           }
         }
       }
@@ -575,15 +563,7 @@ object Server extends IOApp {
     case POST -> Root / "context" / contextId / "getUnits" =>
       withContext(contextId) { case (context, collector) =>
         respondWithEvents(collector) {
-          val result = context.getUnits().map { case (k, v) =>
-            val parsed = try { Json.fromInt(v.toInt) }
-            catch { case _: NumberFormatException =>
-              try { Json.fromDoubleOrNull(v.toDouble) }
-              catch { case _: NumberFormatException => Json.fromString(v) }
-            }
-            k -> parsed
-          }
-          Json.obj(result.toSeq: _*)
+          Json.obj(context.getUnitValues().toSeq: _*)
         }
       }
 
@@ -620,57 +600,34 @@ object Server extends IOApp {
               Json.Null
             }
           case None =>
-            NotImplemented(Json.obj("error" -> Json.fromString("publishFail unsupported for this context (no injectable publisher)")))
+            NotImplemented(errorBody("publishFail unsupported for this context (no injectable publisher)"))
         }
       }
 
     case POST -> Root / "context" / contextId / "publish" =>
       withContext(contextId) { case (context, collector) =>
-        IO(collector.count()).flatMap { prevCount =>
-          IO.fromFuture(IO(context.publish())).flatMap { _ =>
-            Ok(wrapperResponse(Json.Null, collector.getEventsSince(prevCount)))
-          }
-        }.handleErrorWith { err =>
-          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
-        }
+        awaitWithEvents(collector)(context.publish())
       }
 
     case req @ POST -> Root / "context" / contextId / "refresh" =>
       withContext(contextId) { case (context, collector) =>
-        req.as[Json].flatMap { json =>
-          // Apply the request's newData to the context so refresh operates on the
-          // updated payload (not the stale one the context was created with).
-          val newData = json.hcursor.downField("newData").as[ContextData].toOption
-          // refresh() without data is the SDK's blocking fetch.
-          IO.blocking {
-            val prevCount = collector.count()
-            newData match {
-              case Some(data) => context.refresh(data)
-              case None       => context.refresh()
-            }
-            wrapperResponse(Json.Null, collector.getEventsSince(prevCount))
-          }.flatMap(Ok(_)).handleErrorWith { err =>
-            BadRequest(Json.obj("error" -> Json.fromString(err.getMessage)))
-          }
+        // The orchestrator has already stored newData at the payload endpoint;
+        // the SDK's own refresh() fetches it.
+        IO.blocking(collector.count()).flatMap { prevCount =>
+          IO.blocking(context.refresh()).attempt.flatMap(respond(collector, prevCount, Json.Null))
         }
       }
 
     case POST -> Root / "context" / contextId / "finalize" =>
       withContext(contextId) { case (context, collector) =>
-        IO(collector.count()).flatMap { prevCount =>
-          IO.fromFuture(IO(context.finalizeContext())).flatMap { _ =>
-            Ok(wrapperResponse(Json.Null, collector.getEventsSince(prevCount)))
-          }
-        }.handleErrorWith { err =>
-          InternalServerError(Json.obj("error" -> Json.fromString(err.getMessage)))
-        }
+        awaitWithEvents(collector)(context.finalizeContext())
       }
   }
 
   private def withContext(contextId: String)(f: ((Context, WrapperEventCollector)) => IO[Response[IO]]): IO[Response[IO]] = {
     contexts.get(contextId) match {
       case Some(pair) => f(pair)
-      case None => NotFound(Json.obj("error" -> Json.fromString("Context not found")))
+      case None => NotFound(errorBody("Context not found"))
     }
   }
 
@@ -679,14 +636,25 @@ object Server extends IOApp {
    * events the SDK logged during the call. An SDK exception becomes a 400.
    */
   private def respondWithEvents(collector: WrapperEventCollector)(op: => Json): IO[Response[IO]] =
-    IO {
-      val prevCount = collector.count()
-      val result = op
-      wrapperResponse(result, collector.getEventsSince(prevCount))
-    }.attempt.flatMap {
-      case Right(body) => Ok(body)
-      case Left(e)     => BadRequest(Json.obj("error" -> Json.fromString(Option(e.getMessage).getOrElse(e.toString))))
+    IO(collector.count()).flatMap { prevCount =>
+      IO(op).attempt.flatMap(r => respond(collector, prevCount, r.getOrElse(Json.Null))(r.map(_ => ())))
     }
+
+  /** Awaits an SDK Future; the response carries the events logged meanwhile. */
+  private def awaitWithEvents(collector: WrapperEventCollector)(op: => scala.concurrent.Future[Unit]): IO[Response[IO]] =
+    IO(collector.count()).flatMap { prevCount =>
+      IO.fromFuture(IO(op)).attempt.flatMap(respond(collector, prevCount, Json.Null))
+    }
+
+  private def respond(collector: WrapperEventCollector, prevCount: Int, result: Json)(outcome: Either[Throwable, Unit]): IO[Response[IO]] = {
+    val events = collector.getEventsSince(prevCount).map(_.toJson).asJson
+    outcome match {
+      case Right(_) => Ok(Json.obj("result" -> result, "events" -> events))
+      case Left(e)  => BadRequest(Json.obj(
+        "error" -> Json.fromString(Option(e.getMessage).getOrElse(e.toString)),
+        "events" -> events))
+    }
+  }
 
   /**
    * The SDK's variable API is String-only: a resolved variable comes back as
@@ -701,6 +669,10 @@ object Server extends IOApp {
       case Left(err) =>
         throw new IllegalStateException(s"SDK returned a variable value that is not JSON: $value (${err.message})")
     }
+
+  /** An error that no SDK call produced: there are no SDK events to return. */
+  private def errorBody(message: String): Json =
+    Json.obj("error" -> Json.fromString(message), "events" -> Json.arr())
 
   private def wrapperResponse(result: Json, events: List[WrapperEvent]): Json = {
     Json.obj(

@@ -17,7 +17,6 @@ class EventCollector : ContextEventLogger {
         )
         synchronized(lock) {
             events.add(event)
-            lock.notifyAll()
         }
     }
 
@@ -60,21 +59,6 @@ class EventCollector : ContextEventLogger {
                 return emptyList()
             }
             return events.subList(since, events.size).toList()
-        }
-    }
-
-    // The SDK completes its ready future before it logs the Ready event, so a
-    // caller returning from waitUntilReady() can race the event. Block until the
-    // SDK has logged at least `count` events, or the timeout elapses.
-    fun awaitEventCount(count: Int, timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        synchronized(lock) {
-            while (events.size < count) {
-                val remaining = deadline - System.currentTimeMillis()
-                if (remaining <= 0) return false
-                lock.wait(remaining)
-            }
-            return true
         }
     }
 }

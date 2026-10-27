@@ -18,6 +18,7 @@ use ABSmartly\SDK\Context\ContextPublisher;
 use ABSmartly\SDK\Context\ContextEventLogger;
 use ABSmartly\SDK\Context\ContextEventLoggerEvent;
 use ABSmartly\SDK\PublishEvent;
+use ABSmartly\SDK\Utils;
 use React\Http\Server;
 use React\Http\Message\Response;
 use React\EventLoop\Loop;
@@ -106,8 +107,7 @@ class FailingAsyncContextDataProvider extends AsyncContextDataProvider
 
     public function getContextDataAsync(): \React\Promise\PromiseInterface
     {
-        $badData = new ContextData([(object)['name' => 'failing_load']]);
-        return \React\Promise\resolve($badData);
+        return \React\Promise\reject(new \RuntimeException('Context load failed'));
     }
 }
 
@@ -187,17 +187,6 @@ function parseJsonBodyPreserveObjects(ServerRequestInterface $request)
     return json_decode($body);
 }
 
-function waitForClosed(Context $context, int $timeoutMs = 5000, int $pollIntervalMs = 5): void
-{
-    $deadline = microtime(true) + ($timeoutMs / 1000.0);
-    while (!$context->isClosed()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Context did not finalize within timeout');
-        }
-        usleep($pollIntervalMs * 1000);
-    }
-}
-
 function translateEndpoint(string $endpoint): string
 {
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
@@ -217,6 +206,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
     if ($method === 'GET' && $path === '/capabilities') {
         return jsonResponse(200, ['diagnostics' => true,
+            'diagnosticsUtf8' => true,
+            'diagnosticsBase64' => true,
+            'diagnosticsTypeChecks' => true,
+            'diagnosticsIsPromise' => true,
             'attrsSeq' => false,
             'publishFail' => true,
             // php-sdk Context::getVariableKeys() returns key => single experiment
@@ -237,28 +230,24 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         try {
             if ($op === 'hashUnit') {
-                $publishEvent = new PublishEvent();
-                $result = $publishEvent->hashUnit((string)$value);
+                $result = Utils::hashUnit($value);
             } elseif ($op === 'base64UrlNoPadding') {
-                $str = (string)$value;
-                $result = rtrim(strtr(base64_encode($str), '+/', '-_'), '=');
+                $result = Utils::base64UrlNoPadding($value);
             } elseif ($op === 'utf8Bytes') {
-                $str = (string)$value;
-                $bytes = unpack('C*', $str);
-                $result = $bytes ? array_values($bytes) : [];
+                $result = Utils::utf8Bytes($value);
             } elseif ($op === 'isObject') {
-                $result = is_object($value);
+                $result = Utils::isObject($value);
             } elseif ($op === 'isNumeric') {
-                $result = is_int($value) || is_float($value);
+                $result = Utils::isNumeric($value);
             } elseif ($op === 'isPromise') {
-                $result = false;
+                $result = Utils::isPromise($value);
             } else {
-                return jsonResponse(400, ['error' => "Unsupported diagnostic operation: {$op}"]);
+                return jsonResponse(400, ['error' => "Unsupported diagnostic operation: {$op}", 'events' => []]);
             }
 
             return jsonResponse(200, ['result' => $result, 'events' => []]);
         } catch (Throwable $e) {
-            return jsonResponse(500, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => []]);
         }
     }
 
@@ -333,7 +322,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             if (isset($body->units)) {
                 foreach ((array)$body->units as $unitType => $uid) {
-                    $contextConfig->setUnit($unitType, (string)$uid);
+                    $contextConfig->setUnit($unitType, $uid);
                 }
             }
 
@@ -366,8 +355,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                         'events' => $eventCollector->getEvents()
                     ]);
                 },
-                function($error) {
-                    return jsonResponse(500, ['error' => $error->getMessage()]);
+                function($error) use ($eventCollector) {
+                    return jsonResponse(500, ['error' => $error->getMessage(), 'events' => $eventCollector->getEvents()]);
                 }
             );
         }
@@ -416,7 +405,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         if (isset($body->units)) {
             foreach ((array)$body->units as $unitType => $uid) {
-                $contextConfig->setUnit($unitType, (string)$uid);
+                $contextConfig->setUnit($unitType, $uid);
             }
         }
 
@@ -502,10 +491,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return $sdk->createContextAsync($contextConfig)->then(
                 function($context) use ($contextId, $eventCollector, $publisher, $sdk, &$contexts) {
-                    for ($i = 0; $i < 50 && empty($eventCollector->getEvents()); $i++) {
-                        usleep(10000);
-                    }
-
                     $contexts[$contextId] = [
                         'context' => $context,
                         'eventCollector' => $eventCollector,
@@ -523,8 +508,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                         'events' => $eventCollector->getEvents()
                     ]);
                 },
-                function($error) {
-                    return jsonResponse(500, ['error' => $error->getMessage()]);
+                function($error) use ($eventCollector) {
+                    return jsonResponse(500, ['error' => $error->getMessage(), 'events' => $eventCollector->getEvents()]);
                 }
             );
         }
@@ -544,18 +529,13 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $context->setUnit($body['unitType'], (string)$body['uid']);
+            $context->setUnit($body['unitType'], $body['uid']);
 
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            $error = $e->getMessage();
-            if (stripos($error, 'already set') !== false) {
-                $unitType = $body['unitType'] ?? '';
-                $error = "Unit '{$unitType}' UID already set.";
-            }
-            return jsonResponse(400, ['error' => $error]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -574,18 +554,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         try {
             $result = $context->getUnit($body['unitType']);
-            if ($result !== null && is_numeric($result)) {
-                if (strpos($result, '.') !== false) {
-                    $result = (float) $result;
-                } else {
-                    $result = (int) $result;
-                }
-            }
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => $result, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -608,7 +581,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -631,7 +604,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $result, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -655,7 +628,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $variant, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -678,7 +651,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $variant, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -701,7 +674,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $value, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -724,7 +697,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $value, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -743,18 +716,14 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         $bodyObj = parseJsonBodyPreserveObjects($request);
         $rawProps = (is_object($bodyObj) && property_exists($bodyObj, 'properties')) ? $bodyObj->properties : null;
-        if ($rawProps !== null && !is_object($rawProps)) {
-            return jsonResponse(400, ['error' => "Goal '{$body['goalName']}' properties must be of type object."]);
-        }
 
         try {
-            $properties = isset($body['properties']) ? (object)$body['properties'] : null;
-            $context->track($body['goalName'], $properties);
+            $context->track($body['goalName'], $rawProps);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -766,15 +735,17 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
 
         try {
             $context->setOverride($body['experimentName'], (int)$body['variant']);
 
-            return jsonResponse(200, ['result' => null, 'events' => []]);
+            return jsonResponse(200, ['result' => null, 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -786,15 +757,17 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
         $body = parseJsonBody($request);
 
         try {
             $context->setCustomAssignment($body['experimentName'], (int)$body['variant']);
 
-            return jsonResponse(200, ['result' => null, 'events' => []]);
+            return jsonResponse(200, ['result' => null, 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -817,7 +790,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $value, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -839,7 +812,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $keyArray, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -864,7 +837,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $keys, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -888,7 +861,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => $result, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -911,7 +884,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -934,7 +907,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -946,11 +919,13 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
         try {
-            return jsonResponse(200, ['result' => $context->pending(), 'events' => []]);
+            return jsonResponse(200, ['result' => $context->pending(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         } catch (Throwable $e) {
-            return jsonResponse(500, ['error' => $e->getMessage()]);
+            return jsonResponse(500, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -962,8 +937,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
-        return jsonResponse(200, ['result' => $context->isClosed(), 'events' => []]);
+        return jsonResponse(200, ['result' => $context->isClosed(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
     }
 
     if (preg_match('#^/context/([^/]+)/isReady$#', $path, $matches)) {
@@ -974,8 +951,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
-        return jsonResponse(200, ['result' => $context->isReady(), 'events' => []]);
+        return jsonResponse(200, ['result' => $context->isReady(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
     }
 
     if (preg_match('#^/context/([^/]+)/isFailed$#', $path, $matches)) {
@@ -986,8 +965,10 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
-        return jsonResponse(200, ['result' => $context->isFailed(), 'events' => []]);
+        return jsonResponse(200, ['result' => $context->isFailed(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
     }
 
     if (preg_match('#^/context/([^/]+)/experiments$#', $path, $matches)) {
@@ -998,12 +979,14 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         }
 
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
 
         try {
             $experiments = $context->getExperiments();
-            return jsonResponse(200, ['result' => $experiments, 'events' => []]);
+            return jsonResponse(200, ['result' => $experiments, 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1016,18 +999,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $eventsBefore = count($eventCollector->getEvents());
         try {
             $units = $context->getUnits();
-            $result = [];
-            foreach ($units as $k => $v) {
-                if (is_numeric($v)) {
-                    $result[$k] = strpos($v, '.') !== false ? (float)$v : (int)$v;
-                } else {
-                    $result[$k] = $v;
-                }
-            }
+            $result = $units;
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
             return jsonResponse(200, ['result' => (object)$result, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1043,7 +1019,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
             return jsonResponse(200, ['result' => (object)$result, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1052,12 +1028,14 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $data = $contexts[$contextId] ?? null;
         if (!$data) return jsonResponse(404, ['error' => 'Context not found']);
         $context = $data['context'];
+        $eventCollector = $data['eventCollector'];
+        $eventsBefore = count($eventCollector->getEvents());
         try {
             $error = $context->readyError();
             $result = $error ? ['isError' => true, 'message' => $error->getMessage()] : null;
-            return jsonResponse(200, ['result' => $result, 'events' => []]);
+            return jsonResponse(200, ['result' => $result, 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1078,7 +1056,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
             return jsonResponse(200, ['result' => $keys, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1108,7 +1086,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(500, ['error' => $e->getMessage()]);
+            return jsonResponse(500, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 
@@ -1131,7 +1109,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
                 return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
             } catch (Throwable $e) {
-                return jsonResponse(500, ['error' => $e->getMessage()]);
+                return jsonResponse(500, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
             }
         })();
     }
@@ -1149,12 +1127,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         try {
             $context->close();
-            waitForClosed($context);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
         } catch (Throwable $e) {
-            return jsonResponse(500, ['error' => $e->getMessage()]);
+            return jsonResponse(500, ['error' => $e->getMessage(), 'events' => $eventCollector->getNewEvents($eventsBefore)]);
         }
     }
 

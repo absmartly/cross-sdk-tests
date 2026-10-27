@@ -1,6 +1,7 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
+const holdoutSelfTest = require('./holdoutSelfTest');
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -13,13 +14,31 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 app.use(express.json());
 
+// Every response on a context route, success or error, carries the events the
+// SDK's event logger emitted while the request was handled.
+app.use('/context/:contextId', (req, res, next) => {
+  const entry = contexts.get(req.params.contextId);
+  if (!entry) return next();
+  const eventsBefore = entry.eventCollector.events.length;
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      body = { ...body, events: entry.eventCollector.events.slice(eventsBefore) };
+    }
+    return json(body);
+  };
+  next();
+});
+
 let ABSmartlyService = null;
+let renderTreatment = null;
 let angularServiceAvailable = false;
 
 async function initAngularSDK() {
   try {
     const angularSDK = await import('@absmartly/angular-sdk');
     ABSmartlyService = angularSDK.ABSmartlyService;
+    ({ renderTreatment } = await import('./render.mjs'));
     angularServiceAvailable = true;
     console.log('Angular SDK service loaded - routing operations through ABSmartlyService');
   } catch (error) {
@@ -96,8 +115,15 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.get('/capabilities', (req, res) => {
-  res.json({diagnostics: true,
+app.get('/capabilities', async (req, res) => {
+  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  res.json({diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: true,
+    holdouts,
+    holdout_arms: holdoutArms,
+    diagnostics: true,
     attrsSeq: true,
     isWrapper: true,
     wrapsSDK: 'javascript',
@@ -233,8 +259,7 @@ app.post('/context', async (req, res) => {
         failedData,
         { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
-      try { await context.ready(); } catch (e) {}
-      await new Promise(r => setTimeout(r, 50));
+      await context.ready();
     } else if (payloadThrottle > 0 && endpoint) {
       const deferredData = new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -275,37 +300,43 @@ app.post('/context', async (req, res) => {
   }
 });
 
-app.post('/context/:contextId/treatment', (req, res) => {
-  const data = contexts.get(req.params.contextId);
-  if (!data) return res.status(404).json({ error: 'Context not found' });
-
-  const { context, service, eventCollector } = data;
-  const eventsBefore = eventCollector.events.length;
-
-  try {
-    const variant = service.treatment(req.body.experimentName);
-    const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result: variant, events: newEvents });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+// Renders the SDK's <abs-treatment> and reads which variant template it put in
+// the DOM. While the context is not ready the component renders its loading
+// template and performs no SDK read, so the SDK is asked directly for its own
+// not-ready error.
+async function renderedVariant(context, service, experimentName, peek) {
+  const { html, errors } = await renderTreatment(service, experimentName, peek);
+  if (errors.length > 0) throw errors[0];
+  if (html.includes('data-error')) {
+    throw new Error(`Angular SDK <abs-treatment> rendered its error template for "${experimentName}"`);
   }
-});
-
-app.post('/context/:contextId/peek', (req, res) => {
-  const data = contexts.get(req.params.contextId);
-  if (!data) return res.status(404).json({ error: 'Context not found' });
-
-  const { context, service, eventCollector } = data;
-  const eventsBefore = eventCollector.events.length;
-
-  try {
-    const variant = service.peek(req.body.experimentName);
-    const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result: variant, events: newEvents });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+  if (html.includes('data-loading')) {
+    if (context.isReady()) {
+      throw new Error('Angular SDK <abs-treatment> rendered its loading template for a ready context');
+    }
+    return peek ? context.peek(experimentName) : context.treatment(experimentName);
   }
-});
+  const rendered = [...html.matchAll(/data-variant="(\d+)"/g)].map((m) => Number(m[1]));
+  if (rendered.length !== 1) {
+    throw new Error(`Angular SDK <abs-treatment> rendered ${rendered.length} variant templates (expected exactly 1): [${rendered.join(', ')}]`);
+  }
+  return rendered[0];
+}
+
+for (const [route, peek] of [['treatment', false], ['peek', true]]) {
+  app.post(`/context/:contextId/${route}`, async (req, res) => {
+    const data = contexts.get(req.params.contextId);
+    if (!data) return res.status(404).json({ error: 'Context not found' });
+
+    const { context, service } = data;
+    try {
+      const variant = await renderedVariant(context, service, req.body.experimentName, peek);
+      res.json({ result: variant });
+    } catch (error) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+}
 
 app.post('/context/:contextId/track', (req, res) => {
   const data = contexts.get(req.params.contextId);
@@ -463,7 +494,7 @@ app.post('/context/:contextId/override', (req, res) => {
 
   try {
     service.override(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -477,7 +508,7 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
 
   try {
     service.customAssignment(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -553,7 +584,7 @@ app.get('/context/:contextId/pending', (req, res) => {
 
   const { service, context } = data;
   const result = service.pending();
-  res.json({ result, events: [] });
+  res.json({ result });
 });
 
 app.get('/context/:contextId/isFinalized', (req, res) => {
@@ -562,7 +593,7 @@ app.get('/context/:contextId/isFinalized', (req, res) => {
 
   const { service, context } = data;
   const result = service.isFinalized();
-  res.json({ result, events: [] });
+  res.json({ result });
 });
 
 app.get('/context/:contextId/isReady', (req, res) => {
@@ -571,7 +602,7 @@ app.get('/context/:contextId/isReady', (req, res) => {
 
   const { service, context } = data;
   const result = service.isReady();
-  res.json({ result, events: [] });
+  res.json({ result });
 });
 
 app.get('/context/:contextId/isFailed', (req, res) => {
@@ -580,7 +611,7 @@ app.get('/context/:contextId/isFailed', (req, res) => {
 
   const { service, context } = data;
   const result = service.isFailed();
-  res.json({ result, events: [] });
+  res.json({ result });
 });
 
 app.get('/context/:contextId/experiments', (req, res) => {
@@ -591,7 +622,7 @@ app.get('/context/:contextId/experiments', (req, res) => {
   try {
     const { service, context } = data;
     const experiments = service.experiments();
-    res.json({ result: experiments, events: [] });
+    res.json({ result: experiments });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -651,7 +682,7 @@ app.post('/context/:contextId/publishFail', (req, res) => {
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
   data.customPublisher._shouldFail = true;
-  res.json({ result: null, events: [] });
+  res.json({ result: null });
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

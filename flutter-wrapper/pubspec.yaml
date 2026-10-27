@@ -14,6 +14,10 @@ dependencies:
   absmartly_sdk:
     path: ../../flutter-sdk/packages/flutter_sdk
 
+dependency_overrides:
+  absmartly_dart:
+    path: ../../flutter-sdk/packages/dart_sdk
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

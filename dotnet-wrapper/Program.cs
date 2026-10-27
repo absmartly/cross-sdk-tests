@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ABSmartly.Internal.Hashing;
 using ABSmartly;
 using ABSmartly.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -40,7 +40,8 @@ app.Use(async (context, next) =>
 });
 
 var contexts = new ConcurrentDictionary<string, ContextData>();
-var payloadStore = new ConcurrentDictionary<string, ABSmartly.Models.ContextData>();
+var payloadStore = new ConcurrentDictionary<string, string>();
+const string EmptyPayload = "{\"experiments\":[]}";
 
 string TranslateEndpoint(string endpoint)
 {
@@ -50,21 +51,8 @@ string TranslateEndpoint(string endpoint)
     return endpoint;
 }
 
-string TranslateErrorMessage(string msg)
-{
-    if (string.IsNullOrEmpty(msg)) return msg;
-    // Only the SDK's own finalized-context error; a broad "closed" match would
-    // relabel unrelated failures (e.g. a closed HTTP connection).
-    if (msg.Contains("Context is finalized"))
-        return "Context finalized";
-    if (msg.Contains("already set", StringComparison.OrdinalIgnoreCase))
-    {
-        var m = Regex.Match(msg, @"Unit ['""](?<unit>[^'""]+)['""]");
-        if (m.Success)
-            return $"Unit '{m.Groups["unit"].Value}' UID already set.";
-    }
-    return msg;
-}
+IResult Failure(EventCollector collector, int eventsBefore, Exception ex) =>
+    Results.BadRequest(new { error = ex.Message, events = collector.GetEventsSince(eventsBefore) });
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -112,31 +100,30 @@ app.MapPost("/diagnostic", async (HttpContext httpContext) =>
             _ => value.ToString()
         };
 
+        // Only helpers the SDK implements; the SDK has no isObject/isNumeric/isPromise.
         object? result = op switch
         {
-            "hashUnit" => ABSmartly.Internal.Hashing.Md5.Hash(text),
-            "base64UrlNoPadding" => Convert.ToBase64String(Encoding.UTF8.GetBytes(text))
-                .Replace('+', '-').Replace('/', '_').TrimEnd('='),
-            "utf8Bytes" => Encoding.UTF8.GetBytes(text).Select(b => (int)b).ToArray(),
-            "isObject" => value.ValueKind == JsonValueKind.Object,
-            "isNumeric" => value.ValueKind == JsonValueKind.Number,
-            "isPromise" => false,
+            "hashUnit" => Md5.Hash(text),
+            "base64UrlNoPadding" => Md5.Base64UrlNoPadding(Md5.Utf8Bytes(text)),
+            "utf8Bytes" => Md5.Utf8Bytes(text).Select(b => (int)b).ToArray(),
             _ => null
         };
 
-        if (result == null && op != "isPromise")
+        if (result == null)
         {
-            return Results.BadRequest(new { error = $"Unsupported diagnostic operation: {op}" });
+            return Results.BadRequest(new { error = $"Unsupported diagnostic operation: {op}", events = Array.Empty<object>() });
         }
 
         return Results.Ok(new { result, events = Array.Empty<object>() });
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Results.BadRequest(new { error = ex.Message, events = Array.Empty<object>() });
     }
 });
 
+// The payload is stored and served verbatim; the SDK's own client fetches and
+// deserializes it.
 app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext httpContext) =>
 {
     try
@@ -145,59 +132,31 @@ app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext 
         var body = await reader.ReadToEndAsync();
         var requestJson = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
 
-        ABSmartly.Models.ContextData? contextData = null;
-        if (requestJson != null && requestJson.ContainsKey("data"))
-        {
-            var dataJson = requestJson["data"].GetRawText();
-            contextData = JsonSerializer.Deserialize<ABSmartly.Models.ContextData>(dataJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-        }
-
-        payloadStore[payloadId] = contextData ?? new ABSmartly.Models.ContextData();
+        payloadStore[payloadId] = requestJson != null && requestJson.TryGetValue("data", out var dataEl)
+            && dataEl.ValueKind != JsonValueKind.Null
+            ? dataEl.GetRawText()
+            : EmptyPayload;
 
         return Results.Ok(new { success = true });
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Results.BadRequest(new { error = ex.Message, events = Array.Empty<object>() });
     }
 });
 
-app.MapGet("/context_payload/{payloadId}", (string payloadId, [FromQuery] int throttle = 0) =>
+app.MapGet("/context_payload/{payloadId}", async (string payloadId, [FromQuery] int throttle = 0) =>
 {
-    try
-    {
-        if (throttle > 0)
-        {
-            Thread.Sleep(throttle);
-        }
-
-        var data = payloadStore.GetValueOrDefault(payloadId, new ABSmartly.Models.ContextData
-        {
-            Experiments = Array.Empty<Experiment>()
-        });
-
-        return Results.Ok(data);
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
-    }
+    if (throttle > 0) await Task.Delay(throttle);
+    return Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json");
 });
 
 app.MapGet("/context_payload/{payloadId}/context", (string payloadId) =>
-{
-    var data = payloadStore.GetValueOrDefault(payloadId, new ABSmartly.Models.ContextData
-    {
-        Experiments = Array.Empty<Experiment>()
-    });
-    return Results.Ok(data);
-});
+    Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json"));
 
 app.MapPost("/context", async (HttpContext httpContext) =>
 {
+    var eventCollector = new EventCollector();
     try
     {
         using var reader = new StreamReader(httpContext.Request.Body);
@@ -223,7 +182,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
 
             var e2eContextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
-            var e2eEventCollector = new EventCollector();
+            var e2eEventCollector = eventCollector;
 
             var e2eServiceConfig = new ABSmartlyServiceConfiguration
             {
@@ -329,11 +288,9 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         ABSmartly.Models.ContextData? contextData = null;
         if (requestJson.ContainsKey("data"))
         {
-            var dataJson = requestJson["data"].GetRawText();
-            contextData = JsonSerializer.Deserialize<ABSmartly.Models.ContextData>(dataJson, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
+            using var dataStream = new MemoryStream(Encoding.UTF8.GetBytes(requestJson["data"].GetRawText()));
+            contextData = new ABSmartly.Services.DefaultContextDataDeserializer().Deserialize(dataStream)
+                ?? throw new InvalidOperationException("context data could not be deserialized");
         }
 
         var endpoint = "http://localhost:3000";
@@ -364,7 +321,6 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         }
 
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
-        var eventCollector = new EventCollector();
         var publishFailFlag = new PublishFailFlag();
 
         var sdk = new ABSdk(
@@ -463,7 +419,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         {
             Console.WriteLine($"Inner Exception: {ex.InnerException.Message}");
         }
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Results.BadRequest(new { error = ex.Message, events = eventCollector.GetEvents() });
     }
 });
 
@@ -471,10 +427,10 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
         if (request.Uid is not JsonElement uidElement)
             return Results.BadRequest(new { error = "uid is required" });
@@ -492,7 +448,7 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -500,10 +456,10 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         // Read from the SDK (matching getUnits), not the wrapper-local shadow dict.
         object result = null;
         if (data.Context.Units.TryGetValue(request.UnitType, out var uid))
@@ -520,7 +476,7 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -528,10 +484,10 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         // Convert JsonElement to actual value
         object actualValue = request.Value;
         if (request.Value is JsonElement jsonElement)
@@ -546,9 +502,7 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
                 _ => request.Value
             };
         }
-        Console.WriteLine($"DEBUG setAttribute: name={request.Name}, value={actualValue}, type={actualValue?.GetType().Name ?? "null"}");
         data.Context.SetAttribute(request.Name, actualValue);
-        data.Attributes[request.Name] = actualValue;
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -559,7 +513,7 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -567,10 +521,10 @@ app.MapPost("/context/{contextId}/getAttribute", (string contextId, [FromBody] G
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         // Read from the SDK (matching getAttributes), not the wrapper-local shadow dict.
         var result = data.Context.GetAttribute(request.Name);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
@@ -583,7 +537,7 @@ app.MapPost("/context/{contextId}/getAttribute", (string contextId, [FromBody] G
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -591,6 +545,7 @@ app.MapPost("/context/{contextId}/treatment", async (string contextId, HttpConte
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
@@ -600,7 +555,6 @@ app.MapPost("/context/{contextId}/treatment", async (string contextId, HttpConte
 
         var experimentName = request["experimentName"].GetString();
 
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
         var variant = data.Context.GetTreatment(experimentName);
 
@@ -616,7 +570,7 @@ app.MapPost("/context/{contextId}/treatment", async (string contextId, HttpConte
     {
         Console.WriteLine($"Error in treatment: {ex.Message}");
         Console.WriteLine($"StackTrace: {ex.StackTrace}");
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -624,10 +578,10 @@ app.MapPost("/context/{contextId}/peek", (string contextId, [FromBody] Treatment
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         var variant = data.Context.PeekTreatment(request.ExperimentName);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -639,7 +593,7 @@ app.MapPost("/context/{contextId}/peek", (string contextId, [FromBody] Treatment
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -647,6 +601,7 @@ app.MapPost("/context/{contextId}/variableValue", async (string contextId, HttpC
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
@@ -655,25 +610,10 @@ app.MapPost("/context/{contextId}/variableValue", async (string contextId, HttpC
         var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
 
         var key = request["key"].GetString();
-        object defaultValue = null;
-        if (request.ContainsKey("defaultValue"))
-        {
-            var defVal = request["defaultValue"];
-            if (defVal.ValueKind == JsonValueKind.Number)
-            {
-                defaultValue = defVal.GetInt32();
-            }
-            else if (defVal.ValueKind == JsonValueKind.String)
-            {
-                defaultValue = defVal.GetString();
-            }
-            else if (defVal.ValueKind == JsonValueKind.True || defVal.ValueKind == JsonValueKind.False)
-            {
-                defaultValue = defVal.GetBoolean();
-            }
-        }
+        object defaultValue = request.TryGetValue("defaultValue", out var defVal)
+            ? ConvertJsonElement(defVal)
+            : null;
 
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
         var value = data.Context.GetVariableValue(key, defaultValue);
 
@@ -688,7 +628,7 @@ app.MapPost("/context/{contextId}/variableValue", async (string contextId, HttpC
     catch (Exception ex)
     {
         Console.WriteLine($"Error in variableValue: {ex.Message}");
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -696,6 +636,7 @@ app.MapPost("/context/{contextId}/peekVariableValue", async (string contextId, H
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
@@ -704,25 +645,10 @@ app.MapPost("/context/{contextId}/peekVariableValue", async (string contextId, H
         var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(body);
 
         var key = request["key"].GetString();
-        object defaultValue = null;
-        if (request.ContainsKey("defaultValue"))
-        {
-            var defVal = request["defaultValue"];
-            if (defVal.ValueKind == JsonValueKind.Number)
-            {
-                defaultValue = defVal.GetInt32();
-            }
-            else if (defVal.ValueKind == JsonValueKind.String)
-            {
-                defaultValue = defVal.GetString();
-            }
-            else if (defVal.ValueKind == JsonValueKind.True || defVal.ValueKind == JsonValueKind.False)
-            {
-                defaultValue = defVal.GetBoolean();
-            }
-        }
+        object defaultValue = request.TryGetValue("defaultValue", out var defVal)
+            ? ConvertJsonElement(defVal)
+            : null;
 
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
         var value = data.Context.PeekVariableValue(key, defaultValue);
 
@@ -737,7 +663,7 @@ app.MapPost("/context/{contextId}/peekVariableValue", async (string contextId, H
     catch (Exception ex)
     {
         Console.WriteLine($"Error in peekVariableValue: {ex.Message}");
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -745,6 +671,7 @@ app.MapPost("/context/{contextId}/track", (string contextId, [FromBody] TrackReq
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
@@ -756,7 +683,7 @@ app.MapPost("/context/{contextId}/track", (string contextId, [FromBody] TrackReq
 
             if (propsJson.ValueKind != JsonValueKind.Object && propsJson.ValueKind != JsonValueKind.Null)
             {
-                return Results.BadRequest(new { error = $"Goal '{request.GoalName}' properties must be of type object" });
+                return Results.BadRequest(new { error = $"Goal '{request.GoalName}' properties must be of type object.", events = data.EventCollector.GetEventsSince(eventsBefore) });
             }
 
             if (propsJson.ValueKind == JsonValueKind.Object)
@@ -769,7 +696,6 @@ app.MapPost("/context/{contextId}/track", (string contextId, [FromBody] TrackReq
             }
         }
 
-        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.Track(request.GoalName, properties);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -781,7 +707,7 @@ app.MapPost("/context/{contextId}/track", (string contextId, [FromBody] TrackReq
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -789,10 +715,10 @@ app.MapPost("/context/{contextId}/override", (string contextId, [FromBody] Overr
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetOverride(request.ExperimentName, request.Variant);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -804,7 +730,7 @@ app.MapPost("/context/{contextId}/override", (string contextId, [FromBody] Overr
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -812,10 +738,10 @@ app.MapPost("/context/{contextId}/customAssignment", (string contextId, [FromBod
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetCustomAssignment(request.ExperimentName, request.Variant);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -827,7 +753,7 @@ app.MapPost("/context/{contextId}/customAssignment", (string contextId, [FromBod
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -835,12 +761,11 @@ app.MapPost("/context/{contextId}/customFieldValue", (string contextId, [FromBod
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
-        var context = data.Context as Context;
-        var value = context?.GetCustomFieldValue(request.ExperimentName, request.FieldName);
+        var value = ((Context)data.Context).GetCustomFieldValue(request.ExperimentName, request.FieldName);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -851,7 +776,7 @@ app.MapPost("/context/{contextId}/customFieldValue", (string contextId, [FromBod
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -859,13 +784,11 @@ app.MapPost("/context/{contextId}/variableKeys", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
-        var context = data.Context as Context;
-        var keys = context?.VariableKeys;
-        var result = keys?.Keys.ToList() ?? new List<string>();
+        var result = data.Context.VariableKeys.Keys.ToList();
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -876,7 +799,7 @@ app.MapPost("/context/{contextId}/variableKeys", (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -884,23 +807,22 @@ app.MapPost("/context/{contextId}/customFieldKeys", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
-        var context = data.Context as Context;
-        var keys = context?.GetCustomFieldKeys();
+        var keys = ((Context)data.Context).GetCustomFieldKeys();
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
         {
-            Result = keys ?? new List<string>(),
+            Result = keys,
             Events = newEvents
         });
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -908,12 +830,11 @@ app.MapPost("/context/{contextId}/customFieldValueType", (string contextId, [Fro
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
-        var context = data.Context as Context;
-        var valueType = context?.GetCustomFieldType(request.ExperimentName, request.FieldName);
+        var valueType = ((Context)data.Context).GetCustomFieldType(request.ExperimentName, request.FieldName);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -924,7 +845,7 @@ app.MapPost("/context/{contextId}/customFieldValueType", (string contextId, [Fro
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -932,10 +853,10 @@ app.MapPost("/context/{contextId}/setOverride", (string contextId, [FromBody] Ov
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetOverride(request.ExperimentName, request.Variant);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -947,7 +868,7 @@ app.MapPost("/context/{contextId}/setOverride", (string contextId, [FromBody] Ov
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -955,10 +876,10 @@ app.MapPost("/context/{contextId}/setCustomAssignment", (string contextId, [From
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         data.Context.SetCustomAssignment(request.ExperimentName, request.Variant);
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -970,7 +891,7 @@ app.MapPost("/context/{contextId}/setCustomAssignment", (string contextId, [From
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -978,11 +899,12 @@ app.MapGet("/context/{contextId}/pending", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     return Results.Ok(new ApiResponse
     {
         Result = data.Context.PendingCount,
-        Events = new List<object>()
+        Events = data.EventCollector.GetEventsSince(eventsBefore)
     });
 });
 
@@ -990,11 +912,12 @@ app.MapGet("/context/{contextId}/isFinalized", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     return Results.Ok(new ApiResponse
     {
         Result = data.Context.IsClosed(),
-        Events = new List<object>()
+        Events = data.EventCollector.GetEventsSince(eventsBefore)
     });
 });
 
@@ -1002,11 +925,12 @@ app.MapGet("/context/{contextId}/isReady", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     return Results.Ok(new ApiResponse
     {
         Result = data.Context.IsReady(),
-        Events = new List<object>()
+        Events = data.EventCollector.GetEventsSince(eventsBefore)
     });
 });
 
@@ -1014,11 +938,12 @@ app.MapGet("/context/{contextId}/isFailed", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     return Results.Ok(new ApiResponse
     {
         Result = data.Context.IsFailed(),
-        Events = new List<object>()
+        Events = data.EventCollector.GetEventsSince(eventsBefore)
     });
 });
 
@@ -1026,20 +951,20 @@ app.MapGet("/context/{contextId}/experiments", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var context = data.Context as Context;
-        var experiments = context?.Experiments ?? Array.Empty<string>();
+        var experiments = data.Context.Experiments;
         return Results.Ok(new ApiResponse
         {
             Result = experiments,
-            Events = new List<object>()
+            Events = data.EventCollector.GetEventsSince(eventsBefore)
         });
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -1047,9 +972,9 @@ app.MapPost("/context/{contextId}/getUnits", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         var units = new Dictionary<string, object>();
         lock (data.Units)
         {
@@ -1061,7 +986,7 @@ app.MapPost("/context/{contextId}/getUnits", (string contextId) =>
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(e.Message) });
+        return Failure(data.EventCollector, eventsBefore, e);
     }
 });
 
@@ -1069,16 +994,16 @@ app.MapPost("/context/{contextId}/getAttributes", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         var attrs = data.Context.Attributes;
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
         return Results.Ok(new ApiResponse { Result = attrs, Events = newEvents });
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Failure(data.EventCollector, eventsBefore, e);
     }
 });
 
@@ -1086,15 +1011,16 @@ app.MapPost("/context/{contextId}/readyError", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
         var error = data.Context.ReadyError;
         var result = error != null ? new { isError = true, message = error.Message } : null;
-        return Results.Ok(new ApiResponse { Result = result, Events = new List<object>() });
+        return Results.Ok(new ApiResponse { Result = result, Events = data.EventCollector.GetEventsSince(eventsBefore) });
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Failure(data.EventCollector, eventsBefore, e);
     }
 });
 
@@ -1102,16 +1028,16 @@ app.MapPost("/context/{contextId}/variableKeysMap", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         var keys = data.Context.VariableKeys;
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
         return Results.Ok(new ApiResponse { Result = keys, Events = newEvents });
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Failure(data.EventCollector, eventsBefore, e);
     }
 });
 
@@ -1119,17 +1045,16 @@ app.MapPost("/context/{contextId}/globalCustomFieldKeys", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
-        var context = data.Context as Context;
-        var eventsBefore = data.EventCollector.GetEventsCount();
-        var keys = (object)context?.GetCustomFieldKeys() ?? new List<string>();
+        var keys = ((Context)data.Context).GetCustomFieldKeys();
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
         return Results.Ok(new ApiResponse { Result = keys, Events = newEvents });
     }
     catch (Exception e)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Failure(data.EventCollector, eventsBefore, e);
     }
 });
 
@@ -1137,19 +1062,20 @@ app.MapPost("/context/{contextId}/publishFail", (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
     if (data.PublishFailFlag != null)
         data.PublishFailFlag.Fail = true;
-    return Results.Ok(new { result = (object?)null, events = Array.Empty<object>() });
+    return Results.Ok(new { result = (object?)null, events = data.EventCollector.GetEventsSince(eventsBefore) });
 });
 
 app.MapPost("/context/{contextId}/publish", async (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
         await data.Context.PublishAsync();
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -1161,7 +1087,7 @@ app.MapPost("/context/{contextId}/publish", async (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -1169,10 +1095,10 @@ app.MapPost("/context/{contextId}/refresh", async (string contextId, HttpContext
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
         await data.Context.RefreshAsync();
 
@@ -1187,7 +1113,7 @@ app.MapPost("/context/{contextId}/refresh", async (string contextId, HttpContext
     catch (Exception ex)
     {
         Console.WriteLine($"Error in refresh: {ex.Message}");
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 
@@ -1195,24 +1121,12 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
 {
     if (!contexts.TryGetValue(contextId, out var data))
         return Results.NotFound(new { error = "Context not found" });
+    var eventsBefore = data.EventCollector.GetEventsCount();
 
     try
     {
-        var eventsBefore = data.EventCollector.GetEventsCount();
 
-        // The SDK's only public close paths (Close/Dispose/DisposeAsync) also dispose
-        // the context's locks, after which Units/GetAttribute throw, but a finalized
-        // context must stay readable. CloseAsync is the finalize step on its own.
-        if (data.Context is not Context context)
-        {
-            return Results.Json(new { error = $"{data.Context.GetType().Name} is not an SDK Context; cannot finalize" }, statusCode: 500);
-        }
-        var closeMethod = typeof(Context).GetMethod("CloseAsync", BindingFlags.NonPublic | BindingFlags.Instance);
-        if (closeMethod == null)
-        {
-            return Results.Json(new { error = "Context.CloseAsync method not found via reflection; cannot finalize" }, statusCode: 500);
-        }
-        await (Task)closeMethod.Invoke(context, null);
+        await data.Context.FinalizeAsync();
 
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -1224,7 +1138,7 @@ app.MapPost("/context/{contextId}/finalize", async (string contextId) =>
     }
     catch (Exception ex)
     {
-        return Results.BadRequest(new { error = TranslateErrorMessage(ex.Message) });
+        return Failure(data.EventCollector, eventsBefore, ex);
     }
 });
 

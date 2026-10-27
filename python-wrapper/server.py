@@ -4,7 +4,6 @@ import json
 import re
 import time
 import uuid
-import base64
 from concurrent.futures import Future
 
 from sdk.absmartly import ABSmartly
@@ -12,13 +11,14 @@ from sdk.absmartly_config import ABSmartlyConfig
 from sdk.client import Client
 from sdk.client_config import ClientConfig
 from sdk.context_config import ContextConfig
-from sdk.context_event_logger import ContextEventLogger, EventType
+from sdk.context_event_logger import ContextEventLogger
 from sdk.context_publisher import ContextPublisher
 from sdk.json.context_data import ContextData
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
 from sdk.default_context_data_provider import DefaultContextDataProvider
+from sdk import utils as sdk_utils
 import jsons
 import threading
 
@@ -72,8 +72,6 @@ class EventCollector(ContextEventLogger):
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
-        if event_type_str == 'close':
-            event_type_str = 'finalize'
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
             self.events.append({
@@ -89,23 +87,6 @@ class EventCollector(ContextEventLogger):
     def count(self):
         with self._lock:
             return len(self.events)
-
-    def await_event(self, since, types, timeout_s=5.0):
-        """Wait until an event of one of `types` is logged after `since`.
-
-        The SDK resolves its ready/close futures just before it logs the
-        matching event, so the event can land a moment after the blocking call
-        returns. Raises on timeout so a response is never silently missing it.
-        """
-        deadline = time.time() + timeout_s
-        while True:
-            new_events = self.since(since)
-            if any(e['type'] in types for e in new_events):
-                return new_events
-            if time.time() >= deadline:
-                raise RuntimeError(
-                    f"Timed out after {timeout_s}s waiting for SDK {'/'.join(types)} event")
-            time.sleep(0.005)
 
     def _serialize(self, data):
         try:
@@ -139,9 +120,11 @@ def translate_endpoint(endpoint):
         return None
     return re.sub(r'localhost:\d+', '127.0.0.1:3000', endpoint)
 
-def is_context_finalized_error(err):
-    msg = str(err).lower()
-    return 'closed' in msg or 'closing' in msg or 'finalized' in msg
+def ok(collector, since, result, status=200):
+    return jsonify({'result': result, 'events': collector.since(since)}), status
+
+def fail(collector, since, err, status=400):
+    return jsonify({'error': str(err), 'events': collector.since(since)}), status
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -192,19 +175,6 @@ def mock_api_context(payload_id):
         return jsonify({'error': 'Payload not found'}), 404
     return jsonify(payload_store[payload_id])
 
-def restore_unit_type(ctx_data, unit_type, sdk_value):
-    """Return the caller's original JSON value for a unit when the SDK's
-    stored string is exactly its string form (so 125 / 125.75 round-trip as
-    numbers); otherwise return the SDK's string unchanged, so a string UID
-    that merely looks numeric (e.g. "123") is never retyped."""
-    if sdk_value is None:
-        return None
-    original = ctx_data.get('unitInputs', {}).get(unit_type)
-    if isinstance(original, (int, float)) and not isinstance(original, bool) \
-            and str(original) == sdk_value:
-        return original
-    return sdk_value
-
 @app.route('/context', methods=['POST'])
 def create_context():
     req_data = request.json
@@ -237,13 +207,12 @@ def create_context():
         sdk = ABSmartly(sdk_config)
 
         context_config = ContextConfig()
-        context_config.units = {k: str(v) for k, v in req_data['units'].items()}
+        context_config.units = dict(req_data['units'])
         context_config.publish_delay = -1
         context_config.refresh_interval = 0
 
         context = sdk.create_context(context_config)
         context.wait_until_ready()
-        event_collector.await_event(0, ('ready', 'error'))
 
         for name, value in (req_data.get('attributes') or {}).items():
             context.set_attribute(name, value)
@@ -289,8 +258,7 @@ def create_context():
     sdk = ABSmartly(sdk_config)
 
     context_config = ContextConfig()
-    # Convert all units to strings (Python SDK requirement)
-    context_config.units = {k: str(v) for k, v in req_data['units'].items()}
+    context_config.units = dict(req_data['units'])
     context_config.publish_delay = -1
     context_config.refresh_interval = 0
 
@@ -310,7 +278,6 @@ def create_context():
         failing_sdk_config.context_event_handler = publisher
         failing_sdk = ABSmartly(failing_sdk_config)
         context = failing_sdk.create_context(context_config)
-        event_collector.await_event(0, ('error',))
     elif payload_throttle > 0 and endpoint:
         # Delay the SDK's own fetch; the context stays not-ready until it lands.
         deferred_provider = DeferredContextDataProvider(
@@ -325,13 +292,11 @@ def create_context():
         # Async: createContext (the SDK's Client fetches <endpoint>/context)
         context = sdk.create_context(context_config)
         context.wait_until_ready()
-        event_collector.await_event(0, ('ready', 'error'))
 
     contexts[context_id] = {
         'context': context,
         'eventCollector': event_collector,
         'publisher': publisher,
-        'unitInputs': dict(req_data['units']),
     }
 
     return jsonify({
@@ -358,14 +323,11 @@ def set_unit(context_id):
         unit_type = request.json['unitType']
         raw_uid = request.json['uid']
 
-        # The SDK itself raises "Unit '<type>' UID already set." / "UID must
-        # not be blank." and the finalized error, so no wrapper-side pre-check.
-        context.set_unit(unit_type, str(raw_uid))
-        ctx_data.setdefault('unitInputs', {}).setdefault(unit_type, raw_uid)
+        context.set_unit(unit_type, raw_uid)
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/getUnit', methods=['POST'])
 def get_unit(context_id):
@@ -379,11 +341,11 @@ def get_unit(context_id):
 
     try:
         unit_type = request.json['unitType']
-        result = restore_unit_type(ctx_data, unit_type, context.get_unit(unit_type))
+        result = context.get_unit(unit_type)
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/attribute', methods=['POST'])
 def attribute(context_id):
@@ -400,7 +362,7 @@ def attribute(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/getAttribute', methods=['POST'])
 def get_attribute(context_id):
@@ -413,15 +375,11 @@ def get_attribute(context_id):
     events_before = collector.count()
 
     try:
-        # Python SDK doesn't have get_attribute, search in attributes list
-        result = None
-        for attr in context.attributes:
-            if attr.name == request.json['name']:
-                result = attr.value
+        result = context.get_attribute(request.json['name'])
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/treatment', methods=['POST'])
 def treatment(context_id):
@@ -433,17 +391,12 @@ def treatment(context_id):
     collector = ctx_data['eventCollector']
     events_before = collector.count()
 
-    # The python SDK's get_treatment() returns 0 after finalize (context.py:642)
-    # rather than raising, so guard the finalized state explicitly (scenario 189).
-    if context.is_closed():
-        return jsonify({'error': 'Context finalized'}), 400
-
     try:
         variant = context.get_treatment(request.json['experimentName'])
         new_events = collector.since(events_before)
         return jsonify({'result': variant, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/peek', methods=['POST'])
 def peek(context_id):
@@ -460,7 +413,7 @@ def peek(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': variant, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/variableValue', methods=['POST'])
 def variable_value(context_id):
@@ -477,7 +430,7 @@ def variable_value(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/peekVariableValue', methods=['POST'])
 def peek_variable_value(context_id):
@@ -494,7 +447,7 @@ def peek_variable_value(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/track', methods=['POST'])
 def track(context_id):
@@ -510,14 +463,11 @@ def track(context_id):
         goal_name = request.json['goalName']
         properties = request.json.get('properties')
 
-        if properties is not None and not isinstance(properties, dict):
-            return jsonify({'error': f"Goal '{goal_name}' properties must be of type object."}), 400
-
         context.track(goal_name, properties)
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/override', methods=['POST'])
 def override(context_id):
@@ -525,15 +475,15 @@ def override(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
     context = ctx_data['context']
 
     try:
         context.set_override(request.json['experimentName'], request.json['variant'])
-        return jsonify({'result': None, 'events': []})
+        return jsonify({'result': None, 'events': collector.since(events_before)})
     except Exception as e:
-        if is_context_finalized_error(e):
-            return jsonify({'result': None, 'events': []})
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/customAssignment', methods=['POST'])
 def custom_assignment(context_id):
@@ -541,13 +491,15 @@ def custom_assignment(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
     context = ctx_data['context']
 
     try:
         context.set_custom_assignment(request.json['experimentName'], request.json['variant'])
-        return jsonify({'result': None, 'events': []})
+        return jsonify({'result': None, 'events': collector.since(events_before)})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/customFieldValue', methods=['POST'])
 def custom_field_value(context_id):
@@ -564,7 +516,7 @@ def custom_field_value(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': value, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/variableKeys', methods=['POST'])
 def variable_keys(context_id):
@@ -583,7 +535,7 @@ def variable_keys(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/customFieldKeys', methods=['POST'])
 def custom_field_keys(context_id):
@@ -601,7 +553,7 @@ def custom_field_keys(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/customFieldValueType', methods=['POST'])
 def custom_field_value_type(context_id):
@@ -619,7 +571,7 @@ def custom_field_value_type(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': value_type, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/setOverride', methods=['POST'])
 def set_override(context_id):
@@ -637,9 +589,7 @@ def set_override(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        if is_context_finalized_error(e):
-            return jsonify({'result': None, 'events': []})
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/setCustomAssignment', methods=['POST'])
 def set_custom_assignment(context_id):
@@ -657,7 +607,7 @@ def set_custom_assignment(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/pending', methods=['GET'])
 def pending(context_id):
@@ -665,8 +615,10 @@ def pending(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
     count = ctx_data['context'].get_pending_count()
-    return jsonify({'result': count, 'events': []})
+    return jsonify({'result': count, 'events': collector.since(events_before)})
 
 @app.route('/context/<context_id>/isFinalized', methods=['GET'])
 def is_finalized(context_id):
@@ -674,7 +626,9 @@ def is_finalized(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
-    return jsonify({'result': ctx_data['context'].is_closed(), 'events': []})
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
+    return jsonify({'result': ctx_data['context'].is_closed(), 'events': collector.since(events_before)})
 
 @app.route('/context/<context_id>/isReady', methods=['GET'])
 def is_ready(context_id):
@@ -682,7 +636,9 @@ def is_ready(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
-    return jsonify({'result': ctx_data['context'].is_ready(), 'events': []})
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
+    return jsonify({'result': ctx_data['context'].is_ready(), 'events': collector.since(events_before)})
 
 @app.route('/context/<context_id>/isFailed', methods=['GET'])
 def is_failed(context_id):
@@ -690,7 +646,9 @@ def is_failed(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
-    return jsonify({'result': ctx_data['context'].is_failed(), 'events': []})
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
+    return jsonify({'result': ctx_data['context'].is_failed(), 'events': collector.since(events_before)})
 
 @app.route('/context/<context_id>/experiments', methods=['GET'])
 def experiments(context_id):
@@ -698,13 +656,15 @@ def experiments(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
     context = ctx_data['context']
 
     try:
         result = context.get_experiments()
-        return jsonify({'result': result, 'events': []})
+        return jsonify({'result': result, 'events': collector.since(events_before)})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/getUnits', methods=['POST'])
 def get_units(context_id):
@@ -717,11 +677,11 @@ def get_units(context_id):
     events_before = collector.count()
 
     try:
-        result = {k: restore_unit_type(ctx_data, k, v) for k, v in dict(context.units).items()}
+        result = context.get_units()
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/getAttributes', methods=['POST'])
 def get_attributes(context_id):
@@ -734,13 +694,11 @@ def get_attributes(context_id):
     events_before = collector.count()
 
     try:
-        result = {}
-        for attr in context.attributes:
-            result[attr.name] = attr.value
+        result = context.get_attributes()
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/readyError', methods=['POST'])
 def ready_error(context_id):
@@ -760,7 +718,7 @@ def ready_error(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': result, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/variableKeysMap', methods=['POST'])
 def variable_keys_map(context_id):
@@ -777,7 +735,7 @@ def variable_keys_map(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/globalCustomFieldKeys', methods=['POST'])
 def global_custom_field_keys(context_id):
@@ -794,7 +752,7 @@ def global_custom_field_keys(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return fail(collector, events_before, e, 400)
 
 @app.route('/context/<context_id>/publishFail', methods=['POST'])
 def publish_fail(context_id):
@@ -802,8 +760,10 @@ def publish_fail(context_id):
         return jsonify({'error': 'Context not found'}), 404
 
     ctx_data = contexts[context_id]
+    collector = ctx_data['eventCollector']
+    events_before = collector.count()
     ctx_data['publisher']._should_fail = True
-    return jsonify({'result': None, 'events': []})
+    return jsonify({'result': None, 'events': collector.since(events_before)})
 
 @app.route('/context/<context_id>/publish', methods=['POST'])
 def publish(context_id):
@@ -820,7 +780,7 @@ def publish(context_id):
         new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return fail(collector, events_before, e, 500)
 
 @app.route('/context/<context_id>/refresh', methods=['POST'])
 def refresh(context_id):
@@ -834,16 +794,10 @@ def refresh(context_id):
 
     try:
         context.refresh()
-        # The SDK resolves the refresh future just before logging the refresh
-        # event; wait for it (or fail loudly) instead of a fixed poll. On a
-        # failed context the SDK's refresh is a successful no-op with no event.
-        if context.is_failed():
-            new_events = collector.since(events_before)
-        else:
-            new_events = collector.await_event(events_before, ('refresh',), 2.0)
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return fail(collector, events_before, e, 500)
 
 @app.route('/context/<context_id>/finalize', methods=['POST'])
 def finalize(context_id):
@@ -856,42 +810,17 @@ def finalize(context_id):
     events_before = collector.count()
 
     try:
-        was_closed = context.is_closed()
         context.close()
-        # With pending events the SDK resolves the close future before it
-        # logs the close event, so wait for it on the first close.
-        if was_closed:
-            new_events = collector.since(events_before)
-        else:
-            new_events = collector.await_event(events_before, ('finalize',), 2.0)
+        new_events = collector.since(events_before)
         return jsonify({'result': None, 'events': new_events})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return fail(collector, events_before, e, 500)
 
 @app.route('/context/<context_id>', methods=['DELETE'])
 def delete_context(context_id):
     if context_id in contexts:
         del contexts[context_id]
     return jsonify({'result': 'deleted'})
-
-def sdk_hash_unit(text):
-    # Hash through the SDK's own Context.get_unit_hash() rather than any
-    # wrapper-side reimplementation: the pinned python3-sdk branch exposes no
-    # standalone hash function, so a throwaway context over empty data is the
-    # only way to exercise the SDK's hashing code path.
-    client_config = ClientConfig()
-    client_config.endpoint = 'http://dummy'
-    client_config.api_key = 'dummy'
-    client_config.application = 'test'
-    client_config.environment = 'test'
-    sdk_config = ABSmartlyConfig()
-    sdk_config.client = Client(client_config, DefaultHTTPClient(DefaultHTTPClientConfig()))
-    context = ABSmartly(sdk_config).create_context_with(
-        ContextConfig(), jsons.load({'experiments': []}, ContextData))
-    try:
-        return context.get_unit_hash('diagnostic', text).decode('ascii')
-    finally:
-        context.close()
 
 @app.route('/diagnostic', methods=['POST'])
 def diagnostic():
@@ -901,26 +830,23 @@ def diagnostic():
         value = body.get('value')
 
         if op == 'hashUnit':
-            text = '' if value is None else str(value)
-            result = sdk_hash_unit(text)
+            result = sdk_utils.hash_unit(value)
         elif op == 'base64UrlNoPadding':
-            text = '' if value is None else str(value)
-            result = base64.urlsafe_b64encode(text.encode('utf-8')).decode('ascii').rstrip('=')
+            result = sdk_utils.base64_url_no_padding(sdk_utils.utf8_bytes(value))
         elif op == 'utf8Bytes':
-            text = '' if value is None else str(value)
-            result = list(text.encode('utf-8'))
+            result = list(sdk_utils.utf8_bytes(value))
         elif op == 'isObject':
-            result = isinstance(value, dict)
+            result = sdk_utils.is_object(value)
         elif op == 'isNumeric':
-            result = isinstance(value, (int, float)) and not isinstance(value, bool)
+            result = sdk_utils.is_numeric(value)
         elif op == 'isPromise':
-            result = hasattr(value, '__await__')
+            result = sdk_utils.is_promise(value)
         else:
             return jsonify({'error': f'Unsupported diagnostic operation: {op}'}), 400
 
         return jsonify({'result': result, 'events': []})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'events': []}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=False)

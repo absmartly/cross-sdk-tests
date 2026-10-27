@@ -1,7 +1,7 @@
 require 'sinatra'
 require 'json'
-require 'base64'
 require 'ostruct'
+require 'securerandom'
 require 'net/http'
 require 'uri'
 require 'a_b_smartly'
@@ -11,8 +11,11 @@ require 'client_config'
 require 'context_config'
 require 'context_data_provider'
 require 'default_context_data_provider'
+require 'default_context_data_deserializer'
 require 'context_publisher'
 require 'context_event_logger'
+require 'hashing'
+require 'type_utils'
 
 set :port, 3000
 set :bind, '0.0.0.0'
@@ -20,12 +23,6 @@ set :bind, '0.0.0.0'
 def translate_endpoint(endpoint)
   return endpoint if endpoint.nil?
   endpoint.gsub(/localhost:\d+/, '127.0.0.1:3000')
-end
-
-def translate_error_message(msg)
-  return msg if msg.nil? || msg.empty?
-  return 'Context finalized' if msg.include?('closed') || msg.include?('closing')
-  msg
 end
 
 class EventCollector
@@ -36,11 +33,8 @@ class EventCollector
   end
 
   def handle_event(event_type, data)
-    event_type_str = event_type.to_s
-    event_type_str = 'finalize' if event_type_str == 'close'
-
     @events << {
-      type: event_type_str,
+      type: event_type.to_s,
       data: deep_copy(data),
       timestamp: (Time.now.to_f * 1000).to_i
     }
@@ -102,65 +96,6 @@ class EventCollector
   end
 end
 
-class DataWrapper
-  attr_reader :data_future
-
-  def initialize(data)
-    @data_future = hash_to_ostruct(data)
-  end
-
-  def success?
-    true
-  end
-
-  private
-
-  def hash_to_ostruct(obj)
-    return obj unless obj.is_a?(Hash)
-
-    obj.each_with_object(OpenStruct.new) do |(key, val), ostruct|
-      snake_key = camel_to_snake(key.to_s)
-      ostruct[snake_key] = if val.is_a?(Hash)
-                             hash_to_ostruct(val)
-                           elsif val.is_a?(Array)
-                             val.map { |v| hash_to_ostruct(v) }
-                           else
-                             val
-                           end
-    end
-  end
-
-  def camel_to_snake(str)
-    str.gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
-       .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-       .downcase
-  end
-end
-
-class FailingDataWrapper
-  def initialize(exception = StandardError.new('Context load failed'))
-    @exception = exception
-  end
-
-  def data_future
-    nil
-  end
-
-  def success?
-    false
-  end
-
-  def exception
-    @exception
-  end
-end
-
-class FailingDataProvider < ContextDataProvider
-  def context_data
-    FailingDataWrapper.new
-  end
-end
-
 # Delays the SDK's own context-data fetch by throttle_ms. Fetch and
 # deserialization are delegated to the SDK's DefaultContextDataProvider over a
 # real Client, so a throttled context exercises the same HTTP + parse path as
@@ -175,17 +110,6 @@ class DeferredDataProvider < ContextDataProvider
     sleep(@throttle_ms / 1000.0) if @throttle_ms > 0
     @delegate.context_data
   end
-end
-
-# Return the caller's original JSON value for a unit when the SDK's stored
-# string is exactly its string form (so 125 / 125.75 round-trip as numbers);
-# otherwise return the SDK's string, so a string UID that merely looks numeric
-# (e.g. "123") is never retyped.
-def restore_unit_type(ctx_data, unit_type, sdk_value)
-  return nil if sdk_value.nil?
-  original = (ctx_data[:unitInputs] || {})[unit_type.to_s]
-  return original if original.is_a?(Numeric) && original.to_s == sdk_value.to_s
-  sdk_value
 end
 
 class CustomPublisher < ContextPublisher
@@ -205,185 +129,53 @@ class CustomPublisher < ContextPublisher
   end
 end
 
+# Events the SDK logged since `from`.
+def events_since(collector, from)
+  collector.events[from..-1] || []
+end
+
+def sdk_error(status, e, collector, from)
+  halt status, { error: e.message, events: collector ? events_since(collector, from) : [] }.to_json
+end
+
 $contexts = {}
 $payload_store = {}
 
-get '/health' do
-  content_type :json
-  {
-    status: 'healthy',
-    sdk: 'ruby',
-    version: '1.0.0'
-  }.to_json
-end
-
-get '/capabilities' do
-  content_type :json
-  {diagnostics: true,
-    attrsSeq: true,
-    publishFail: true,
-    variableKeysMap: true,
-    globalCustomFieldKeys: true,
-    getUnits: true,
-    getAttributes: true,
-    readyError: true
-  }.to_json
-end
-
-put '/context_payload/:payload_id' do
+def body_json
   request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  $payload_store[params['payload_id']] = req_data[:data] || { experiments: [] }
-
-  content_type :json
-  { success: true }.to_json
+  raw = request.body.read
+  raw.empty? ? {} : JSON.parse(raw, symbolize_names: true)
 end
 
-get '/context_payload/:payload_id' do
-  throttle = (params['throttle'] || '0').to_i
-  data = $payload_store[params['payload_id']] || { experiments: [] }
-
-  sleep(throttle / 1000.0) if throttle > 0
-
+# Runs one SDK call on a stored context and returns its result together with
+# the events the SDK logged during the call, on success and on error.
+def with_context(error_status = 400)
   content_type :json
-  data.to_json
-end
-
-get '/context_payload/:payload_id/context' do
-  # A never-stored payload id is a missing collector payload: answer 404 so the
-  # SDK's own fetch fails the context, instead of serving an empty-but-valid
-  # payload that would make it silently ready.
-  content_type :json
-  data = $payload_store[params['payload_id']]
-  halt 404, { error: 'Payload not found' }.to_json if data.nil?
-  data.to_json
-end
-
-post '/context' do
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  if req_data[:mode] == 'e2e'
-    e2e_endpoint = ENV['ABSMARTLY_E2E_ENDPOINT']
-    e2e_api_key = ENV['ABSMARTLY_E2E_API_KEY']
-    e2e_application = ENV['ABSMARTLY_E2E_APPLICATION']
-    e2e_environment = ENV['ABSMARTLY_E2E_ENVIRONMENT']
-    unless e2e_endpoint && e2e_api_key && e2e_application && e2e_environment
-      content_type :json
-      halt 501, { error: 'e2e mode not configured' }.to_json
-    end
-
-    context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
-    event_collector = EventCollector.new
-
-    client_config = ClientConfig.new
-    client_config.endpoint = e2e_endpoint
-    client_config.api_key = e2e_api_key
-    client_config.application = e2e_application
-    client_config.environment = e2e_environment
-
-    client = Client.create(client_config)
-
-    sdk_config = ABSmartlyConfig.new
-    sdk_config.client = client
-    sdk_config.context_event_logger = event_collector
-
-    sdk = ABSmartly.new(sdk_config)
-
-    context_config = ContextConfig.new
-    context_config.units = req_data[:units].transform_keys(&:to_sym)
-    context_config.publish_delay = -1
-    context_config.refresh_interval = 0
-
-    context = sdk.create_context(context_config)
-    50.times do
-      break if context.ready?
-      sleep 0.1
-    end
-
-    (req_data[:attributes] || {}).each do |name, value|
-      context.set_attribute(name.to_s, value)
-    end
-
-    $contexts[context_id] = {
-      context: context,
-      eventCollector: event_collector,
-      publisher: nil
-    }
-
-    content_type :json
-    return {
-      result: {
-        contextId: context_id,
-        ready: context.ready?,
-        failed: context.failed? || false,
-        finalized: context.closed?
-      },
-      events: event_collector.events
-    }.to_json
+  ctx_data = $contexts[params['context_id']]
+  halt 404, { error: 'Context not found', events: [] }.to_json unless ctx_data
+  collector = ctx_data[:eventCollector]
+  from = collector.events.length
+  begin
+    result = yield ctx_data[:context], ctx_data
+    { result: result, events: events_since(collector, from) }.to_json
+  rescue => e
+    sdk_error(error_status, e, collector, from)
   end
+end
 
-  context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
-
-  event_collector = EventCollector.new
-  publisher = CustomPublisher.new(event_collector)
-
+def sdk_client(endpoint, api_key: 'dummy', application: 'test', environment: 'test', max_retries: nil)
   client_config = ClientConfig.new
-  endpoint = req_data[:endpoint]
-  translated_endpoint = endpoint ? translate_endpoint(endpoint) : 'http://dummy'
-  client_config.endpoint = translated_endpoint
-  client_config.api_key = 'dummy'
-  client_config.application = 'test'
-  client_config.environment = 'test'
+  client_config.endpoint = endpoint
+  client_config.api_key = api_key
+  client_config.application = application
+  client_config.environment = environment
+  client_config.max_retries = max_retries unless max_retries.nil?
+  Client.create(client_config)
+end
 
-  client = Client.create(client_config)
-
-  sdk_config = ABSmartlyConfig.new
-  sdk_config.client = client
-  sdk_config.context_event_handler = publisher
-  sdk_config.context_event_logger = event_collector
-
-  sdk = ABSmartly.new(sdk_config)
-
-  context_config = ContextConfig.new
-  context_config.units = req_data[:units].transform_keys(&:to_sym)
-  context_config.publish_delay = -1
-  context_config.refresh_interval = 0
-
-  options = req_data[:options] || {}
-  payload_throttle = options[:payloadThrottle] || 0
-
-  if req_data[:data]
-    context = sdk.create_context_with(context_config, DataWrapper.new(req_data[:data]))
-  elsif req_data[:failLoad]
-    failing_sdk_config = ABSmartlyConfig.new
-    failing_sdk_config.context_data_provider = FailingDataProvider.new
-    failing_sdk_config.context_event_handler = publisher
-    failing_sdk_config.context_event_logger = event_collector
-    context = ABSmartly.new(failing_sdk_config).create_context(context_config)
-  elsif payload_throttle.to_i > 0
-    # Delay the SDK's own fetch; the context stays not-ready until it lands.
-    deferred_sdk_config = ABSmartlyConfig.new
-    deferred_sdk_config.context_data_provider = DeferredDataProvider.new(client, payload_throttle.to_i)
-    deferred_sdk_config.context_event_handler = publisher
-    deferred_sdk_config.context_event_logger = event_collector
-    deferred_sdk_config.client = client
-    context = ABSmartly.new(deferred_sdk_config).create_context_async(context_config)
-  else
-    # The SDK's Client fetches <endpoint>/context synchronously; the ready or
-    # error event is logged before create_context returns.
-    context = sdk.create_context(context_config)
-  end
-
-  $contexts[context_id] = {
-    context: context,
-    eventCollector: event_collector,
-    publisher: publisher,
-    unitInputs: req_data[:units].transform_keys(&:to_s)
-  }
-
-  content_type :json
+def register(context, collector, publisher)
+  context_id = "ctx-#{SecureRandom.uuid}"
+  $contexts[context_id] = { context: context, eventCollector: collector, publisher: publisher }
   {
     result: {
       contextId: context_id,
@@ -391,647 +183,168 @@ post '/context' do
       failed: context.failed? || false,
       finalized: context.closed?
     },
-    events: event_collector.events.dup
+    events: collector.events.dup
   }.to_json
 end
 
-post '/context/:context_id/treatment' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  if context.closed?
-    halt 400, { error: 'Context finalized' }.to_json
-  end
-
-  begin
-    variant = context.treatment(req_data[:experimentName])
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: variant, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/peek' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    variant = context.peek_treatment(req_data[:experimentName])
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: variant, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/track' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  props = req_data[:properties]
-  if !props.nil? && !props.is_a?(Hash)
-    halt 400, { error: "Goal '#{req_data[:goalName]}' properties must be of type object." }.to_json
-  end
-
-  begin
-    context.track(req_data[:goalName], req_data[:properties])
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/attribute' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_attribute(req_data[:name], req_data[:value])
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/override' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_override(req_data[:experimentName], req_data[:variant])
-    content_type :json
-    { result: nil, events: [] }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/customAssignment' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_custom_assignment(req_data[:experimentName], req_data[:variant])
-    content_type :json
-    { result: nil, events: [] }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-get '/context/:context_id/pending' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
+get '/health' do
   content_type :json
-  { result: ctx_data[:context].pending_count, events: [] }.to_json
+  { status: 'healthy', sdk: 'ruby', version: '1.0.0' }.to_json
 end
 
-get '/context/:context_id/isFinalized' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
+get '/capabilities' do
   content_type :json
-  { result: ctx_data[:context].closed?, events: [] }.to_json
+  { diagnostics: true,
+    diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: false,
+    attrsSeq: true,
+    publishFail: true,
+    variableKeysMap: true,
+    globalCustomFieldKeys: true,
+    getUnits: true,
+    getAttributes: true,
+    readyError: true }.to_json
 end
 
-get '/context/:context_id/isReady' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
+put '/context_payload/:payload_id' do
+  $payload_store[params['payload_id']] = body_json[:data] || { experiments: [] }
   content_type :json
-  { result: ctx_data[:context].ready?, events: [] }.to_json
+  { success: true }.to_json
 end
 
-get '/context/:context_id/isFailed' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
+get '/context_payload/:payload_id/context' do
+  # A never-stored payload id is a missing collector payload: answer 404 so the
+  # SDK's own fetch fails the context.
   content_type :json
-  { result: ctx_data[:context].failed? || false, events: [] }.to_json
+  data = $payload_store[params['payload_id']]
+  halt 404, { error: 'Payload not found' }.to_json if data.nil?
+  data.to_json
 end
 
-get '/context/:context_id/experiments' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+post '/context' do
+  req_data = body_json
+  content_type :json
+  collector = EventCollector.new
 
-  ctx_data = $contexts[context_id]
+  context_config = ContextConfig.new
+  context_config.units = req_data[:units].transform_keys(&:to_sym)
+  context_config.publish_delay = -1
+  context_config.refresh_interval = 0
 
-  begin
-    experiments = ctx_data[:context].experiments
-    content_type :json
-    { result: experiments, events: [] }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
+  if req_data[:mode] == 'e2e'
+    env = %w[ENDPOINT API_KEY APPLICATION ENVIRONMENT].map { |k| ENV["ABSMARTLY_E2E_#{k}"] }
+    halt 501, { error: 'e2e mode not configured' }.to_json if env.any?(&:nil?)
+
+    sdk_config = ABSmartlyConfig.new
+    sdk_config.client = sdk_client(env[0], api_key: env[1], application: env[2], environment: env[3])
+    sdk_config.context_event_logger = collector
+    context = ABSmartly.new(sdk_config).create_context(context_config)
+    (req_data[:attributes] || {}).each { |name, value| context.set_attribute(name.to_s, value) }
+    return register(context, collector, nil)
   end
-end
 
-post '/context/:context_id/getUnits' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
+  publisher = CustomPublisher.new(collector)
+  sdk_config = ABSmartlyConfig.new
+  sdk_config.context_event_handler = publisher
+  sdk_config.context_event_logger = collector
+  throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
 
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    units = {}
-    context.get_units.each do |k, v|
-      units[k.to_s] = restore_unit_type(ctx_data, k, v)
+  if req_data[:data]
+    # Pre-fetched data goes through the SDK's own deserializer.
+    sdk_config.client = sdk_client('http://unused')
+    raw = req_data[:data].to_json
+    data = DefaultContextDataDeserializer.new.deserialize(raw, 0, raw.size)
+    context = ABSmartly.new(sdk_config).create_context_with(context_config,
+                                                            OpenStruct.new(success?: true, data_future: data))
+  elsif req_data[:failLoad]
+    # A real fetch against a closed port: the SDK's client fails the way a
+    # network failure does.
+    sdk_config.client = sdk_client('http://127.0.0.1:1', max_retries: 0)
+    context = ABSmartly.new(sdk_config).create_context(context_config)
+  else
+    client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy')
+    sdk_config.client = client
+    if throttle > 0
+      sdk_config.context_data_provider = DeferredDataProvider.new(client, throttle)
+      context = ABSmartly.new(sdk_config).create_context_async(context_config)
+    else
+      context = ABSmartly.new(sdk_config).create_context(context_config)
     end
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: units, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
+  end
+
+  register(context, collector, publisher)
+end
+
+post('/context/:context_id/treatment') { r = body_json; with_context { |c| c.treatment(r[:experimentName]) } }
+post('/context/:context_id/peek') { r = body_json; with_context { |c| c.peek_treatment(r[:experimentName]) } }
+post('/context/:context_id/track') { r = body_json; with_context { |c| c.track(r[:goalName], r[:properties]); nil } }
+post('/context/:context_id/attribute') { r = body_json; with_context { |c| c.set_attribute(r[:name], r[:value]); nil } }
+
+%w[override setOverride].each do |route|
+  post("/context/:context_id/#{route}") { r = body_json; with_context { |c| c.set_override(r[:experimentName], r[:variant]); nil } }
+end
+%w[customAssignment setCustomAssignment].each do |route|
+  post("/context/:context_id/#{route}") { r = body_json; with_context { |c| c.set_custom_assignment(r[:experimentName], r[:variant]); nil } }
+end
+
+get('/context/:context_id/pending') { with_context { |c| c.pending_count } }
+get('/context/:context_id/isFinalized') { with_context { |c| c.closed? } }
+get('/context/:context_id/isReady') { with_context { |c| c.ready? } }
+get('/context/:context_id/isFailed') { with_context { |c| c.failed? || false } }
+get('/context/:context_id/experiments') { with_context { |c| c.experiments } }
+
+post('/context/:context_id/getUnits') { with_context { |c| c.get_units.transform_keys(&:to_s) } }
+post('/context/:context_id/getAttributes') { with_context { |c| c.get_attributes } }
+post('/context/:context_id/readyError') do
+  with_context do |c|
+    error = c.ready_error
+    error ? { isError: true, message: error.to_s } : nil
   end
 end
+post('/context/:context_id/variableKeysMap') { with_context { |c| c.variable_keys.transform_keys(&:to_s) } }
+post('/context/:context_id/variableKeys') { with_context { |c| c.variable_keys.keys.map(&:to_s) } }
+post('/context/:context_id/globalCustomFieldKeys') { with_context { |c| c.custom_field_keys } }
+post('/context/:context_id/customFieldKeys') { with_context { |c| c.custom_field_keys } }
 
-post '/context/:context_id/getAttributes' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    attrs = context.get_attributes
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: attrs, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
+post('/context/:context_id/publishFail') do
+  with_context { |_c, d| d[:publisher].should_fail = true; nil }
 end
-
-post '/context/:context_id/readyError' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-
-  begin
-    error = context.respond_to?(:ready_error) ? context.ready_error : nil
-    result = error ? { isError: true, message: error.to_s } : nil
-    content_type :json
-    { result: result, events: [] }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/variableKeysMap' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    keys = context.variable_keys
-    result = keys.is_a?(Hash) ? keys.transform_keys(&:to_s) : keys
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/globalCustomFieldKeys' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    keys = context.custom_field_keys
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: keys, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/publishFail' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  $contexts[context_id][:publisher].should_fail = true
-  content_type :json
-  { result: nil, events: [] }.to_json
-end
-
-post '/context/:context_id/publish' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    context.publish
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 500, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/finalize' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    context.close  # Ruby SDK method is close not finalize
-    new_events = collector.events[events_before..-1] || []
-
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 500, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/setUnit' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_unit(req_data[:unitType].to_sym, req_data[:uid].to_s)
-    (ctx_data[:unitInputs] ||= {})[req_data[:unitType].to_s] ||= req_data[:uid]
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    error = e.message
-    if error&.downcase&.include?('already set')
-      error = "Unit '#{req_data[:unitType]}' UID already set."
-    end
-    halt 400, { error: translate_error_message(error) }.to_json
-  end
-end
-
-post '/context/:context_id/getUnit' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    result = restore_unit_type(ctx_data, req_data[:unitType], context.get_unit(req_data[:unitType].to_sym))
-
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/getAttribute' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    result = context.get_attribute(req_data[:name])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/variableValue' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    result = context.variable_value(req_data[:key], req_data[:defaultValue])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/peekVariableValue' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    result = context.peek_variable_value(req_data[:key], req_data[:defaultValue])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/customFieldValue' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    result = context.custom_field_value(req_data[:experimentName], req_data[:fieldName])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/variableKeys' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  begin
-    keys = context.variable_keys
-    result = keys.is_a?(Hash) ? keys.keys.map(&:to_s) : keys
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: result, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/customFieldKeys' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    keys = context.custom_field_keys
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: keys, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/customFieldValueType' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    value_type = context.custom_field_type(req_data[:experimentName], req_data[:fieldName])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: value_type, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/setOverride' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_override(req_data[:experimentName], req_data[:variant])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/setCustomAssignment' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.set_custom_assignment(req_data[:experimentName], req_data[:variant])
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 400, { error: translate_error_message(e.message) }.to_json
-  end
-end
-
-post '/context/:context_id/refresh' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  collector = ctx_data[:eventCollector]
-  events_before = collector.events.length
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
-    context.refresh
-    new_events = collector.events[events_before..-1] || []
-    content_type :json
-    { result: nil, events: new_events }.to_json
-  rescue => e
-    halt 500, { error: translate_error_message(e.message) }.to_json
-  end
-end
+post('/context/:context_id/publish') { with_context(500) { |c| c.publish; nil } }
+post('/context/:context_id/finalize') { with_context(500) { |c| c.finalize; nil } }
+post('/context/:context_id/refresh') { with_context(500) { |c| c.refresh; nil } }
+
+post('/context/:context_id/setUnit') { r = body_json; with_context { |c| c.set_unit(r[:unitType].to_sym, r[:uid]); nil } }
+post('/context/:context_id/getUnit') { r = body_json; with_context { |c| c.get_unit(r[:unitType].to_sym) } }
+post('/context/:context_id/getAttribute') { r = body_json; with_context { |c| c.get_attribute(r[:name]) } }
+post('/context/:context_id/variableValue') { r = body_json; with_context { |c| c.variable_value(r[:key], r[:defaultValue]) } }
+post('/context/:context_id/peekVariableValue') { r = body_json; with_context { |c| c.peek_variable_value(r[:key], r[:defaultValue]) } }
+post('/context/:context_id/customFieldValue') { r = body_json; with_context { |c| c.custom_field_value(r[:experimentName], r[:fieldName]) } }
+post('/context/:context_id/customFieldValueType') { r = body_json; with_context { |c| c.custom_field_type(r[:experimentName], r[:fieldName]) } }
 
 delete '/context/:context_id' do
-  context_id = params['context_id']
-  $contexts.delete(context_id) if $contexts[context_id]
-
+  $contexts.delete(params['context_id'])
   content_type :json
   { result: 'deleted' }.to_json
 end
 
 post '/diagnostic' do
   content_type :json
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-  op = req_data[:operation]
+  req_data = body_json
   value = req_data[:value]
 
-  result = case op
-           when 'hashUnit'
-             Hashing.hash_unit(value.to_s)
-           when 'base64UrlNoPadding'
-             Base64.urlsafe_encode64(value.to_s, padding: false)
-           when 'utf8Bytes'
-             value.to_s.bytes
-           when 'isObject'
-             value.is_a?(Hash)
-           when 'isNumeric'
-             value.is_a?(Numeric)
-           when 'isPromise'
-             false
+  result = case req_data[:operation]
+           when 'hashUnit' then Hashing.hash_unit(value)
+           when 'base64UrlNoPadding' then Hashing.base64_url_no_padding(Hashing.to_utf8(value))
+           when 'utf8Bytes' then Hashing.to_utf8(value).bytes
+           when 'isObject' then TypeUtils.object?(value)
+           when 'isNumeric' then TypeUtils.numeric?(value)
            else
-             halt 400, { error: "Unsupported diagnostic operation: #{op}" }.to_json
+             halt 400, { error: "Unsupported diagnostic operation: #{req_data[:operation]}", events: [] }.to_json
            end
 
   { result: result, events: [] }.to_json
 rescue => e
-  halt 500, { error: translate_error_message(e.message) }.to_json
+  halt 500, { error: e.message, events: [] }.to_json
 end

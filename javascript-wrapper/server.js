@@ -14,6 +14,22 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 app.use(express.json());
 
+// Every response on a context route, success or error, carries the events the
+// SDK's event logger emitted while the request was handled.
+app.use('/context/:contextId', (req, res, next) => {
+  const entry = contexts.get(req.params.contextId);
+  if (!entry) return next();
+  const eventsBefore = entry.eventCollector.events.length;
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      body = { ...body, events: entry.eventCollector.events.slice(eventsBefore) };
+    }
+    return json(body);
+  };
+  next();
+});
+
 class EventCollector {
   constructor() {
     this.events = [];
@@ -81,7 +97,11 @@ app.get('/health', (req, res) => {
 app.get('/capabilities', async (req, res) => {
   const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
 
-  res.json({
+  res.json({diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: true,
+
     diagnostics: true,
     attrsSeq: true,
     publishFail: true,
@@ -204,8 +224,7 @@ app.post('/context', async (req, res) => {
         failedData,
         { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
-      try { await context.ready(); } catch (e) {}
-      await new Promise(r => setTimeout(r, 50));
+      await context.ready();
     } else if (payloadThrottle > 0 && endpoint) {
       const deferredData = new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -398,7 +417,7 @@ app.post('/context/:contextId/override', (req, res) => {
 
   try {
     context.override(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -412,7 +431,7 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
 
   try {
     context.customAssignment(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -518,28 +537,28 @@ app.get('/context/:contextId/pending', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.pending(), events: [] });
+  res.json({ result: data.context.pending() });
 });
 
 app.get('/context/:contextId/isFinalized', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFinalized(), events: [] });
+  res.json({ result: data.context.isFinalized() });
 });
 
 app.get('/context/:contextId/isReady', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isReady(), events: [] });
+  res.json({ result: data.context.isReady() });
 });
 
 app.get('/context/:contextId/isFailed', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFailed(), events: [] });
+  res.json({ result: data.context.isFailed() });
 });
 
 app.get('/context/:contextId/experiments', (req, res) => {
@@ -549,7 +568,7 @@ app.get('/context/:contextId/experiments', (req, res) => {
 
   try {
     const experiments = data.context.experiments();
-    res.json({ result: experiments, events: [] });
+    res.json({ result: experiments });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -642,7 +661,7 @@ app.post('/context/:contextId/publishFail', (req, res) => {
 
   data.publishFail = true;
   data.customPublisher._shouldFail = true;
-  res.json({ result: null, events: [] });
+  res.json({ result: null });
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

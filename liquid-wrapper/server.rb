@@ -1,6 +1,5 @@
 require 'sinatra'
 require 'json'
-require 'base64'
 require 'ostruct'
 require 'net/http'
 require 'uri'
@@ -9,6 +8,9 @@ require 'context_data_provider'
 require 'default_context_data_provider'
 require 'context_publisher'
 require 'a_b_smartly_config'
+require 'default_context_data_deserializer'
+require 'hashing'
+require 'type_utils'
 
 # Register Liquid SDK filters and tags
 ABsmartly::Liquid.register_all
@@ -24,10 +26,6 @@ Liquid::Template.register_filter(JsonFilter)
 set :port, 3000
 set :bind, '0.0.0.0'
 
-def translate_error(message)
-  message.gsub('ABSmartly Context is closed', 'Context finalized')
-end
-
 def translate_endpoint(endpoint)
   return endpoint if endpoint.nil?
   endpoint.gsub(/localhost:\d+/, '127.0.0.1:3000')
@@ -41,11 +39,8 @@ class EventCollector
   end
 
   def handle_event(event_type, data)
-    event_type_str = event_type.to_s
-    event_type_str = 'finalize' if event_type_str == 'close'
-
     @events << {
-      type: event_type_str,
+      type: event_type.to_s,
       data: deep_copy(data),
       timestamp: (Time.now.to_f * 1000).to_i
     }
@@ -107,38 +102,19 @@ class EventCollector
   end
 end
 
-class DataWrapper
+# Preloaded context data (scenario `data`) is parsed by the SDK's own
+# DefaultContextDataDeserializer, the same one its Client uses for a fetch.
+class PreloadedData
   attr_reader :data_future
 
   def initialize(data)
-    @data_future = hash_to_ostruct(data)
+    json = JSON.generate(data)
+    @data_future = DefaultContextDataDeserializer.new.deserialize(json, 0, json.bytesize)
+    raise 'Context data could not be deserialized' if @data_future.nil?
   end
 
   def success?
     true
-  end
-
-  private
-
-  def hash_to_ostruct(obj)
-    return obj unless obj.is_a?(Hash)
-
-    obj.each_with_object(OpenStruct.new) do |(key, val), ostruct|
-      snake_key = camel_to_snake(key.to_s)
-      ostruct[snake_key] = if val.is_a?(Hash)
-                             hash_to_ostruct(val)
-                           elsif val.is_a?(Array)
-                             val.map { |v| hash_to_ostruct(v) }
-                           else
-                             val
-                           end
-    end
-  end
-
-  def camel_to_snake(str)
-    str.gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
-       .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-       .downcase
   end
 end
 
@@ -182,17 +158,6 @@ class DeferredDataProvider < ContextDataProvider
   end
 end
 
-# Return the caller's original JSON value for a unit when the SDK's stored
-# string is exactly its string form (so 125 / 125.75 round-trip as numbers);
-# otherwise return the SDK's string, so a string UID that merely looks numeric
-# (e.g. "123") is never retyped.
-def restore_unit_type(ctx_data, unit_type, sdk_value)
-  return nil if sdk_value.nil?
-  original = (ctx_data[:unitInputs] || {})[unit_type.to_s]
-  return original if original.is_a?(Numeric) && original.to_s == sdk_value.to_s
-  sdk_value
-end
-
 # Render a template against this context only. The ABsmartly Liquid filters
 # and tags resolve the context from the 'absmartly' drop; the process-global
 # ABsmartly::Liquid.current_context is never set, so one request can never
@@ -205,6 +170,18 @@ end
 
 # The absmartly_treatment / absmartly_peek output is the SDK's integer variant;
 # anything else means the template did not render a variant.
+def events_since(collector, events_before)
+  collector.events[events_before..-1] || []
+end
+
+# Error responses carry the SDK's message unchanged plus the events the SDK
+# emitted during the call.
+def error_response(status, error, collector, events_before)
+  body = { error: error.message }
+  body[:events] = collector ? events_since(collector, events_before) : []
+  halt status, body.to_json
+end
+
 def parse_variant(rendered)
   Integer(rendered.strip, 10)
 rescue ArgumentError, TypeError
@@ -261,7 +238,7 @@ get '/capabilities' do
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',
       'variableKeys', 'customFieldKeys', 'customFieldValueType',
       'setOverride', 'setCustomAssignment', 'refresh',
-      'diagnostic', 'experiments', 'isReady', 'isFailed',
+      'diagnostic', 'isReady', 'isFailed',
       'getUnits', 'getAttributes', 'readyError', 'variableKeysMap',
       'globalCustomFieldKeys', 'publishFail'
     ]
@@ -397,7 +374,7 @@ post '/context' do
   payload_throttle = options[:payloadThrottle] || 0
 
   if req_data[:data]
-    context = sdk.create_context_with(context_config, DataWrapper.new(req_data[:data]))
+    context = sdk.create_context_with(context_config, PreloadedData.new(req_data[:data]))
   elsif req_data[:failLoad]
     failing_sdk_config = ABSmartlyConfig.new
     failing_sdk_config.context_data_provider = FailingDataProvider.new
@@ -421,8 +398,7 @@ post '/context' do
   $contexts[context_id] = {
     context: context,
     eventCollector: event_collector,
-    publisher: publisher,
-    unitInputs: req_data[:units].transform_keys(&:to_s)
+    publisher: publisher
   }
 
   content_type :json
@@ -449,10 +425,6 @@ post '/context/:context_id/treatment' do
   request.body.rewind
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
-  if context.closed?
-    halt 400, { error: 'Context finalized' }.to_json
-  end
-
   begin
     # Use Liquid template with absmartly_treatment block tag
     # The tag needs context['absmartly'] to be a Drop with treatment method
@@ -461,12 +433,12 @@ post '/context/:context_id/treatment' do
       'experiment_name' => req_data[:experimentName])
     variant = parse_variant(rendered)
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: variant, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -488,12 +460,12 @@ post '/context/:context_id/peek' do
       'experiment_name' => req_data[:experimentName])
     variant = parse_variant(rendered)
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: variant, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -510,25 +482,16 @@ post '/context/:context_id/track' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    # Validate properties type first (must be nil or Hash)
-    props = req_data[:properties]
-    if !props.nil? && !props.is_a?(Hash)
-      halt 400, { error: "Goal '#{req_data[:goalName]}' properties must be of type object." }.to_json
-    end
-
-    # Track calls the underlying ruby SDK directly, NOT the Liquid
-    # absmartly_track filter/tag: in non-strict mode those drop a goal when
-    # the context is not ready yet (and swallow the finalized error), which
-    # contradicts scenario 67 (goal queued before ready). Properties pass
-    # through unchanged (nil stays nil) and the goal event returned is exactly
-    # what the SDK logged.
-    context.track(req_data[:goalName].to_s, props)
-    new_events = collector.events[events_before..-1] || []
+    # Track renders the Liquid absmartly_track filter; properties pass through
+    # unchanged (nil stays nil) and the SDK validates them.
+    render_liquid(context, "{{ goal_name | absmartly_track: properties }}",
+      'goal_name' => req_data[:goalName], 'properties' => req_data[:properties])
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -546,153 +509,96 @@ post '/context/:context_id/attribute' do
 
   begin
     context.set_attribute(req_data[:name], req_data[:value])
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
-post '/context/:context_id/override' do
-  context_id = params['context_id']
+# Runs one SDK call against a stored context and replies with its result and
+# the events the SDK emitted during the call (also on error).
+def sdk_route(context_id, error_status = 400)
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
   ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
+  collector = ctx_data[:eventCollector]
+  events_before = collector.events.length
+  content_type :json
   begin
-    context.set_override(req_data[:experimentName], req_data[:variant])
-    content_type :json
-    { result: nil, events: [] }.to_json
+    result = yield ctx_data[:context]
+    { result: result, events: events_since(collector, events_before) }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(error_status, e, collector, events_before)
+  end
+end
+
+def read_body
+  request.body.rewind
+  JSON.parse(request.body.read, symbolize_names: true)
+end
+
+post '/context/:context_id/override' do
+  req_data = read_body
+  sdk_route(params['context_id']) do |context|
+    context.set_override(req_data[:experimentName], req_data[:variant])
+    nil
   end
 end
 
 post '/context/:context_id/customAssignment' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-
-  request.body.rewind
-  req_data = JSON.parse(request.body.read, symbolize_names: true)
-
-  begin
+  req_data = read_body
+  sdk_route(params['context_id']) do |context|
     context.set_custom_assignment(req_data[:experimentName], req_data[:variant])
-    content_type :json
-    { result: nil, events: [] }.to_json
-  rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    nil
   end
 end
 
 get '/context/:context_id/pending' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  content_type :json
-  { result: ctx_data[:context].pending_count, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.pending_count }
 end
 
 get '/context/:context_id/isFinalized' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  content_type :json
-  { result: ctx_data[:context].closed?, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.closed? }
 end
 
 get '/context/:context_id/isReady' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  content_type :json
-  { result: ctx_data[:context].ready?, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.ready? }
 end
 
 get '/context/:context_id/isFailed' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  failed = context.respond_to?(:failed?) ? (context.failed? || false) : false
-  content_type :json
-  { result: failed, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.failed? }
 end
 
 get '/context/:context_id/experiments' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-
-  ctx_data = $contexts[context_id]
-  content_type :json
-  { result: ctx_data[:context].experiments, events: [] }.to_json
+  sdk_route(params['context_id']) do |context|
+    # Through the Liquid Drop, which raises the SDK's errors.
+    JSON.parse(render_liquid(context, "{{ absmartly.experiments | json }}", {}).strip)
+  end
 end
 
 post '/context/:context_id/getUnits' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  units = {}
-  context.get_units.each do |k, v|
-    units[k.to_s] = restore_unit_type(ctx_data, k, v)
-  end
-  content_type :json
-  { result: units, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.get_units.transform_keys(&:to_s) }
 end
 
 post '/context/:context_id/getAttributes' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  attrs = context.get_attributes
-  content_type :json
-  { result: attrs, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.get_attributes }
 end
 
 post '/context/:context_id/readyError' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  error = context.respond_to?(:ready_error) ? context.ready_error : nil
-  result = error ? { isError: true, message: error.to_s } : nil
-  content_type :json
-  { result: result, events: [] }.to_json
+  sdk_route(params['context_id']) do |context|
+    error = context.ready_error
+    error ? { isError: true, message: error.to_s } : nil
+  end
 end
 
 post '/context/:context_id/variableKeysMap' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  keys = context.variable_keys
-  result = keys.is_a?(Hash) ? keys.transform_keys(&:to_s) : keys
-  content_type :json
-  { result: result, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.variable_keys.transform_keys(&:to_s) }
 end
 
 post '/context/:context_id/globalCustomFieldKeys' do
-  context_id = params['context_id']
-  halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
-  ctx_data = $contexts[context_id]
-  context = ctx_data[:context]
-  keys = context.custom_field_keys
-  content_type :json
-  { result: keys, events: [] }.to_json
+  sdk_route(params['context_id']) { |context| context.custom_field_keys }
 end
 
 post '/context/:context_id/publishFail' do
@@ -714,12 +620,12 @@ post '/context/:context_id/publish' do
 
   begin
     context.publish
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: translate_error(e.message) }.to_json
+    error_response(500, e, collector, events_before)
   end
 end
 
@@ -734,12 +640,12 @@ post '/context/:context_id/finalize' do
 
   begin
     context.close
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
 
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: translate_error(e.message) }.to_json
+    error_response(500, e, collector, events_before)
   end
 end
 
@@ -757,16 +663,11 @@ post '/context/:context_id/setUnit' do
 
   begin
     context.set_unit(req_data[:unitType], req_data[:uid])
-    (ctx_data[:unitInputs] ||= {})[req_data[:unitType].to_s] ||= req_data[:uid]
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    error = e.message
-    if error&.downcase&.include?('already set')
-      error = "Unit '#{req_data[:unitType]}' UID already set."
-    end
-    halt 400, { error: translate_error(error) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -783,13 +684,13 @@ post '/context/:context_id/getUnit' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    result = restore_unit_type(ctx_data, req_data[:unitType], context.get_unit(req_data[:unitType]))
+    result = context.get_unit(req_data[:unitType])
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -807,11 +708,11 @@ post '/context/:context_id/getAttribute' do
 
   begin
     result = context.get_attribute(req_data[:name])
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -836,11 +737,11 @@ post '/context/:context_id/variableValue' do
     # Parse the JSON result
     result = JSON.parse(rendered.strip)
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -865,11 +766,11 @@ post '/context/:context_id/peekVariableValue' do
     # Parse the JSON result
     result = JSON.parse(rendered.strip)
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -894,11 +795,11 @@ post '/context/:context_id/customFieldValue' do
     # Parse the JSON result
     result = JSON.parse(rendered.strip)
 
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -914,11 +815,11 @@ post '/context/:context_id/variableKeys' do
   begin
     keys = context.variable_keys
     result = keys.is_a?(Hash) ? keys.keys.map(&:to_s) : keys
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: result, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -936,11 +837,11 @@ post '/context/:context_id/customFieldKeys' do
 
   begin
     keys = context.custom_field_keys
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: keys, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -958,11 +859,11 @@ post '/context/:context_id/customFieldValueType' do
 
   begin
     value_type = context.custom_field_type(req_data[:experimentName], req_data[:fieldName])
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: value_type, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -980,11 +881,11 @@ post '/context/:context_id/setOverride' do
 
   begin
     context.set_override(req_data[:experimentName], req_data[:variant])
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -1002,11 +903,11 @@ post '/context/:context_id/setCustomAssignment' do
 
   begin
     context.set_custom_assignment(req_data[:experimentName], req_data[:variant])
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 400, { error: translate_error(e.message) }.to_json
+    error_response(400, e, collector, events_before)
   end
 end
 
@@ -1024,11 +925,11 @@ post '/context/:context_id/refresh' do
 
   begin
     context.refresh
-    new_events = collector.events[events_before..-1] || []
+    new_events = events_since(collector, events_before)
     content_type :json
     { result: nil, events: new_events }.to_json
   rescue => e
-    halt 500, { error: translate_error(e.message) }.to_json
+    error_response(500, e, collector, events_before)
   end
 end
 
@@ -1048,23 +949,17 @@ post '/diagnostic' do
   value = req_data[:value]
 
   result = case op
-           when 'hashUnit'
-             Hashing.hash_unit(value.to_s)
-           when 'base64UrlNoPadding'
-             Base64.urlsafe_encode64(value.to_s, padding: false)
-           when 'utf8Bytes'
-             value.to_s.bytes
-           when 'isObject'
-             value.is_a?(Hash)
-           when 'isNumeric'
-             value.is_a?(Numeric)
-           when 'isPromise'
-             false
+           when 'hashUnit' then Hashing.hash_unit(value)
+           when 'base64UrlNoPadding' then Hashing.base64_url_no_padding(Hashing.to_utf8(value))
+           when 'utf8Bytes' then Hashing.to_utf8(value).bytes
+           when 'isObject' then TypeUtils.object?(value)
+           when 'isNumeric' then TypeUtils.numeric?(value)
            else
-             halt 400, { error: "Unsupported diagnostic operation: #{op}" }.to_json
+             # isPromise has no Ruby SDK implementation, so it is not offered.
+             halt 400, { error: "Unsupported diagnostic operation: #{op}", events: [] }.to_json
            end
 
   { result: result, events: [] }.to_json
 rescue => e
-  halt 500, { error: translate_error(e.message) }.to_json
+  error_response(500, e, nil, 0)
 end

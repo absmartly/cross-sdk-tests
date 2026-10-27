@@ -120,11 +120,22 @@ private:
     std::atomic<bool> fail_next_{false};
 };
 
+// Events the SDK emitted since this request locked its context. httplib runs
+// each request on one thread, so the window is per thread.
+static thread_local std::shared_ptr<EventCollector> tl_collector;
+static thread_local size_t tl_events_before = 0;
+
+static std::vector<Event> window_events() {
+    if (!tl_collector) {
+        return {};
+    }
+    return tl_collector->get_new_events(tl_events_before);
+}
+
 struct ContextEntry {
     std::unique_ptr<absmartly::Context> context;
     std::shared_ptr<EventCollector> collector;
     std::shared_ptr<FailablePublisher> publisher;
-    std::map<std::string, json> unit_original_values;
     // Data comes from an endpoint the SDK fetches, so /refresh re-fetches
     // through the SDK's provider.
     bool fetches_from_endpoint = false;
@@ -174,7 +185,12 @@ static LockedEntry lock_context(const std::string& id) {
             entry = it->second;
         }
     }
-    return LockedEntry(std::move(entry));
+    LockedEntry locked(entry);
+    if (entry) {
+        tl_collector = entry->collector;
+        tl_events_before = entry->collector->size();
+    }
+    return locked;
 }
 
 static void store_context(const std::string& id, std::shared_ptr<ContextEntry> entry) {
@@ -235,29 +251,11 @@ static json make_response(const json& result, const std::vector<Event>& events) 
     return json{{"result", result}, {"events", events_to_json(events)}};
 }
 
+// Error bodies carry `error` and the events the SDK emitted during the call.
+// The `code` argument documents the call site and is not emitted.
 static json make_error_response(const std::string& error,
                                 [[maybe_unused]] const std::string& code) {
-    // Match the other 20 wrappers: error bodies carry only `error`. The `code`
-    // argument is retained at call sites for readability but is not emitted (the
-    // orchestrator only ever reads the `error` field).
-    return json{{"error", error}};
-}
-
-static std::string uid_to_string(const json& val) {
-    if (val.is_string()) {
-        return val.get<std::string>();
-    }
-    if (val.is_number_integer()) {
-        return std::to_string(val.get<int64_t>());
-    }
-    if (val.is_number_float()) {
-        double d = val.get<double>();
-        if (d == static_cast<double>(static_cast<int64_t>(d))) {
-            return std::to_string(static_cast<int64_t>(d));
-        }
-        return std::to_string(d);
-    }
-    return val.dump();
+    return json{{"error", error}, {"events", events_to_json(window_events())}};
 }
 
 static absmartly::ContextData parse_context_data(const json& j) {
@@ -309,6 +307,13 @@ int main() {
         }
     });
 
+    // Start every request with an empty events window.
+    svr.set_pre_routing_handler([](const httplib::Request&, httplib::Response&) {
+        tl_collector.reset();
+        tl_events_before = 0;
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
     svr.Get("/health", [](const httplib::Request&, httplib::Response& res) {
         json resp = {{"status", "healthy"}, {"sdk", "cpp"}, {"version", "1.0.0"}};
         res.set_content(resp.dump(), "application/json");
@@ -346,26 +351,17 @@ int main() {
                  } else if (op == "base64UrlNoPadding") {
                      result = absmartly::base64url_no_padding(
                          reinterpret_cast<const uint8_t*>(text.data()), text.size());
-                 } else if (op == "utf8Bytes") {
-                     result = json::array();
-                     for (unsigned char c : text) {
-                         result.push_back(static_cast<int>(c));
-                     }
-                 } else if (op == "isObject") {
-                     result = value.is_object();
-                 } else if (op == "isNumeric") {
-                     result = value.is_number();
-                 } else if (op == "isPromise") {
-                     result = false;
                  } else {
-                     res.status = 400;
+                     // utf8Bytes, isObject, isNumeric and isPromise have no
+                     // C++ SDK implementation to call.
+                     res.status = 501;
                      res.set_content(
                          make_error_response("Unsupported diagnostic operation: " + op, "BAD_REQUEST").dump(),
                          "application/json");
                      return;
                  }
 
-                 json resp = {{"result", result}, {"events", json::array()}};
+                 json resp = make_response(result, window_events());
                  res.set_content(resp.dump(), "application/json");
              });
 
@@ -483,11 +479,9 @@ int main() {
                      // drives publishing explicitly.
                      e2e_ctx_config.publish_delay = -1;
                      e2e_ctx_config.refresh_period = 0;
-                     std::map<std::string, json> e2e_original_units;
                      if (body.contains("units") && body["units"].is_object()) {
                          for (auto& [key, val] : body["units"].items()) {
-                             e2e_ctx_config.units[key] = uid_to_string(val);
-                             e2e_original_units[key] = val;
+                             e2e_ctx_config.units[key] = val;
                          }
                      }
 
@@ -510,7 +504,6 @@ int main() {
                      entry->context = std::move(e2e_ctx);
                      entry->collector = e2e_collector;
                      entry->publisher = e2e_publisher;
-                     entry->unit_original_values = std::move(e2e_original_units);
                      entry->fetches_from_endpoint = true;
                      store_context(e2e_context_id, std::move(entry));
 
@@ -523,12 +516,9 @@ int main() {
                  }
 
                  absmartly::ContextConfig config;
-                 std::map<std::string, json> original_units;
-
                  if (body.contains("units") && body["units"].is_object()) {
                      for (auto& [key, val] : body["units"].items()) {
-                         config.units[key] = uid_to_string(val);
-                         original_units[key] = val;
+                         config.units[key] = val;
                      }
                  }
 
@@ -550,6 +540,7 @@ int main() {
                  }
 
                  auto collector = std::make_shared<EventCollector>();
+                 tl_collector = collector;
                  auto publisher = std::make_shared<FailablePublisher>();
                  std::string context_id = make_context_id();
                  bool fetches_from_endpoint = false;
@@ -614,7 +605,6 @@ int main() {
                      entry->context = std::move(ctx);
                      entry->collector = collector;
                      entry->publisher = publisher;
-                     entry->unit_original_values = std::move(original_units);
                      entry->fetches_from_endpoint = fetches_from_endpoint;
                      store_context(context_id, std::move(entry));
 
@@ -657,14 +647,12 @@ int main() {
                  }
 
                  std::string unit_type = body.value("unitType", "");
-                 json uid_json = body["uid"];
-                 std::string uid = uid_to_string(uid_json);
+                 json uid = body.contains("uid") ? body["uid"] : json(nullptr);
 
                  size_t events_before = entry->collector->size();
 
                  try {
                      entry->context->set_unit(unit_type, uid);
-                     entry->unit_original_values[unit_type] = uid_json;
                  } catch (const std::exception& e) {
                      res.status = 400;
                      res.set_content(
@@ -708,48 +696,8 @@ int main() {
 
                  auto new_events = entry->collector->get_new_events(events_before);
 
-                 if (unit.has_value()) {
-                     json result_val;
-                     auto orig_it = entry->unit_original_values.find(unit_type);
-                     if (orig_it != entry->unit_original_values.end()) {
-                         result_val = orig_it->second;
-                     } else {
-                         const std::string& uid_str = unit.value();
-                         bool is_integer = !uid_str.empty();
-                         bool has_dot = false;
-                         for (size_t i = 0; i < uid_str.size(); ++i) {
-                             char c = uid_str[i];
-                             if (c == '.') {
-                                 has_dot = true;
-                             } else if (c == '-' && i == 0) {
-                                 continue;
-                             } else if (c < '0' || c > '9') {
-                                 is_integer = false;
-                                 break;
-                             }
-                         }
-                         if (is_integer && !has_dot) {
-                             try {
-                                 result_val = std::stoll(uid_str);
-                             } catch (...) {
-                                 result_val = uid_str;
-                             }
-                         } else if (is_integer && has_dot) {
-                             try {
-                                 result_val = std::stod(uid_str);
-                             } catch (...) {
-                                 result_val = uid_str;
-                             }
-                         } else {
-                             result_val = uid_str;
-                         }
-                     }
-                     json resp = make_response(result_val, new_events);
-                     res.set_content(resp.dump(), "application/json");
-                 } else {
-                     json resp = make_response(nullptr, new_events);
-                     res.set_content(resp.dump(), "application/json");
-                 }
+                 json resp = make_response(unit.has_value() ? *unit : json(nullptr), new_events);
+                 res.set_content(resp.dump(), "application/json");
              });
 
     svr.Post(R"(/context/([^/]+)/attribute)",
@@ -853,17 +801,6 @@ int main() {
 
                  std::string experiment_name = body.value("experimentName", "");
                  size_t events_before = entry->collector->size();
-
-                 // The cpp SDK's treatment() has no finalize guard
-                 // (context.cpp:244) and would return the default variant, so
-                 // enforce the spec's "finalized => error" here (scenario 189).
-                 if (entry->context->is_finalized()) {
-                     res.status = 400;
-                     res.set_content(
-                         make_error_response("Context finalized", "TREATMENT_ERROR").dump(),
-                         "application/json");
-                     return;
-                 }
 
                  try {
                      int variant = entry->context->treatment(experiment_name);
@@ -1032,22 +969,6 @@ int main() {
                      properties = body["properties"];
                  }
 
-                 // The SDK coerces non-object properties to null and tracks
-                 // anyway, so enforce the spec's type check here: a present
-                 // properties value that is not an object (number, string,
-                 // array) must fail (scenarios 37/38/39).
-                 if (body.contains("properties") && !properties.is_null() &&
-                     !properties.is_object()) {
-                     res.status = 400;
-                     res.set_content(
-                         make_error_response(
-                             "Goal '" + goal_name + "' properties must be of type object.",
-                             "TRACK_ERROR")
-                             .dump(),
-                         "application/json");
-                     return;
-                 }
-
                  size_t events_before = entry->collector->size();
 
                  try {
@@ -1196,8 +1117,7 @@ int main() {
                 }
 
                 int count = entry->context->pending();
-                std::vector<Event> empty;
-                json resp = make_response(count, empty);
+                json resp = make_response(count, window_events());
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1215,8 +1135,7 @@ int main() {
                 }
 
                 bool finalized = entry->context->is_finalized();
-                std::vector<Event> empty;
-                json resp = make_response(finalized, empty);
+                json resp = make_response(finalized, window_events());
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1283,8 +1202,7 @@ int main() {
                     result.push_back(name);
                 }
 
-                std::vector<Event> empty;
-                json resp = make_response(result, empty);
+                json resp = make_response(result, window_events());
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -1308,8 +1226,7 @@ int main() {
                          result.push_back(key);
                      }
 
-                     std::vector<Event> empty;
-                     json resp = make_response(result, empty);
+                          json resp = make_response(result, window_events());
                      res.set_content(resp.dump(), "application/json");
                  } catch (const std::exception& e) {
                      res.status = 400;
@@ -1347,8 +1264,7 @@ int main() {
                      result.push_back(key);
                  }
 
-                 std::vector<Event> empty;
-                 json resp = make_response(result, empty);
+                  json resp = make_response(result, window_events());
                  res.set_content(resp.dump(), "application/json");
              });
 
@@ -1381,8 +1297,7 @@ int main() {
                  auto type = entry->context->custom_field_value_type(experiment_name, field_name);
                  json result = type ? json(*type) : json(nullptr);
 
-                 std::vector<Event> empty;
-                 json resp = make_response(result, empty);
+                  json resp = make_response(result, window_events());
                  res.set_content(resp.dump(), "application/json");
              });
 
@@ -1397,14 +1312,7 @@ int main() {
                  }
                  size_t eb = entry->collector->size();
                  auto units = entry->context->get_units();
-                 json result = json::object();
-                 for (auto& [k, v] : units) {
-                     try { result[k] = std::stoi(v); }
-                     catch (...) {
-                         try { result[k] = std::stod(v); }
-                         catch (...) { result[k] = v; }
-                     }
-                 }
+                 json result = units;
                  auto ne = entry->collector->get_new_events(eb);
                  res.set_content(make_response(result, ne).dump(), "application/json");
              });
@@ -1486,7 +1394,7 @@ int main() {
                      return;
                  }
                  entry->publisher->arm_failure();
-                 res.set_content(make_response(nullptr, {}).dump(), "application/json");
+                 res.set_content(make_response(nullptr, window_events()).dump(), "application/json");
              });
 
     svr.Post(R"(/context/([^/]+)/publish)",
@@ -1520,21 +1428,6 @@ int main() {
     svr.Post(R"(/context/([^/]+)/refresh)",
              [](const httplib::Request& req, httplib::Response& res) {
                  std::string id = req.matches[1];
-                 // The body is optional (the orchestrator sends `{}` unless it
-                 // has new data).
-                 json body = json::object();
-                 if (req.body.find_first_not_of(" \t\r\n") != std::string::npos) {
-                     try {
-                         body = json::parse(req.body);
-                     } catch (...) {
-                         res.status = 400;
-                         res.set_content(
-                             make_error_response("Invalid JSON", "PARSE_ERROR").dump(),
-                             "application/json");
-                         return;
-                     }
-                 }
-
                  auto entry = lock_context(id);
                  if (!entry) {
                      res.status = 404;
@@ -1547,18 +1440,10 @@ int main() {
                  size_t events_before = entry->collector->size();
 
                  try {
-                     if (body.contains("newData") && !body["newData"].is_null()) {
-                         // Supplied data is applied as given, so direct callers
-                         // get the data they sent even on endpoint-backed contexts.
-                         absmartly::ContextData new_data = parse_context_data(body["newData"]);
-                         entry->context->refresh(new_data);
-                     } else if (entry->fetches_from_endpoint) {
-                         // No newData: the SDK re-fetches through its own data
-                         // provider, as a real refresh does.
-                         entry->context->refresh();
-                     } else {
-                         entry->context->refresh(entry->context->data());
-                     }
+                     // The orchestrator stores any new data at the payload
+                     // endpoint first; the SDK re-fetches it through its own
+                     // data provider.
+                     entry->context->refresh();
                      auto new_events = entry->collector->get_new_events(events_before);
                      json resp = make_response(nullptr, new_events);
                      res.set_content(resp.dump(), "application/json");

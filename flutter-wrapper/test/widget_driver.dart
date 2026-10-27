@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:absmartly_sdk/absmartly_sdk.dart';
@@ -149,6 +151,16 @@ Future<dynamic> renderVariableValue(
 
   if (!captured) {
     throw StateError('VariableValue widget for "$variableKey" never built');
+  }
+
+  if (_isUsable(context)) {
+    // Peek after the render so the widget's own read is the one that queues
+    // the exposure.
+    final expected = context.peekVariableValue(variableKey, defaultValue);
+    if (jsonEncode(expected) != jsonEncode(capturedValue)) {
+      throw StateError('VariableValue widget for "$variableKey" rendered '
+          '$capturedValue but the SDK returned $expected');
+    }
   }
   return capturedValue;
 }

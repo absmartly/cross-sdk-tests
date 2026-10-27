@@ -71,7 +71,7 @@ fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher 
     Box::new(move || {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
-                sdk.create_context(HashMap::<String, String>::new(), None)
+                sdk.create_context(HashMap::<String, Value>::new(), None)
                     .await
                     .map_err(|e| format!("Refresh fetch failed: {}", e))
                     .and_then(|c| c.data().map(|d| d.clone()))
@@ -80,9 +80,12 @@ fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher 
     })
 }
 
-/// SDK errors become the wrapper's normal 400 error response.
-fn sdk_err(e: String) -> (StatusCode, Json<Value>) {
-    (StatusCode::BAD_REQUEST, Json(json!({"error": e})))
+type HandlerError = (StatusCode, Json<Value>);
+
+/// An SDK error as an error response carrying the events the SDK emitted
+/// during the call.
+fn err_with_events(status: StatusCode, e: impl ToString, ec: &EventCollector, since: usize) -> HandlerError {
+    (status, Json(json!({"error": e.to_string(), "events": ec.get_events_since(since)})))
 }
 
 fn now_millis() -> i64 {
@@ -311,31 +314,29 @@ async fn diagnostic_handler(
 ) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
     let value = req.value.unwrap_or(Value::Null);
     let result = match req.operation.as_str() {
-        "hashUnit" => {
-            let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
-            Value::String(utils::hash_unit(&input))
-        }
+        "hashUnit" => match utils::hash_unit_value(&value) {
+            Some(hash) => Value::String(hash),
+            None => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "error": "hashUnit takes a string or a number", "events": [] })),
+                ))
+            }
+        },
         "base64UrlNoPadding" => {
             let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
-            Value::String(utils::base64_url_no_padding(input.as_bytes()))
+            Value::String(utils::base64_url_no_padding(&utils::utf8_bytes(&input)))
         }
         "utf8Bytes" => {
             let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
-            Value::Array(
-                input
-                    .as_bytes()
-                    .iter()
-                    .map(|b| Value::Number(serde_json::Number::from(*b)))
-                    .collect(),
-            )
+            json!(utils::utf8_bytes(&input))
         }
-        "isObject" => Value::Bool(matches!(value, Value::Object(_))),
-        "isNumeric" => Value::Bool(matches!(value, Value::Number(_))),
-        "isPromise" => Value::Bool(false),
+        "isObject" => Value::Bool(utils::is_object(&value)),
+        "isNumeric" => Value::Bool(utils::is_numeric(&value)),
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": format!("Unsupported diagnostic operation: {}", req.operation) })),
+                Json(json!({ "error": format!("Unsupported diagnostic operation: {}", req.operation), "events": [] })),
             ))
         }
     };
@@ -387,26 +388,6 @@ async fn mock_api_context_handler(
     }
 }
 
-fn value_to_string(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i.to_string()
-            } else if let Some(f) = n.as_f64() {
-                if f == f.trunc() {
-                    (f as i64).to_string()
-                } else {
-                    f.to_string()
-                }
-            } else {
-                n.to_string()
-            }
-        }
-        _ => v.to_string(),
-    }
-}
-
 async fn create_context_handler(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreateContextRequest>,
@@ -427,18 +408,14 @@ async fn create_context_handler(
         let context_id = format!("ctx-{}", Uuid::new_v4());
         let event_collector = Arc::new(EventCollector::new());
 
-        let units: HashMap<String, String> = req
-            .units
-            .iter()
-            .map(|(k, v)| (k.clone(), value_to_string(v)))
-            .collect();
+        let units: HashMap<String, Value> = req.units.clone();
 
         let sdk = match ABsmartly::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": format!("Failed to create SDK: {}", e)})),
+                    Json(json!({"error": format!("Failed to create SDK: {}", e), "events": []})),
                 ).into_response();
             }
         };
@@ -450,7 +427,7 @@ async fn create_context_handler(
             Err(e) => {
                 return (
                     StatusCode::BAD_GATEWAY,
-                    Json(json!({"error": format!("{}", e)})),
+                    Json(json!({"error": format!("{}", e), "events": event_collector.get_events_since(0)})),
                 ).into_response();
             }
         };
@@ -500,11 +477,7 @@ async fn create_context_handler(
     let context_id = format!("ctx-{}", Uuid::new_v4());
     let event_collector = Arc::new(EventCollector::new());
 
-    let units: HashMap<String, String> = req
-        .units
-        .iter()
-        .map(|(k, v)| (k.clone(), value_to_string(v)))
-        .collect();
+    let units: HashMap<String, Value> = req.units.clone();
 
     let payload_throttle_ms = req.options.as_ref()
         .and_then(|opts| opts.get("payloadThrottle"))
@@ -529,7 +502,7 @@ async fn create_context_handler(
             Err(e) => {
                 return (
                     StatusCode::BAD_REQUEST,
-                    Json(json!({"error": format!("Failed to create SDK: {}", e)})),
+                    Json(json!({"error": format!("Failed to create SDK: {}", e), "events": []})),
                 ).into_response();
             }
         };
@@ -539,12 +512,15 @@ async fn create_context_handler(
             // made meanwhile (e.g. track before ready) land on this context.
             let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
             for (unit_type, uid) in &units {
-                let _ = ctx.set_unit(unit_type, uid);
+                if let Err(e) = ctx.set_unit(unit_type, uid.clone()) {
+                    return err_with_events(StatusCode::BAD_REQUEST, e, &event_collector, 0).into_response();
+                }
             }
             let publish_fail = Arc::new(AtomicBool::new(false));
             ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
             ctx.set_data_fetcher(sdk_data_fetcher(sdk.clone()));
 
+            let (ready, failed, finalized) = (ctx.is_ready(), ctx.is_failed(), ctx.is_finalized());
             let context_data = Arc::new(ContextData_ {
                 context: Mutex::new(ctx),
                 event_collector: event_collector.clone(),
@@ -587,9 +563,9 @@ async fn create_context_handler(
             return Json(ApiResponse {
                 result: serde_json::to_value(CreateContextResponse {
                     context_id,
-                    ready: false,
-                    failed: false,
-                    finalized: false,
+                    ready,
+                    failed,
+                    finalized,
                 })
                 .unwrap(),
                 events,
@@ -655,369 +631,162 @@ fn get_context(
     contexts.get(context_id).cloned().ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            Json(json!({"error": "context not found"})),
+            Json(json!({"error": "context not found", "events": []})),
         )
     })
 }
+
+type HandlerResult = Result<Json<ApiResponse>, HandlerError>;
+
+/// Run one SDK call on the context and return its result together with the
+/// events the SDK emitted during the call, on success and on error.
+fn with_context(
+    state: &Arc<AppState>,
+    context_id: &str,
+    error_status: StatusCode,
+    call: impl FnOnce(&mut Context) -> Result<Value, String>,
+) -> HandlerResult {
+    let ctx_data = get_context(state, context_id)?;
+    let events_before = ctx_data.event_collector.len();
+    // SDK calls are synchronous and may block (refresh/publish do HTTP, which
+    // in mock mode hits this same server). block_in_place hands this worker's
+    // queued tasks to other workers first; otherwise a task parked here (e.g.
+    // the one serving the SDK's own fetch) stalls until the SDK times out.
+    let outcome = tokio::task::block_in_place(|| {
+        let mut context = ctx_data.context.lock().unwrap();
+        call(&mut context)
+    });
+    match outcome {
+        Ok(result) => Ok(Json(ApiResponse {
+            result,
+            events: ctx_data.event_collector.get_events_since(events_before),
+            error: None,
+        })),
+        Err(e) => Err(err_with_events(error_status, e, &ctx_data.event_collector, events_before)),
+    }
+}
+
+fn to_json<T: Serialize>(value: T) -> Value {
+    serde_json::to_value(value).unwrap_or(Value::Null)
+}
+
+const BAD: StatusCode = StatusCode::BAD_REQUEST;
 
 async fn set_unit_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<SetUnitRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let uid_str = value_to_string(&req.uid);
-
-    {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Err(e) = context.set_unit(&req.unit_type, &uid_str) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
-        }
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.set_unit(&req.unit_type, req.uid).map(|_| Value::Null))
 }
 
 async fn get_unit_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<GetUnitRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let result = {
-        let context = ctx_data.context.lock().unwrap();
-        match context.get_unit(&req.unit_type) {
-            Some(uid) => {
-                if let Ok(n) = uid.parse::<i64>() {
-                    Value::Number(n.into())
-                } else if let Ok(f) = uid.parse::<f64>() {
-                    serde_json::Number::from_f64(f)
-                        .map(Value::Number)
-                        .unwrap_or(Value::String(uid.clone()))
-                } else {
-                    Value::String(uid.clone())
-                }
-            }
-            None => Value::Null,
-        }
-    };
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(c.get_unit(&req.unit_type).cloned().unwrap_or(Value::Null)))
 }
 
 async fn set_attribute_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<SetAttributeRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Err(e) = context.set_attribute(&req.name, req.value) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
-        }
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.set_attribute(&req.name, req.value).map(|_| Value::Null))
 }
 
 async fn get_attribute_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<GetAttributeRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let result = {
-        let context = ctx_data.context.lock().unwrap();
-        context.get_attribute(&req.name).cloned().unwrap_or(Value::Null)
-    };
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(c.get_attribute(&req.name).cloned().unwrap_or(Value::Null)))
 }
 
 async fn treatment_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<TreatmentRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    // The rust SDK's treatment() returns 0 after finalize rather than erroring, so
-    // guard the finalized state explicitly (scenario 189).
-    if ctx_data.context.lock().unwrap().is_finalized() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Context finalized"})),
-        ));
-    }
-
-    let variant = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.treatment(&req.experiment_name)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Number(variant.into()),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.treatment(&req.experiment_name).map(|v| json!(v)))
 }
 
 async fn peek_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<TreatmentRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let variant = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.peek(&req.experiment_name)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Number(variant.into()),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.peek(&req.experiment_name).map(|v| json!(v)))
 }
 
 async fn variable_value_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<VariableValueRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let value = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.variable_value(&req.key, req.default_value)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: value,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.variable_value(&req.key, req.default_value))
 }
 
 async fn peek_variable_value_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<VariableValueRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let value = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.peek_variable_value(&req.key, req.default_value)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: value,
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.peek_variable_value(&req.key, req.default_value))
 }
 
 async fn track_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<TrackRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
+) -> HandlerResult {
     let properties = req.properties.unwrap_or(Value::Null);
-
-    if !properties.is_null() && !properties.is_object() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": format!("Goal '{}' properties must be of type object.", req.goal_name)})),
-        ));
-    }
-
-    {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Err(e) = context.track(&req.goal_name, properties) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
-        }
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+    with_context(&state, &context_id, BAD, |c| c.track(&req.goal_name, properties).map(|_| Value::Null))
 }
 
 async fn override_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<OverrideRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Err(e) = context.set_override(&req.experiment_name, req.variant) {
-            let msg = e.to_string().to_lowercase();
-            if msg.contains("closed") || msg.contains("closing") || msg.contains("finalized") {
-                return Ok(Json(ApiResponse {
-                    result: Value::Null,
-                    events: vec![],
-                    error: None,
-                }));
-            }
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
-        }
-    }
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: vec![],
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.set_override(&req.experiment_name, req.variant).map(|_| Value::Null))
 }
 
 async fn custom_assignment_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<OverrideRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Err(e) = context.set_custom_assignment(&req.experiment_name, req.variant) {
-            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": e}))));
-        }
-    }
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: vec![],
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| {
+        c.set_custom_assignment(&req.experiment_name, req.variant).map(|_| Value::Null)
+    })
 }
 
 async fn custom_field_value_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<CustomFieldValueRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let value = {
-        let context = ctx_data.context.lock().unwrap();
-        context.custom_field_value(&req.experiment_name, &req.field_name)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: value.unwrap_or(Value::Null),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| {
+        c.custom_field_value(&req.experiment_name, &req.field_name).map(|v| v.unwrap_or(Value::Null))
+    })
 }
 
 async fn variable_keys_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let keys = {
-        let context = ctx_data.context.lock().unwrap();
-        context.variable_keys()
-    }
-    .map_err(sdk_err)?;
-
-    let keys_list: Vec<String> = keys.keys().cloned().collect();
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: serde_json::to_value(keys_list).unwrap_or(Value::Array(vec![])),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| {
+        c.variable_keys().map(|keys| to_json(keys.keys().cloned().collect::<Vec<String>>()))
+    })
 }
 
 async fn custom_field_keys_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let keys = {
-        let context = ctx_data.context.lock().unwrap();
-        context.custom_field_keys()
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: serde_json::to_value(keys).unwrap_or(Value::Array(vec![])),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.custom_field_keys().map(to_json))
 }
 
 #[derive(Deserialize)]
@@ -1032,311 +801,101 @@ async fn custom_field_value_type_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     Json(req): Json<CustomFieldValueTypeRequest>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    let value_type = {
-        let context = ctx_data.context.lock().unwrap();
-        context.custom_field_value_type(&req.experiment_name, &req.field_name)
-    }
-    .map_err(sdk_err)?;
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: value_type.map(Value::String).unwrap_or(Value::Null),
-        events: new_events,
-        error: None,
-    }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| {
+        c.custom_field_value_type(&req.experiment_name, &req.field_name).map(to_json)
+    })
 }
 
-async fn pending_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let pending = {
-        let context = ctx_data.context.lock().unwrap();
-        context.pending()
-    };
-
-    Ok(Json(ApiResponse {
-        result: Value::Number(pending.into()),
-        events: vec![],
-        error: None,
-    }))
+async fn pending_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(json!(c.pending())))
 }
 
-async fn is_finalized_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let finalized = {
-        let context = ctx_data.context.lock().unwrap();
-        context.is_finalized()
-    };
-
-    Ok(Json(ApiResponse {
-        result: Value::Bool(finalized),
-        events: vec![],
-        error: None,
-    }))
+async fn is_finalized_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(json!(c.is_finalized())))
 }
 
-async fn is_ready_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let ready = {
-        let context = ctx_data.context.lock().unwrap();
-        context.is_ready()
-    };
-
-    Ok(Json(ApiResponse {
-        result: Value::Bool(ready),
-        events: vec![],
-        error: None,
-    }))
+async fn is_ready_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(json!(c.is_ready())))
 }
 
-async fn is_failed_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let failed = {
-        let context = ctx_data.context.lock().unwrap();
-        context.is_failed()
-    };
-
-    Ok(Json(ApiResponse {
-        result: Value::Bool(failed),
-        events: vec![],
-        error: None,
-    }))
+async fn is_failed_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(json!(c.is_failed())))
 }
 
-async fn experiments_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let experiments = {
-        let context = ctx_data.context.lock().unwrap();
-        context.experiments()
-    }
-    .map_err(sdk_err)?;
-
-    Ok(Json(ApiResponse {
-        result: serde_json::to_value(experiments).unwrap_or(Value::Array(vec![])),
-        events: vec![],
-        error: None,
-    }))
+async fn experiments_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.experiments().map(to_json))
 }
 
-async fn get_units_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-    let result = {
-        let context = ctx_data.context.lock().unwrap();
-        let units = context.get_units();
-        let mut map = serde_json::Map::new();
-        for (k, v) in units {
-            if let Ok(n) = v.parse::<i64>() {
-                map.insert(k.clone(), Value::Number(n.into()));
-            } else if let Ok(f) = v.parse::<f64>() {
-                map.insert(k.clone(), serde_json::Number::from_f64(f).map(Value::Number).unwrap_or(Value::String(v.clone())));
-            } else {
-                map.insert(k.clone(), Value::String(v.clone()));
-            }
-        }
-        Value::Object(map)
-    };
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-    Ok(Json(ApiResponse { result, events: new_events, error: None }))
+async fn get_units_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(to_json(c.get_units())))
 }
 
-async fn get_attributes_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-    let result = {
-        let context = ctx_data.context.lock().unwrap();
-        context.get_attributes()
-    };
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-    Ok(Json(ApiResponse { result: serde_json::to_value(result).unwrap_or(Value::Object(serde_json::Map::new())), events: new_events, error: None }))
+async fn get_attributes_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| Ok(to_json(c.get_attributes())))
 }
 
-async fn ready_error_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let result = {
-        let context = ctx_data.context.lock().unwrap();
-        context
-            .ready_error()
+async fn ready_error_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| {
+        Ok(c.ready_error()
             .map(|e| json!({"isError": true, "message": e.clone()}))
-            .unwrap_or(Value::Null)
-    };
-    Ok(Json(ApiResponse { result, events: vec![], error: None }))
+            .unwrap_or(Value::Null))
+    })
 }
 
-async fn variable_keys_map_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-    let keys = {
-        let context = ctx_data.context.lock().unwrap();
-        context.variable_keys()
-    }
-    .map_err(sdk_err)?;
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-    Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Object(serde_json::Map::new())), events: new_events, error: None }))
+async fn variable_keys_map_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.variable_keys().map(to_json))
 }
 
 async fn global_custom_field_keys_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-    let keys = {
-        let context = ctx_data.context.lock().unwrap();
-        context.custom_field_keys()
-    }
-    .map_err(sdk_err)?;
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-    Ok(Json(ApiResponse { result: serde_json::to_value(keys).unwrap_or(Value::Array(vec![])), events: new_events, error: None }))
+) -> HandlerResult {
+    with_context(&state, &context_id, BAD, |c| c.custom_field_keys().map(to_json))
 }
 
-async fn publish_fail_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+async fn publish_fail_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
     let ctx_data = get_context(&state, &context_id)?;
     ctx_data.publish_fail.store(true, Ordering::SeqCst);
     Ok(Json(ApiResponse { result: Value::Null, events: vec![], error: None }))
 }
 
-async fn publish_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-
-    let events_before = ctx_data.event_collector.len();
-
-    // Always the real SDK path: Context::publish hands the event to the
-    // context's ArmablePublisher (which delivers nothing in mock mode and
-    // sends via the SDK's ABsmartly::publish in e2e mode) and keeps pending on failure.
-    let outcome = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.publish()
-    };
-    if let Err(e) = outcome {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+// Context::publish hands the event to the context's ArmablePublisher (which
+// delivers nothing in mock mode and sends via the SDK's ABsmartly::publish in
+// e2e mode).
+async fn publish_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, StatusCode::INTERNAL_SERVER_ERROR, |c| c.publish().map(|_| Value::Null))
 }
 
+// Endpoint-backed contexts re-fetch through the SDK's own data fetcher (the
+// orchestrator has already stored the new payload at the endpoint), as the JS
+// wrapper does. Contexts created from inline data have no endpoint, so the
+// supplied newData goes through the SDK's refresh_with.
 async fn refresh_handler(
     State(state): State<Arc<AppState>>,
     Path(context_id): Path<String>,
     body: axum::body::Bytes,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+) -> HandlerResult {
     let ctx_data = get_context(&state, &context_id)?;
-
-    // The body is optional: the orchestrator sends `{}` (or `{"newData": ...}`
-    // after it has already stored the new payload at the context's endpoint).
     let req: RefreshRequest = if body.iter().all(|b| b.is_ascii_whitespace()) {
         RefreshRequest { new_data: None }
     } else {
         serde_json::from_slice(&body).map_err(|e| {
-            (StatusCode::BAD_REQUEST, Json(json!({"error": format!("Invalid refresh body: {}", e)})))
+            (BAD, Json(json!({"error": format!("Invalid refresh body: {}", e), "events": []})))
         })?
     };
-
-    let events_before = ctx_data.event_collector.len();
-
-    let outcome = {
-        let mut context = ctx_data.context.lock().unwrap();
-        if let Some(new_data) = req.new_data {
-            // Supplied data is applied as given, so direct callers get the
-            // data they sent even on endpoint-backed contexts.
-            context.refresh_with(new_data)
-        } else if ctx_data.fetches_from_endpoint {
-            // No newData: the SDK re-fetches through its own client (its
-            // data fetcher), as a real refresh does.
-            context.refresh()
-        } else {
-            Err("Refresh of a context created from inline data requires newData".to_string())
+    let fetches = ctx_data.fetches_from_endpoint;
+    with_context(&state, &context_id, StatusCode::INTERNAL_SERVER_ERROR, |c| {
+        match (fetches, req.new_data) {
+            (false, Some(new_data)) => c.try_refresh_with(new_data),
+            _ => c.refresh(),
         }
-    };
-    if let Err(e) = outcome {
-        let status = if ctx_data.fetches_from_endpoint {
-            StatusCode::INTERNAL_SERVER_ERROR
-        } else {
-            StatusCode::BAD_REQUEST
-        };
-        return Err((status, Json(json!({"error": e}))));
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+        .map(|_| Value::Null)
+    })
 }
 
-async fn finalize_handler(
-    State(state): State<Arc<AppState>>,
-    Path(context_id): Path<String>,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    let ctx_data = get_context(&state, &context_id)?;
-    let events_before = ctx_data.event_collector.len();
-
-    // Always the real SDK path (see publish_handler).
-    let outcome = {
-        let mut context = ctx_data.context.lock().unwrap();
-        context.finalize()
-    };
-    if let Err(e) = outcome {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))));
-    }
-
-    let new_events = ctx_data.event_collector.get_events_since(events_before);
-
-    Ok(Json(ApiResponse {
-        result: Value::Null,
-        events: new_events,
-        error: None,
-    }))
+async fn finalize_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
+    with_context(&state, &context_id, StatusCode::INTERNAL_SERVER_ERROR, |c| c.finalize().map(|_| Value::Null))
 }
 
 async fn delete_context_handler(
