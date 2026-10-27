@@ -225,6 +225,10 @@ Future<void> startServer() async {
     return shelf.Response.ok(
       jsonEncode({
         'diagnostics': true,
+        'diagnosticsUtf8': true,
+        'diagnosticsBase64': false,
+        'diagnosticsTypeChecks': false,
+        'diagnosticsIsPromise': false,
         'attrsSeq': false,
         'isWrapper': true,
         'wrapsSDK': 'dart',

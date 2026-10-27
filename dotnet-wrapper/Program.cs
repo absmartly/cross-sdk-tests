@@ -76,6 +76,10 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapGet("/capabilities", () => Results.Ok(new
 {
     diagnostics = true,
+    diagnosticsUtf8 = true,
+    diagnosticsBase64 = true,
+    diagnosticsTypeChecks = false,
+    diagnosticsIsPromise = false,
     attrsSeq = true,
     publishFail = true,
     variableKeysMap = true,

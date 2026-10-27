@@ -243,6 +243,10 @@ end
 get '/capabilities' do
   content_type :json
   {diagnostics: true,
+    diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: false,
     attrsSeq: false,
     isWrapper: true,
     wrapsSDK: 'ruby',

@@ -25,6 +25,10 @@ defmodule ElixirWrapper.Router do
 
   get "/capabilities" do
     send_json(conn, 200, %{diagnostics: true,
+      diagnosticsUtf8: true,
+      diagnosticsBase64: true,
+      diagnosticsTypeChecks: true,
+      diagnosticsIsPromise: true,
       attrsSeq: false,
       publishFail: true,
       variableKeysMap: true,

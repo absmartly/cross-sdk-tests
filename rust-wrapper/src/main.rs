@@ -292,6 +292,10 @@ async fn health_handler() -> impl IntoResponse {
 
 async fn capabilities_handler() -> impl IntoResponse {
     Json(json!({"diagnostics": true,
+        "diagnosticsUtf8": true,
+        "diagnosticsBase64": true,
+        "diagnosticsTypeChecks": true,
+        "diagnosticsIsPromise": false,
         "attrsSeq": false,
         "publishFail": true,
         "variableKeysMap": true,

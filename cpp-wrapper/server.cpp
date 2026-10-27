@@ -319,7 +319,9 @@ int main() {
                 json resp = {{"diagnostics", true}, {"attrsSeq", false},
                     {"publishFail", true}, {"variableKeysMap", true},
                     {"globalCustomFieldKeys", true}, {"getUnits", true},
-                    {"getAttributes", true}, {"readyError", true}};
+                    {"getAttributes", true}, {"readyError", true},
+                    {"diagnosticsUtf8", false}, {"diagnosticsBase64", true},
+                    {"diagnosticsTypeChecks", false}, {"diagnosticsIsPromise", false}};
                 res.set_content(resp.dump(), "application/json");
             });
 

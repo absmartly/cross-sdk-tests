@@ -154,6 +154,10 @@ def health():
 @app.route('/capabilities', methods=['GET'])
 def capabilities():
     return jsonify({'diagnostics': True,
+        'diagnosticsUtf8': True,
+        'diagnosticsBase64': True,
+        'diagnosticsTypeChecks': True,
+        'diagnosticsIsPromise': True,
         'attrsSeq': False,
         'publishFail': True,
         'variableKeysMap': True,
