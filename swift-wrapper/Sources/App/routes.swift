@@ -390,8 +390,6 @@ func lookup(_ req: Request) throws -> ContextStorage {
     return storage
 }
 
-/// Runs one SDK call and answers with its result and the events the SDK logged
-/// during the call. An SDK error becomes a 400 with the SDK's message and those events.
 func call(_ storage: ContextStorage, _ body: () async throws -> Any?) async throws -> HTTPResponse {
     let before = storage.eventCollector.events.count
     do {
@@ -439,6 +437,10 @@ func routes(_ app: VaporApplication) throws {
     app.get("capabilities") { _ -> HTTPResponse in
         return try reply([
             "diagnostics": true,
+            "diagnosticsUtf8": true,
+            "diagnosticsBase64": true,
+            "diagnosticsTypeChecks": false,
+            "diagnosticsIsPromise": false,
             "attrsSeq": true,
             "publishFail": true,
             "variableKeysMap": true,
@@ -469,7 +471,6 @@ func routes(_ app: VaporApplication) throws {
         return try reply(["result": result, "events": [] as [Any]])
     }
 
-    // Payloads are stored and served byte for byte; only the SDK decodes them.
     app.put("context_payload", ":payloadId") { req -> HTTPResponse in
         guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
         let request = try requestBody(req)
@@ -510,7 +511,6 @@ func routes(_ app: VaporApplication) throws {
                 contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
                 variableParser: nil, scheduler: nil, client: client))
             let config = makeConfig(request, logger: eventCollector)
-            // No background timers in e2e mode.
             config.publishDelay = -1
             config.refreshInterval = 0
             let context = sdk.createContext(config: config)
@@ -783,7 +783,6 @@ func routes(_ app: VaporApplication) throws {
         }
     }
 
-    // The context stays in the manager so it can still be queried after finalize.
     app.post("context", ":contextId", "finalize") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
@@ -797,16 +796,18 @@ func routes(_ app: VaporApplication) throws {
               let storage = contextManager.get(contextId: contextId) else {
             throw Abort(.notFound, reason: "Context not found")
         }
+        let before = storage.eventCollector.events.count
         var closeError: Error?
         if !storage.context.isFinalized() {
             do { try await storage.context.finalize().asyncValue() } catch { closeError = error }
         }
         _ = try? await storage.sdk.close().asyncValue()
         contextManager.remove(contextId: contextId)
+        let events = sanitizeForJSON(Array(storage.eventCollector.events.suffix(from: before)))
         if let closeError = closeError {
-            return try errorReply(closeError.localizedDescription)
+            return try reply(["error": closeError.localizedDescription, "events": events], status: .badRequest)
         }
-        return try reply(["result": "deleted", "events": [] as [Any]])
+        return try reply(["result": "deleted", "events": events])
     }
 }
 

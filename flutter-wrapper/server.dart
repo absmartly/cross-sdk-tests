@@ -187,8 +187,6 @@ class ContextStore {
 
 final Map<String, ContextStore> contexts = {};
 
-// Every response on a /context/<id>/... route, success or error, carries the
-// events the SDK's event logger emitted while the request was handled.
 shelf.Handler withEventsWindow(shelf.Handler inner) {
   return (shelf.Request request) async {
     final segments = request.url.pathSegments;

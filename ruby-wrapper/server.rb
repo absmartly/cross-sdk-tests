@@ -147,8 +147,6 @@ def body_json
   raw.empty? ? {} : JSON.parse(raw, symbolize_names: true)
 end
 
-# Runs one SDK call on a stored context and returns its result together with
-# the events the SDK logged during the call, on success and on error.
 def with_context(error_status = 400)
   content_type :json
   ctx_data = $contexts[params['context_id']]
@@ -216,7 +214,6 @@ end
 
 get '/context_payload/:payload_id/context' do
   # A never-stored payload id is a missing collector payload: answer 404 so the
-  # SDK's own fetch fails the context.
   content_type :json
   data = $payload_store[params['payload_id']]
   halt 404, { error: 'Payload not found' }.to_json if data.nil?
@@ -252,7 +249,6 @@ post '/context' do
   throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
 
   if req_data[:data]
-    # Pre-fetched data goes through the SDK's own deserializer.
     sdk_config.client = sdk_client('http://unused')
     raw = req_data[:data].to_json
     data = DefaultContextDataDeserializer.new.deserialize(raw, 0, raw.size)

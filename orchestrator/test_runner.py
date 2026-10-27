@@ -891,10 +891,6 @@ class TestOrchestrator:
                 if not error_msg:
                     error_msg = str(exc)
 
-                # Error responses must carry the events window too (spec:
-                # every response has `events`), and a failed call must emit
-                # exactly the events the scenario lists (e.g. JS logs `error`
-                # on a failed publish).
                 if isinstance(error_body, dict):
                     observations[step_index] = (
                         action,
@@ -1361,8 +1357,6 @@ class TestOrchestrator:
             "consistency_comparisons": self.consistency_comparisons,
             "sdk_stats": sdk_stats,
             "results": self.results,
-            # Raw per-SDK outcomes and step observations, so reports from
-            # separate lanes can be compared afterwards (--compare-reports).
             "scenario_outcomes": self.scenario_outcomes,
             "step_observations": {
                 name: {sdk: {str(i): list(obs) for i, obs in steps.items()} for sdk, steps in per_sdk.items()}

@@ -251,8 +251,6 @@ static json make_response(const json& result, const std::vector<Event>& events) 
     return json{{"result", result}, {"events", events_to_json(events)}};
 }
 
-// Error bodies carry `error` and the events the SDK emitted during the call.
-// The `code` argument documents the call site and is not emitted.
 static json make_error_response(const std::string& error,
                                 [[maybe_unused]] const std::string& code) {
     return json{{"error", error}, {"events", events_to_json(window_events())}};
@@ -307,7 +305,6 @@ int main() {
         }
     });
 
-    // Start every request with an empty events window.
     svr.set_pre_routing_handler([](const httplib::Request&, httplib::Response&) {
         tl_collector.reset();
         tl_events_before = 0;

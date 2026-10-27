@@ -183,8 +183,6 @@ type CreateContextResponse struct {
 	Finalized bool   `json:"finalized"`
 }
 
-// writeSDKError returns an SDK error as a 400 together with the events the
-// SDK emitted during the call.
 func writeSDKError(w http.ResponseWriter, status int, err error, events []Event) {
 	if events == nil {
 		events = []Event{}
@@ -351,7 +349,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 
-	// The orchestrator drives publish and refresh itself.
 	contextConfig := sdk.ContextConfig{
 		Attributes_:      make(map[string]interface{}),
 		Overrides_:       make(map[string]int),
@@ -399,7 +396,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if payloadThrottle > 0 {
 			throttled = true
-			// Test transport: delays the fetch so the context stays pending.
 			dataFuture, done := future.New()
 			go func() {
 				time.Sleep(time.Duration(payloadThrottle) * time.Millisecond)
@@ -437,7 +433,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			absmartly = &a
 		}
 	case req.FailLoad:
-		// Test transport: the fetch fails like a network error.
 		dataFuture, done := future.New()
 		done(nil, fmt.Errorf("Context load failed"))
 		a := sdk.Create(sdk.ABSmartlyConfig{
@@ -509,8 +504,6 @@ func getContext(contextID string) (*ContextData, error) {
 
 type routeFunc func(cd *ContextData, decode func(interface{}) error) (interface{}, error)
 
-// contextRoute looks up the context and runs call. The response carries the
-// events the SDK emitted during the call, on success and on error.
 func contextRoute(call routeFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctxData, err := getContext(mux.Vars(r)["contextId"])

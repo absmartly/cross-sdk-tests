@@ -54,7 +54,6 @@ fun Application.configureRouting() {
             endpoint
         }
     }
-    // Error responses carry the events the SDK logged during the call.
     suspend fun ApplicationCall.respondError(status: HttpStatusCode, e: Throwable, events: List<Any?>) {
         val cause = if (e is java.util.concurrent.CompletionException && e.cause != null) e.cause!! else e
         respond(status, mapOf("error" to (cause.message ?: cause.toString()), "events" to events))

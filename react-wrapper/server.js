@@ -59,8 +59,6 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 app.use(express.json());
 
-// Every response on a context route, success or error, carries the events the
-// SDK's event logger emitted while the request was handled.
 app.use('/context/:contextId', (req, res, next) => {
   const entry = contexts.get(req.params.contextId);
   if (!entry) return next();

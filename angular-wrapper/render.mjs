@@ -1,7 +1,3 @@
-// Renders the Angular SDK's real <abs-treatment> component (with one
-// absTreatmentVariant template per variant, plus its loading and error
-// templates) through Angular's server renderer, and returns the HTML it
-// produced plus any error Angular reported while rendering it.
 import '@angular/compiler';
 import { enableProdMode, Component, ErrorHandler, provideExperimentalZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
@@ -36,4 +32,3 @@ export async function renderTreatment(service, name, peek = false) {
   );
   return { html, errors };
 }
-

@@ -122,8 +122,6 @@ app.MapPost("/diagnostic", async (HttpContext httpContext) =>
     }
 });
 
-// The payload is stored and served verbatim; the SDK's own client fetches and
-// deserializes it.
 app.MapPut("/context_payload/{payloadId}", async (string payloadId, HttpContext httpContext) =>
 {
     try
@@ -1449,5 +1447,3 @@ public class RefreshRequest
 {
     public ABSmartly.Models.ContextData NewData { get; set; }
 }
-
-

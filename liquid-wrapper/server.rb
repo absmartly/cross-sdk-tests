@@ -174,8 +174,6 @@ def events_since(collector, events_before)
   collector.events[events_before..-1] || []
 end
 
-# Error responses carry the SDK's message unchanged plus the events the SDK
-# emitted during the call.
 def error_response(status, error, collector, events_before)
   body = { error: error.message }
   body[:events] = collector ? events_since(collector, events_before) : []
@@ -482,8 +480,6 @@ post '/context/:context_id/track' do
   req_data = JSON.parse(request.body.read, symbolize_names: true)
 
   begin
-    # Track renders the Liquid absmartly_track filter; properties pass through
-    # unchanged (nil stays nil) and the SDK validates them.
     render_liquid(context, "{{ goal_name | absmartly_track: properties }}",
       'goal_name' => req_data[:goalName], 'properties' => req_data[:properties])
     new_events = events_since(collector, events_before)
@@ -518,8 +514,6 @@ post '/context/:context_id/attribute' do
   end
 end
 
-# Runs one SDK call against a stored context and replies with its result and
-# the events the SDK emitted during the call (also on error).
 def sdk_route(context_id, error_status = 400)
   halt 404, { error: 'Context not found' }.to_json unless $contexts[context_id]
   ctx_data = $contexts[context_id]
@@ -573,7 +567,6 @@ end
 
 get '/context/:context_id/experiments' do
   sdk_route(params['context_id']) do |context|
-    # Through the Liquid Drop, which raises the SDK's errors.
     JSON.parse(render_liquid(context, "{{ absmartly.experiments | json }}", {}).strip)
   end
 end

@@ -82,8 +82,6 @@ fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher 
 
 type HandlerError = (StatusCode, Json<Value>);
 
-/// An SDK error as an error response carrying the events the SDK emitted
-/// during the call.
 fn err_with_events(status: StatusCode, e: impl ToString, ec: &EventCollector, since: usize) -> HandlerError {
     (status, Json(json!({"error": e.to_string(), "events": ec.get_events_since(since)})))
 }
@@ -637,8 +635,6 @@ fn get_context(
 
 type HandlerResult = Result<Json<ApiResponse>, HandlerError>;
 
-/// Run one SDK call on the context and return its result together with the
-/// events the SDK emitted during the call, on success and on error.
 fn with_context(
     state: &Arc<AppState>,
     context_id: &str,
