@@ -82,9 +82,8 @@
       }
     },
     "scala": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
       "unsupported": {
-        "readyError": "scala-sdk has no public path to a failed Context from a failing fetch and emits no error event",
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
       }

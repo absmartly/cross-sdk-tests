@@ -363,6 +363,10 @@ class CapabilityPolicyTests(unittest.TestCase):
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
         self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        ready_error_exceptions = sorted(
+            sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
+        )
+        self.assertEqual(ready_error_exceptions, ["go"])
         for sdk, entry in policy["sdks"].items():
             for cap, reason in entry["unsupported"].items():
                 self.assertTrue(reason.strip(), f"{sdk}.{cap} needs a reason")
