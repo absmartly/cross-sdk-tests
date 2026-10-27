@@ -12054,7 +12054,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsUtf8"
     ]
   },
   {
@@ -12087,7 +12087,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsUtf8"
     ]
   },
   {
@@ -12110,7 +12110,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -12166,7 +12166,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -12189,7 +12189,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -12212,7 +12212,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -14071,7 +14071,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsTypeChecks"
     ]
   },
   {
@@ -14138,7 +14138,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsTypeChecks"
     ]
   },
   {
@@ -14174,7 +14174,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsIsPromise"
     ]
   },
   {

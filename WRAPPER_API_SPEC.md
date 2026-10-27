@@ -193,13 +193,21 @@ Content-Type: application/json
 }
 ```
 
-Supported operations in wrappers that advertise `diagnostics=true`:
-- `hashUnit`
-- `base64UrlNoPadding`
-- `utf8Bytes`
-- `isObject`
-- `isNumeric`
-- `isPromise`
+Each operation is gated by its own capability, so a wrapper advertises exactly
+the helpers its SDK implements:
+
+| Operation | Capability |
+|---|---|
+| `hashUnit` | `diagnostics` |
+| `utf8Bytes` | `diagnosticsUtf8` |
+| `base64UrlNoPadding` (of the value's UTF-8 bytes) | `diagnosticsBase64` |
+| `isObject`, `isNumeric` | `diagnosticsTypeChecks` |
+| `isPromise` | `diagnosticsIsPromise` |
+
+The wrapper must call the SDK's own helper for every operation it advertises.
+If the SDK has no such helper, the wrapper reports the capability as `false`
+and answers the operation with an error (with `events: []`); it never computes
+the result itself with the language's standard library or a literal value.
 
 **Response:**
 ```json
@@ -806,7 +814,7 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | /health | Health check |
-| GET | /capabilities | Feature flags (`diagnostics`, etc.) |
+| GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, `diagnosticsBase64`, `diagnosticsTypeChecks`, `diagnosticsIsPromise`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
