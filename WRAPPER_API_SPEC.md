@@ -690,24 +690,69 @@ back to the raw response text when the body is not JSON.
 
 Several scenarios assert specific error behaviors. The orchestrator matches
 error text by keyword subset (strict mode, the CI default), so the message
-must contain the key words shown below. If the underlying SDK does not raise
-these errors natively, the wrapper must implement the check itself:
+must contain the key words shown below.
+
+**These errors must come from the SDK.** A wrapper calls the SDK and returns
+the SDK's own error message as a 400. It must never raise one of these errors
+itself, check the condition before calling the SDK, rewrite the SDK's message
+into the expected text, or turn an SDK error into a success. If an SDK does not
+raise one of these errors, the scenario fails and the SDK is fixed. Every error
+below is raised by the JavaScript SDK (`src/context.ts`), which is the
+reference:
 
 1. **Operations on a finalized context** — `treatment`, `track`, `attribute`,
-   and `setUnit` on a finalized context must return 400 with a message
-   containing `Context finalized`. (`setOverride`/`setCustomAssignment` remain
-   allowed after finalize.)
+   and `setUnit` on a finalized context must return 400 with the SDK's
+   `ABsmartly Context is finalized.` (`context.ts:505-510`).
+   `setOverride`/`setCustomAssignment` remain allowed after finalize
+   (`context.ts:471-477`); an SDK that refuses them must be fixed.
 2. **Goal properties type** — `track` with a `properties` value that is
-   present, non-null, and not a JSON object must return 400 with
-   `Goal '<name>' properties must be of type object.`
-3. **Unit UID rules** — `setUnit` with a blank UID must return 400 with
-   `UID must not be blank`; re-setting an already-set unit type to a different
-   value must return 400 with `Unit '<type>' UID already set.`
+   present, non-null, and not a JSON object must return 400 with the SDK's
+   `Goal '<name>' properties must be of type object.` (`context.ts:1052`).
+   In a statically typed SDK whose API cannot accept a non-object, the wrapper
+   rejects the request at its JSON-to-type boundary with that same message;
+   it must not reach into the SDK or alter what the SDK queues.
+3. **Unit UID rules** — `setUnit` with a blank UID must return 400 with the
+   SDK's `Unit '<type>' UID must not be blank.`; re-setting an already-set unit
+   type to a different value must return 400 with the SDK's
+   `Unit '<type>' UID already set.` (`context.ts:342, 352`).
 4. **Reads before ready** — `treatment`, `peek`, `variableValue`,
    `peekVariableValue`, `variableKeys`, `experiments` and custom-field reads on
    a context that is not yet ready must return the SDK's own not-ready error
    (`ABsmartly Context is not yet ready.`) as a 400. Wrappers must not check
    readiness themselves and substitute defaults (`0`, the default value, `[]`).
+5. **Events on error responses** — an error response carries the events the
+   SDK emitted during the call (for example the `error` event a failed publish
+   logs), in the same `events` field as a success response.
+
+#### What a wrapper must not do
+
+A wrapper is a thin adapter between HTTP JSON and the SDK. It must not:
+
+- compute a result the SDK did not return (defaults, cached values, or its own
+  implementation of hashing, assignment, audience matching, comparisons,
+  number/string conversion, custom-field parsing or holdouts);
+- build, rename, rewrite, filter, re-order or de-duplicate events instead of
+  returning what the SDK's event logger emitted, or rewrite values inside them
+  (for example `""` to `null` or `{}` to `null`);
+- keep its own copy of SDK state (ready, failed, finalized, pending counts,
+  units, attributes) and answer from it instead of asking the SDK;
+- re-type values the SDK returns based on what the request sent;
+- feed refreshed data into the context directly when the SDK has a refresh
+  path; `/refresh` triggers the SDK's own refresh;
+- parse or fetch context data itself when the SDK provides a client and a
+  deserializer;
+- call private or internal SDK members (reflection, internal fields);
+- special-case scenario names, experiment names, unit ids or step numbers;
+- advertise a capability the SDK lacks, or hide one it has.
+
+Allowed: converting between JSON and the SDK's native types, mapping the SDK's
+idiomatic error (exception, Go `error`, Rust `Err`, Elixir `{:error, _}`) to a
+400 with its message, awaiting the SDK's async APIs, and injecting a test
+transport where a scenario asks for one (`publishFail`, `failLoad`,
+`payloadThrottle`). A `failLoad` transport must fail the fetch the way a real
+network failure does (reject or raise); it must not return malformed data.
+Diagnostic helpers (`hashUnit`, `utf8Bytes`, `base64UrlNoPadding`, …) call the
+SDK's own implementation when the SDK has one.
 
 ### Context Lifecycle
 
