@@ -6,11 +6,11 @@ Reconstructed from test_scenarios_complete.json
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 NOT CANONICAL. The checked-in test_scenarios_complete.json is the CANONICAL
-source of truth for the cross-SDK suite (227 scenarios); the harness never
+source of truth for the cross-SDK suite (229 scenarios); the harness never
 runs this script, and nothing (CI included) may be wired to it. This
 generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 227.
+  * It emits only 192 scenarios, not the canonical 229.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.

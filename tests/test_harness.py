@@ -121,6 +121,22 @@ class ResultMatchesTests(unittest.TestCase):
     def test_absent_result_does_not_match_null(self):
         self.assertFalse(result_matches("track", MISSING, None))
 
+    def test_data_results_require_exact_key_set(self):
+        self.assertFalse(result_matches("getUnits", {"session_id": "a", "extra": 1}, {"session_id": "a"}))
+        self.assertFalse(result_matches("getAttributes", {"country": "US", "x": None}, {"country": "US"}))
+        self.assertFalse(result_matches("customFieldValue", {"123": 1, "456": 0, "7": 2}, {"123": 1, "456": 0}))
+        self.assertFalse(result_matches("customFieldValue", [{"a": 1, "b": 2}], [{"a": 1}]))
+        self.assertFalse(
+            result_matches("variableKeysMap", {"button.color": ["x"], "banner": ["z"]}, {"button.color": ["x"]})
+        )
+        self.assertTrue(result_matches("getUnits", {"session_id": "a"}, {"session_id": "a"}))
+
+    def test_status_results_stay_partial(self):
+        actual = {"contextId": "ctx-1", "ready": True, "failed": False, "finalized": False}
+        for action in ("createContext", "createContextWith", "createContextFailed"):
+            self.assertTrue(result_matches(action, actual, {"ready": True, "failed": False}), action)
+        self.assertTrue(result_matches("readyError", {"isError": True, "message": "boom"}, {"isError": True}))
+
 
 class ValidateStepTests(unittest.TestCase):
     def setUp(self):
@@ -247,7 +263,7 @@ class ConstructorStateTests(unittest.TestCase):
 class ErrorPathEventTests(unittest.TestCase):
     """An expected error must not hide events emitted by the failed call."""
 
-    def run_error_step(self, body):
+    def run_error_step(self, body, expect=None):
         import requests
 
         resp = requests.Response()
@@ -257,7 +273,13 @@ class ErrorPathEventTests(unittest.TestCase):
         orch = make_orchestrator(policy=make_policy({"alpha": {"required": ["diagnostics", "holdouts"], "unsupported": {}}}))
         scenario = {
             "name": "err",
-            "steps": [{"action": "treatment", "params": {"experimentName": "e"}, "expect": {"error": "not yet ready", "events": []}}],
+            "steps": [
+                {
+                    "action": "treatment",
+                    "params": {"experimentName": "e"},
+                    "expect": expect or {"error": "not yet ready", "events": []},
+                }
+            ],
         }
         with mock.patch.object(test_runner.requests, "post", return_value=resp), mock.patch.object(
             test_runner.requests, "delete"
@@ -269,11 +291,30 @@ class ErrorPathEventTests(unittest.TestCase):
             {"error": "ABsmartly Context is not yet ready.", "events": [{"type": "exposure", "data": {}}]}
         )
         self.assertFalse(result["passed"])
-        self.assertEqual(result["failures"][0]["field"], "events")
+        self.assertEqual(result["failures"][0]["field"], "events.length")
 
-    def test_error_only_response_passes(self):
+    def test_error_response_without_events_fails(self):
         result = self.run_error_step({"error": "ABsmartly Context is not yet ready."})
+        self.assertFalse(result["passed"], result)
+        self.assertEqual(result["failures"][0]["field"], "events")
+        self.assertIn("<missing>", result["failures"][0]["actual"])
+
+    def test_error_response_with_empty_events_passes(self):
+        result = self.run_error_step({"error": "ABsmartly Context is not yet ready.", "events": []})
         self.assertTrue(result["passed"], result)
+
+    def test_error_response_events_must_match_listed_events(self):
+        expect = {"error": "Publish failed", "events": [{"type": "error"}]}
+        ok = self.run_error_step({"error": "Publish failed", "events": [{"type": "error", "data": "x"}]}, expect)
+        self.assertTrue(ok["passed"], ok)
+        missing = self.run_error_step({"error": "Publish failed", "events": []}, expect)
+        self.assertEqual(missing["failures"][0]["field"], "events.length")
+        wrong = self.run_error_step({"error": "Publish failed", "events": [{"type": "publish"}]}, expect)
+        self.assertEqual(wrong["failures"][0]["field"], "events[0].type")
+
+    def test_non_object_error_body_fails(self):
+        result = self.run_error_step(["oops"])
+        self.assertFalse(result["passed"])
 
 
 class ErrorMatchTests(unittest.TestCase):
@@ -284,6 +325,17 @@ class ErrorMatchTests(unittest.TestCase):
         self.assertTrue(orch.error_matches("Unit 'session_id' UID already set.", "Unit 'session_id' UID already set."))
         self.assertFalse(orch.error_matches("finalized", "Context finalized"))
         self.assertFalse(orch.error_matches("something else", "Context finalized"))
+
+    def test_negation_is_significant(self):
+        orch = make_orchestrator()
+        self.assertFalse(orch.error_matches("context is not finalized", "Context finalized"))
+        self.assertFalse(orch.error_matches("Context is finalized", "Context not finalized"))
+        self.assertFalse(orch.error_matches("Context can't be finalized", "Context finalized"))
+        self.assertFalse(orch.error_matches("UID must be blank", "UID must not be blank"))
+        self.assertTrue(orch.error_matches("Unit 'x' UID must not be blank.", "UID must not be blank"))
+        self.assertTrue(orch.error_matches("ABsmartly Context is not yet ready.", "not yet ready"))
+        loose = make_orchestrator(loose_error_match=True)
+        self.assertFalse(loose.error_matches("context is not finalized", "Context finalized"))
 
 
 class CapabilityPolicyTests(unittest.TestCase):
@@ -310,7 +362,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["java", "javascript"])
+        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
         for sdk, entry in policy["sdks"].items():
             for cap, reason in entry["unsupported"].items():
                 self.assertTrue(reason.strip(), f"{sdk}.{cap} needs a reason")
@@ -556,15 +608,81 @@ class ConsistencyTests(unittest.TestCase):
         orch = make_orchestrator(sdks={"a": "", "b": ""})
         expected = {"result": {"ready": True}, "events": [{"type": "ready"}]}
         self.run_obs(orch, "s", "a", 0, "createContext",
-                     {"result": {"contextId": "ctx-1", "ready": True}, "events": [{"type": "ready", "timestamp": 1, "data": {"x": 1}}]}, expected)
+                     {"result": {"contextId": "ctx-1", "ready": True}, "events": [{"type": "ready", "timestamp": 1, "data": {"experiments": [{"id": 1, "name": "e", "seedHi": 1}]}}]}, expected)
         self.run_obs(orch, "s", "b", 0, "createContext",
-                     {"result": {"contextId": "ctx-2", "ready": True}, "events": [{"type": "ready", "timestamp": 2, "data": {"x": 2}}]}, expected)
+                     {"result": {"contextId": "ctx-2", "ready": True}, "events": [{"type": "ready", "timestamp": 2, "data": {"experiments": [{"id": 1, "name": "e"}]}}]}, expected)
         expected_pub = {"result": None, "events": [{"type": "publish"}]}
-        self.run_obs(orch, "s", "a", 1, "publish", {"result": None, "events": [{"type": "publish", "data": {"publishedAt": 1}}]}, expected_pub)
-        self.run_obs(orch, "s", "b", 1, "publish", {"result": None, "events": [{"type": "publish", "data": {"publishedAt": 2}}]}, expected_pub)
+        pub_a = {"publishedAt": 1, "sdkVersion": "1.0", "hashed": True, "units": [{"type": "u", "uid": "h"}],
+                 "exposures": [{"id": 1, "name": "e", "exposedAt": 3}],
+                 "attributes": [{"name": "sdk_name", "value": "a", "setAt": 1}, {"name": "x", "value": 1, "setAt": 1}]}
+        pub_b = {"publishedAt": 2, "sdkVersion": "2.0", "hashed": True, "units": [{"type": "u", "uid": "h"}],
+                 "exposures": [{"id": 1, "name": "e", "exposedAt": 4}], "goals": [],
+                 "attributes": [{"name": "x", "value": 1, "setAt": 9}, {"name": "sdk_name", "value": "b"}]}
+        self.run_obs(orch, "s", "a", 1, "publish", {"result": None, "events": [{"type": "publish", "data": pub_a}]}, expected_pub)
+        self.run_obs(orch, "s", "b", 1, "publish", {"result": None, "events": [{"type": "publish", "data": pub_b}]}, expected_pub)
         orch.check_cross_sdk_consistency()
         self.assertEqual(orch.consistency_report, [])
         self.assertEqual(orch.consistency_comparisons, 3)
+
+    def test_payload_drift_detected(self):
+        def obs(action, data, etype):
+            return test_runner.observation_for_step(action, {"result": None, "events": [{"type": etype, "data": data}]}, {})
+
+        base_pub = {"hashed": True, "units": [{"type": "u", "uid": "h"}], "goals": [{"name": "g", "properties": {"a": 1}}]}
+        self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
+        self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
+        self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        ready = {"experiments": [{"id": 1, "name": "e"}]}
+        self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
+        self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
+
+    def test_error_response_events_observed(self):
+        orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
+        import requests
+
+        def resp(body):
+            r = requests.Response()
+            r.status_code = 500
+            r._content = json.dumps(body).encode()
+            return r
+
+        scenario = {"name": "s", "steps": [{"action": "publish", "params": {}, "expect": {"error": "Publish failed", "events": [{"type": "error"}]}}]}
+        for sdk, events in (("a", [{"type": "error"}]), ("b", [{"type": "error"}]), ("c", [{"type": "publish"}])):
+            with mock.patch.object(test_runner.requests, "post", return_value=resp({"error": "Publish failed", "events": events})), mock.patch.object(test_runner.requests, "delete"):
+                outcome = orch.run_and_validate_sdk(sdk, "http://x", scenario)
+            orch.record_outcome("s", sdk, "pass" if outcome["passed"] else "fail")
+        orch.check_cross_sdk_consistency()
+        self.assertIn("s [step 0 publish]", orch.consistency_failures.get("c", []))
+
+    def test_compare_reports_across_lanes(self):
+        def lane(sdk, variant):
+            orch = make_orchestrator(sdks={sdk: ""})
+            self.run_obs(orch, "s", sdk, 0, "treatment", {"result": variant, "events": []}, {"result": 1})
+            path = os.path.join(self.tmp, f"{sdk}.json")
+            with quiet():
+                orch.generate_report(path)
+            return path
+
+        self.tmp = tempfile.mkdtemp()
+        paths = [lane("a", 1), lane("b", 1), lane("c", 0)]
+        with quiet():
+            self.assertEqual(test_runner.compare_reports(paths[:2]), 0)
+            self.assertEqual(test_runner.compare_reports(paths, os.path.join(self.tmp, "out.json")), 1)
+            self.assertEqual(test_runner.compare_reports(paths[:1]), 1)
+            self.assertEqual(test_runner.compare_reports([paths[0], paths[0]]), 1)
+        with open(os.path.join(self.tmp, "out.json")) as src:
+            self.assertEqual(json.load(src)["consistency_failures"], {"c": ["s [step 0 treatment]"]})
+
+    def test_workflow_compares_every_lane(self):
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            text = src.read()
+        self.assertIn("--compare-reports", text)
+        self.assertIn("pattern: report-*", text)
+
+    def test_data_results_compared_whole(self):
+        a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
+        b = test_runner.observation_for_step("getUnits", {"result": {"u": 1, "v": 2}, "events": []}, {"result": {"u": 1}})
+        self.assertNotEqual(a, b)
 
     def test_unasserted_exposure_drift_detected(self):
         orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
@@ -717,6 +835,23 @@ class StaticRepoChecks(unittest.TestCase):
             names = [s["name"] for s in json.load(src)]
         for name in names:
             self.assertNotRegex(name, r"(?i)\bretry\b|\btimeout after\b|\babort signal\b", name)
+
+    def test_audience_scenarios_assert_audience_mismatch(self):
+        # Every treatment on an experiment with an audience must pin the
+        # exposure's audienceMismatch, or a matcher that always returns null
+        # (or always true/false) passes unnoticed.
+        with open(SCENARIOS_PATH) as src:
+            scenarios = json.load(src)
+        for s in scenarios:
+            with_audience = {
+                e["name"] for e in s.get("contextData", {}).get("experiments", []) if e.get("audience") not in (None, "")
+            }
+            for st in s["steps"]:
+                if st["action"] != "treatment" or st["params"].get("experimentName") not in with_audience:
+                    continue
+                for e in st["expect"].get("events", []):
+                    if e.get("type") == "exposure":
+                        self.assertIn("audienceMismatch", e.get("data", {}), s["name"])
 
     def test_generator_is_marked_non_canonical(self):
         with open(os.path.join(REPO_ROOT, "generate_scenarios.py")) as src:

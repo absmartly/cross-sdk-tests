@@ -35,6 +35,13 @@ UNORDERED_RESULT_ACTIONS = frozenset(
 # Actions whose result is a map of key -> list, where each list is unordered.
 UNORDERED_MAP_VALUE_ACTIONS = frozenset({"variableKeysMap"})
 
+# Actions whose object result is a status record the scenario asserts only in
+# part (contextId and the readyError message are SDK-specific). Every other
+# object result is data and must match the expected key set exactly.
+PARTIAL_RESULT_ACTIONS = frozenset(
+    {"createContext", "createContextWith", "createContextFailed", "readyError"}
+)
+
 # Exposure fields every wrapper reports (scenarios assert all of them in 90+
 # steps), compared across SDKs even where a scenario only asserts the event type.
 EXPOSURE_CONSISTENCY_KEYS = (
@@ -49,6 +56,9 @@ EXPOSURE_CONSISTENCY_KEYS = (
     "custom",
     "audienceMismatch",
 )
+
+# Publish attributes the SDK adds about itself; their values differ per SDK.
+SYSTEM_ATTRIBUTE_NAMES = frozenset({"sdk_name", "sdk_version", "application", "environment", "app_version"})
 
 # Keys of a /capabilities response that are not capability flags but are read
 # by the harness, with the JSON type each must have when present.
@@ -219,14 +229,18 @@ def _is_scalar(value: Any) -> bool:
     return value is None or isinstance(value, (str, int, float, bool))
 
 
-def values_match(actual: Any, expected: Any, unordered: bool = False) -> bool:
+def values_match(actual: Any, expected: Any, unordered: bool = False, exact_objects: bool = False) -> bool:
     """Compare an actual JSON value to an expected one.
 
-    * Objects are matched as a SUBSET: every expected key must be present in
-      the actual object (absent never matches, not even an expected null) and
-      match recursively; extra actual keys are allowed. Scenario payloads are
-      deliberately partial (dynamic timestamps, ids and SDK-specific fields are
-      not asserted).
+    * Objects are matched as a SUBSET by default: every expected key must be
+      present in the actual object (absent never matches, not even an expected
+      null) and match recursively; extra actual keys are allowed. Event data
+      and context-creation results are deliberately partial (dynamic
+      timestamps, ids and SDK-specific fields are not asserted).
+      With `exact_objects`, every object (at any depth) must have exactly the
+      expected key set: used for results that ARE data (getUnits,
+      getAttributes, variableKeysMap, JSON custom field values), where an
+      extra key is a wrong answer.
     * Arrays must have the same length. They are compared positionally unless
       `unordered` is set and every element is a scalar, in which case they are
       compared as multisets (duplicates still count).
@@ -239,8 +253,10 @@ def values_match(actual: Any, expected: Any, unordered: bool = False) -> bool:
     if isinstance(expected, dict):
         if not isinstance(actual, dict):
             return False
+        if exact_objects and set(actual) != set(expected):
+            return False
         return all(
-            key in actual and values_match(actual[key], expected_value)
+            key in actual and values_match(actual[key], expected_value, exact_objects=exact_objects)
             for key, expected_value in expected.items()
         )
 
@@ -249,7 +265,7 @@ def values_match(actual: Any, expected: Any, unordered: bool = False) -> bool:
             return False
         if unordered and all(_is_scalar(x) for x in expected) and all(_is_scalar(x) for x in actual):
             return Counter(_scalar_key(x) for x in actual) == Counter(_scalar_key(x) for x in expected)
-        return all(values_match(a, e) for a, e in zip(actual, expected))
+        return all(values_match(a, e, exact_objects=exact_objects) for a, e in zip(actual, expected))
 
     if not _is_scalar(actual):
         return False
@@ -257,16 +273,17 @@ def values_match(actual: Any, expected: Any, unordered: bool = False) -> bool:
 
 
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
+    exact = action not in PARTIAL_RESULT_ACTIONS
     if not ordered and action in UNORDERED_RESULT_ACTIONS:
-        return values_match(actual, expected, unordered=True)
+        return values_match(actual, expected, unordered=True, exact_objects=exact)
     if not ordered and action in UNORDERED_MAP_VALUE_ACTIONS and isinstance(expected, dict):
-        if not isinstance(actual, dict):
+        if not isinstance(actual, dict) or set(actual) != set(expected):
             return False
         return all(
-            key in actual and values_match(actual[key], value, unordered=True)
+            values_match(actual[key], value, unordered=True, exact_objects=exact)
             for key, value in expected.items()
         )
-    return values_match(actual, expected)
+    return values_match(actual, expected, exact_objects=exact)
 
 
 def _canonical(value: Any) -> Any:
@@ -299,21 +316,88 @@ def _project(actual: Any, expected: Any) -> Any:
     return actual
 
 
+def _exposure_observation(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: _canonical(data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
+
+
+def _context_data_observation(data: Dict[str, Any]) -> Any:
+    """ready/refresh payload: which experiments (id, name) the SDK loaded.
+
+    Only id and name are compared: the rest of each experiment is the SDK's own
+    deserialized model, whose shape legitimately differs per language.
+    """
+    experiments = data.get("experiments", MISSING)
+    if not isinstance(experiments, list):
+        return {"experiments": _canonical(experiments)}
+    return {
+        "experiments": [
+            {"id": _canonical(e.get("id", MISSING)), "name": _canonical(e.get("name", MISSING))}
+            if isinstance(e, dict)
+            else {"invalid": _canonical(e)}
+            for e in experiments
+        ]
+    }
+
+
+def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
+    """publish payload minus what is volatile or SDK-identifying.
+
+    Left out: publishedAt/exposedAt/achievedAt/setAt (clock), sdkVersion, and
+    the system attributes (sdk_name, sdk_version, application, environment,
+    app_version) whose values name the SDK. An omitted goals/exposures/
+    attributes array is the same as an empty one (JS omits empty arrays).
+    """
+
+    def items(key: str) -> List[Any]:
+        value = data.get(key)
+        if value is None:
+            return []
+        return value if isinstance(value, list) else [{"invalid": _canonical(value)}]
+
+    units = [
+        {"type": _canonical(u.get("type", MISSING)), "uid": _canonical(u.get("uid", MISSING))}
+        if isinstance(u, dict)
+        else {"invalid": _canonical(u)}
+        for u in items("units")
+    ]
+    return {
+        "hashed": _canonical(data.get("hashed", MISSING)),
+        "units": _sorted_list(units),
+        "exposures": [_exposure_observation(x) if isinstance(x, dict) else {"invalid": _canonical(x)} for x in items("exposures")],
+        "goals": [
+            {"name": _canonical(g.get("name", MISSING)), "properties": _canonical(g.get("properties"))}
+            if isinstance(g, dict)
+            else {"invalid": _canonical(g)}
+            for g in items("goals")
+        ],
+        "attributes": [
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            if isinstance(a, dict)
+            else {"invalid": _canonical(a)}
+            for a in items("attributes")
+            if not (isinstance(a, dict) and a.get("name") in SYSTEM_ATTRIBUTE_NAMES)
+        ],
+    }
+
+
 def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ordered: bool = False) -> str:
     """Normalized, comparable view of what an SDK returned for one step.
 
-    Volatile fields are left out by construction: object results are projected
-    onto the keys the scenario asserts (so contextId, readyError messages and
-    similar SDK-specific detail never participate), event timestamps and
-    publish data (publishedAt) are not included, and exposure events contribute
-    only the canonical exposure fields every wrapper reports.
+    Volatile fields are left out by construction: partial (status) results are
+    projected onto the keys the scenario asserts (so contextId, readyError
+    messages and similar SDK-specific detail never participate), and event
+    timestamps are not included. Exposure events contribute the canonical
+    exposure fields, ready/refresh the loaded experiments, and publish the
+    request payload without clock values or SDK identification.
     """
     if not isinstance(actual, dict):
         return json.dumps({"response": _canonical(actual)}, sort_keys=True)
 
     result = actual.get("result", MISSING)
     expected_result = expected.get("result", MISSING)
-    if isinstance(result, dict) and isinstance(expected_result, dict):
+    if isinstance(result, dict) and action not in PARTIAL_RESULT_ACTIONS:
+        pass
+    elif isinstance(result, dict) and isinstance(expected_result, dict):
         result = _project(result, expected_result)
     elif isinstance(result, dict):
         result = {k: v for k, v in result.items() if k != "contextId"}
@@ -334,9 +418,13 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
             entry: Dict[str, Any] = {"type": _canonical(event.get("type", MISSING))}
             data = event.get("data")
             if entry["type"] == "exposure" and isinstance(data, dict):
-                entry["data"] = {k: _canonical(data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
+                entry["data"] = _exposure_observation(data)
             elif entry["type"] == "goal" and isinstance(data, dict):
                 entry["data"] = {"name": _canonical(data.get("name", MISSING))}
+            elif entry["type"] in ("ready", "refresh") and isinstance(data, dict):
+                entry["data"] = _context_data_observation(data)
+            elif entry["type"] == "publish" and isinstance(data, dict):
+                entry["data"] = _publish_observation(data)
             events_obs.append(entry)
 
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
@@ -810,25 +898,36 @@ class TestOrchestrator:
                 if not error_msg:
                     error_msg = str(exc)
 
-                # Error responses may carry an events window; a failed call must
-                # not emit events the scenario does not list.
-                if isinstance(error_body, dict) and "events" in error_body:
-                    error_events = error_body["events"]
-                    if error_events != expected.get("events", []):
-                        types = (
-                            [e.get("type") if isinstance(e, dict) else e for e in error_events]
-                            if isinstance(error_events, list)
-                            else error_events
+                # Error responses must carry the events window too (spec:
+                # every response has `events`), and a failed call must emit
+                # exactly the events the scenario lists (e.g. JS logs `error`
+                # on a failed publish).
+                if isinstance(error_body, dict):
+                    observations[step_index] = (
+                        action,
+                        observation_for_step(
+                            action, {"result": "<error>", "events": error_body.get("events", MISSING)}, expected
+                        ),
+                    )
+                    failures.extend(
+                        self.validate_events(
+                            step_index,
+                            action,
+                            error_body.get("events", MISSING),
+                            expected,
+                            context="events on error response: ",
                         )
-                        failures.append(
-                            {
-                                "step": step_index,
-                                "action": action,
-                                "field": "events",
-                                "expected": describe(expected.get("events", [])),
-                                "actual": f"events on error response: {types}",
-                            }
-                        )
+                    )
+                else:
+                    failures.append(
+                        {
+                            "step": step_index,
+                            "action": action,
+                            "field": "events",
+                            "expected": describe(expected.get("events", [])),
+                            "actual": "error response body is not a JSON object",
+                        }
+                    )
 
                 if "errorContains" in expected:
                     if expected["errorContains"].lower() not in error_msg.lower():
@@ -935,6 +1034,35 @@ class TestOrchestrator:
                 fail("result", expected_result, actual_result)
 
         actual_events = actual.get("events", MISSING)
+        failures.extend(self.validate_events(step_index, action, actual_events, expected))
+        return failures
+
+    def validate_events(
+        self,
+        step_index: int,
+        action: str,
+        actual_events: Any,
+        expected: Dict[str, Any],
+        context: str = "",
+    ) -> List[Dict[str, Any]]:
+        """Check a response's events window against the step's `events`.
+
+        Used for success AND error responses: both must carry the events the
+        SDK emitted during the call (a step without `events` expects none).
+        """
+        failures: List[Dict[str, Any]] = []
+
+        def fail(field: str, expected_value: Any, actual_value: Any) -> None:
+            failures.append(
+                {
+                    "step": step_index,
+                    "action": action,
+                    "field": field,
+                    "expected": describe(expected_value),
+                    "actual": f"{context}{describe(actual_value)}" if context else describe(actual_value),
+                }
+            )
+
         if actual_events is MISSING:
             # The wire contract requires an `events` array on every response.
             fail("events", expected.get("events", []), MISSING)
@@ -1023,6 +1151,12 @@ class TestOrchestrator:
         if actual_norm == expected_norm:
             return True
 
+        # Negation changes the meaning ("not finalized" vs "finalized"), so it
+        # is never filler: both messages must agree on whether they negate.
+        negation = re.compile(r"\b(?:not|no|cannot|never|unable|without)\b|n't\b")
+        if bool(negation.search(expected_norm)) != bool(negation.search(actual_norm)):
+            return False
+
         # Allow a verbose SDK error that CONTAINS the expected phrase. Only the
         # forward direction is safe: a short actual message that merely happens
         # to be a substring of a specific expected phrase must NOT pass (it would
@@ -1032,7 +1166,7 @@ class TestOrchestrator:
 
         expected_words = set(re.findall(r"'[^']+'|\w+", expected_norm))
         actual_words = set(re.findall(r"'[^']+'|\w+", actual_norm))
-        filler = {"must", "be", "not", "the", "a", "an", "is", "of"}
+        filler = {"must", "be", "the", "a", "an", "is", "of"}
         expected_key_words = expected_words - filler
         # Subset rule: the expected keywords all appear in the actual message.
         # A single shared *common* token is too weak (it matches unrelated
@@ -1234,6 +1368,13 @@ class TestOrchestrator:
             "consistency_comparisons": self.consistency_comparisons,
             "sdk_stats": sdk_stats,
             "results": self.results,
+            # Raw per-SDK outcomes and step observations, so reports from
+            # separate lanes can be compared afterwards (--compare-reports).
+            "scenario_outcomes": self.scenario_outcomes,
+            "step_observations": {
+                name: {sdk: {str(i): list(obs) for i, obs in steps.items()} for sdk, steps in per_sdk.items()}
+                for name, per_sdk in self.step_observations.items()
+            },
         }
         if self.consistency_report:
             report["cross_sdk_consistency"] = self.consistency_report
@@ -1553,11 +1694,78 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--report", type=str, default="/results/report.json", help="Where to write report.json")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show verbose output with full test details")
+    parser.add_argument(
+        "--compare-reports",
+        nargs="+",
+        metavar="REPORT",
+        help=(
+            "Do not run scenarios: load report.json files written by separate lanes and run the "
+            "cross-SDK consistency check over all of them (exit 1 on any disagreement)"
+        ),
+    )
     return parser
+
+
+def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
+    """Cross-SDK consistency over reports written by independent lanes.
+
+    Each lane runs one SDK, so its own consistency check never fires. This
+    merges every lane's outcomes and step observations and compares them the
+    same way a multi-SDK run does.
+    """
+    orch = TestOrchestrator({}, capability_policy=load_capability_policy())
+    for path in paths:
+        try:
+            with open(path) as src:
+                report = json.load(src)
+        except (OSError, ValueError) as exc:
+            print(f"Error: cannot read report {path}: {exc}")
+            return 1
+        if "scenario_outcomes" not in report or "step_observations" not in report:
+            print(f"Error: report {path} has no scenario_outcomes/step_observations")
+            return 1
+        for name, outcomes in report["scenario_outcomes"].items():
+            for sdk, outcome in outcomes.items():
+                if sdk in orch.sdks:
+                    print(f"Error: SDK {sdk!r} appears in more than one report")
+                    return 1
+                orch.scenario_outcomes.setdefault(name, {})[sdk] = outcome
+        lane_sdks = {sdk for outcomes in report["scenario_outcomes"].values() for sdk in outcomes}
+        for name, per_sdk in report["step_observations"].items():
+            for sdk, steps in per_sdk.items():
+                orch.step_observations.setdefault(name, {})[sdk] = {int(i): tuple(obs) for i, obs in steps.items()}
+        for sdk in lane_sdks:
+            orch.sdks[sdk] = path
+
+    orch.check_cross_sdk_consistency()
+    print(f"Compared {len(orch.sdks)} SDKs from {len(paths)} reports: {orch.consistency_comparisons} comparisons")
+    for sdk, labels in sorted(orch.consistency_failures.items()):
+        print(f"  {sdk}: {len(labels)} disagreement(s)")
+        for label in labels[:20]:
+            print(f"    - {label}")
+    if output_file:
+        with open(output_file, "w") as out:
+            json.dump(
+                {
+                    "sdks": sorted(orch.sdks),
+                    "consistency_comparisons": orch.consistency_comparisons,
+                    "consistency_failures": orch.consistency_failures,
+                    "cross_sdk_consistency": orch.consistency_report,
+                },
+                out,
+                indent=2,
+                default=describe,
+            )
+    if len(orch.sdks) < 2 or orch.consistency_comparisons == 0:
+        print("Error: fewer than 2 SDKs or no comparisons; consistency was not checked")
+        return 1
+    return 1 if orch.consistency_failures else 0
 
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = build_arg_parser().parse_args(argv)
+    if args.compare_reports:
+        sys.exit(compare_reports(args.compare_reports, args.report))
     all_sdks = discover_sdks()
 
     if args.sdk:

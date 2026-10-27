@@ -132,32 +132,20 @@
       }
     },
     "react": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
-      "unsupported": {
-        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
-        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
     },
     "vue2": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
-      "unsupported": {
-        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
-        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
     },
     "vue3": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
-      "unsupported": {
-        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
-        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
     },
     "angular": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError"],
-      "unsupported": {
-        "holdouts": "wrapper does not run the javascript holdout self-test, so it does not advertise holdouts",
-        "holdout_arms": "wrapper does not run the javascript holdout self-test, so it does not advertise holdout_arms"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms"],
+      "unsupported": {}
     }
   }
 }
