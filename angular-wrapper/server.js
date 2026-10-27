@@ -303,7 +303,10 @@ app.post('/context', async (req, res) => {
 // template and performs no SDK read, so the SDK is asked directly for its own
 // not-ready error.
 async function renderedVariant(context, service, experimentName, peek) {
-  const { html, errors } = await renderTreatment(service, experimentName, peek);
+  const experiment = context.isReady()
+    ? (context.data().experiments ?? []).find((e) => e.name === experimentName)
+    : undefined;
+  const { html, errors } = await renderTreatment(service, experimentName, peek, experiment?.variants.length);
   if (errors.length > 0) throw errors[0];
   if (html.includes('data-error')) {
     throw new Error(`Angular SDK <abs-treatment> rendered its error template for "${experimentName}"`);
@@ -313,6 +316,9 @@ async function renderedVariant(context, service, experimentName, peek) {
       throw new Error('Angular SDK <abs-treatment> rendered its loading template for a ready context');
     }
     return peek ? context.peek(experimentName) : context.treatment(experimentName);
+  }
+  if (html.includes('data-unmatched')) {
+    throw new Error(`Angular SDK <abs-treatment> assigned a variant outside the ${experimentName} experiment's variants`);
   }
   const rendered = [...html.matchAll(/data-variant="(\d+)"/g)].map((m) => Number(m[1]));
   if (rendered.length !== 1) {

@@ -129,7 +129,7 @@ object Server extends IOApp {
         }
 
         result match {
-          case Right(v) => Ok(wrapperResponse(v, List.empty)) // no context, so no SDK events
+          case Right(v) => Ok(wrapperResponse(v, List.empty))
           case Left(err) => BadRequest(errorBody(err))
         }
       }

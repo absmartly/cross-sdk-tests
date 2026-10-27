@@ -1034,11 +1034,7 @@ class TestOrchestrator:
         expected: Dict[str, Any],
         context: str = "",
     ) -> List[Dict[str, Any]]:
-        """Check a response's events window against the step's `events`.
-
-        Used for success AND error responses: both must carry the events the
-        SDK emitted during the call (a step without `events` expects none).
-        """
+        """Check a response's events window against the step's `events`."""
         failures: List[Dict[str, Any]] = []
 
         def fail(field: str, expected_value: Any, actual_value: Any) -> None:
@@ -1694,12 +1690,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
-    """Cross-SDK consistency over reports written by independent lanes.
-
-    Each lane runs one SDK, so its own consistency check never fires. This
-    merges every lane's outcomes and step observations and compares them the
-    same way a multi-SDK run does.
-    """
+    """Cross-SDK consistency over reports written by independent lanes."""
     orch = TestOrchestrator({}, capability_policy=load_capability_policy())
     for path in paths:
         try:
@@ -1731,6 +1722,9 @@ def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
         for label in labels[:20]:
             print(f"    - {label}")
     if output_file:
+        output_dir = os.path.dirname(output_file)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
         with open(output_file, "w") as out:
             json.dump(
                 {
