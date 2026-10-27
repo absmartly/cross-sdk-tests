@@ -129,8 +129,12 @@ Validation is strict by default:
   `1 == 1.0`. Lists are ordered, except the results of `variableKeys`,
   `customFieldKeys`, `globalCustomFieldKeys`, `experiments` and the values of
   `variableKeysMap`, which are compared as multisets (duplicates still count).
-- Expected objects stay partial: keys a scenario does not assert (contextId,
-  timestamps, `publishedAt`, uids) are not compared.
+- Object results are data and must have exactly the expected keys, at every
+  depth. Only the status records returned by `createContext`,
+  `createContextWith`, `createContextFailed` and `readyError` are compared in
+  part, because their contextId and error message differ per SDK.
+- Expected event data stays partial: keys a scenario does not assert
+  (timestamps, `publishedAt`, uids) are not compared.
 
 With 2+ SDKs the run also compares what the SDKs actually returned, step by
 step: the asserted result fields, the event types, and the canonical exposure
@@ -189,13 +193,15 @@ from, builds just that wrapper plus the orchestrator, and drives the suite over
 the compose network. The live-backend e2e suite is intentionally excluded from
 CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
-A separate `cross-sdk-consistency` job brings up javascript, python, and go
-together and runs the orchestrator once over all three, so the cross-SDK
-consistency check (which needs at least two SDKs to compare) actually executes
-on every PR. The per-SDK matrix jobs run one SDK each and never trigger it. The
-job fails if the runner fails, if `report.json` is missing, or if the check made
-zero comparisons. Both Docker jobs depend on a fast `harness-unit-tests` job,
-which runs `tests/` without Docker.
+Each lane uploads its report, which records every scenario outcome and what
+the SDK returned at each step. A separate `cross-sdk-consistency` job then
+downloads the reports from all 20 lanes and compares the SDKs with each other
+(`test_runner.py --compare-reports`), because a lane runs only one SDK and has
+nothing to compare against. That job runs even when some lanes fail. It fails
+if a report is missing or unreadable, if fewer than two SDKs or zero
+comparisons were checked, or if any SDK disagrees with the others. Both Docker
+jobs depend on a fast `harness-unit-tests` job, which runs `tests/` without
+Docker.
 
 ## Repository layout
 
