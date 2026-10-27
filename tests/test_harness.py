@@ -237,7 +237,6 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.orch.validate_step(0, "getUnit", {"result": 99.0, "events": []}, {"result": 99, "events": []}), [])
 
     def test_method_values_match_backwards_compatible(self):
-        # Historical signature: ordered=False compares scalar lists as multisets.
         self.assertTrue(self.orch.values_match(["b", "a"], ["a", "b"]))
         self.assertFalse(self.orch.values_match(["b", "a"], ["a", "b"], ordered=True))
 

@@ -517,7 +517,6 @@ public class WrapperController {
             String experimentName = (String) request.get("experimentName");
             int variant = data.getContext().getTreatment(experimentName);
 
-            // Exact slice of everything the SDK logged during this call.
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
             Map<String, Object> response = new HashMap<>();
@@ -654,7 +653,6 @@ public class WrapperController {
 
             data.getContext().track(goalName, properties);
 
-            // Exact slice of everything the SDK logged during this call.
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
             Map<String, Object> response = new HashMap<>();

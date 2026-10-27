@@ -74,13 +74,6 @@ CONTEXT_CREATE_ACTIONS = ("createContext", "createContextWith", "createContextFa
 class _Missing:
     """Sentinel for a JSON key that is absent (distinct from an explicit null)."""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __repr__(self) -> str:
         return "<missing>"
 

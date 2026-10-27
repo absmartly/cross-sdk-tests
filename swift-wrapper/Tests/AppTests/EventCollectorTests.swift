@@ -23,7 +23,7 @@ final class EventCollectorTests: XCTestCase {
         config.refreshInterval = 0
         let context = sdk.createContextWithData(config: config, contextData: ContextData(experiments: []))
 
-        XCTAssertEqual(collector.events.count, 1)  // ready
+        XCTAssertEqual(collector.events.count, 1)
 
         for i in 0..<250 {
             let before = collector.events.count

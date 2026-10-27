@@ -388,7 +388,7 @@ defmodule ElixirWrapper.Router do
   # pending events), so a context started from the request process is gone before
   # the next request. Start it under the SDK's own ContextSupervisor instead, exactly
   # like ABSmartly.SDK.create_context*/3 does.
-  defp start_supervised_context(sdk_config, context_config, start_mfa_args, start_fun) do
+  defp start_supervised_context(sdk_config, start_mfa_args, start_fun) do
     child_spec = %{
       id: ABSmartly.Context,
       start: {ABSmartly.Context, start_fun, start_mfa_args},
@@ -425,7 +425,7 @@ defmodule ElixirWrapper.Router do
       |> Map.put(:event_handler, event_handler)
       |> ABSmartly.Types.ContextConfig.from_options()
 
-    case start_supervised_context(sdk_config, context_config, [sdk_config, context_data, context_config], :start_link) do
+    case start_supervised_context(sdk_config, [sdk_config, context_data, context_config], :start_link) do
       {:ok, ctx} ->
         context_id = UUID.uuid4()
         ContextStore.store_context(context_id, ctx, collector)
@@ -494,7 +494,7 @@ defmodule ElixirWrapper.Router do
         []
       end
 
-    case start_supervised_context(sdk_config, context_config, [sdk_config, context_config, start_opts], :start_link_async) do
+    case start_supervised_context(sdk_config, [sdk_config, context_config, start_opts], :start_link_async) do
       {:ok, ctx} ->
         if payload_throttle == 0 do
           ABSmartly.Context.wait_until_ready(ctx, 10000)
@@ -550,7 +550,7 @@ defmodule ElixirWrapper.Router do
     # does not fabricate events, and reports SDK-observed state verbatim.
     data_fetcher = fn -> {:error, "Context load failed"} end
 
-    case start_supervised_context(sdk_config, context_config, [sdk_config, context_config, [data_fetcher: data_fetcher]], :start_link_async) do
+    case start_supervised_context(sdk_config, [sdk_config, context_config, [data_fetcher: data_fetcher]], :start_link_async) do
       {:ok, ctx} ->
         # wait_until_ready replies {:error, reason} once the SDK processes the
         # failed fetch (or immediately if it already has).
@@ -607,7 +607,7 @@ defmodule ElixirWrapper.Router do
 
       context_config = ABSmartly.Types.ContextConfig.from_options(context_options)
 
-      case start_supervised_context(sdk_config, context_config, [sdk_config, context_config], :start_link_async) do
+      case start_supervised_context(sdk_config, [sdk_config, context_config], :start_link_async) do
         {:ok, ctx} ->
           ABSmartly.Context.wait_until_ready(ctx, 10000)
 

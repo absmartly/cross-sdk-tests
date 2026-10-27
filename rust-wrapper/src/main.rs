@@ -359,7 +359,6 @@ async fn store_payload_handler(
     Json(json!({ "success": true }))
 }
 
-// Read a stored payload; `?throttle=<ms>` delays the response.
 async fn get_payload_handler(
     State(state): State<Arc<AppState>>,
     Path(payload_id): Path<String>,

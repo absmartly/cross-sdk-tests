@@ -3,8 +3,6 @@ package com.absmartly.wrapper;
 import com.absmartly.sdk.ContextDataProvider;
 import com.absmartly.sdk.json.ContextData;
 import java8.util.concurrent.CompletableFuture;
-import java8.util.function.Consumer;
-import java8.util.function.Function;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,18 +30,10 @@ public class DeferredContextDataProvider implements ContextDataProvider {
         scheduler.schedule(() -> {
             try {
                 delegate.getContextData()
-                    .thenAccept(new Consumer<ContextData>() {
-                        @Override
-                        public void accept(ContextData data) {
-                            future.complete(data);
-                        }
-                    })
-                    .exceptionally(new Function<Throwable, Void>() {
-                        @Override
-                        public Void apply(Throwable error) {
-                            future.completeExceptionally(error);
-                            return null;
-                        }
+                    .thenAccept(data -> future.complete(data))
+                    .exceptionally(error -> {
+                        future.completeExceptionally(error);
+                        return null;
                     });
             } catch (Throwable error) {
                 future.completeExceptionally(error);

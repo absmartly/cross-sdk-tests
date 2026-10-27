@@ -32,9 +32,8 @@ function renderCommitted(element) {
       await reactAct(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      return container;
+      return container.cloneNode(true);
     } finally {
-      const snapshot = container.cloneNode(true);
       await reactAct(async () => {
         root.unmount();
       });
@@ -42,7 +41,6 @@ function renderCommitted(element) {
       global.document = saved.document;
       global.IS_REACT_ACT_ENVIRONMENT = saved.act;
       dom.window.close();
-      container.committedSnapshot = snapshot;
     }
   };
   const result = renderQueue.then(run, run);
@@ -350,9 +348,9 @@ app.post('/context/:contextId/treatment', async (req, res) => {
       loadingComponent: React.createElement('span', { 'data-loading': 'true' })
     }, ...variants));
 
-    const rendered = Array.from(container.committedSnapshot.querySelectorAll('[data-variant]'))
+    const rendered = Array.from(container.querySelectorAll('[data-variant]'))
       .map((el) => Number(el.getAttribute('data-variant')));
-    const renderedLoading = container.committedSnapshot.querySelector('[data-loading]') !== null;
+    const renderedLoading = container.querySelector('[data-loading]') !== null;
 
     if (renderedLoading) {
       // <Treatment> rendered its loading state, which performs no SDK read.

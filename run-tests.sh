@@ -290,7 +290,6 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
       echo "$START_OUTPUT" >&2
       exit "$START_EXIT"
     fi
-    # One recovery retry; a second failure is fatal rather than swallowed.
     if ! RETRY_OUTPUT=$(docker compose up -d --force-recreate --remove-orphans "${BATCH[@]}" 2>&1); then
       echo "ERROR: 'docker compose up -d' failed again for batch (${BATCH[*]}) after recovery:" >&2
       echo "$RETRY_OUTPUT" >&2

@@ -30,7 +30,7 @@ COPY cross-sdk-tests/swift-wrapper /app
 
 RUN cd /app && swift package resolve && swift package edit SwiftyJSON --path /deps/SwiftyJSON
 
-RUN cd /app && swift build -c release
+RUN cd /app && swift test --filter EventCollectorTests && swift build -c release
 
 EXPOSE 3000
 

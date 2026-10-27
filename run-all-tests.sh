@@ -165,9 +165,6 @@ if [ ${#TARGET_SDKS[@]} -eq 0 ]; then
   exit 1
 fi
 
-# Build phase. The child phases below only get --skip-build when the images
-# they need were built here (same COMPOSE_PROJECT_NAME) or the user opted in.
-BUILT_WRAPPERS=false
 if [ "$SKIP_BUILD" = false ]; then
   clean_js_build_artifacts
   BUILD_SERVICES=""
@@ -176,15 +173,9 @@ if [ "$SKIP_BUILD" = false ]; then
   fi
   if [ "$UNIT_ONLY" = false ] || [ "$E2E" = true ]; then
     BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names) orchestrator"
-    BUILT_WRAPPERS=true
   fi
   echo "Building images for:$BUILD_SERVICES"
   docker compose build $BUILD_SERVICES
-fi
-
-CHILD_SKIP_BUILD=""
-if [ "$SKIP_BUILD" = true ] || [ "$BUILT_WRAPPERS" = true ]; then
-  CHILD_SKIP_BUILD="--skip-build"
 fi
 
 UNIT_EXIT_CODE=0
@@ -295,7 +286,7 @@ if [ "$UNIT_ONLY" = false ]; then
   if [ -n "$SDK_CSV" ]; then
     CROSS_ARGS="--sdk $SDK_CSV"
   fi
-  CROSS_ARGS="$CROSS_ARGS $CHILD_SKIP_BUILD"
+  CROSS_ARGS="$CROSS_ARGS --skip-build"
   if [ "$VERBOSE" = true ]; then
     CROSS_ARGS="$CROSS_ARGS --verbose"
   fi
@@ -312,7 +303,7 @@ if [ "$E2E" = true ]; then
   echo "  Running E2E Tests"
   echo "============================================"
 
-  E2E_ARGS="$CHILD_SKIP_BUILD"
+  E2E_ARGS="--skip-build"
   if [ -n "$SDK_NAMES" ]; then
     E2E_ARGS="$E2E_ARGS --sdk $SDK_NAMES"
   fi

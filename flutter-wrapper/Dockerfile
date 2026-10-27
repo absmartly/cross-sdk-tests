@@ -12,7 +12,7 @@ WORKDIR /app
 
 COPY cross-sdk-tests/flutter-wrapper /app
 
-RUN flutter pub get
+RUN flutter pub get && flutter test test/widget_driver_test.dart
 
 EXPOSE 3000
 

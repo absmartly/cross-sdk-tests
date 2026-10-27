@@ -393,7 +393,6 @@ int main() {
                 res.set_content(resp.dump(), "application/json");
             });
 
-    // Read a stored payload; `?throttle=<ms>` delays the response.
     svr.Get(R"(/context_payload/([^/]+)$)",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
