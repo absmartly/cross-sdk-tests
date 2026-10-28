@@ -324,6 +324,7 @@ public class WrapperController {
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
                     context.waitUntilReady();
+                    eventCollector.awaitEvent(0, 2000, "ready", "error");
                 }
             } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
                 ContextDataProvider failingProvider = new ContextDataProvider() {
@@ -341,6 +342,7 @@ public class WrapperController {
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
                 context.waitUntilReady();
+                eventCollector.awaitEvent(0, 2000, "ready", "error");
             } else {
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
@@ -426,7 +428,7 @@ public class WrapperController {
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String unitType = (String) request.get("unitType");
-            Object result = data.getContext().getUnit(unitType);
+            Object result = data.getContext().getUnitValue(unitType);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -1004,7 +1006,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Map<String, Object> result = data.getContext().getUnits();
+            Map<String, Object> result = data.getContext().getUnitValues();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
@@ -1163,7 +1165,11 @@ public class WrapperController {
                 data.getDataProvider().setNextData(newContextData);
             }
 
+            boolean wasFailed = data.getContext().isFailed();
             data.getContext().refresh();
+            if (!wasFailed) {
+                data.getEventCollector().awaitEvent(eventsBefore, 2000, "refresh", "error");
+            }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -1189,7 +1195,11 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
+            boolean wasClosed = data.getContext().isClosed();
             data.getContext().close();
+            if (!wasClosed) {
+                data.getEventCollector().awaitEvent(eventsBefore, 2000, "finalize", "error");
+            }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 

@@ -15845,7 +15845,10 @@
           "value": 1.5
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -15897,7 +15900,10 @@
           "value": "value"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -15949,7 +15955,10 @@
           "uid": "123"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -19203,7 +19212,10 @@
           "value": "US"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -19300,7 +19312,10 @@
           "experimentName": "exp_test_ab"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]

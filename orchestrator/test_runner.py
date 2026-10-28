@@ -929,6 +929,21 @@ class TestOrchestrator:
                                 "actual": error_msg,
                             }
                         )
+                elif "errorAnyOf" in expected:
+                    # The same failure may be worded differently by two released SDK
+                    # versions (e.g. 1.6.3 "... is closed" vs. "... is finalized"); the call
+                    # passes if the actual message matches any listed alternative.
+                    alternatives = expected["errorAnyOf"]
+                    if not any(self.error_matches(error_msg, alt) for alt in alternatives):
+                        failures.append(
+                            {
+                                "step": step_index,
+                                "action": action,
+                                "field": "errorAnyOf",
+                                "expected": " | ".join(alternatives),
+                                "actual": error_msg,
+                            }
+                        )
                 elif "error" in expected:
                     if not self.error_matches(error_msg, expected["error"]):
                         failures.append(
@@ -992,11 +1007,16 @@ class TestOrchestrator:
         # raise), so if the scenario expected an error, the call succeeding is
         # itself a failure. Without this, error scenarios pass vacuously whenever
         # the SDK returns HTTP 200 instead of the expected failure.
-        if "errorContains" in expected or "error" in expected:
-            expected_error = expected.get("errorContains", expected.get("error"))
+        if "errorContains" in expected or "error" in expected or "errorAnyOf" in expected:
+            if "errorAnyOf" in expected:
+                expected_error = " | ".join(expected["errorAnyOf"])
+            else:
+                expected_error = expected.get("errorContains", expected.get("error"))
             http_status = actual.get("status", 200) if isinstance(actual, dict) else 200
             fail(
-                "errorContains" if "errorContains" in expected else "error",
+                "errorContains"
+                if "errorContains" in expected
+                else ("errorAnyOf" if "errorAnyOf" in expected else "error"),
                 expected_error,
                 f"expected error but call succeeded (got HTTP {http_status})",
             )

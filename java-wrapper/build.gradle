@@ -15,7 +15,7 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'com.absmartly.sdk:core-api:2.0.0'
+    implementation 'com.absmartly.sdk:core-api:1.7.0'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 }
 

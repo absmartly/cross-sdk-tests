@@ -62,6 +62,31 @@ public class EventCollector implements ContextEventLogger {
         }
     }
 
+    // The SDK completes its futures before it logs the matching event (as in 1.6.3), so a
+    // caller that just returned from waitUntilReady()/refresh()/close() may be a moment ahead
+    // of the logger. Wait for the event itself; nothing is synthesized if it never arrives.
+    public void awaitEvent(int since, long timeoutMs, String... types) {
+        final long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+        while (System.nanoTime() < deadline) {
+            synchronized (events) {
+                for (int i = since; i < events.size(); i++) {
+                    Object type = events.get(i).get("type");
+                    for (String t : types) {
+                        if (t.equals(type)) {
+                            return;
+                        }
+                    }
+                }
+            }
+            try {
+                Thread.sleep(2);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
     public List<Map<String, Object>> getNewEvents(int since) {
         synchronized (events) {
             if (since >= events.size()) {

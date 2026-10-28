@@ -11,7 +11,7 @@ ARG SDK_SOURCE_DIR=java-sdk
 # core-api version published to the local maven repo. Must match the
 # `com.absmartly.sdk:core-api:<version>` dependency in java-wrapper/build.gradle
 # and VERSION in java-sdk/build.gradle. Override at build time if the SDK bumps.
-ARG CORE_API_VERSION=2.0.0
+ARG CORE_API_VERSION=1.7.0
 
 COPY ${SDK_SOURCE_DIR} /build/java-sdk
 RUN cd /build/java-sdk && ./gradlew :core-api:jar -x test && \

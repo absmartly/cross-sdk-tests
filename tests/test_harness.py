@@ -292,6 +292,48 @@ class ErrorPathEventTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["failures"][0]["field"], "events.length")
 
+    def test_error_any_of_accepts_each_listed_wording(self):
+        expect = {"errorAnyOf": ["Context finalized", "Context closed"], "events": []}
+        for message in ("ABSmartly Context is closed", "ABsmartly Context is finalized."):
+            result = self.run_error_step({"error": message, "events": []}, expect)
+            self.assertTrue(result["passed"], (message, result))
+
+    def test_error_any_of_rejects_unlisted_wording(self):
+        expect = {"errorAnyOf": ["Context finalized", "Context closed"], "events": []}
+        for message in ("ABSmartly Context is closing", "ABSmartly Context is not yet ready", "Context is not closed"):
+            result = self.run_error_step({"error": message, "events": []}, expect)
+            self.assertFalse(result["passed"], (message, result))
+            self.assertEqual(result["failures"][0]["field"], "errorAnyOf")
+
+    def test_error_any_of_fails_when_the_call_succeeds(self):
+        import requests
+
+        ok = requests.Response()
+        ok.status_code = 200
+        ok._content = json.dumps({"result": None, "events": []}).encode()
+        scenario = {
+            "name": "err",
+            "steps": [{"action": "track", "params": {}, "expect": {"errorAnyOf": ["Context finalized", "Context closed"]}}],
+        }
+        orch = make_orchestrator(policy=make_policy({"alpha": {"required": ["diagnostics", "holdouts"], "unsupported": {}}}))
+        with mock.patch.object(test_runner.requests, "post", return_value=ok), mock.patch.object(
+            test_runner.requests, "delete"
+        ):
+            result = orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertFalse(result["passed"], result)
+        self.assertEqual(result["failures"][0]["field"], "errorAnyOf")
+
+    def test_post_finalize_scenarios_accept_closed_and_finalized(self):
+        with open(SCENARIOS_PATH) as fh:
+            data = json.load(fh)
+        scenarios = data["scenarios"] if isinstance(data, dict) and "scenarios" in data else data
+        wanted = [s for s in scenarios if s["name"].startswith(("147 -", "148 -", "149 -", "188 -", "189 -"))]
+        self.assertEqual(len(wanted), 5)
+        for scenario in wanted:
+            expects = [st["expect"] for st in scenario["steps"] if "errorAnyOf" in st["expect"]]
+            self.assertEqual(len(expects), 1, scenario["name"])
+            self.assertEqual(expects[0]["errorAnyOf"], ["Context finalized", "Context closed"])
+
     def test_error_response_without_events_fails(self):
         result = self.run_error_step({"error": "ABsmartly Context is not yet ready."})
         self.assertFalse(result["passed"], result)
