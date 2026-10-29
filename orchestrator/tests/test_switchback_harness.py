@@ -384,6 +384,8 @@ def test_generation_fails_when_bucket_of_disagrees_with_the_vectors(monkeypatch)
 # ---------------------------------------------------------------------------
 
 BASE_MUTANTS = ("per_value", "sticky", "le", "count_10", "count_50", "count_100")
+# Serves the switchback draw even when fullOnVariant is set; only a full-on scenario can catch it.
+FULL_ON_MUTANTS = ("ignore_full_on",)
 ATTRIBUTE_MUTANTS = ("lax_attr", "unit_fallback")
 
 # Mutants that cannot change what a scenario serves, by scenario name suffix.
@@ -432,7 +434,7 @@ def model_variant(exp, units, attributes, mutant, now):
     uid = units.get(exp.get("switchbackClusterUnitType", exp["unitType"]))
     if uid is None:
         return 0
-    if exp["fullOnVariant"]:
+    if exp["fullOnVariant"] and mutant != "ignore_full_on":
         return exp["fullOnVariant"]
     if mutant == "sticky" or exp.get("randomizationType") != "switchback":
         return generator.unit_variant(uid, split, exp["seedHi"], exp["seedLo"])
@@ -483,7 +485,8 @@ def context_scenarios(scenarios):
 def applicable_mutants(scenario):
     experiments = [e for e in scenario["contextData"]["experiments"] if e.get("randomizationType") == "switchback"]
     has_attribute = any("switchbackClusterAttribute" in e for e in experiments)
-    mutants = [*BASE_MUTANTS, *(ATTRIBUTE_MUTANTS if has_attribute else ())]
+    has_full_on = any(e.get("fullOnVariant") for e in experiments)
+    mutants = [*BASE_MUTANTS, *(ATTRIBUTE_MUTANTS if has_attribute else ()), *(FULL_ON_MUTANTS if has_full_on else ())]
     configured = {e.get("switchbackClusterCount") for e in experiments}
     mutants = [m for m in mutants if not (m.startswith("count_") and configured == {int(m[6:])})]
     exempt = next((v for k, v in EXEMPT.items() if scenario["name"].endswith(k)), set())
@@ -498,6 +501,14 @@ def test_every_context_scenario_fails_under_each_applicable_mutant():
     assert [s["name"] for s in scenarios if failing_steps(s, "correct")] == []
     survivors = [(s["name"], m) for s in scenarios for m in applicable_mutants(s) if failing_steps(s, m) == 0]
     assert survivors == []
+
+
+def test_full_on_scenario_fails_when_full_on_is_ignored():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        (scenario,) = [s for s in context_scenarios(json.load(src)) if s["name"].endswith("Full-On Serves The Full-On Variant")]
+    assert "ignore_full_on" in applicable_mutants(scenario)
+    assert failing_steps(scenario, "correct") == 0
+    assert failing_steps(scenario, "ignore_full_on") == 1
 
 
 def test_every_exemption_names_a_scenario():

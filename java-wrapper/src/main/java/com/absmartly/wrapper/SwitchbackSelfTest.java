@@ -170,7 +170,8 @@ final class SwitchbackSelfTest {
         experiments.add(switchback(517, "sb_cluster_count_1000", "unit_store", -559038737, 1234567890, 3,
             ANCHOR_PERIOD_0, 0, 1000));
         experiments.add(switchback(510, "sb_dedup", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
-        experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 2, 100));
+        // The period-0 draw for serving-9 is 2, so fullOnVariant 1 tells full-on apart from the draw.
+        experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 1, 100));
         experiments.add(switchback(512, "sb_override", "unit_serving", -559038737, 1234567890, 3,
             ANCHOR_PERIOD_0, 0, 100));
         experiments.add(switchback(513, "sb_payload", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
@@ -255,8 +256,8 @@ final class SwitchbackSelfTest {
                 && expect(context, exposures, "attribute missing", "sb_attr_missing", 0,
                     new Exposure(516, "sb_attr_missing", "unit_serving", 0, 0, true, false, false, false, false,
                         false))
-                && expect(context, exposures, "full-on", "sb_full_on", 2,
-                    new Exposure(511, "sb_full_on", "unit_serving", 2, 0, true, true, false, true, false, false))
+                && expect(context, exposures, "full-on", "sb_full_on", 1,
+                    new Exposure(511, "sb_full_on", "unit_serving", 1, 0, true, true, false, true, false, false))
                 && checkOverride(context, exposures)
                 && checkPayloadShape(context, exposures, published);
         } finally {

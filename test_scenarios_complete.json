@@ -59638,7 +59638,7 @@
   },
   {
     "name": "251 - Switchback - Full-On Serves The Full-On Variant",
-    "description": "fullOnVariant=2 takes precedence over the switchback draw: variant 2 with fullOn=true.",
+    "description": "The period-0 draw for this cluster is 2; fullOnVariant=1 takes precedence over it: variant 1 with fullOn=true.",
     "contextData": {
       "experiments": [
         {
@@ -59659,7 +59659,7 @@
             0,
             1
           ],
-          "fullOnVariant": 2,
+          "fullOnVariant": 1,
           "applications": [
             {
               "name": "website"
@@ -59734,7 +59734,7 @@
           "experimentName": "exp_switchback_full_on"
         },
         "expect": {
-          "result": 2,
+          "result": 1,
           "events": [
             {
               "type": "exposure",
@@ -59742,7 +59742,7 @@
                 "id": 121,
                 "name": "exp_switchback_full_on",
                 "unit": "store_id",
-                "variant": 2,
+                "variant": 1,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -59767,7 +59767,7 @@
                   {
                     "id": 121,
                     "name": "exp_switchback_full_on",
-                    "variant": 2
+                    "variant": 1
                   }
                 ]
               }

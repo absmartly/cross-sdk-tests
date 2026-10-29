@@ -689,10 +689,13 @@ def serving_scenarios() -> list:
     uid = pick_uid("serving", 0, 3, 100)
     variant = switchback_variant(uid, 0, 3, 100)
     dedup = switchback_experiment(120, "exp_switchback_dedup", "store_id", 3, ANCHOR_PERIOD_0, 100)
+    # Full-on and the override each serve a variant the switchback draw would not, so neither can
+    # pass by serving the draw.
+    other_variant = next(v for v in (1, 2) if v != variant)
     full_on = switchback_experiment(121, "exp_switchback_full_on", "store_id", 3, ANCHOR_PERIOD_0, 100,
-                                    fullOnVariant=2)
+                                    fullOnVariant=other_variant)
     overridden = switchback_experiment(122, "exp_switchback_override", "store_id", 3, ANCHOR_PERIOD_0, 100)
-    override_variant = next(v for v in (1, 2) if v != variant)
+    override_variant = other_variant
     payload = switchback_experiment(123, "exp_switchback_payload", "store_id", 3, ANCHOR_PERIOD_0, 100)
     baseline = experiment(124, "exp_switchback_payload_baseline", "store_id", 3)
     seed_hi, seed_lo, split = ARMS[3]
@@ -712,12 +715,13 @@ def serving_scenarios() -> list:
             ]),
         context_scenario(
             "Full-On Serves The Full-On Variant",
-            "fullOnVariant=2 takes precedence over the switchback draw: variant 2 with fullOn=true.",
+            (f"The period-0 draw for this cluster is {variant}; fullOnVariant={other_variant} takes precedence "
+             f"over it: variant {other_variant} with fullOn=true."),
             [full_on],
             {"store_id": uid},
             [
-                treatment_step(full_on, 2, exposure(full_on, 2, full_on=True)),
-                publish_step([exposure(full_on, 2, full_on=True)]),
+                treatment_step(full_on, other_variant, exposure(full_on, other_variant, full_on=True)),
+                publish_step([exposure(full_on, other_variant, full_on=True)]),
             ]),
         context_scenario(
             "Override Wins Over The Switchback Draw",
