@@ -15,6 +15,9 @@ generator is OUT OF DATE:
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
   * It does not emit the Holdouts scenario group (203-227) at all.
+  * It does not emit the Switchback group (230-259); that group is owned by
+    generate_switchback_scenarios.py, which rewrites it in place in the
+    canonical file and verifies it with --check.
 
 To avoid clobbering the fixed oracle, this script writes to
 'test_scenarios_generated.json' (NOT the canonical file). Its output must be
