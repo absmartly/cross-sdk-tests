@@ -19,17 +19,6 @@ UNIT_TEST_PARSERS = {
         "framework": "pytest",
         "custom_parser": "pytest",
     },
-    "typescript": {
-        "framework": "vitest",
-        "patterns": [
-            # "Tests  2 failed | 1 skipped | 306 passed (309)"
-            (r"Tests\s+(\d+)\s+failed\s+\|.*?(\d+)\s+passed\s+\((\d+)\)",
-             lambda m: (int(m.group(2)), int(m.group(1)), int(m.group(3)))),
-            # "Tests  1 skipped | 308 passed (309)" or "Tests  309 passed (309)"
-            (r"Tests\s+(?:\d+\s+skipped\s+\|\s+)?(\d+)\s+passed\s+\((\d+)\)",
-             lambda m: (int(m.group(1)), 0, int(m.group(2)))),
-        ],
-    },
     "ruby": {
         "framework": "rspec",
         "patterns": [
@@ -346,6 +335,23 @@ def parse_unit_test_output(sdk, output):
     return None, None, None
 
 
+def run_level_status(stats):
+    """Map test_runner's run-level failure flags to a forced table status (or None)."""
+    if stats.get("service_failed"):
+        return "DOWN"
+    if stats.get("capabilities_failed"):
+        return "CAPS FAIL"
+    if stats.get("capability_policy_violations"):
+        return "CAPS POLICY"
+    if stats.get("no_tests_run"):
+        return "NO TESTS RUN"
+    if stats.get("consistency_failed"):
+        return "INCONSISTENT"
+    if stats.get("consistency_unchecked"):
+        return "UNCHECKED"
+    return None
+
+
 def load_cross_sdk_report(report_path):
     if not report_path or not os.path.exists(report_path):
         return {}
@@ -366,19 +372,13 @@ def load_cross_sdk_report(report_path):
             skipped = stats.get("skipped", 0)
             # test_runner sets these run-level flags independently of the
             # passed/failed tallies; an SDK can report 0 failures yet still be a
-            # failed run (service never started, capabilities fetch failed, zero
-            # scenarios executed, or a cross-SDK disagreement). Surface a distinct
+            # failed run (service never started, capabilities fetch failed or
+            # violated the checked-in capability policy, zero scenarios
+            # executed, a cross-SDK disagreement, or a multi-SDK run whose
+            # consistency check made zero comparisons). Surface a distinct
             # status so the table doesn't print PASS where report.json says
             # FAILED, and force the row to count toward the aggregate exit code.
-            forced_status = None
-            if stats.get("service_failed"):
-                forced_status = "DOWN"
-            elif stats.get("capabilities_failed"):
-                forced_status = "CAPS FAIL"
-            elif stats.get("no_tests_run"):
-                forced_status = "NO TESTS RUN"
-            elif stats.get("consistency_failed"):
-                forced_status = "INCONSISTENT"
+            forced_status = run_level_status(stats)
             results[sdk] = {
                 "passed": passed,
                 "failed": failed,
@@ -517,9 +517,10 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             c_skipped = cross.get("skipped") or 0
             forced_status = cross.get("forced_status")
             if forced_status:
-                # A run-level failure flag (DOWN / CAPS FAIL / NO TESTS RUN /
-                # INCONSISTENT) overrides the passed/failed tally: the run failed
-                # even if zero individual scenarios reported a failure.
+                # A run-level failure flag (DOWN / CAPS FAIL / CAPS POLICY /
+                # NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
+                # passed/failed tally: the run failed even if zero individual
+                # scenarios reported a failure.
                 cells.append(f"{RED}{forced_status}{RESET}")
                 cross_sdk_total += 1
                 any_failure = True

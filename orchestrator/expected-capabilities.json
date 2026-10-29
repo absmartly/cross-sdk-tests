@@ -1,0 +1,178 @@
+{
+  "_comment": [
+    "Checked-in capability policy for the cross-SDK suite (read by orchestrator/test_runner.py).",
+    "Every capability a scenario lists under `requires` must appear in `capabilities`, and every SDK",
+    "must classify every capability as either `required` (the wrapper MUST advertise it as true; a",
+    "false/missing value fails the run and the gated scenarios still execute) or a reviewed",
+    "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
+    "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
+    "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
+    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports.",
+    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`."
+  ],
+  "capabilities": {
+    "diagnostics": "POST /diagnostic hashUnit, computed by the SDK's own hashing",
+    "diagnosticsUtf8": "POST /diagnostic utf8Bytes, computed by the SDK's own UTF-8 encoder",
+    "diagnosticsBase64": "POST /diagnostic base64UrlNoPadding of raw bytes, computed by the SDK's own encoder",
+    "diagnosticsTypeChecks": "POST /diagnostic isObject/isNumeric, computed by the SDK's own type-check helpers",
+    "diagnosticsIsPromise": "POST /diagnostic isPromise, computed by the SDK's own promise check",
+    "publishFail": "POST /context/{id}/publishFail arms a one-shot publisher failure",
+    "variableKeysMap": "POST /context/{id}/variableKeysMap returns every experiment per variable key",
+    "globalCustomFieldKeys": "POST /context/{id}/globalCustomFieldKeys returns the union of custom field keys",
+    "getUnits": "POST /context/{id}/getUnits",
+    "getAttributes": "POST /context/{id}/getAttributes",
+    "readyError": "POST /context/{id}/readyError reports the error of a failed context",
+    "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
+    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test"
+  },
+  "sdks": {
+    "javascript": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {}
+    },
+    "python": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {
+        "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks"
+      }
+    },
+    "ruby": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks"],
+      "unsupported": {
+        "diagnosticsIsPromise": "ruby-sdk has no promise abstraction or isPromise helper",
+        "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks"
+      }
+    },
+    "liquid": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks"],
+      "unsupported": {
+        "diagnosticsIsPromise": "wraps ruby-sdk, which has no promise abstraction or isPromise helper",
+        "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
+        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks"
+      }
+    },
+    "php": {
+      "required": ["diagnostics", "publishFail", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {
+        "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
+        "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks"
+      }
+    },
+    "go": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "diagnosticsUtf8", "diagnosticsBase64"],
+      "unsupported": {
+        "diagnosticsTypeChecks": "go-sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "go-sdk has no isPromise helper (Go has no promise type)",
+        "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
+        "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks"
+      }
+    },
+    "rust": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks"],
+      "unsupported": {
+        "diagnosticsIsPromise": "rust-sdk has no promise/future type check (src/utils.rs)",
+        "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks"
+      }
+    },
+    "java": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "unsupported": {
+        "diagnosticsBase64": "java-sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
+        "diagnosticsTypeChecks": "java-sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "java-sdk has no isPromise helper"
+      }
+    },
+    "kotlin": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64"],
+      "unsupported": {
+        "diagnosticsTypeChecks": "kotlin-sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "kotlin-sdk has no isPromise helper",
+        "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks"
+      }
+    },
+    "scala": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {
+        "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
+      }
+    },
+    "swift": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64"],
+      "unsupported": {
+        "diagnosticsTypeChecks": "swift-sdk has no isObject/isNumeric helpers (statically typed API; Internal/Hashing has only hash, base64UrlNoPadding, utf8Bytes)",
+        "diagnosticsIsPromise": "swift-sdk has no isPromise helper",
+        "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks"
+      }
+    },
+    "dart": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "unsupported": {
+        "diagnosticsBase64": "dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
+        "diagnosticsTypeChecks": "dart_sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "dart_sdk has no isPromise helper",
+        "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks"
+      }
+    },
+    "flutter": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "unsupported": {
+        "diagnosticsBase64": "flutter-sdk dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
+        "diagnosticsTypeChecks": "flutter-sdk dart_sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "flutter-sdk dart_sdk has no isPromise helper",
+        "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks"
+      }
+    },
+    "dotnet": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64"],
+      "unsupported": {
+        "diagnosticsTypeChecks": "dotnet-sdk has no isObject/isNumeric helpers (statically typed API)",
+        "diagnosticsIsPromise": "dotnet-sdk has no isPromise helper (.NET has no promise type)",
+        "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks"
+      }
+    },
+    "cpp": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsBase64"],
+      "unsupported": {
+        "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
+        "diagnosticsTypeChecks": "cpp-sdk has no isObject/isNumeric helpers; it uses nlohmann::json type queries internally",
+        "diagnosticsIsPromise": "cpp-sdk has no promise type or isPromise helper",
+        "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks"
+      }
+    },
+    "elixir": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {
+        "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
+        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks"
+      }
+    },
+    "react": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {}
+    },
+    "vue2": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {}
+    },
+    "vue3": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {}
+    },
+    "angular": {
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
+      "unsupported": {}
+    }
+  }
+}

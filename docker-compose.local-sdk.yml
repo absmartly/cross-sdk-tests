@@ -2,4 +2,20 @@ services:
   java-sdk:
     build:
       args:
-        SDK_SOURCE_DIR: java-sdk-holdouts
+        SDK_SOURCE_DIR: ${JAVA_SDK_DIR:-java-sdk}
+  go-sdk:
+    build:
+      args:
+        GO_SDK_DIR: ${GO_SDK_DIR:-go-sdk-wt-fix-parser-flush}
+  go-unit:
+    build:
+      args:
+        GO_SDK_DIR: ${GO_SDK_DIR:-go-sdk-wt-fix-parser-flush}
+  python-sdk:
+    build:
+      args:
+        PYTHON_SDK_DIR: ${PYTHON_SDK_DIR:-python3-sdk-wt-jervasion}
+  python-unit:
+    build:
+      args:
+        PYTHON_SDK_DIR: ${PYTHON_SDK_DIR:-python3-sdk-wt-jervasion}

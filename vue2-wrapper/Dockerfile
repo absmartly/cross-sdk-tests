@@ -3,12 +3,19 @@ FROM node:24-alpine AS sdk-builder
 WORKDIR /javascript-sdk
 COPY javascript-sdk/package*.json ./
 COPY javascript-sdk/ ./
-RUN npm install && npm run build
+RUN npm install && npm run build && \
+    mv "$(npm pack --silent --ignore-scripts)" /tmp/javascript-sdk.tgz
 
 WORKDIR /vue2-sdk
 COPY vue2-sdk/package*.json ./
 COPY vue2-sdk/ ./
-RUN npm install && NODE_OPTIONS=--openssl-legacy-provider npm run build
+# Build against the pinned javascript-sdk checkout (packed like a registry
+# release), not the registry copy the lockfile would pull.
+RUN npm install && \
+    rm -rf node_modules/@absmartly/javascript-sdk && \
+    mkdir -p node_modules/@absmartly/javascript-sdk && \
+    tar -xzf /tmp/javascript-sdk.tgz -C node_modules/@absmartly/javascript-sdk --strip-components=1
+RUN NODE_OPTIONS=--openssl-legacy-provider npm run build
 
 FROM sdk-builder AS tester
 WORKDIR /vue2-sdk
@@ -32,6 +39,7 @@ RUN rm -rf /vue2-sdk/node_modules/vue /vue2-sdk/node_modules/@absmartly 2>/dev/n
     ln -sf /javascript-sdk /vue2-sdk/node_modules/@absmartly/javascript-sdk
 
 COPY cross-sdk-tests/vue2-wrapper/server.js ./
+COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
 
 EXPOSE 3000
 

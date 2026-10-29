@@ -1,19 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
 import 'package:absmartly_dart/absmartly_dart.dart';
+import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
-
-String translateErrorMessage(String msg) {
-  if (msg.contains('closed') || msg.contains('closing')) {
-    return 'Context finalized';
-  }
-  return msg;
-}
 
 String translateEndpoint(String endpoint) {
   final uri = Uri.parse(endpoint);
@@ -88,7 +83,7 @@ class EventCollector implements ContextEventLogger {
       case EventType.goal:
         eventType = 'goal';
         break;
-      case EventType.close:
+      case EventType.finalize:
         eventType = 'finalize';
         break;
     }
@@ -137,18 +132,23 @@ class CustomPublisher implements ContextPublisher {
   final EventCollector eventCollector;
   bool shouldFail = false;
 
-  CustomPublisher(this.eventCollector);
+  // e2e contexts pass the SDK's real DefaultContextPublisher so publishes
+  // reach the collector; /publishFail still arms a one-shot failure on top.
+  final ContextPublisher? delegate;
+
+  CustomPublisher(this.eventCollector, {this.delegate});
 
   @override
   Completer<void> publish(Context context, PublishEvent event) {
-    final completer = Completer<void>();
     if (shouldFail) {
       shouldFail = false;
-      completer.completeError(Exception('publish failed'));
-    } else {
-      completer.complete();
+      return Completer<void>()..completeError(Exception('publish failed'));
     }
-    return completer;
+    final inner = delegate;
+    if (inner != null) {
+      return inner.publish(context, event);
+    }
+    return Completer<void>()..complete();
   }
 }
 
@@ -159,6 +159,8 @@ class CustomDataProvider implements ContextDataProvider {
   void setData(ContextData data) {
     _data = data;
   }
+
+  ContextData? get initialData => _data;
 
   void setNextData(ContextData data) {
     _nextData = data;
@@ -223,6 +225,32 @@ class ContextStore {
 }
 
 final Map<String, ContextStore> contexts = {};
+
+shelf.Handler withEventsWindow(shelf.Handler inner) {
+  return (shelf.Request request) async {
+    final segments = request.url.pathSegments;
+    final store = segments.length >= 2 && segments[0] == 'context'
+        ? contexts[segments[1]]
+        : null;
+    if (store == null) return inner(request);
+
+    final eventsBefore = store.eventCollector.events.length;
+    final response = await inner(request);
+    final body = await response.readAsString();
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(body);
+    } catch (_) {
+      return response.change(body: body);
+    }
+    if (decoded is Map<String, dynamic>) {
+      decoded['events'] = store.eventCollector.getNewEvents(eventsBefore);
+      return response.change(body: jsonEncode(decoded));
+    }
+    return response.change(body: body);
+  };
+}
+
 // Raw payloads exactly as the orchestrator sent them. Served back verbatim so
 // the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
 final Map<String, Map<String, dynamic>> payloadStore = {};
@@ -245,6 +273,10 @@ void main() async {
     return shelf.Response.ok(
       jsonEncode({
         'diagnostics': true,
+        'diagnosticsUtf8': true,
+        'diagnosticsBase64': false,
+        'diagnosticsTypeChecks': false,
+        'diagnosticsIsPromise': false,
         'attrsSeq': false,
         'publishFail': true,
         'variableKeysMap': true,
@@ -269,25 +301,14 @@ void main() async {
         case 'hashUnit':
           result = String.fromCharCodes(Hashing.hashUnit(text));
           break;
-        case 'base64UrlNoPadding':
-          result = base64Url.encode(utf8.encode(text)).replaceAll('=', '');
-          break;
         case 'utf8Bytes':
-          result = utf8.encode(text);
-          break;
-        case 'isObject':
-          result = value is Map;
-          break;
-        case 'isNumeric':
-          result = value is num;
-          break;
-        case 'isPromise':
-          result = false;
+          final buffer = Uint8List(text.length * 4);
+          result = buffer.sublist(0, Buffers.encodeUTF8(buffer, 0, text));
           break;
         default:
           return shelf.Response(
             400,
-            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op'}),
+            body: jsonEncode({'error': 'Unsupported diagnostic operation: $op', 'events': []}),
             headers: {'Content-Type': 'application/json'},
           );
       }
@@ -317,7 +338,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -342,7 +363,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -395,25 +416,22 @@ void main() async {
           .setEnvironment(e2eEnv);
 
         final client = Client.create(clientConfig, httpClient: httpClient);
+        final publisher = CustomPublisher(eventCollector, delegate: DefaultContextPublisher(client));
 
         final sdkConfig = ABSmartlyConfig.create()
           .setClient(client)
+          .setContextPublisher(publisher)
           .setContextEventLogger(eventCollector);
 
         final e2eSdk = ABSmartly(sdkConfig);
 
-        final unitsMap = Map<String, String>.from(
-          units.map((key, value) => MapEntry(key.toString(), value.toString()))
-        );
+        final unitsMap = Map<String, Object>.from(units);
 
         final contextConfig = ContextConfig();
         contextConfig.setUnits(unitsMap);
-        // e2e: disable auto-publish timer and auto-refresh so no background
-        // HTTP fires mid-test; tests drive publish/refresh explicitly.
-        // Dart's Timer has no negative-delay guard (a negative Duration fires
-        // immediately), so disabling means a very large delay, matching the
-        // non-e2e path below.
-        contextConfig.setPublishDelay(999999999);
+        // e2e: no auto-publish (negative delay) and no auto-refresh; tests
+        // drive publish/refresh explicitly.
+        contextConfig.setPublishDelay(-1);
         contextConfig.setRefreshInterval(0);
 
         final context = e2eSdk.createContext(contextConfig);
@@ -426,7 +444,7 @@ void main() async {
           }
         }
 
-        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {}, CustomPublisher(eventCollector));
+        contexts[contextId] = ContextStore(context, eventCollector, CustomDataProvider(), {}, publisher);
 
         return shelf.Response.ok(
           jsonEncode({
@@ -487,25 +505,22 @@ void main() async {
 
       final sdk = ABSmartly(sdkConfig);
 
-      final unitsMap = Map<String, String>.from(
-        units.map((key, value) => MapEntry(key.toString(), value.toString()))
-      );
+      final unitsMap = Map<String, Object>.from(units);
 
       final contextConfig = ContextConfig();
       contextConfig.setUnits(unitsMap);
 
-      final publishDelay = options['publishDelay'] as int? ?? -1;
-      contextConfig.setPublishDelay(publishDelay < 0 ? 999999999 : publishDelay);
-      contextConfig.setRefreshInterval(options['refreshPeriod'] as int? ?? 0);
+      contextConfig.setPublishDelay(options['publishDelay'] as int? ?? -1);
+      contextConfig.setRefreshInterval(0);
 
-      final context = sdk.createContext(contextConfig);
+      // createContextWith hands the SDK the payload parsed by its own
+      // ContextData.fromMap; the other paths fetch through the SDK Client.
+      final Context context = data != null && !failLoad
+          ? sdk.createContextWith(contextConfig, dataProvider.initialData!)
+          : sdk.createContext(contextConfig);
 
       if (payloadThrottle == 0) {
         await context.waitUntilReady();
-        // Wait for events to be collected (like Go/Java wrappers)
-        for (int i = 0; i < 50 && eventCollector.events.isEmpty; i++) {
-          await Future.delayed(Duration(milliseconds: 10));
-        }
       }
 
       contexts[contextId] = ContextStore(context, eventCollector, dataProvider, data ?? {}, publisher,
@@ -527,7 +542,7 @@ void main() async {
       print('Error creating context: $e');
       print(stackTrace);
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -545,7 +560,7 @@ void main() async {
     try {
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      ctxData.context.setUnit(unitType, body['uid'].toString());
+      ctxData.context.setUnit(unitType, body['uid'] as Object);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -553,14 +568,8 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      var errorMsg = e.toString();
-      if (errorMsg.contains('already set')) {
-        errorMsg = "Unit '$unitType' UID already set.";
-      } else {
-        errorMsg = translateErrorMessage(errorMsg);
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': errorMsg}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -576,15 +585,7 @@ void main() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final unitStr = ctxData.context.getUnit(body['unitType'] as String);
-
-      dynamic result = unitStr;
-      if (unitStr != null) {
-        final numValue = num.tryParse(unitStr);
-        if (numValue != null) {
-          result = numValue;
-        }
-      }
+      final result = ctxData.context.getUnit(body['unitType'] as String);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -593,7 +594,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -618,7 +619,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -643,7 +644,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -659,15 +660,6 @@ void main() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      // The dart SDK's getTreatment() returns 0 after finalize (context.dart:235)
-      // rather than throwing, so guard the finalized state explicitly (scenario 189).
-      if (ctxData.context.isClosed()) {
-        return shelf.Response(400,
-          body: jsonEncode({'error': 'Context finalized'}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
-
       final variant = ctxData.context.getTreatment(body['experimentName'] as String);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
@@ -678,7 +670,7 @@ void main() async {
     } catch (e) {
       print('Error in treatment handler: $e');
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -703,7 +695,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -732,7 +724,7 @@ void main() async {
     } catch (e) {
       print('Error in variableValue handler: $e');
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -761,7 +753,7 @@ void main() async {
     } catch (e) {
       print('Error in peekVariableValue handler: $e');
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -795,24 +787,13 @@ void main() async {
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
 
-      if (properties == null) {
-        for (final event in newEvents) {
-          if (event['type'] == 'goal' && event['data'] is Map) {
-            final data = event['data'] as Map<String, dynamic>;
-            if (data['properties'] is Map && (data['properties'] as Map).isEmpty) {
-              data['properties'] = null;
-            }
-          }
-        }
-      }
-
       return shelf.Response.ok(
         jsonEncode({'result': null, 'events': newEvents}),
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -837,14 +818,8 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -870,7 +845,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -895,7 +870,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -919,7 +894,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -945,7 +920,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -973,7 +948,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1000,14 +975,8 @@ void main() async {
         headers: {'Content-Type': 'application/json'},
       );
     } catch (e) {
-      if (translateErrorMessage(e.toString()) == 'Context finalized') {
-        return shelf.Response.ok(
-          jsonEncode({'result': null, 'events': []}),
-          headers: {'Content-Type': 'application/json'},
-        );
-      }
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1035,7 +1004,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1118,7 +1087,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response(400,
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1128,12 +1097,7 @@ void main() async {
     final ctxData = contexts[contextId];
     if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
     try {
-      final units = ctxData.context.getUnits();
-      final result = <String, dynamic>{};
-      units.forEach((k, v) {
-        final numVal = num.tryParse(v);
-        result[k] = numVal ?? v;
-      });
+      final result = ctxData.context.getUnits();
       return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
     } catch (e) {
       return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});
@@ -1211,7 +1175,7 @@ void main() async {
       );
     } catch (e) {
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1245,7 +1209,7 @@ void main() async {
     } catch (e) {
       print('Refresh error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1270,7 +1234,7 @@ void main() async {
     } catch (e) {
       print('Finalize error: $e');
       return shelf.Response.internalServerError(
-        body: jsonEncode({'error': translateErrorMessage(e.toString())}),
+        body: jsonEncode({'error': e.toString()}),
         headers: {'Content-Type': 'application/json'},
       );
     }
@@ -1286,7 +1250,7 @@ void main() async {
 
   final handler = shelf.Pipeline()
       .addMiddleware(shelf.logRequests())
-      .addHandler(router);
+      .addHandler(withEventsWindow(router));
 
   final port = int.parse(Platform.environment['PORT'] ?? '3000');
   final server = await shelf_io.serve(handler, '0.0.0.0', port);

@@ -710,7 +710,7 @@
   },
   {
     "name": "09 - Goal Tracking - Filter Non-Numeric Properties",
-    "description": "Non-numeric goal properties should be filtered out",
+    "description": "Goal properties are passed through unchanged: non-numeric values (strings, arrays, objects) are kept, not filtered",
     "contextData": {
       "experiments": []
     },
@@ -7753,8 +7753,8 @@
     ]
   },
   {
-    "name": "68 - HTTP Client - Retry on Connection Error",
-    "description": "Client should retry on network errors up to max retries",
+    "name": "68 - Live Fetch - Treatment Variant 0 (exp_http_68)",
+    "description": "Live-fetched context assigns exp_http_68 to variant 0 and queues one exposure. No HTTP fault is injected: this does NOT test retry on connection errors.",
     "contextData": {
       "experiments": [
         {
@@ -7838,8 +7838,8 @@
     ]
   },
   {
-    "name": "69 - HTTP Client - No Retry on 400 Bad Request",
-    "description": "Client should NOT retry on 4xx client errors",
+    "name": "69 - Live Fetch - Treatment Variant 1 (exp_http_69)",
+    "description": "Live-fetched context assigns exp_http_69 to variant 1 and queues one exposure. No HTTP fault is injected: this does NOT test 4xx no-retry behavior.",
     "contextData": {
       "experiments": [
         {
@@ -7923,8 +7923,8 @@
     ]
   },
   {
-    "name": "70 - HTTP Client - Retry on 500 Server Error",
-    "description": "Client should retry on 5xx server errors",
+    "name": "70 - Live Fetch - Treatment Variant 0 (exp_http_70)",
+    "description": "Live-fetched context assigns exp_http_70 to variant 0 and queues one exposure. No HTTP fault is injected: this does NOT test retry on 5xx errors.",
     "contextData": {
       "experiments": [
         {
@@ -8008,8 +8008,8 @@
     ]
   },
   {
-    "name": "71 - HTTP Client - Timeout After Max Duration",
-    "description": "Client should abort request after timeout duration",
+    "name": "71 - Live Fetch - Ready Within Wait Then Treatment (exp_http_71)",
+    "description": "Live-fetched context becomes ready within the 3s wait, then assigns exp_http_71 to variant 0 with one exposure. No delay is injected: this does NOT test request timeouts.",
     "contextData": {
       "experiments": [
         {
@@ -8103,8 +8103,8 @@
     ]
   },
   {
-    "name": "72 - HTTP Client - Manual Abort Signal",
-    "description": "Client should support manual request abortion",
+    "name": "72 - Live Fetch - Treatment Variant 1 (exp_http_72)",
+    "description": "Live-fetched context assigns exp_http_72 to variant 1 and queues one exposure. No abort is issued: this does NOT test manual request abortion.",
     "contextData": {
       "experiments": [
         {
@@ -8188,8 +8188,8 @@
     ]
   },
   {
-    "name": "73 - HTTP Client - URL Query Encoding",
-    "description": "Client should properly encode special characters in query params",
+    "name": "73 - Live Fetch - Treatment Variant 0 (exp_http_73)",
+    "description": "Live-fetched context assigns exp_http_73 to variant 0 and queues one exposure. The harness does not inspect request URLs: this does NOT test query encoding.",
     "contextData": {
       "experiments": [
         {
@@ -8273,8 +8273,8 @@
     ]
   },
   {
-    "name": "74 - HTTP Client - Empty Query Parameters",
-    "description": "Client should omit query string when params are empty",
+    "name": "74 - Live Fetch - Treatment Variant 1 (exp_http_74)",
+    "description": "Live-fetched context assigns exp_http_74 to variant 1 and queues one exposure. The harness does not inspect request URLs: this does NOT test empty query handling.",
     "contextData": {
       "experiments": [
         {
@@ -9657,6 +9657,43 @@
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"flag\"},{\"value\":true}]}]}",
           "audienceStrict": false,
           "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_conv_91_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"flag\"},{\"value\":true}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
         }
       ]
     },
@@ -9704,7 +9741,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_conv_91",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_91_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_conv_91_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -9751,6 +9826,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_conv_92_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -9799,7 +9911,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_conv_92",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_92_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_conv_92_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -9846,6 +9996,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_conv_93_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"count\"},{\"value\":1}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -9894,7 +10081,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_conv_93",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_93_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_conv_93_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -9941,6 +10166,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"123\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_conv_94_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"123\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -9989,7 +10251,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_conv_94",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_94_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_conv_94_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10036,6 +10336,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"abc\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_conv_95_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"code\"},{\"value\":\"abc\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10086,7 +10423,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_conv_95",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_conv_95_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_conv_95_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -10133,6 +10508,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/city\"},{\"value\":\"Porto\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eval_96_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/city\"},{\"value\":\"Porto\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10185,7 +10597,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eval_96",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_96_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eval_96_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10232,6 +10682,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/zip\"},{\"value\":\"4000\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eval_97_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"profile/address/zip\"},{\"value\":\"4000\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10284,7 +10771,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eval_97",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_97_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eval_97_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -10331,6 +10856,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"optional\"},{\"value\":null}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eval_98_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"optional\"},{\"value\":null}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10379,7 +10941,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eval_98",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eval_98_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eval_98_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -10426,6 +11026,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":42}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_99_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":42}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10474,7 +11111,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_99",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_99_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_99_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10521,6 +11196,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":\"NaN\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_100_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"v\"},{\"value\":\"NaN\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10569,7 +11281,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_100",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_100_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_100_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10616,6 +11366,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_101_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10668,7 +11455,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_101",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_101_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_101_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10715,6 +11540,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,[2,3],4]}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_102_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,[2,3],4]}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10770,7 +11632,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_102",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_102_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_102_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10817,6 +11717,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":1,\"b\":2}}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_103_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":1,\"b\":2}}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10868,7 +11805,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_103",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_103_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_103_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -10915,6 +11890,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":{\"x\":1},\"b\":[1,2]}}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_104_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"obj\"},{\"value\":{\"a\":{\"x\":1},\"b\":[1,2]}}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -10971,7 +11983,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_104",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_104_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_104_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -11004,7 +12054,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsUtf8"
     ]
   },
   {
@@ -11037,7 +12087,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsUtf8"
     ]
   },
   {
@@ -11060,7 +12110,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -11116,7 +12166,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -11139,7 +12189,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -11162,7 +12212,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsBase64"
     ]
   },
   {
@@ -11205,6 +12255,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_eq_111_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"arr\"},{\"value\":[1,2,3]}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -11257,7 +12344,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_eq_111",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_eq_111_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_eq_111_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -11539,7 +12664,7 @@
   },
   {
     "name": "116 - SDK Config - Unit Type Coercion",
-    "description": "SDK should coerce numeric unit values to strings",
+    "description": "Numeric unit values keep their numeric type: getUnit returns the number the context was created with",
     "contextData": {
       "experiments": []
     },
@@ -11942,6 +13067,43 @@
           "audience": "{\"filter\":[]}",
           "audienceStrict": false,
           "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_aud_120_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[]}",
+          "audienceStrict": true,
+          "customFieldValues": null
         }
       ]
     },
@@ -11978,7 +13140,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_aud_120",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_120_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_aud_120_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -12026,6 +13226,43 @@
           "audience": "{\"filter\":\"invalid\"}",
           "audienceStrict": false,
           "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_aud_121_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":\"invalid\"}",
+          "audienceStrict": true,
+          "customFieldValues": null
         }
       ]
     },
@@ -12062,7 +13299,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_aud_121",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_121_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_aud_121_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -12109,6 +13384,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_aud_122_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -12157,7 +13469,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_aud_122",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_aud_122_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_aud_122_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -12204,6 +13554,43 @@
           ],
           "audience": "{\"filter\":[{\"eq\":[{\"var\":\"a\"},{\"value\":1}]},{\"eq\":[{\"var\":\"b\"},{\"value\":\"yes\"}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_json_123_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"a\"},{\"value\":1}]},{\"eq\":[{\"var\":\"b\"},{\"value\":\"yes\"}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -12263,7 +13650,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_json_123",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_json_123_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_json_123_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -12310,6 +13735,43 @@
           ],
           "audience": "{\"filter\":[{\"unknown\":[{\"var\":\"a\"},{\"value\":1}]}]}",
           "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_json_124_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603516,
+          "seedLo": 233373851,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867250,
+          "trafficSeedLo": 455443630,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"unknown\":[{\"var\":\"a\"},{\"value\":1}]}]}",
+          "audienceStrict": true,
           "customFieldValues": null
         }
       ]
@@ -12358,7 +13820,45 @@
           "result": 0,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_json_124",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_json_124_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_json_124_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
             }
           ]
         }
@@ -12571,7 +14071,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsTypeChecks"
     ]
   },
   {
@@ -12638,7 +14138,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsTypeChecks"
     ]
   },
   {
@@ -12674,7 +14174,7 @@
       }
     ],
     "requires": [
-      "diagnostics"
+      "diagnosticsIsPromise"
     ]
   },
   {
@@ -14345,7 +15845,10 @@
           "value": 1.5
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -14397,7 +15900,10 @@
           "value": "value"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -14449,7 +15955,10 @@
           "uid": "123"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -15910,6 +17419,43 @@
           "audience": "{\"filter\": []}",
           "audienceStrict": false,
           "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_empty_filter_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 1,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\": []}",
+          "audienceStrict": true,
+          "customFieldValues": null
         }
       ]
     },
@@ -15944,7 +17490,45 @@
           "result": 1,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_empty_filter",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_empty_filter_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_empty_filter_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -16935,6 +18519,43 @@
           "audience": "{\"filter\":[{\"not\":[{\"eq\":[{\"var\":\"status\"},{\"value\":\"banned\"}]}]}]}",
           "audienceStrict": false,
           "customFieldValues": null
+        },
+        {
+          "id": 1001,
+          "name": "exp_not_mismatch_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"not\":[{\"eq\":[{\"var\":\"status\"},{\"value\":\"banned\"}]}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
         }
       ]
     },
@@ -16980,7 +18601,45 @@
           "result": 1,
           "events": [
             {
-              "type": "exposure"
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_not_mismatch",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_not_mismatch_strict"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1001,
+                "name": "exp_not_mismatch_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
             }
           ]
         }
@@ -17553,7 +19212,10 @@
           "value": "US"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -17650,7 +19312,10 @@
           "experimentName": "exp_test_ab"
         },
         "expect": {
-          "error": "Context finalized"
+          "errorAnyOf": [
+            "Context finalized",
+            "Context closed"
+          ]
         }
       }
     ]
@@ -17979,7 +19644,12 @@
         "action": "publish",
         "params": {},
         "expect": {
-          "error": "Publish failed"
+          "error": "Publish failed",
+          "events": [
+            {
+              "type": "error"
+            }
+          ]
         }
       },
       {
@@ -18574,8 +20244,8 @@
     ]
   },
   {
-    "name": "201 - Not Ready - Read Methods Return Defaults",
-    "description": "treatment() called before context is ready must return 0 without throwing; variableValue() must return the provided default",
+    "name": "201 - Not Ready - Read Methods Throw",
+    "description": "Read methods (treatment, peek, variableValue, peekVariableValue, variableKeys, experiments) called before the context is ready must raise the SDK not-ready error (\"ABsmartly Context is not yet ready.\") and must not queue exposures",
     "contextData": {
       "experiments": [
         {
@@ -18644,7 +20314,17 @@
           "experimentName": "exp_test_ab"
         },
         "expect": {
-          "result": 0,
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18655,7 +20335,18 @@
           "defaultValue": "blue"
         },
         "expect": {
-          "result": "blue",
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "banner.color",
+          "defaultValue": "blue"
+        },
+        "expect": {
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18663,7 +20354,7 @@
         "action": "variableKeys",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
           "events": []
         }
       },
@@ -18671,7 +20362,15 @@
         "action": "experiments",
         "params": {},
         "expect": {
-          "result": [],
+          "error": "not yet ready",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
           "events": []
         }
       }
@@ -24313,6 +26012,361 @@
               }
             }
           ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "228 - Publish Failure - Failed Final Publish Keeps Context Open",
+    "description": "When the publish made by finalize() fails, the error is surfaced and an error event logged, the events stay queued and the context is not finalized; a second finalize() publishes them and finalizes",
+    "requires": [
+      "publishFail"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready"
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_test_ab",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "track",
+        "params": {
+          "goalName": "signup",
+          "properties": {
+            "amount": 5
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "goal"
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publishFail",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "error": "Publish failed",
+          "events": [
+            {
+              "type": "error"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "finalize",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "exposures": [
+                  {
+                    "name": "exp_test_ab",
+                    "variant": 1
+                  }
+                ],
+                "goals": [
+                  {
+                    "name": "signup",
+                    "properties": {
+                      "amount": 5
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "finalize"
+            }
+          ]
+        }
+      },
+      {
+        "action": "isFinalized",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "229 - Ready Error - Refresh On Failed Context Is A No-Op",
+    "description": "refresh() on a context whose initial load failed succeeds without fetching: no refresh or error event, the context stays failed, and data offered for the refresh is not applied",
+    "requires": [
+      "readyError"
+    ],
+    "contextData": {
+      "experiments": []
+    },
+    "steps": [
+      {
+        "action": "createContextFailed",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": true,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "error"
+            }
+          ]
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 1,
+                "name": "exp_test_ab",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3603515,
+                "seedLo": 233373850,
+                "split": [
+                  0.5,
+                  0.5
+                ],
+                "trafficSeedHi": 449867249,
+                "trafficSeedLo": 455443629,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "isFailed",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "isReady",
+        "params": {},
+        "expect": {
+          "result": true,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 0,
+                "name": "exp_test_ab",
+                "unit": null,
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "readyError",
+        "params": {},
+        "expect": {
+          "result": {
+            "isError": true
+          },
+          "events": []
         }
       }
     ]

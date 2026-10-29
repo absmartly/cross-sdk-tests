@@ -263,7 +263,7 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
   BATCH=("${SVC_ARRAY[@]:i:BATCH_SIZE}")
   echo "  Starting batch: ${BATCH[*]}"
   set +e
-  START_OUTPUT=$(docker compose up -d --remove-orphans "${BATCH[@]}" 2>&1)
+  START_OUTPUT=$(docker compose up -d --force-recreate --remove-orphans "${BATCH[@]}" 2>&1)
   START_EXIT=$?
   set -e
 
@@ -271,14 +271,17 @@ for ((i=0; i<${#SVC_ARRAY[@]}; i+=BATCH_SIZE)); do
     if echo "$START_OUTPUT" | grep -qi "500 Internal Server Error"; then
       echo "Docker returned 500. Restarting Docker..."
       restart_docker
-      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
     elif echo "$START_OUTPUT" | grep -q "No such container"; then
       docker compose rm -f "${BATCH[@]}" 2>/dev/null || true
-      docker compose up -d --remove-orphans "${BATCH[@]}" 2>/dev/null || true
     else
       echo "ERROR: 'docker compose up -d' failed for batch (${BATCH[*]}) with no recoverable cause:" >&2
       echo "$START_OUTPUT" >&2
       exit "$START_EXIT"
+    fi
+    if ! RETRY_OUTPUT=$(docker compose up -d --force-recreate --remove-orphans "${BATCH[@]}" 2>&1); then
+      echo "ERROR: 'docker compose up -d' failed again for batch (${BATCH[*]}) after recovery:" >&2
+      echo "$RETRY_OUTPUT" >&2
+      exit 1
     fi
   fi
   sleep 2
@@ -291,7 +294,7 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
   UNHEALTHY=""
   for svc in "${SVC_ARRAY[@]}"; do
     STATUS=$(docker compose ps --format '{{.Status}}' "$svc" 2>/dev/null)
-    if echo "$STATUS" | grep -qi "exit\|dead\|created"; then
+    if [ -z "$STATUS" ] || echo "$STATUS" | grep -qi "exit\|dead\|created"; then
       UNHEALTHY="$UNHEALTHY $svc"
     fi
   done
@@ -302,10 +305,11 @@ for health_attempt in $(seq 1 $MAX_HEALTH_RETRIES); do
 
   if [ "$health_attempt" -lt "$MAX_HEALTH_RETRIES" ]; then
     echo "  Restarting crashed services (attempt $health_attempt/$MAX_HEALTH_RETRIES):$UNHEALTHY"
-    docker compose up -d $UNHEALTHY 2>/dev/null || true
+    docker compose up -d $UNHEALTHY || echo "  (restart attempt $health_attempt failed; re-checking)"
     sleep 5
   else
-    echo "  Some services still unhealthy after $MAX_HEALTH_RETRIES attempts:$UNHEALTHY"
+    echo "ERROR: services still not running after $MAX_HEALTH_RETRIES attempts:$UNHEALTHY" >&2
+    exit 1
   fi
 done
 

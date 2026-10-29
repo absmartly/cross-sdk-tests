@@ -3,6 +3,7 @@ package com.absmartly.wrapper;
 import com.absmartly.sdk.*;
 import com.absmartly.sdk.ABSmartly;
 import com.absmartly.sdk.ABSmartlyConfig;
+import com.absmartly.sdk.internal.Buffers;
 import com.absmartly.sdk.internal.hashing.Hashing;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
@@ -33,19 +34,33 @@ public class WrapperController {
         return endpoint;
     }
 
-    private String normalizeError(String message) {
-        if (message != null && message.contains("Context is closed")) {
-            return "Context finalized";
+    /**
+     * Unwraps async wrapper exceptions (CompletionException from either the
+     * java8 backport or the JDK, ExecutionException) so the reported message is
+     * the SDK/publisher's own error, not "java.lang.RuntimeException: ...".
+     */
+    private static Throwable rootCause(Throwable error) {
+        Throwable current = error;
+        while ((current instanceof java8.util.concurrent.CompletionException
+                || current instanceof java.util.concurrent.CompletionException
+                || current instanceof java.util.concurrent.ExecutionException)
+            && current.getCause() != null) {
+            current = current.getCause();
         }
-        if (message != null && message.toLowerCase().contains("already set")) {
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("Unit ['\\\"]([^'\\\"]+)['\\\"]")
-                .matcher(message);
-            if (m.find()) {
-                return "Unit '" + m.group(1) + "' UID already set.";
-            }
-        }
-        return message;
+        return current;
+    }
+
+    private String errorMessage(Throwable error) {
+        Throwable root = rootCause(error);
+        String message = root.getMessage();
+        return message != null ? message : root.toString();
+    }
+
+    private static Map<String, Object> errorBody(String message, List<Map<String, Object>> events) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("error", message);
+        body.put("events", events);
+        return body;
     }
 
     @GetMapping("/health")
@@ -59,7 +74,12 @@ public class WrapperController {
 
     @GetMapping("/capabilities")
     public Map<String, Object> capabilities() {
-        Map<String, Object> response = new HashMap<>();response.put("diagnostics", true);
+        Map<String, Object> response = new HashMap<>();
+        response.put("diagnostics", true);
+        response.put("diagnosticsUtf8", true);
+        response.put("diagnosticsBase64", false);
+        response.put("diagnosticsTypeChecks", false);
+        response.put("diagnosticsIsPromise", false);
         response.put("attrsSeq", false);
         response.put("publishFail", true);
         response.put("variableKeysMap", true);
@@ -77,37 +97,27 @@ public class WrapperController {
         try {
             String operation = (String) request.get("operation");
             Object value = request.get("value");
-            String text = value == null ? "" : String.valueOf(value);
-
             Object result;
             switch (operation) {
                 case "hashUnit":
-                    result = new String(Hashing.hashUnit(text));
+                    result = new String(Hashing.hashUnit(value), java.nio.charset.StandardCharsets.US_ASCII);
                     break;
-                case "base64UrlNoPadding":
-                    result = Base64.getUrlEncoder().withoutPadding()
-                        .encodeToString(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                    break;
-                case "utf8Bytes":
-                    byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-                    List<Integer> out = new ArrayList<>(bytes.length);
-                    for (byte b : bytes) {
-                        out.add((int) (b & 0xff));
+                case "utf8Bytes": {
+                    String text = (String) value;
+                    byte[] buffer = new byte[text.length() * 4];
+                    int length = Buffers.encodeUTF8(buffer, 0, text);
+                    List<Integer> out = new ArrayList<>(length);
+                    for (int i = 0; i < length; i++) {
+                        out.add(buffer[i] & 0xff);
                     }
                     result = out;
                     break;
-                case "isObject":
-                    result = value instanceof Map;
-                    break;
-                case "isNumeric":
-                    result = value instanceof Number;
-                    break;
-                case "isPromise":
-                    result = false;
-                    break;
+                }
                 default:
+                    // base64UrlNoPadding, isObject, isNumeric and isPromise have no
+                    // public implementation in the Java SDK.
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Collections.singletonMap("error", "Unsupported diagnostic operation: " + operation));
+                        .body(errorBody("Unsupported diagnostic operation: " + operation, Collections.emptyList()));
             }
 
             Map<String, Object> response = new HashMap<>();
@@ -115,9 +125,8 @@ public class WrapperController {
             response.put("events", Collections.emptyList());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), Collections.emptyList()));
         }
     }
 
@@ -136,9 +145,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), Collections.emptyList()));
         }
     }
 
@@ -165,15 +173,20 @@ public class WrapperController {
 
     @GetMapping("/context_payload/{payloadId}/context")
     public ResponseEntity<?> mockApiContext(@PathVariable String payloadId) {
-        com.absmartly.sdk.json.ContextData data = payloadStore.getOrDefault(
-            payloadId,
-            new com.absmartly.sdk.json.ContextData()
-        );
+        // A never-stored payload id is a missing collector payload: answer 404
+        // so the SDK's own fetch fails the context, instead of serving an
+        // empty-but-valid payload that would make it silently ready.
+        com.absmartly.sdk.json.ContextData data = payloadStore.get(payloadId);
+        if (data == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Collections.singletonMap("error", "Payload not found"));
+        }
         return ResponseEntity.ok(data);
     }
 
     @PostMapping("/context")
     public ResponseEntity<?> createContext(@RequestBody Map<String, Object> request) {
+        EventCollector createCollector = null;
         try {
             String mode = (String) request.get("mode");
             if ("e2e".equals(mode)) {
@@ -191,15 +204,14 @@ public class WrapperController {
                 Map<String, Object> e2eAttrs = (Map<String, Object>) request.get("attributes");
 
                 EventCollector e2eCollector = new EventCollector();
+                createCollector = e2eCollector;
                 ContextConfig e2eContextConfig = ContextConfig.create();
                 // Never auto-publish or auto-refresh in e2e mode; the test drives
                 // publishing explicitly (SDK default publishDelay is 100ms).
                 e2eContextConfig.setPublishDelay(-1);
                 e2eContextConfig.setRefreshInterval(0);
                 if (e2eUnits != null) {
-                    for (Map.Entry<String, Object> entry : e2eUnits.entrySet()) {
-                        e2eContextConfig.setUnit(entry.getKey(), String.valueOf(entry.getValue()));
-                    }
+                    e2eContextConfig.setUnits(e2eUnits);
                 }
 
                 ClientConfig e2eClientConfig = ClientConfig.create()
@@ -254,14 +266,13 @@ public class WrapperController {
             Map<String, Object> options = (Map<String, Object>) request.getOrDefault("options", new HashMap<>());
 
             EventCollector eventCollector = new EventCollector();
+            createCollector = eventCollector;
             CustomPublisher publisher = new CustomPublisher(eventCollector);
 
             ContextConfig contextConfig = ContextConfig.create();
 
             if (units != null) {
-                for (Map.Entry<String, Object> entry : units.entrySet()) {
-                    contextConfig.setUnit(entry.getKey(), String.valueOf(entry.getValue()));
-                }
+                contextConfig.setUnits(units);
             }
 
             Integer publishDelay = (Integer) options.getOrDefault("publishDelay", -1);
@@ -283,12 +294,22 @@ public class WrapperController {
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContextWith(contextConfig, contextData);
             } else if (endpoint != null) {
-                // createContext with endpoint - create a real client to fetch data
+                // createContext with endpoint: a real SDK Client fetches and
+                // deserializes the payload from <endpoint>/context.
                 String translatedEndpoint = translateEndpoint(endpoint);
                 Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
 
+                ClientConfig clientConfig = ClientConfig.create()
+                    .setEndpoint(translatedEndpoint)
+                    .setAPIKey("test-api-key")
+                    .setApplication("test-app")
+                    .setEnvironment("test-env");
+                Client client = Client.create(clientConfig);
+
                 if (payloadThrottle > 0) {
-                    DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(translatedEndpoint, payloadThrottle);
+                    // Delay the SDK's own fetch; the context stays not-ready until it lands.
+                    DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
+                        new DefaultContextDataProvider(client), payloadThrottle);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setContextDataProvider(deferredProvider)
                         .setContextEventHandler(publisher)
@@ -296,12 +317,6 @@ public class WrapperController {
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
                 } else {
-                    ClientConfig clientConfig = ClientConfig.create()
-                        .setEndpoint(translatedEndpoint)
-                        .setAPIKey("test-api-key")
-                        .setApplication("test-app")
-                        .setEnvironment("test-env");
-                    Client client = Client.create(clientConfig);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
                         .setContextEventHandler(publisher)
@@ -309,15 +324,7 @@ public class WrapperController {
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
                     context.waitUntilReady();
-                    // Wait for events to be collected (like Go wrapper)
-                    for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
-                        try {
-                            Thread.sleep(10);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            break;
-                        }
-                    }
+                    eventCollector.awaitEvent(0, 2000, "ready", "error");
                 }
             } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
                 ContextDataProvider failingProvider = new ContextDataProvider() {
@@ -334,9 +341,8 @@ public class WrapperController {
                     .setContextEventLogger(eventCollector);
                 sdk = ABSmartly.create(sdkConfig);
                 context = sdk.createContext(contextConfig);
-                for (int i = 0; i < 50 && eventCollector.getEvents().isEmpty(); i++) {
-                    try { Thread.sleep(10); } catch (InterruptedException e) { break; }
-                }
+                context.waitUntilReady();
+                eventCollector.awaitEvent(0, 2000, "ready", "error");
             } else {
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
@@ -348,7 +354,8 @@ public class WrapperController {
             }
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            contexts.put(contextId, new ContextWrapper(context, eventCollector, contextDataProvider, publisher));
+            ContextWrapper wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
+            contexts.put(contextId, wrapper);
 
             Map<String, Object> result = new HashMap<>();
             result.put("contextId", contextId);
@@ -367,9 +374,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), createCollector != null ? createCollector.getEvents() : Collections.emptyList()));
         }
     }
 
@@ -384,13 +390,16 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String unitType = (String) request.get("unitType");
             Object uid = request.get("uid");
 
-            data.getContext().setUnit(unitType, String.valueOf(uid));
+            if (uid instanceof Number) {
+                data.getContext().setUnit(unitType, (Number) uid);
+            } else {
+                data.getContext().setUnit(unitType, (String) uid);
+            }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -400,9 +409,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -417,28 +425,10 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String unitType = (String) request.get("unitType");
-            String unitValue = data.getContext().getUnit(unitType);
-
-            Object result = null;
-            if (unitValue != null) {
-                try {
-                    result = Integer.parseInt(unitValue);
-                } catch (NumberFormatException e) {
-                    try {
-                        result = Long.parseLong(unitValue);
-                    } catch (NumberFormatException e2) {
-                        try {
-                            result = Double.parseDouble(unitValue);
-                        } catch (NumberFormatException e3) {
-                            result = unitValue;
-                        }
-                    }
-                }
-            }
+            Object result = data.getContext().getUnitValue(unitType);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -448,9 +438,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -465,9 +454,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String name = (String) request.get("name");
             Object value = request.get("value");
 
@@ -481,9 +469,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -498,9 +485,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String name = (String) request.get("name");
             Object result = data.getContext().getAttribute(name);
 
@@ -512,9 +498,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -529,29 +514,12 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
-        // The java SDK's getTreatment returns 0 (not an error) after close();
-        // scenario 189 requires an error once the context is finalized.
-        if (data.getContext().isClosed()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", "Context finalized"));
-        }
-
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             int variant = data.getContext().getTreatment(experimentName);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
-            List<Map<String, Object>> exposureEvents = new ArrayList<>();
-            for (Map<String, Object> event : newEvents) {
-                if ("exposure".equals(event.get("type"))) {
-                    exposureEvents.add(event);
-                }
-            }
-            if (!exposureEvents.isEmpty()) {
-                newEvents = exposureEvents;
-            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", variant);
@@ -560,10 +528,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            error.put("trace", e.getClass().getName());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -578,9 +544,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             int variant = data.getContext().peekTreatment(experimentName);
 
@@ -592,9 +557,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -609,9 +573,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String key = (String) request.get("key");
             Object defaultValue = request.get("defaultValue");
 
@@ -626,10 +589,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            error.put("trace", e.getClass().getName());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -644,9 +605,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String key = (String) request.get("key");
             Object defaultValue = request.get("defaultValue");
 
@@ -661,10 +621,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            error.put("trace", e.getClass().getName());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -679,10 +637,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-            boolean wasReady = data.getContext().isReady();
-
             String goalName = (String) request.get("goalName");
             Object propertiesObj = request.get("properties");
             Map<String, Object> properties = null;
@@ -690,7 +646,7 @@ public class WrapperController {
             if (propertiesObj != null) {
                 if (!(propertiesObj instanceof Map)) {
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Collections.singletonMap("error", "Goal '" + goalName + "' properties must be of type object."));
+                        .body(errorBody("Goal '" + goalName + "' properties must be of type object.", Collections.emptyList()));
                 }
                 @SuppressWarnings("unchecked")
                 Map<String, Object> propsMap = (Map<String, Object>) propertiesObj;
@@ -700,16 +656,6 @@ public class WrapperController {
             data.getContext().track(goalName, properties);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
-            if (!wasReady) {
-                // While the async payload is still resolving, include only the goal emitted by this call.
-                List<Map<String, Object>> goalOnlyEvents = new ArrayList<>();
-                for (Map<String, Object> event : newEvents) {
-                    if ("goal".equals(event.get("type"))) {
-                        goalOnlyEvents.add(event);
-                    }
-                }
-                newEvents = goalOnlyEvents;
-            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);
@@ -717,9 +663,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -734,6 +679,7 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String experimentName = (String) request.get("experimentName");
             Integer variant = (Integer) request.get("variant");
@@ -742,19 +688,12 @@ public class WrapperController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);
-            response.put("events", Collections.emptyList());
+            response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            if ("Context finalized".equals(normalizeError(e.getMessage()))) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("result", null);
-                response.put("events", Collections.emptyList());
-                return ResponseEntity.ok(response);
-            }
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -769,6 +708,7 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String experimentName = (String) request.get("experimentName");
             Integer variant = (Integer) request.get("variant");
@@ -777,13 +717,12 @@ public class WrapperController {
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);
-            response.put("events", Collections.emptyList());
+            response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -798,9 +737,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             String fieldName = (String) request.get("fieldName");
 
@@ -814,15 +752,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            if ("Context finalized".equals(normalizeError(e.getMessage()))) {
-                Map<String, Object> response = new HashMap<>();
-                response.put("result", null);
-                response.put("events", Collections.emptyList());
-                return ResponseEntity.ok(response);
-            }
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -834,9 +765,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             Map<String, List<String>> keys = data.getContext().getVariableKeys();
             List<String> result = new ArrayList<>(keys.keySet());
 
@@ -848,9 +778,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -865,9 +794,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String[] keys = data.getContext().getCustomFieldKeys();
             List<String> result = Arrays.asList(keys);
 
@@ -879,9 +807,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -896,9 +823,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             String fieldName = (String) request.get("fieldName");
 
@@ -912,9 +838,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -929,9 +854,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             Integer variant = (Integer) request.get("variant");
 
@@ -945,9 +869,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -962,9 +885,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             String experimentName = (String) request.get("experimentName");
             Integer variant = (Integer) request.get("variant");
 
@@ -978,9 +900,8 @@ public class WrapperController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -992,16 +913,12 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
-        int pendingCount = 0;
-        try {
-            pendingCount = data.getContext().getPendingCount();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        int eventsBefore = data.getEventCollector().getEvents().size();
+        int pendingCount = data.getContext().getPendingCount();
 
         Map<String, Object> response = new HashMap<>();
         response.put("result", pendingCount);
-        response.put("events", Collections.emptyList());
+        response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
         return ResponseEntity.ok(response);
     }
@@ -1014,9 +931,11 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
+        Object result = data.getContext().isClosed();
         Map<String, Object> response = new HashMap<>();
-        response.put("result", data.getContext().isClosed());
-        response.put("events", Collections.emptyList());
+        response.put("result", result);
+        response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
         return ResponseEntity.ok(response);
     }
@@ -1029,9 +948,11 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
+        Object result = data.getContext().isReady();
         Map<String, Object> response = new HashMap<>();
-        response.put("result", data.getContext().isReady());
-        response.put("events", Collections.emptyList());
+        response.put("result", result);
+        response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
         return ResponseEntity.ok(response);
     }
@@ -1044,9 +965,11 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
+        Object result = data.getContext().isFailed();
         Map<String, Object> response = new HashMap<>();
-        response.put("result", data.getContext().isFailed());
-        response.put("events", Collections.emptyList());
+        response.put("result", result);
+        response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
         return ResponseEntity.ok(response);
     }
@@ -1059,18 +982,18 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             List<String> experiments = Arrays.asList(data.getContext().getExperiments());
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", experiments);
-            response.put("events", Collections.emptyList());
+            response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1081,17 +1004,9 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
         }
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-            Map<String, String> units = data.getContext().getUnits();
-            Map<String, Object> result = new LinkedHashMap<>();
-            for (Map.Entry<String, String> e : units.entrySet()) {
-                try { result.put(e.getKey(), Integer.parseInt(e.getValue())); }
-                catch (NumberFormatException nfe) {
-                    try { result.put(e.getKey(), Double.parseDouble(e.getValue())); }
-                    catch (NumberFormatException nfe2) { result.put(e.getKey(), e.getValue()); }
-                }
-            }
+            Map<String, Object> result = data.getContext().getUnitValues();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
@@ -1099,7 +1014,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", e.getMessage()));
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1110,8 +1025,8 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
         }
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
             Map<String, Object> result = data.getContext().getAttributes();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
@@ -1120,7 +1035,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", e.getMessage()));
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1131,6 +1046,7 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
         }
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             Throwable error = data.getContext().readyError();
             Map<String, Object> result = error != null
@@ -1138,11 +1054,11 @@ public class WrapperController {
                 : null;
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
-            response.put("events", Collections.emptyList());
+            response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", e.getMessage()));
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1153,8 +1069,8 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
         }
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
             Map<String, List<String>> keys = data.getContext().getVariableKeys();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
@@ -1163,7 +1079,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", e.getMessage()));
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1174,8 +1090,8 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Context not found"));
         }
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
             List<String> keys = Arrays.asList(data.getContext().getCustomFieldKeys());
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
@@ -1184,7 +1100,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", e.getMessage()));
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1210,9 +1126,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             data.getContext().publish();
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
@@ -1224,9 +1139,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1241,9 +1155,8 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-
             if (request.containsKey("newData") && data.getDataProvider() != null) {
                 com.absmartly.sdk.json.ContextData newContextData = objectMapper.convertValue(
                     request.get("newData"),
@@ -1252,15 +1165,10 @@ public class WrapperController {
                 data.getDataProvider().setNextData(newContextData);
             }
 
+            boolean wasFailed = data.getContext().isFailed();
             data.getContext().refresh();
-
-            for (int i = 0; i < 100 && data.getEventCollector().getEvents().size() == eventsBefore; i++) {
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+            if (!wasFailed) {
+                data.getEventCollector().awaitEvent(eventsBefore, 2000, "refresh", "error");
             }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
@@ -1272,9 +1180,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 
@@ -1286,38 +1193,15 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Context not found"));
         }
 
+        int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            int eventsBefore = data.getEventCollector().getEvents().size();
-            int pendingBefore = data.getContext().getPendingCount();
-
+            boolean wasClosed = data.getContext().isClosed();
             data.getContext().close();
+            if (!wasClosed) {
+                data.getEventCollector().awaitEvent(eventsBefore, 2000, "finalize", "error");
+            }
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
-            int pollCount = 0;
-            int maxPolls = 50; // 50 * 10ms = 500ms max wait
-            while (pollCount < maxPolls) {
-                boolean hasFinalize = false;
-                boolean hasPublish = pendingBefore == 0;
-                for (Map<String, Object> event : newEvents) {
-                    String type = String.valueOf(event.get("type"));
-                    if ("finalize".equals(type)) {
-                        hasFinalize = true;
-                    } else if ("publish".equals(type)) {
-                        hasPublish = true;
-                    }
-                }
-                if (hasFinalize && hasPublish) {
-                    break;
-                }
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-                pollCount++;
-                newEvents = data.getEventCollector().getNewEvents(eventsBefore);
-            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", null);
@@ -1326,9 +1210,8 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             e.printStackTrace();
-            Map<String, Object> error = new HashMap<>();
-            error.put("error", normalizeError(e.getMessage()));
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(errorBody(errorMessage(e), data.getEventCollector().getNewEvents(eventsBefore)));
         }
     }
 

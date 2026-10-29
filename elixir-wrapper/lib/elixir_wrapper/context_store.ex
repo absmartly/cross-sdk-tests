@@ -30,7 +30,29 @@ defmodule ElixirWrapper.ContextStore do
   end
 
   def delete_context(context_id) do
-    GenServer.call(__MODULE__, {:delete_context, context_id})
+    case GenServer.call(__MODULE__, {:delete_context, context_id}) do
+      {:ok, {context, collector}} ->
+        # Termination may publish and call back into this store, so it must run
+        # in the caller, not in the store's handle_call.
+        case DynamicSupervisor.terminate_child(ABSmartly.ContextSupervisor, context) do
+          {:error, :not_found} -> stop_if_alive(context)
+          :ok -> :ok
+        end
+
+        stop_if_alive(collector)
+
+      :not_found ->
+        :ok
+    end
+  end
+
+  defp stop_if_alive(pid) do
+    try do
+      GenServer.stop(pid, :normal)
+    catch
+      :exit, {:noproc, _} -> :ok
+      :exit, {:normal, _} -> :ok
+    end
   end
 
   def store_payload(payload_id, data) do
@@ -78,16 +100,14 @@ defmodule ElixirWrapper.ContextStore do
   end
 
   def handle_call({:delete_context, context_id}, _from, state) do
-    case :ets.lookup(state.contexts, context_id) do
-      [{^context_id, {ctx, _collector}}] when is_pid(ctx) ->
+    case :ets.take(state.contexts, context_id) do
+      [{^context_id, {ctx, _collector} = value}] ->
         :ets.delete(state.flags, {:publish_fail, ctx})
+        {:reply, {:ok, value}, state}
 
-      _ ->
-        :ok
+      [] ->
+        {:reply, :not_found, state}
     end
-
-    :ets.delete(state.contexts, context_id)
-    {:reply, :ok, state}
   end
 
   def handle_call({:store_payload, payload_id, data}, _from, state) do

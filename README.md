@@ -15,19 +15,27 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **227 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **229 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
 
   Some scenarios only apply to SDKs that support a given feature. These carry
-  a `requires: ["<capability>"]` field; the orchestrator fetches each wrapper's
-  `/capabilities` and SKIPs (not fails) any scenario whose capability the SDK
-  doesn't advertise, printing the reason and counting it separately in the
-  summary. Scenarios 203-208 (holdouts) require the `holdouts` capability this
-  way — an SDK without holdout support skips them cleanly instead of failing
-  CI, and gets them for free the moment its wrapper starts advertising
-  `holdouts`. Scenario 209 (holdout wire-format inertness) is deliberately
+  a `requires: ["<capability>"]` field. Which capabilities each SDK must
+  support is pinned in the checked-in policy
+  [`orchestrator/expected-capabilities.json`](orchestrator/expected-capabilities.json):
+  per SDK, a capability is either **required** (the wrapper's `/capabilities`
+  must report `true`, otherwise the run fails and the scenarios still run) or a
+  reviewed **unsupported** exception with a one-line reason (its scenarios are
+  SKIPped and counted separately in the summary). An SDK missing from the
+  policy, an unclassified capability, a malformed `/capabilities` body, or a
+  `requires` name the policy does not declare all fail closed. A wrapper that
+  starts advertising an excepted capability also fails the run until the
+  policy moves it to `required`. Scenarios 203-208 require the `holdouts`
+  capability. Only javascript is currently required to support it (its wrapper
+  reports it from a behavioral self-test, so a failing self-test fails the
+  javascript lane). The other SDKs list it as a reviewed exception. Scenario
+  209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 214-220
   require the `holdout_arms` capability and are skipped by SDKs that have not
   yet implemented three-arm holdout logic. Scenario 221 requires `holdouts`, and
@@ -38,7 +46,12 @@ across languages.
   state survives publish (223), refresh keeps it unless the holdout iteration
   changes (224), a refresh that changes `holdoutIds` re-resolves the experiment
   (225), `variableValue` on a suppressed experiment returns control (226), and
-  a holdout resolves with the covered experiment's unit type (227).
+  a holdout resolves with the covered experiment's unit type (227). Scenario
+  228 (`publishFail`) checks that a failed final publish surfaces the error,
+  logs an `error` event, keeps the events queued and the context open, and that
+  a second `finalize()` publishes them; scenario 229 (`readyError`) checks that
+  `refresh()` on a context whose load failed is a successful no-op (no fetch,
+  no event, still failed).
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -108,6 +121,38 @@ docker compose run --rm --no-deps \
 Pass `--loose-error-match` to relax error-message comparison when iterating
 locally on a wrapper whose error text does not yet match.
 
+Validation is strict by default:
+
+- An absent `result` or `events` key never matches an expected `null` / `[]`.
+- A step that lists no `events` expects none, so any emitted event fails it.
+- JSON types are distinct (`true` is not `1`, `null` is not `"null"`), but
+  `1 == 1.0`. Lists are ordered, except the results of `variableKeys`,
+  `customFieldKeys`, `globalCustomFieldKeys`, `experiments` and the values of
+  `variableKeysMap`, which are compared as multisets (duplicates still count).
+- Object results are data and must have exactly the expected keys, at every
+  depth. Only the status records returned by `createContext`,
+  `createContextWith`, `createContextFailed` and `readyError` are compared in
+  part, because their contextId and error message differ per SDK.
+- Expected event data stays partial: keys a scenario does not assert
+  (timestamps, `publishedAt`, uids) are not compared.
+
+With 2+ SDKs the run also compares what the SDKs actually returned, step by
+step: the asserted result fields, the event types, and the canonical exposure
+fields. Volatile fields are ignored. Any SDK that differs from the majority
+fails, and a multi-SDK run that made zero comparisons fails as `UNCHECKED`
+instead of reporting agreement.
+
+Every scenario runs against every wrapper by default. `--wrapper-skip` (also
+on `run-tests.sh`) opts in to the old fast mode that skips scenarios a
+wrapper declares as pure pass-through to another SDK under test.
+`--no-wrapper-skip` is kept as a no-op for compatibility.
+
+The orchestrator's own unit tests need no Docker:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 ## E2E mode (live collector)
 
 The e2e suite creates a real experiment on a test ABsmartly environment, has
@@ -141,18 +186,22 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 227-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 229-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
 the compose network. The live-backend e2e suite is intentionally excluded from
 CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
-A separate `cross-sdk-consistency` job brings up javascript, python, and go
-together and runs the orchestrator once over all three, so the cross-SDK
-assignment-consistency check (which needs at least two SDKs to compare
-assignments) actually executes on every PR — the per-SDK matrix jobs run one SDK
-each and never trigger it.
+Each lane uploads its report, which records every scenario outcome and what
+the SDK returned at each step. A separate `cross-sdk-consistency` job then
+downloads the reports from all 20 lanes and compares the SDKs with each other
+(`test_runner.py --compare-reports`), because a lane runs only one SDK and has
+nothing to compare against. That job runs even when some lanes fail. It fails
+if a report is missing or unreadable, if fewer than two SDKs or zero
+comparisons were checked, or if any SDK disagrees with the others. Both Docker
+jobs depend on a fast `harness-unit-tests` job, which runs `tests/` without
+Docker.
 
 ## Repository layout
 
@@ -161,8 +210,8 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 227 scenarios
-├── generate_scenarios.py         # regenerates scenarios; output
+├── test_scenarios_complete.json  # 229 scenarios
+├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be
 │                                 #   diffed against the canonical file above
 │                                 #   (the generated file is gitignored)
