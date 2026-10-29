@@ -14,6 +14,20 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 app.use(express.json());
 
+app.use('/context/:contextId', (req, res, next) => {
+  const entry = contexts.get(req.params.contextId);
+  if (!entry) return next();
+  const eventsBefore = entry.eventCollector.events.length;
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      body = { ...body, events: entry.eventCollector.events.slice(eventsBefore) };
+    }
+    return json(body);
+  };
+  next();
+});
+
 class EventCollector {
   constructor() {
     this.events = [];
@@ -28,24 +42,27 @@ class EventCollector {
   }
 }
 
+// Test contexts have no collector, so a publish succeeds without sending
+// anything. e2e contexts pass forwardToSdk so the publish goes through the
+// SDK's own ContextPublisher (real HTTP to the collector). Either way,
+// /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends absmartly.ContextPublisher {
-  constructor(eventCollector) {
+  constructor(eventCollector, { forwardToSdk = false } = {}) {
     super();
     this.eventCollector = eventCollector;
     this._shouldFail = false;
+    this._forwardToSdk = forwardToSdk;
   }
 
-  publish(request, sdk, context) {
+  publish(request, sdk, context, requestOptions) {
     if (this._shouldFail) {
       this._shouldFail = false;
       return Promise.reject(new Error('Publish failed'));
     }
-    try {
-      return Promise.resolve();
-    } catch (error) {
-      console.error('CustomPublisher error:', error);
-      return Promise.reject(error);
+    if (this._forwardToSdk) {
+      return super.publish(request, sdk, context, requestOptions);
     }
+    return Promise.resolve();
   }
 }
 
@@ -78,7 +95,11 @@ app.get('/health', (req, res) => {
 app.get('/capabilities', async (req, res) => {
   const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
 
-  res.json({
+  res.json({diagnosticsUtf8: true,
+    diagnosticsBase64: true,
+    diagnosticsTypeChecks: true,
+    diagnosticsIsPromise: true,
+
     diagnostics: true,
     attrsSeq: true,
     publishFail: true,
@@ -128,6 +149,7 @@ app.post('/context', async (req, res) => {
       const contextId = `ctx-${Date.now()}-${Math.random()}`;
       const eventCollector = new EventCollector();
 
+      const customPublisher = new CustomPublisher(eventCollector, { forwardToSdk: true });
       const e2eSdk = new absmartly.SDK({
         endpoint: e2eEndpoint,
         apiKey: e2eApiKey,
@@ -135,7 +157,8 @@ app.post('/context', async (req, res) => {
         environment: e2eEnv,
         eventLogger: (ctx, eventName, eventData) => {
           eventCollector.handleEvent(ctx, eventName, eventData);
-        }
+        },
+        publisher: customPublisher
       });
 
       const contextConfig = { units: req.body.units || {} };
@@ -149,7 +172,7 @@ app.post('/context', async (req, res) => {
         }
       }
 
-      contexts.set(contextId, { context, eventCollector });
+      contexts.set(contextId, { context, eventCollector, customPublisher });
 
       return res.json({
         result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
@@ -189,7 +212,7 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         data,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else if (failLoad) {
       const failedData = Promise.reject(new Error('Context load failed'));
@@ -197,10 +220,9 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         failedData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
-      try { await context.ready(); } catch (e) {}
-      await new Promise(r => setTimeout(r, 50));
+      await context.ready();
     } else if (payloadThrottle > 0 && endpoint) {
       const deferredData = new Promise((resolve, reject) => {
         setTimeout(() => {
@@ -213,12 +235,12 @@ app.post('/context', async (req, res) => {
       context = sdk.createContextWith(
         { units },
         deferredData,
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
     } else {
       context = sdk.createContext(
         { units },
-        { publishDelay: -1, refreshPeriod: 0, ...options }
+        { ...options, publishDelay: -1, refreshPeriod: 0 }
       );
       await context.ready();
     }
@@ -266,7 +288,7 @@ app.post('/context/:contextId/getUnit', (req, res) => {
   try {
     const result = context.getUnit(req.body.unitType);
     const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result, events: newEvents });
+    res.json({ result: result ?? null, events: newEvents });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -298,7 +320,7 @@ app.post('/context/:contextId/getAttribute', (req, res) => {
   try {
     const result = context.getAttribute(req.body.name);
     const newEvents = eventCollector.events.slice(eventsBefore);
-    res.json({ result, events: newEvents });
+    res.json({ result: result ?? null, events: newEvents });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -311,13 +333,6 @@ app.post('/context/:contextId/treatment', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (context.isFinalized()) {
-    return res.status(400).json({ error: 'ABSmartly Context is finalized.' });
-  }
-
-  if (!context.isReady()) {
-    return res.json({ result: 0, events: [] });
-  }
 
   try {
     const variant = context.treatment(req.body.experimentName);
@@ -350,10 +365,6 @@ app.post('/context/:contextId/variableValue', (req, res) => {
 
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
-
-  if (!context.isReady()) {
-    return res.json({ result: req.body.defaultValue, events: [] });
-  }
 
   try {
     const value = context.variableValue(req.body.key, req.body.defaultValue);
@@ -404,7 +415,7 @@ app.post('/context/:contextId/override', (req, res) => {
 
   try {
     context.override(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -418,7 +429,7 @@ app.post('/context/:contextId/customAssignment', (req, res) => {
 
   try {
     context.customAssignment(req.body.experimentName, req.body.variant);
-    res.json({ result: null, events: [] });
+    res.json({ result: null });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -479,10 +490,6 @@ app.post('/context/:contextId/variableKeys', (req, res) => {
   const { context, eventCollector } = data;
   const eventsBefore = eventCollector.events.length;
 
-  if (!context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
-
   try {
     const keys = context.variableKeys();
     const newEvents = eventCollector.events.slice(eventsBefore);
@@ -528,41 +535,38 @@ app.get('/context/:contextId/pending', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.pending(), events: [] });
+  res.json({ result: data.context.pending() });
 });
 
 app.get('/context/:contextId/isFinalized', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFinalized(), events: [] });
+  res.json({ result: data.context.isFinalized() });
 });
 
 app.get('/context/:contextId/isReady', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isReady(), events: [] });
+  res.json({ result: data.context.isReady() });
 });
 
 app.get('/context/:contextId/isFailed', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  res.json({ result: data.context.isFailed(), events: [] });
+  res.json({ result: data.context.isFailed() });
 });
 
 app.get('/context/:contextId/experiments', (req, res) => {
   const data = contexts.get(req.params.contextId);
   if (!data) return res.status(404).json({ error: 'Context not found' });
 
-  if (!data.context.isReady()) {
-    return res.json({ result: [], events: [] });
-  }
 
   try {
     const experiments = data.context.experiments();
-    res.json({ result: experiments, events: [] });
+    res.json({ result: experiments });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -655,7 +659,7 @@ app.post('/context/:contextId/publishFail', (req, res) => {
 
   data.publishFail = true;
   data.customPublisher._shouldFail = true;
-  res.json({ result: null, events: [] });
+  res.json({ result: null });
 });
 
 app.post('/context/:contextId/publish', async (req, res) => {

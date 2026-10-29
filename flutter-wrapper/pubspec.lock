@@ -7,14 +7,14 @@ packages:
       path: "../../flutter-sdk/packages/dart_sdk"
       relative: true
     source: path
-    version: "2.1.2"
+    version: "2.2.0"
   absmartly_sdk:
     dependency: "direct main"
     description:
       path: "../../flutter-sdk/packages/flutter_sdk"
       relative: true
     source: path
-    version: "2.1.2"
+    version: "2.2.0"
   async:
     dependency: transitive
     description:

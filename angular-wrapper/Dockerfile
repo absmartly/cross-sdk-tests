@@ -8,19 +8,17 @@ RUN npm install && npm run build
 WORKDIR /angular-sdk
 COPY angular-sdk/package*.json ./
 COPY angular-sdk/ ./
-RUN npm install && npm run build
+# Build against the pinned javascript-sdk checkout, not the registry copy.
+RUN npm install && \
+    rm -rf node_modules/@absmartly/javascript-sdk && \
+    ln -s /javascript-sdk node_modules/@absmartly/javascript-sdk && \
+    npm run build
 
 FROM sdk-builder AS tester
 WORKDIR /angular-sdk
 CMD ["npm", "test"]
 
 FROM sdk-builder AS server
-WORKDIR /angular-sdk
-RUN node -e "const p=require('./package.json'); p.type='module'; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2))"
-RUN node -e "\
-const fs=require('fs'),path=require('path');\
-function fix(dir){for(const f of fs.readdirSync(dir)){const fp=path.join(dir,f);if(fs.statSync(fp).isDirectory())fix(fp);else if(fp.endsWith('.js')){let c=fs.readFileSync(fp,'utf8');c=c.replace(/from '(\.[^']+)'/g,(m,p)=>p.endsWith('.js')?m:\"from '\"+p+\".js'\");fs.writeFileSync(fp,c)}}}\
-fix('/angular-sdk/lib/esm');"
 WORKDIR /app
 COPY cross-sdk-tests/angular-wrapper/package*.json ./
 RUN npm install
@@ -35,9 +33,12 @@ RUN rm -rf /app/node_modules/@absmartly/javascript-sdk /app/node_modules/@absmar
 RUN rm -rf /angular-sdk/node_modules/@absmartly 2>/dev/null || true && \
     mkdir -p /angular-sdk/node_modules/@absmartly && \
     ln -sf /javascript-sdk /angular-sdk/node_modules/@absmartly/javascript-sdk && \
-    ln -sf /app/node_modules/@angular /angular-sdk/node_modules/@angular 2>/dev/null || true
+    rm -rf /angular-sdk/node_modules/@angular /angular-sdk/node_modules/rxjs && \
+    ln -s /app/node_modules/@angular /angular-sdk/node_modules/@angular && \
+    ln -s /app/node_modules/rxjs /angular-sdk/node_modules/rxjs
 
-COPY cross-sdk-tests/angular-wrapper/server.js ./
+COPY cross-sdk-tests/angular-wrapper/server.js cross-sdk-tests/angular-wrapper/render.mjs ./
+COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
 
 EXPOSE 3000
 

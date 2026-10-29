@@ -1,13 +1,16 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 202-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 259-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
 # the orchestrator, and drives the suite through the orchestrator container
 # (race-free service discovery over the compose network).
 #
-# Unit tests run in each SDK's own repo CI; this workflow is cross-SDK only.
+# SDK unit tests run in each SDK's own repo CI. The fast `harness` job below
+# runs the orchestrator's own Docker-free unit tests (tests/ and
+# orchestrator/tests/) before any wrapper image is built; every Docker job
+# depends on it.
 # The live-backend e2e suite is intentionally not run here (needs secrets +
 # the abs CLI and mutates real experiments).
 name: Cross-SDK Tests
@@ -21,33 +24,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  harness:
+    name: harness-unit-tests
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.lanes.outputs.matrix }}
+    steps:
+      - name: Define SDK lanes
+        id: lanes
+        run: |
+          matrix='{"include":[
+            {"sdk":"javascript","repos":"javascript-sdk"},
+            {"sdk":"python","repos":"python3-sdk"},
+            {"sdk":"ruby","repos":"ruby-sdk"},
+            {"sdk":"php","repos":"php-sdk"},
+            {"sdk":"java","repos":"java-sdk"},
+            {"sdk":"kotlin","repos":"kotlin-sdk"},
+            {"sdk":"scala","repos":"scala-sdk"},
+            {"sdk":"go","repos":"go-sdk"},
+            {"sdk":"rust","repos":"rust-sdk"},
+            {"sdk":"swift","repos":"swift-sdk"},
+            {"sdk":"dotnet","repos":"dotnet-sdk"},
+            {"sdk":"cpp","repos":"cpp-sdk"},
+            {"sdk":"elixir","repos":"elixir-sdk"},
+            {"sdk":"dart","repos":"flutter-sdk"},
+            {"sdk":"flutter","repos":"flutter-sdk"},
+            {"sdk":"liquid","repos":"liquid-sdk ruby-sdk"},
+            {"sdk":"react","repos":"react-sdk javascript-sdk"},
+            {"sdk":"vue2","repos":"vue2-sdk javascript-sdk"},
+            {"sdk":"vue3","repos":"vue3-sdk javascript-sdk"},
+            {"sdk":"angular","repos":"angular-sdk javascript-sdk"}
+          ]}'
+          echo "matrix=$(echo "$matrix" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install orchestrator requirements
+        run: pip install -r orchestrator/requirements.txt
+
+      - name: Byte-compile harness
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py
+
+      - name: Shell syntax
+        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
+
+      - name: Harness unit tests (no Docker)
+        run: python -m unittest discover -s tests -v
+
+      - name: Switchback harness unit tests (no Docker)
+        run: |
+          pip install pytest
+          python -m pytest orchestrator/tests -v
+
+      - name: Switchback scenarios match their generator
+        run: python generate_switchback_scenarios.py --check
+
   cross-sdk:
     name: ${{ matrix.sdk }}
+    needs: harness
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { sdk: javascript, repos: javascript-sdk }
-          - { sdk: python,     repos: python3-sdk }
-          - { sdk: ruby,       repos: ruby-sdk }
-          - { sdk: php,        repos: php-sdk }
-          - { sdk: java,       repos: java-sdk }
-          - { sdk: kotlin,     repos: kotlin-sdk }
-          - { sdk: scala,      repos: scala-sdk }
-          - { sdk: go,         repos: go-sdk }
-          - { sdk: rust,       repos: rust-sdk }
-          - { sdk: swift,      repos: swift-sdk }
-          - { sdk: dotnet,     repos: dotnet-sdk }
-          - { sdk: cpp,        repos: cpp-sdk }
-          - { sdk: elixir,     repos: elixir-sdk }
-          - { sdk: dart,       repos: flutter-sdk }
-          - { sdk: flutter,    repos: flutter-sdk }
-          - { sdk: liquid,     repos: "liquid-sdk ruby-sdk" }
-          - { sdk: react,      repos: "react-sdk javascript-sdk" }
-          - { sdk: vue2,       repos: "vue2-sdk javascript-sdk" }
-          - { sdk: vue3,       repos: "vue3-sdk javascript-sdk" }
-          - { sdk: angular,    repos: "angular-sdk javascript-sdk" }
+      matrix: ${{ fromJSON(needs.harness.outputs.matrix) }}
     steps:
       # The wrapper Dockerfiles use build context `..` and COPY sibling
       # <name>-sdk/ directories, so this repo and the SDK source repos must be
@@ -84,10 +127,14 @@ jobs:
         env:
           COMPOSE_PROJECT_NAME: csdk
         run: |
-          docker compose up -d ${{ matrix.sdk }}-sdk
+          set -euo pipefail
+          mkdir -p test-results
+          rm -f test-results/report.json
+          docker compose up -d --force-recreate ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
+          test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
 
       - name: Upload results
         if: always()
@@ -95,7 +142,7 @@ jobs:
         with:
           name: report-${{ matrix.sdk }}
           path: cross-sdk-tests/test-results/report.json
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       - name: Tear down
         if: always()
@@ -105,63 +152,49 @@ jobs:
         run: docker compose down --remove-orphans --volumes || true
 
   # The matrix job above runs one SDK per job, so test_runner's cross-SDK
-  # consistency check (which requires len(sdks) >= 2 to compare assignments
-  # across SDKs) never fires on the PR gate. This job brings up a small
-  # representative subset together and runs the orchestrator once over all of
-  # them, so the consistency check actually executes. Its failure fails the
-  # workflow like any other required job.
+  # consistency check (which needs 2+ SDKs) never fires inside a lane. This job
+  # collects every lane's report (each carries its per-scenario outcomes and
+  # per-step observations: results, exposures, ready/refresh experiments and
+  # publish payloads) and compares all SDKs against each other. It runs even
+  # when some lanes failed, so a drift is reported alongside lane failures, and
+  # its failure fails the workflow like any other required job.
   cross-sdk-consistency:
     name: cross-sdk-consistency
+    needs: [harness, cross-sdk]
+    if: ${{ always() && needs.cross-sdk.result != 'cancelled' && needs.cross-sdk.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cross-sdk-tests
         uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
         with:
-          path: cross-sdk-tests
+          python-version: "3.11"
 
-      - name: Checkout SDK source repos
-        run: |
-          # Per-SDK known-good branches, single source of truth in
-          # cross-sdk-tests/sdk-branches.sh (also used by local runs via
-          # setup-sdks.sh) so CI builds the same branches that pass locally
-          # instead of SDK main, which has API drift vs the wrappers.
-          # Repos not listed fall back to main.
-          source cross-sdk-tests/sdk-branches.sh
-          for repo in javascript-sdk python3-sdk go-sdk; do
-            branch="${SDK_BRANCHES[$repo]:-main}"
-            echo "::group::Cloning absmartly/$repo ($branch)"
-            git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
-            echo "::endgroup::"
-          done
+      - name: Install orchestrator requirements
+        run: pip install -r orchestrator/requirements.txt
 
-      - name: Build wrappers + orchestrator
-        working-directory: cross-sdk-tests
+      - name: Download lane reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: lane-reports
+
+      - name: Compare all lanes
         env:
-          COMPOSE_PROJECT_NAME: csdk
-        run: docker compose build javascript-sdk python-sdk go-sdk orchestrator
-
-      - name: Run cross-SDK consistency suite
-        working-directory: cross-sdk-tests
-        env:
-          COMPOSE_PROJECT_NAME: csdk
+          EXPECTED_SDKS: ${{ join(fromJSON(needs.harness.outputs.matrix).include.*.sdk, ',') }}
         run: |
-          docker compose up -d javascript-sdk python-sdk go-sdk
-          docker compose run --rm --no-deps \
-            -e "SDK_SERVICES=javascript,python,go" \
-            orchestrator python3 test_runner.py
+          set -euo pipefail
+          mapfile -t reports < <(find lane-reports -name report.json | sort)
+          echo "lane reports: ${#reports[@]}"
+          python orchestrator/test_runner.py --report consistency-report.json \
+            --expected-sdks "$EXPECTED_SDKS" \
+            --compare-reports "${reports[@]}"
 
-      - name: Upload results
+      - name: Upload consistency report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: report-cross-sdk-consistency
-          path: cross-sdk-tests/test-results/report.json
-          if-no-files-found: ignore
-
-      - name: Tear down
-        if: always()
-        working-directory: cross-sdk-tests
-        env:
-          COMPOSE_PROJECT_NAME: csdk
-        run: docker compose down --remove-orphans --volumes || true
+          name: cross-sdk-consistency
+          path: consistency-report.json
+          if-no-files-found: warn

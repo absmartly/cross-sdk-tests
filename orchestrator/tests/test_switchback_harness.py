@@ -200,11 +200,32 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
         gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
     assert len(gated) == len(generator.build_group(generator.load_fixtures(), 1)) - 1 == 29
 
-    runner.capabilities = {"sdk": {"switchback": False}}
+    # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
+    reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
+    runner.capabilities = {"javascript": {"switchback": False}}
     for scenario in gated:
-        result = runner.run_and_validate_sdk("sdk", "http://sdk.invalid", scenario)
-        assert result == {"passed": True, "skipped": True, "reason": "SDK does not support: switchback"}
+        result = runner.run_and_validate_sdk("javascript", "http://sdk.invalid", scenario)
+        assert result == {"passed": True, "skipped": True, "reason": f"reviewed exception: switchback ({reason})"}
     assert calls == []
+
+
+def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
+    sdks = runner.policy["sdks"]
+    assert "switchback" in runner.policy["capabilities"]
+    assert "switchback" in sdks["java"]["required"]
+    for sdk, entry in sdks.items():
+        if sdk != "java":
+            assert "switchback" not in entry["required"], sdk
+            assert entry["unsupported"]["switchback"].endswith("java-sdk only (Phase 1B)"), sdk
+
+
+def test_java_without_switchback_still_runs_the_gated_scenarios(runner):
+    # Required capabilities fail closed: java not advertising switchback is a policy violation, not a skip.
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
+    runner.capabilities = {"java": {"switchback": False}}
+    assert all(runner.capability_gate("java", s) is None for s in gated)
+    assert any("'switchback'" in v for v in runner.policy_violations_for("java", {"switchback": False}))
 
 
 def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
@@ -224,7 +245,7 @@ def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail(
     assert numbers == list(range(1, len(scenarios) + 1))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(227, len(scenarios)))
+    assert group == list(range(229, len(scenarios)))
     assert len(group) == 30
 
 
@@ -379,7 +400,7 @@ EXEMPT = {
     # The served variant is 0 (ineligible) either way; only a mutant that finds a key draws.
     "No Bucket Key Is Ineligible": {"per_value", "le", "count_10", "count_50", "count_100"},
     "Does Not Reassign Within The Period": {"per_value", "le", "count_10", "count_50", "count_100", "lax_attr"},
-    # Every attribute is set before the first read, so a unit fallback never triggers; 255's values
+    # Every attribute is set before the first read, so a unit fallback never triggers; 257's values
     # are plain strings, which a lax reader keys identically.
     "String, Whole Number, Nested And Array-Index Paths": {"unit_fallback"},
     "Mid-Period setAttribute Keeps The Bucket": {"lax_attr", "unit_fallback"},
@@ -473,7 +494,7 @@ def test_every_context_scenario_fails_under_each_applicable_mutant():
     with open(generator.CANONICAL, encoding="utf-8") as src:
         scenarios = context_scenarios(json.load(src))
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
-    assert numbers == list(range(237, 257))
+    assert numbers == list(range(239, 259))
     assert [s["name"] for s in scenarios if failing_steps(s, "correct")] == []
     survivors = [(s["name"], m) for s in scenarios for m in applicable_mutants(s) if failing_steps(s, m) == 0]
     assert survivors == []
@@ -485,12 +506,12 @@ def test_every_exemption_names_a_scenario():
     assert all(sum(n.endswith(k) for n in names) == 1 for k in EXEMPT)
 
 
-# The 227 scenarios inherited from main, serialized with sort_keys=True.
-MAIN_SHA256 = "2be3dae29101b58f3e55cb4c1fbd38c03f2feb5f10417083c7b1ae72d04c3d2c"
+# The 229 scenarios inherited from main (4734dcc), serialized with sort_keys=True.
+MAIN_SHA256 = "8ddb8e702cf86ddf9346560071e8ba75ca6b58901ad90ebe8f2acb9ac4b25e86"
 
 
 def test_main_scenarios_are_untouched():
     with open(generator.CANONICAL, encoding="utf-8") as src:
         kept = [s for s in json.load(src) if generator.GROUP_MARKER not in s["name"]]
-    assert len(kept) == 227
+    assert len(kept) == 229
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256

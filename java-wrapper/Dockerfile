@@ -5,13 +5,13 @@ WORKDIR /build
 # SDK_SOURCE_DIR lets local validation point at an unreleased SDK checkout (e.g. a
 # feature-branch worktree) that sits alongside cross-sdk-tests in the build context.
 # CI keeps the default "java-sdk" sibling checkout; see docker-compose.local-sdk.yml
-# for the override, which takes the directory from JAVA_SDK_SOURCE_DIR.
+# for the override, which takes the directory from JAVA_SDK_DIR.
 ARG SDK_SOURCE_DIR=java-sdk
 
 # core-api version published to the local maven repo. Must match the
 # `com.absmartly.sdk:core-api:<version>` dependency in java-wrapper/build.gradle
 # and VERSION in java-sdk/build.gradle. Override at build time if the SDK bumps.
-ARG CORE_API_VERSION=1.6.3
+ARG CORE_API_VERSION=1.7.0
 
 COPY ${SDK_SOURCE_DIR} /build/java-sdk
 RUN cd /build/java-sdk && ./gradlew :core-api:jar -x test && \

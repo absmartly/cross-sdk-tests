@@ -3,19 +3,21 @@ package com.absmartly.wrapper
 import com.absmartly.sdk.Context
 import com.absmartly.sdk.ContextEventLogger
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import java.util.Collections
 
 class EventCollector : ContextEventLogger {
-    private val events = Collections.synchronizedList(mutableListOf<Map<String, Any?>>())
+    private val lock = Object()
+    private val events = mutableListOf<Map<String, Any?>>()
     private val objectMapper = jacksonObjectMapper()
 
     override fun handleEvent(context: Context, type: ContextEventLogger.EventType, data: Any?) {
         val event = mapOf(
             "type" to mapEventType(type),
-            "data" to deepCopy(data),
+            "data" to deepCopy(type, data),
             "timestamp" to System.currentTimeMillis()
         )
-        events.add(event)
+        synchronized(lock) {
+            events.add(event)
+        }
     }
 
     private fun mapEventType(type: ContextEventLogger.EventType): String {
@@ -30,24 +32,29 @@ class EventCollector : ContextEventLogger {
         }
     }
 
-    private fun deepCopy(data: Any?): Any? {
+    // The SDK swallows exceptions thrown by an event logger (Context.logEvent),
+    // so throwing here would silently drop the event. Keep the original object
+    // instead: the route's response serialization then fails with the same
+    // error and the operation returns an HTTP error, and stderr records why.
+    private fun deepCopy(type: ContextEventLogger.EventType, data: Any?): Any? {
         if (data == null) return null
         return try {
             val json = objectMapper.writeValueAsString(data)
             objectMapper.readValue(json, Any::class.java)
         } catch (e: Exception) {
+            System.err.println("EventCollector: cannot serialize $type event data (${data.javaClass.name}): ${e.message}")
             data
         }
     }
 
     fun getEvents(): List<Map<String, Any?>> {
-        synchronized(events) {
+        synchronized(lock) {
             return events.toList()
         }
     }
 
     fun getNewEvents(since: Int): List<Map<String, Any?>> {
-        synchronized(events) {
+        synchronized(lock) {
             if (since >= events.size) {
                 return emptyList()
             }

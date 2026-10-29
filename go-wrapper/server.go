@@ -1,15 +1,15 @@
 package main
 
 import (
-	"encoding/base64"
+	gocontext "context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -79,8 +79,6 @@ func (ec *EventCollector) HandleEvent(context sdk.Context, eventType sdk.EventTy
 		eventTypeLower = "exposure"
 	case sdk.Goal:
 		eventTypeLower = "goal"
-	case sdk.Close:
-		eventTypeLower = "finalize"
 	case sdk.Error:
 		eventTypeLower = "error"
 	}
@@ -103,32 +101,7 @@ func deepCopy(src interface{}) interface{} {
 	}
 	var dest interface{}
 	json.Unmarshal(data, &dest)
-	dest = normalizeEmptyStrings(dest)
 	return dest
-}
-
-func normalizeEmptyStrings(v interface{}) interface{} {
-	switch val := v.(type) {
-	case string:
-		if val == "" {
-			return nil
-		}
-		return val
-	case map[string]interface{}:
-		result := make(map[string]interface{})
-		for k, v := range val {
-			result[k] = normalizeEmptyStrings(v)
-		}
-		return result
-	case []interface{}:
-		result := make([]interface{}, len(val))
-		for i, v := range val {
-			result[i] = normalizeEmptyStrings(v)
-		}
-		return result
-	default:
-		return val
-	}
 }
 
 type deferredContextDataProvider struct {
@@ -210,6 +183,23 @@ type CreateContextResponse struct {
 	Finalized bool   `json:"finalized"`
 }
 
+func writeSDKError(w http.ResponseWriter, status int, err error, events []Event) {
+	if events == nil {
+		events = []Event{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(Response{Result: nil, Events: events, Error: err.Error()})
+}
+
+func writeResult(w http.ResponseWriter, result interface{}, events []Event) {
+	if events == nil {
+		events = []Event{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{Result: result, Events: events})
+}
+
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -221,16 +211,20 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"diagnostics":  true,
-		"attrsSeq":     false,
-		"publishFail":  true,
-		"variableKeysMap": true,
+	json.NewEncoder(w).Encode(map[string]bool{"diagnostics": true,
+		"diagnosticsUtf8":       true,
+		"diagnosticsBase64":     true,
+		"diagnosticsTypeChecks": false,
+		"diagnosticsIsPromise":  false,
+		"attrsSeq":              false,
+		"publishFail":           true,
+		"variableKeysMap":       true,
 		"globalCustomFieldKeys": true,
-		"getUnits":     true,
-		"getAttributes": true,
+		"getUnits":              true,
+		"getAttributes":         true,
 		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
 		// so the wrapper cannot report it without fabricating it.
-		"readyError":   false,
+		"readyError": false,
 	})
 }
 
@@ -247,43 +241,42 @@ func diagnosticHandler(w http.ResponseWriter, r *http.Request) {
 	var result interface{}
 	switch req.Operation {
 	case "hashUnit":
-		hashed := sdk.HashUnit(fmt.Sprint(req.Value))
+		hashed, err := sdk.HashUnitValue(req.Value)
+		if err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, nil)
+			return
+		}
 		hashedBytes := make([]byte, len(hashed))
 		for i, b := range hashed {
 			hashedBytes[i] = byte(b)
 		}
 		result = string(hashedBytes)
-	case "base64UrlNoPadding":
-		result = base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprint(req.Value)))
-	case "utf8Bytes":
-		data := []byte(fmt.Sprint(req.Value))
-		out := make([]int, len(data))
-		for i, b := range data {
-			out[i] = int(b)
+	case "base64UrlNoPadding", "utf8Bytes":
+		value, ok := req.Value.(string)
+		if !ok {
+			writeSDKError(w, http.StatusBadRequest, fmt.Errorf("%s expects a string value", req.Operation), nil)
+			return
 		}
-		result = out
-	case "isObject":
-		_, ok := req.Value.(map[string]interface{})
-		result = ok
-	case "isNumeric":
-		switch req.Value.(type) {
-		case float64, float32, int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8:
-			result = true
-		default:
-			result = false
+		encoded := sdk.UTF8Bytes(value)
+		if req.Operation == "base64UrlNoPadding" {
+			result = sdk.Base64UrlNoPadding(encoded)
+		} else {
+			out := make([]int, len(encoded))
+			for i, b := range encoded {
+				out[i] = int(b)
+			}
+			result = out
 		}
-	case "isPromise":
-		result = false
 	default:
-		http.Error(w, fmt.Sprintf("Unsupported diagnostic operation: %s", req.Operation), http.StatusBadRequest)
+		// isObject, isNumeric and isPromise are JavaScript type checks the Go
+		// SDK has no counterpart for.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Unsupported diagnostic operation: %s", req.Operation)})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"result": result,
-		"events": []interface{}{},
-	})
+	writeResult(w, result, nil)
 }
 
 func storePayloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +346,23 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Mode == "e2e" {
+	eventCollector := &EventCollector{events: []Event{}}
+	customPublisher := &CustomPublisher{eventCollector: eventCollector}
+
+	contextConfig := sdk.ContextConfig{
+		Attributes_:      make(map[string]interface{}),
+		Overrides_:       make(map[string]int),
+		Cassigmnents_:    make(map[string]int),
+		EventLogger_:     eventCollector,
+		PublishDelay_:    int64(-1),
+		RefreshInterval_: int64(0),
+	}
+
+	var absmartly *sdk.ABSmartly
+	var data *jsonmodels.ContextData
+	throttled := false
+	switch {
+	case req.Mode == "e2e":
 		e2eEndpoint := os.Getenv("ABSMARTLY_E2E_ENDPOINT")
 		e2eApiKey := os.Getenv("ABSMARTLY_E2E_API_KEY")
 		e2eApplication := os.Getenv("ABSMARTLY_E2E_APPLICATION")
@@ -364,243 +373,122 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(map[string]string{"error": "e2e mode not configured"})
 			return
 		}
-
-		e2eEventCollector := &EventCollector{events: []Event{}}
-
-		e2eClientConfig := sdk.ClientConfig{
+		client := sdk.CreateDefaultClient(sdk.ClientConfig{
 			Endpoint_:    e2eEndpoint,
 			ApiKey_:      e2eApiKey,
 			Application_: e2eApplication,
 			Environment_: e2eEnvironment,
-		}
-		e2eClient := sdk.CreateDefaultClient(e2eClientConfig)
-		e2ePublisher := &CustomPublisher{
-			eventCollector: e2eEventCollector,
-			inner:          sdk.CreateDefaultContextEventHandler(e2eClient),
-		}
-		e2eAbsmartly := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:              e2eClient,
-			ContextPublisher_:    e2ePublisher,
-			ContextEventLogger_: e2eEventCollector,
 		})
-
-		e2eUnits := make(map[string]string)
-		for k, v := range req.Units {
-			switch val := v.(type) {
-			case string:
-				e2eUnits[k] = val
-			case float64:
-				if val == float64(int64(val)) {
-					e2eUnits[k] = fmt.Sprintf("%.0f", val)
-				} else {
-					e2eUnits[k] = fmt.Sprintf("%g", val)
-				}
-			default:
-				e2eUnits[k] = fmt.Sprintf("%v", val)
-			}
-		}
-
-		e2eContextConfig := sdk.ContextConfig{
-			Units_:          e2eUnits,
-			Attributes_:     make(map[string]interface{}),
-			Overrides_:      make(map[string]int),
-			Cassigmnents_:   make(map[string]int),
-			EventLogger_:    e2eEventCollector,
-			PublishDelay_:   int64(-1),
-			RefreshInterval_: int64(-1),
-		}
-
-		e2eContext := e2eAbsmartly.CreateContext(e2eContextConfig)
-
-		for k, v := range req.Attributes {
-			_ = e2eContext.SetAttribute(k, v)
-		}
-
-		e2eContext.WaitUntilReady()
-
-		e2eContextID := fmt.Sprintf("ctx-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
-		e2eCtxData := &ContextData{
-			context:        e2eContext,
-			eventCollector: e2eEventCollector,
-			publisher:      e2ePublisher,
-		}
-
-		contextsMu.Lock()
-		contexts[e2eContextID] = e2eCtxData
-		contextsMu.Unlock()
-
-		e2eResponse := Response{
-			Result: CreateContextResponse{
-				ContextID: e2eContextID,
-				Ready:     e2eContext.IsReady(),
-				Failed:    e2eContext.IsFailed(),
-				Finalized: e2eContext.IsClosed(),
-			},
-			Events: e2eEventCollector.SliceFrom(0),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(e2eResponse)
-		return
-	}
-
-	contextID := fmt.Sprintf("ctx-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
-
-	eventCollector := &EventCollector{events: []Event{}}
-	customPublisher := &CustomPublisher{eventCollector: eventCollector}
-
-	config := sdk.ABSmartlyConfig{
-		Client_:               nil,
-		ContextPublisher_:  customPublisher,
-		ContextEventLogger_:  eventCollector,
-		ContextDataProvider_:  nil,
-		AudienceDeserializer_:nil,
-	}
-
-	absmartly := sdk.Create(config)
-
-	units := make(map[string]string)
-	for k, v := range req.Units {
-		switch val := v.(type) {
-		case string:
-			units[k] = val
-		case float64:
-			// Check if it's a whole number
-			if val == float64(int64(val)) {
-				units[k] = fmt.Sprintf("%.0f", val)
-			} else {
-				units[k] = fmt.Sprintf("%g", val)
-			}
-		case int:
-			units[k] = fmt.Sprintf("%d", val)
-		default:
-			units[k] = fmt.Sprintf("%v", val)
-		}
-	}
-
-	publishDelay := int64(-1)
-	refreshInterval := int64(-1)
-
-	if req.Options != nil {
-		if pd, ok := req.Options["publishDelay"].(float64); ok {
-			publishDelay = int64(pd)
-		}
-		if ri, ok := req.Options["refreshPeriod"].(float64); ok {
-			if ri > 0 {
-				refreshInterval = int64(ri)
-			} else {
-				refreshInterval = -1
-			}
-		}
-	}
-
-	contextConfig := sdk.ContextConfig{
-		Units_:            units,
-		Attributes_:       make(map[string]interface{}),
-		Overrides_:        make(map[string]int),
-		Cassigmnents_:    make(map[string]int),
-		EventLogger_:      eventCollector,
-		PublishDelay_:      publishDelay,
-		RefreshInterval_:   refreshInterval,
-	}
-
-	var context *sdk.Context
-	if req.Endpoint != "" {
+		customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
+		a := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:             client,
+			ContextPublisher_:   customPublisher,
+			ContextEventLogger_: eventCollector,
+		})
+		absmartly = &a
+	case req.Endpoint != "":
 		endpoint := translateEndpoint(req.Endpoint)
-
 		payloadThrottle := 0
 		if req.Options != nil {
 			if pt, ok := req.Options["payloadThrottle"].(float64); ok {
 				payloadThrottle = int(pt)
 			}
 		}
-
 		if payloadThrottle > 0 {
+			throttled = true
 			dataFuture, done := future.New()
 			go func() {
 				time.Sleep(time.Duration(payloadThrottle) * time.Millisecond)
 				resp, err := http.Get(endpoint)
 				if err != nil {
-					done(jsonmodels.ContextData{}, err)
+					done(nil, err)
 					return
 				}
 				defer resp.Body.Close()
 				var data jsonmodels.ContextData
 				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-					done(jsonmodels.ContextData{}, err)
+					done(nil, err)
 					return
 				}
 				done(data, nil)
 			}()
-
-			deferredProvider := &deferredContextDataProvider{dataFuture: dataFuture}
-			absmartlyDeferred := sdk.Create(sdk.ABSmartlyConfig{
-				ContextDataProvider_:  deferredProvider,
-				ContextPublisher_:  customPublisher,
+			a := sdk.Create(sdk.ABSmartlyConfig{
+				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
+				ContextPublisher_:    customPublisher,
 				ContextEventLogger_:  eventCollector,
-				AudienceDeserializer_:nil,
 			})
-			context = absmartlyDeferred.CreateContext(contextConfig)
+			absmartly = &a
 		} else {
-			clientConfig := sdk.ClientConfig{
+			client := sdk.CreateDefaultClient(sdk.ClientConfig{
 				Endpoint_:    endpoint,
 				ApiKey_:      "test-api-key",
 				Application_: "test-app",
 				Environment_: "test-env",
-			}
-			client := sdk.CreateDefaultClient(clientConfig)
-			absmartlyWithClient := sdk.Create(sdk.ABSmartlyConfig{
-				Client_:               client,
-				ContextPublisher_:  customPublisher,
-				ContextEventLogger_:  eventCollector,
-				AudienceDeserializer_:nil,
 			})
-			context = absmartlyWithClient.CreateContext(contextConfig)
-			context.WaitUntilReady()
-			for i := 0; i < 50 && eventCollector.Len() == 0; i++ {
-				time.Sleep(10 * time.Millisecond)
-			}
+			a := sdk.Create(sdk.ABSmartlyConfig{
+				Client_:             client,
+				ContextPublisher_:   customPublisher,
+				ContextEventLogger_: eventCollector,
+			})
+			absmartly = &a
 		}
-	} else if req.FailLoad {
+	case req.FailLoad:
 		dataFuture, done := future.New()
-		done(jsonmodels.ContextData{}, fmt.Errorf("Context load failed"))
-		failingProvider := &deferredContextDataProvider{dataFuture: dataFuture}
-		absmartlyFailing := sdk.Create(sdk.ABSmartlyConfig{
-			ContextDataProvider_:  failingProvider,
-			ContextPublisher_:  customPublisher,
+		done(nil, fmt.Errorf("Context load failed"))
+		a := sdk.Create(sdk.ABSmartlyConfig{
+			ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
+			ContextPublisher_:    customPublisher,
 			ContextEventLogger_:  eventCollector,
-			AudienceDeserializer_:nil,
 		})
-		context = absmartlyFailing.CreateContext(contextConfig)
-		for i := 0; i < 50 && eventCollector.Len() == 0; i++ {
-			time.Sleep(10 * time.Millisecond)
-		}
-	} else {
-		contextConfig.RefreshInterval_ = -1
-		context = absmartly.CreateContextWith(contextConfig, req.Data)
+		absmartly = &a
+	default:
+		a := sdk.Create(sdk.ABSmartlyConfig{
+			ContextPublisher_:   customPublisher,
+			ContextEventLogger_: eventCollector,
+		})
+		absmartly = &a
+		data = &req.Data
 	}
 
-	contextData := &ContextData{
+	var context *sdk.Context
+	if data != nil {
+		context = absmartly.CreateContextWith(contextConfig, *data)
+	} else {
+		context = absmartly.CreateContext(contextConfig)
+	}
+
+	for unitType, uid := range req.Units {
+		if err := context.SetUnitValue(unitType, uid); err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, eventCollector.SliceFrom(0))
+			return
+		}
+	}
+	for name, value := range req.Attributes {
+		if err := context.SetAttribute(name, value); err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, eventCollector.SliceFrom(0))
+			return
+		}
+	}
+
+	if !throttled {
+		context.WaitUntilReady()
+	}
+
+	contextID := fmt.Sprintf("ctx-%d-%f", time.Now().UnixNano(), float64(time.Now().UnixNano()%1000000))
+	contextsMu.Lock()
+	contexts[contextID] = &ContextData{
 		context:        context,
 		eventCollector: eventCollector,
 		publisher:      customPublisher,
 	}
-
-	contextsMu.Lock()
-	contexts[contextID] = contextData
 	contextsMu.Unlock()
 
-	response := Response{
-		Result: CreateContextResponse{
-			ContextID: contextID,
-			Ready:     context.IsReady(),
-			Failed:    context.IsFailed(),
-			Finalized: context.IsClosed(),
-		},
-		Events: eventCollector.SliceFrom(0),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	writeResult(w, CreateContextResponse{
+		ContextID: contextID,
+		Ready:     context.IsReady(),
+		Failed:    context.IsFailed(),
+		Finalized: context.IsClosed(),
+	}, eventCollector.SliceFrom(0))
 }
 
 func getContext(contextID string) (*ContextData, error) {
@@ -614,932 +502,264 @@ func getContext(contextID string) (*ContextData, error) {
 	return ctx, nil
 }
 
-func setUnitHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
+type routeFunc func(cd *ContextData, decode func(interface{}) error) (interface{}, error)
 
+func contextRoute(call routeFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctxData, err := getContext(mux.Vars(r)["contextId"])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		decode := func(v interface{}) error {
+			if err := json.NewDecoder(r.Body).Decode(v); err != nil && err != io.EOF {
+				return err
+			}
+			return nil
+		}
+		eventsBefore := ctxData.eventCollector.Len()
+		result, err := call(ctxData, decode)
+		events := ctxData.eventCollector.SliceFrom(eventsBefore)
+		if err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, events)
+			return
+		}
+		writeResult(w, result, events)
+	}
+}
+
+type experimentRequest struct {
+	ExperimentName string `json:"experimentName"`
+}
+
+type variantRequest struct {
+	ExperimentName string  `json:"experimentName"`
+	Variant        float64 `json:"variant"`
+}
+
+type fieldRequest struct {
+	ExperimentName string `json:"experimentName"`
+	FieldName      string `json:"fieldName"`
+}
+
+type variableRequest struct {
+	Key          string      `json:"key"`
+	DefaultValue interface{} `json:"defaultValue"`
+}
+
+func setUnit(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
 		UnitType string      `json:"unitType"`
 		UID      interface{} `json:"uid"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	uidStr := ""
-	switch v := req.UID.(type) {
-	case string:
-		uidStr = v
-	case float64:
-		// Check if it's a whole number
-		if v == float64(int64(v)) {
-			uidStr = fmt.Sprintf("%.0f", v)
-		} else {
-			uidStr = fmt.Sprintf("%g", v)
-		}
-	case int:
-		uidStr = fmt.Sprintf("%d", v)
-	default:
-		uidStr = fmt.Sprintf("%v", v)
-	}
-
-	err = ctxData.context.SetUnit(req.UnitType, uidStr)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
-			errMsg = "Context finalized"
-		}
-		http.Error(w, errMsg, http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return nil, cd.context.SetUnitValue(req.UnitType, req.UID)
 }
 
-func getUnitHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
+func getUnit(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
 		UnitType string `json:"unitType"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	unit := ctxData.context.Units_[req.UnitType]
-
-	if unit == "" {
-		newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-		response := Response{
-			Result: nil,
-			Events: newEvents,
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	var result interface{} = unit
-	if num, err := strconv.ParseFloat(unit, 64); err == nil {
-		if num == float64(int64(num)) {
-			result = int64(num)
-		} else {
-			result = num
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: result,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return cd.context.GetUnit(req.UnitType), nil
 }
 
-func setAttributeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
+func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
 		Name  string      `json:"name"`
 		Value interface{} `json:"value"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	err = ctxData.context.SetAttribute(req.Name, req.Value)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
-			errMsg = "Context finalized"
-		}
-		http.Error(w, errMsg, http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return nil, cd.context.SetAttribute(req.Name, req.Value)
 }
 
-func getAttributeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
+func getAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	var result interface{}
-	for _, attr := range ctxData.context.Attributes_ {
-		if a, ok := attr.(jsonmodels.Attribute); ok && a.Name == req.Name {
-			result = a.Value
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: result,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return cd.context.GetAttribute(req.Name), nil
 }
 
-func treatmentHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
+func treatment(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req experimentRequest
+	if err := decode(&req); err != nil {
+		return nil, err
+	}
+	return resultOrNil(cd.context.GetTreatment(req.ExperimentName))
+}
 
+func peek(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req experimentRequest
+	if err := decode(&req); err != nil {
+		return nil, err
+	}
+	return resultOrNil(cd.context.PeekTreatment(req.ExperimentName))
+}
+
+func resultOrNil(v int, err error) (interface{}, error) {
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func variableValue(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req variableRequest
+	if err := decode(&req); err != nil {
+		return nil, err
+	}
+	return cd.context.GetVariableValue(req.Key, req.DefaultValue)
+}
+
+func peekVariableValue(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req variableRequest
+	if err := decode(&req); err != nil {
+		return nil, err
+	}
+	return cd.context.PeekVariableValue(req.Key, req.DefaultValue)
+}
+
+func track(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
-		ExperimentName string `json:"experimentName"`
+		GoalName   string          `json:"goalName"`
+		Properties json.RawMessage `json:"properties"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	variant, err := ctxData.context.GetTreatment(req.ExperimentName)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "not yet ready") {
-			// Not-ready read methods return defaults (treatment -> 0), no error.
-			variant = 0
-		} else {
-			if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
-				errMsg = "Context finalized"
-			}
-			http.Error(w, errMsg, http.StatusBadRequest)
-			return
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: variant,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func peekHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string `json:"experimentName"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	variant, err := ctxData.context.PeekTreatment(req.ExperimentName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: variant,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func variableValueHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		Key          string      `json:"key"`
-		DefaultValue interface{} `json:"defaultValue"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	value := req.DefaultValue
-	var varErr error
-	var panicMsg string
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicMsg = fmt.Sprintf("%v", r)
-			}
-		}()
-		value, varErr = ctxData.context.GetVariableValue(req.Key, req.DefaultValue)
-	}()
-
-	if panicMsg != "" {
-		log.Printf("Recovered from panic in variableValue: %s", panicMsg)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": panicMsg})
-		return
-	}
-
-	if varErr != nil {
-		// Not-ready read methods return the provided default, no error.
-		// Any other SDK error is a real failure and must be surfaced.
-		if strings.Contains(varErr.Error(), "not yet ready") {
-			value = req.DefaultValue
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": varErr.Error()})
-			return
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: value,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func peekVariableValueHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		Key          string      `json:"key"`
-		DefaultValue interface{} `json:"defaultValue"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	value := req.DefaultValue
-	var peekErr error
-	var panicMsg string
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicMsg = fmt.Sprintf("%v", r)
-			}
-		}()
-		value, peekErr = ctxData.context.PeekVariableValue(req.Key, req.DefaultValue)
-	}()
-
-	if panicMsg != "" {
-		log.Printf("Recovered from panic in peekVariableValue: %s", panicMsg)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": panicMsg})
-		return
-	}
-
-	if peekErr != nil {
-		// Not-ready read methods return the provided default, no error.
-		// Any other SDK error is a real failure and must be surfaced.
-		if strings.Contains(peekErr.Error(), "not yet ready") {
-			value = req.DefaultValue
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": peekErr.Error()})
-			return
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: value,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func trackHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	// First decode into generic map to validate properties type
-	var rawReq map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&rawReq); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	goalName, _ := rawReq["goalName"].(string)
+	// Track takes a map, so a non-object cannot reach the SDK: reject it at
+	// the JSON-to-Go boundary with the SDK family's message.
 	var properties map[string]interface{}
-
-	if propsVal, exists := rawReq["properties"]; exists && propsVal != nil {
-		if propsMap, ok := propsVal.(map[string]interface{}); ok {
-			properties = propsMap
-		} else {
-			http.Error(w, fmt.Sprintf("Goal '%s' properties must be of type object.", goalName), http.StatusBadRequest)
-			return
+	if len(req.Properties) > 0 && string(req.Properties) != "null" {
+		if err := json.Unmarshal(req.Properties, &properties); err != nil {
+			return nil, fmt.Errorf("Goal '%s' properties must be of type object.", req.GoalName)
 		}
 	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	err = ctxData.context.Track(goalName, properties)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "finalized") {
-			errMsg = "Context finalized"
-		}
-		http.Error(w, errMsg, http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return nil, cd.context.Track(req.GoalName, properties)
 }
 
-func overrideHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string  `json:"experimentName"`
-		Variant        float64 `json:"variant"`
+func override(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req variantRequest
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	err = ctxData.context.SetOverride(req.ExperimentName, int(req.Variant))
-	if err != nil {
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
-			response := Response{
-				Result: nil,
-				Events: []Event{},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	response := Response{
-		Result: nil,
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return nil, cd.context.SetOverride(req.ExperimentName, int(req.Variant))
 }
 
-func customAssignmentHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string  `json:"experimentName"`
-		Variant        float64 `json:"variant"`
+func customAssignment(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req variantRequest
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	err = ctxData.context.SetCustomAssignment(req.ExperimentName, int(req.Variant))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	response := Response{
-		Result: nil,
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return nil, cd.context.SetCustomAssignment(req.ExperimentName, int(req.Variant))
 }
 
-func customFieldValueHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string `json:"experimentName"`
-		FieldName      string `json:"fieldName"`
+func customFieldValue(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req fieldRequest
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	value := ctxData.context.GetCustomFieldValue(req.ExperimentName, req.FieldName)
-	log.Printf("GetCustomFieldValue(%s, %s) returned: %v (type: %T)", req.ExperimentName, req.FieldName, value, value)
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: value,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return cd.context.GetCustomFieldValueE(req.ExperimentName, req.FieldName)
 }
 
-func variableKeysHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+func customFieldValueType(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
+	var req fieldRequest
+	if err := decode(&req); err != nil {
+		return nil, err
 	}
+	return cd.context.GetCustomFieldValueType(req.ExperimentName, req.FieldName), nil
+}
 
-	eventsBefore := ctxData.eventCollector.Len()
-
-	keys, err := ctxData.context.GetVariableKeys()
+func variableKeys(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	keys, err := cd.context.GetVariableKeys()
 	if err != nil {
-		if !strings.Contains(err.Error(), "not yet ready") {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		keys = map[string][]string{}
+		return nil, err
 	}
-
 	result := make([]string, 0, len(keys))
 	for key := range keys {
 		result = append(result, key)
 	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: result,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return result, nil
 }
 
-func customFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string `json:"experimentName"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
+func variableKeysMap(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	keys, err := cd.context.GetVariableKeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return nil, err
 	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	keys, err := ctxData.context.GetCustomFieldValueKeys()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: keys,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return keys, nil
 }
 
-func customFieldValueTypeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string `json:"experimentName"`
-		FieldName      string `json:"fieldName"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
+func customFieldKeys(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	keys, err := cd.context.GetCustomFieldValueKeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return nil, err
 	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	valueType := ctxData.context.GetCustomFieldValueType(req.ExperimentName, req.FieldName)
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: valueType,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return keys, nil
 }
 
-func setOverrideHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string  `json:"experimentName"`
-		Variant        float64 `json:"variant"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
+func experiments(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	names, err := cd.context.GetExperiments()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return nil, err
 	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	err = ctxData.context.SetOverride(req.ExperimentName, int(req.Variant))
-	if err != nil {
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "closed") || strings.Contains(errMsg, "closing") || strings.Contains(errMsg, "finalized") {
-			response := Response{
-				Result: nil,
-				Events: []Event{},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	return names, nil
 }
 
-func setCustomAssignmentHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	var req struct {
-		ExperimentName string  `json:"experimentName"`
-		Variant        float64 `json:"variant"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	err = ctxData.context.SetCustomAssignment(req.ExperimentName, int(req.Variant))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func pending(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.GetPendingCount(), nil
 }
 
-func pendingHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	response := Response{
-		Result: ctxData.context.GetPendingCount(),
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func isFinalized(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.IsClosed(), nil
 }
 
-func isFinalizedHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	response := Response{
-		Result: ctxData.context.IsClosed(),
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func isReady(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.IsReady(), nil
 }
 
-func isReadyHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	response := Response{
-		Result: ctxData.context.IsReady(),
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func isFailed(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.IsFailed(), nil
 }
 
-func isFailedHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	response := Response{
-		Result: ctxData.context.IsFailed(),
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func getUnits(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.GetUnits(), nil
 }
 
-func experimentsHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	experiments, err := ctxData.context.GetExperiments()
-	if err != nil {
-		if strings.Contains(err.Error(), "not yet ready") {
-			experiments = []string{}
-		} else {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	response := Response{
-		Result: experiments,
-		Events: []Event{},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+func getAttributes(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return cd.context.GetAttributes(), nil
 }
 
-func getUnitsHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	units := ctxData.context.Units_
-	result := make(map[string]interface{})
-	for k, v := range units {
-		if num, err := strconv.ParseFloat(v, 64); err == nil {
-			if num == float64(int64(num)) {
-				result[k] = int64(num)
-			} else {
-				result[k] = num
-			}
-		} else {
-			result[k] = v
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: result, Events: newEvents})
+func publishFail(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	cd.publisher.failNext.Store(true)
+	return nil, nil
 }
 
-func getAttributesHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
+func publish(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	return nil, cd.context.Publish()
+}
 
-	ctxData, err := getContext(contextID)
+func refresh(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	_, err := cd.context.RefreshAsync().Get(gocontext.Background())
+	return nil, err
+}
+
+func finalize(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
+	f, err := cd.context.FinalizeAsync()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return nil, err
 	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	attrsMap := make(map[string]interface{})
-	for _, attr := range ctxData.context.Attributes_ {
-		if a, ok := attr.(jsonmodels.Attribute); ok {
-			attrsMap[a.Name] = a.Value
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: attrsMap, Events: newEvents})
+	_, err = f.Get(gocontext.Background())
+	return nil, err
 }
 
 func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
@@ -1550,177 +770,13 @@ func readyErrorHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"error": "readyError not supported by Go SDK"})
 }
 
-func variableKeysMapHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	keys, err := ctxData.context.GetVariableKeys()
-	if err != nil {
-		if strings.Contains(err.Error(), "not yet ready") {
-			keys = map[string][]string{}
-		} else {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
-}
-
-func globalCustomFieldKeysHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	keys, err := ctxData.context.GetCustomFieldValueKeys()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: keys, Events: newEvents})
-}
-
-func publishFailHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	if ctxData.publisher == nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotImplemented)
-		json.NewEncoder(w).Encode(map[string]string{"error": "publishFail not supported for this context mode"})
-		return
-	}
-	ctxData.publisher.failNext.Store(true)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{Result: nil, Events: []Event{}})
-}
-
-func publishHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	err = ctxData.context.Publish()
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func refreshHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	ctxData.context.Refresh()
-
-	for i := 0; i < 50 && ctxData.eventCollector.Len() == eventsBefore; i++ {
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-func finalizeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
-	ctxData, err := getContext(contextID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	eventsBefore := ctxData.eventCollector.Len()
-
-	ctxData.context.Close()
-
-	newEvents := ctxData.eventCollector.SliceFrom(eventsBefore)
-
-	response := Response{
-		Result: nil,
-		Events: newEvents,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
 func deleteContextHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	contextID := vars["contextId"]
-
+	contextID := mux.Vars(r)["contextId"]
 	contextsMu.Lock()
 	delete(contexts, contextID)
 	contextsMu.Unlock()
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"result": "deleted",
-	})
+	json.NewEncoder(w).Encode(map[string]interface{}{"result": "deleted"})
 }
 
 func main() {
@@ -1733,37 +789,37 @@ func main() {
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")
 	router.HandleFunc("/context", createContextHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/setUnit", setUnitHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/getUnit", getUnitHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/attribute", setAttributeHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/getAttribute", getAttributeHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/treatment", treatmentHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/peek", peekHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/variableValue", variableValueHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/peekVariableValue", peekVariableValueHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/track", trackHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/override", overrideHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/customAssignment", customAssignmentHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/customFieldValue", customFieldValueHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/variableKeys", variableKeysHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/customFieldKeys", customFieldKeysHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/customFieldValueType", customFieldValueTypeHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/setOverride", setOverrideHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/setCustomAssignment", setCustomAssignmentHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/pending", pendingHandler).Methods("GET")
-	router.HandleFunc("/context/{contextId}/isFinalized", isFinalizedHandler).Methods("GET")
-	router.HandleFunc("/context/{contextId}/isReady", isReadyHandler).Methods("GET")
-	router.HandleFunc("/context/{contextId}/isFailed", isFailedHandler).Methods("GET")
-	router.HandleFunc("/context/{contextId}/experiments", experimentsHandler).Methods("GET")
-	router.HandleFunc("/context/{contextId}/getUnits", getUnitsHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/getAttributes", getAttributesHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/setUnit", contextRoute(setUnit)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/getUnit", contextRoute(getUnit)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/attribute", contextRoute(setAttribute)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/getAttribute", contextRoute(getAttribute)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/treatment", contextRoute(treatment)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/peek", contextRoute(peek)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/variableValue", contextRoute(variableValue)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/peekVariableValue", contextRoute(peekVariableValue)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/track", contextRoute(track)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/override", contextRoute(override)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/customAssignment", contextRoute(customAssignment)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/customFieldValue", contextRoute(customFieldValue)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/variableKeys", contextRoute(variableKeys)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/customFieldKeys", contextRoute(customFieldKeys)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/customFieldValueType", contextRoute(customFieldValueType)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/setOverride", contextRoute(override)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/setCustomAssignment", contextRoute(customAssignment)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/pending", contextRoute(pending)).Methods("GET")
+	router.HandleFunc("/context/{contextId}/isFinalized", contextRoute(isFinalized)).Methods("GET")
+	router.HandleFunc("/context/{contextId}/isReady", contextRoute(isReady)).Methods("GET")
+	router.HandleFunc("/context/{contextId}/isFailed", contextRoute(isFailed)).Methods("GET")
+	router.HandleFunc("/context/{contextId}/experiments", contextRoute(experiments)).Methods("GET")
+	router.HandleFunc("/context/{contextId}/getUnits", contextRoute(getUnits)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/getAttributes", contextRoute(getAttributes)).Methods("POST")
 	router.HandleFunc("/context/{contextId}/readyError", readyErrorHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/variableKeysMap", variableKeysMapHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/globalCustomFieldKeys", globalCustomFieldKeysHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/publishFail", publishFailHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/publish", publishHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/refresh", refreshHandler).Methods("POST")
-	router.HandleFunc("/context/{contextId}/finalize", finalizeHandler).Methods("POST")
+	router.HandleFunc("/context/{contextId}/variableKeysMap", contextRoute(variableKeysMap)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/globalCustomFieldKeys", contextRoute(customFieldKeys)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/publishFail", contextRoute(publishFail)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/publish", contextRoute(publish)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/refresh", contextRoute(refresh)).Methods("POST")
+	router.HandleFunc("/context/{contextId}/finalize", contextRoute(finalize)).Methods("POST")
 	router.HandleFunc("/context/{contextId}", deleteContextHandler).Methods("DELETE")
 
 	port := os.Getenv("PORT")

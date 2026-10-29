@@ -1,11 +1,10 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:absmartly_sdk/absmartly_sdk.dart';
 
 import '../server.dart' as server;
 import '../lib/widget_test_queue.dart';
+import 'widget_driver.dart';
 
 void main() {
   LiveTestWidgetsFlutterBinding.ensureInitialized();
@@ -19,8 +18,9 @@ void main() {
   // genuinely exercised), but is optimized for throughput:
   //   * event-driven: awaits the queue's notifier instead of a 10ms poll loop,
   //     so a request is handled the instant it arrives;
-  //   * minimal variant map: only the assigned variant (+ control) are built,
-  //     not 0..100 widgets;
+  //   * small variant map: control plus the experiment's own variants;
+  //   * no fallback: a widget that throws or renders nothing fails the request
+  //     (see widget_driver.dart);
   //   * pump() with a bounded ready-check instead of pumpAndSettle(), which
   //     otherwise blocks on the Treatment widget's 30s timeout timer.
   testWidgets('Widget Test Server', (WidgetTester tester) async {
@@ -43,8 +43,10 @@ void main() {
 
       try {
         final dynamic result = request.type == WidgetTestRequestType.treatment
-            ? await _processTreatmentRequest(tester, request)
-            : await _processVariableValueRequest(tester, request);
+            ? await renderTreatment(
+                tester, request.context, request.experimentName)
+            : await renderVariableValue(tester, request.context,
+                request.variableKey!, request.defaultValue);
         if (!request.completer.isCompleted) {
           request.completer.complete(result);
         }
@@ -57,88 +59,4 @@ void main() {
       }
     }
   }, timeout: const Timeout(Duration(days: 365)));
-}
-
-/// Pump until [isDone] returns true, or a bounded number of frames elapse.
-/// Avoids pumpAndSettle() (which waits for the Treatment widget's long timeout
-/// timer to fire). The widget resolves synchronously once the context is ready,
-/// so this returns after one or two frames in practice.
-Future<void> _pumpUntil(
-  WidgetTester tester,
-  bool Function() isDone, {
-  int maxFrames = 60,
-  Duration step = const Duration(milliseconds: 16),
-}) async {
-  for (var i = 0; i < maxFrames; i++) {
-    await tester.pump(step);
-    if (isDone()) return;
-  }
-}
-
-Future<int> _processTreatmentRequest(
-  WidgetTester tester,
-  WidgetTestRequest request,
-) async {
-  // Resolve the assigned variant up front (non-exposing) so we only need to
-  // build that variant plus the control in the map. The real Treatment widget
-  // below independently resolves AND exposes; its build() indexes
-  // variants[_variant], so the assigned key must be present (a missing key
-  // silently falls back to variants[0], which would capture the wrong variant).
-  final peeked = request.context.peekTreatment(request.experimentName);
-
-  int? capturedVariant;
-  Widget marker(int i) => Builder(
-        builder: (_) {
-          capturedVariant = i;
-          return Text('Variant $i');
-        },
-      );
-
-  final widget = MaterialApp(
-    home: Scaffold(
-      body: Treatment(
-        key: UniqueKey(),
-        name: request.experimentName,
-        context: request.context,
-        variants: {
-          0: marker(0),
-          if (peeked != 0) peeked: marker(peeked),
-        },
-      ),
-    ),
-  );
-
-  await tester.pumpWidget(widget);
-  await _pumpUntil(tester, () => capturedVariant != null);
-
-  return capturedVariant ?? peeked;
-}
-
-Future<dynamic> _processVariableValueRequest(
-  WidgetTester tester,
-  WidgetTestRequest request,
-) async {
-  var captured = false;
-  dynamic capturedValue;
-
-  final widget = MaterialApp(
-    home: Scaffold(
-      body: VariableValue<dynamic>(
-        key: UniqueKey(),
-        name: request.variableKey!,
-        defaultValue: request.defaultValue,
-        context: request.context,
-        builder: (value) {
-          captured = true;
-          capturedValue = value;
-          return Text('Variable: $value');
-        },
-      ),
-    ),
-  );
-
-  await tester.pumpWidget(widget);
-  await _pumpUntil(tester, () => captured);
-
-  return capturedValue;
 }
