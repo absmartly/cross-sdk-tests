@@ -560,6 +560,10 @@ POST /context/{contextId}/publish
 
 ### 18. Refresh Context
 
+For endpoint-backed contexts, the orchestrator stores `newData` at the payload
+endpoint first and sends an empty body to `/refresh`, invoking the SDK's own
+fetch path. The body below is the direct-data request form.
+
 ```http
 POST /context/{contextId}/refresh
 Content-Type: application/json

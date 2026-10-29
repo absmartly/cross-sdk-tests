@@ -388,12 +388,11 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
 
     result = actual.get("result", MISSING)
     expected_result = expected.get("result", MISSING)
-    if isinstance(result, dict) and action not in PARTIAL_RESULT_ACTIONS:
-        pass
-    elif isinstance(result, dict) and isinstance(expected_result, dict):
-        result = _project(result, expected_result)
-    elif isinstance(result, dict):
-        result = {k: v for k, v in result.items() if k != "contextId"}
+    if isinstance(result, dict) and action in PARTIAL_RESULT_ACTIONS:
+        if isinstance(expected_result, dict):
+            result = _project(result, expected_result)
+        else:
+            result = {k: v for k, v in result.items() if k != "contextId"}
     result = _canonical(result)
     if not ordered and isinstance(result, list) and action in UNORDERED_RESULT_ACTIONS:
         result = _sorted_list(result)
@@ -1214,10 +1213,8 @@ class TestOrchestrator:
         flag any SDK whose outcome differs from the majority. On a tie there is
         no majority, so every participating SDK is reported as disagreeing.
 
-        The comparison intentionally remains at pass/fail granularity. Expected
-        payloads are partial by contract and event timestamps/publishedAt are
-        dynamic; comparing fields the scenario did not assert would turn
-        harmless SDK serialization differences into false consistency failures.
+        Also compare normalized step observations, excluding volatile and
+        SDK-specific fields as defined by observation_for_step.
         """
         self.consistency_report = []
         self.consistency_failures = {}
@@ -1706,10 +1703,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "cross-SDK consistency check over all of them (exit 1 on any disagreement)"
         ),
     )
+    parser.add_argument(
+        "--expected-sdks",
+        type=lambda value: [sdk.strip() for sdk in value.split(",") if sdk.strip()],
+        help="Comma-separated SDKs required when comparing lane reports",
+    )
     return parser
 
 
-def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
+def compare_reports(
+    paths: List[str], output_file: Optional[str] = None, expected_sdks: Optional[List[str]] = None
+) -> int:
     """Cross-SDK consistency over reports written by independent lanes."""
     orch = TestOrchestrator({}, capability_policy=load_capability_policy())
     for path in paths:
@@ -1734,6 +1738,13 @@ def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
                 orch.step_observations.setdefault(name, {})[sdk] = {int(i): tuple(obs) for i, obs in steps.items()}
         for sdk in lane_sdks:
             orch.sdks[sdk] = path
+
+    if expected_sdks is not None and set(orch.sdks) != set(expected_sdks):
+        print(
+            f"Error: missing SDKs {sorted(set(expected_sdks) - set(orch.sdks))}, "
+            f"unexpected SDKs {sorted(set(orch.sdks) - set(expected_sdks))}"
+        )
+        return 1
 
     orch.check_cross_sdk_consistency()
     print(f"Compared {len(orch.sdks)} SDKs from {len(paths)} reports: {orch.consistency_comparisons} comparisons")
@@ -1766,7 +1777,7 @@ def compare_reports(paths: List[str], output_file: Optional[str] = None) -> int:
 def main(argv: Optional[List[str]] = None) -> None:
     args = build_arg_parser().parse_args(argv)
     if args.compare_reports:
-        sys.exit(compare_reports(args.compare_reports, args.report))
+        sys.exit(compare_reports(args.compare_reports, args.report, args.expected_sdks))
     all_sdks = discover_sdks()
 
     if args.sdk:

@@ -26,7 +26,36 @@ jobs:
   harness:
     name: harness-unit-tests
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.lanes.outputs.matrix }}
     steps:
+      - name: Define SDK lanes
+        id: lanes
+        run: |
+          matrix='{"include":[
+            {"sdk":"javascript","repos":"javascript-sdk"},
+            {"sdk":"python","repos":"python3-sdk"},
+            {"sdk":"ruby","repos":"ruby-sdk"},
+            {"sdk":"php","repos":"php-sdk"},
+            {"sdk":"java","repos":"java-sdk"},
+            {"sdk":"kotlin","repos":"kotlin-sdk"},
+            {"sdk":"scala","repos":"scala-sdk"},
+            {"sdk":"go","repos":"go-sdk"},
+            {"sdk":"rust","repos":"rust-sdk"},
+            {"sdk":"swift","repos":"swift-sdk"},
+            {"sdk":"dotnet","repos":"dotnet-sdk"},
+            {"sdk":"cpp","repos":"cpp-sdk"},
+            {"sdk":"elixir","repos":"elixir-sdk"},
+            {"sdk":"dart","repos":"flutter-sdk"},
+            {"sdk":"flutter","repos":"flutter-sdk"},
+            {"sdk":"liquid","repos":"liquid-sdk ruby-sdk"},
+            {"sdk":"react","repos":"react-sdk javascript-sdk"},
+            {"sdk":"vue2","repos":"vue2-sdk javascript-sdk"},
+            {"sdk":"vue3","repos":"vue3-sdk javascript-sdk"},
+            {"sdk":"angular","repos":"angular-sdk javascript-sdk"}
+          ]}'
+          echo "matrix=$(echo "$matrix" | jq -c .)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout cross-sdk-tests
         uses: actions/checkout@v4
 
@@ -52,28 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { sdk: javascript, repos: javascript-sdk }
-          - { sdk: python,     repos: python3-sdk }
-          - { sdk: ruby,       repos: ruby-sdk }
-          - { sdk: php,        repos: php-sdk }
-          - { sdk: java,       repos: java-sdk }
-          - { sdk: kotlin,     repos: kotlin-sdk }
-          - { sdk: scala,      repos: scala-sdk }
-          - { sdk: go,         repos: go-sdk }
-          - { sdk: rust,       repos: rust-sdk }
-          - { sdk: swift,      repos: swift-sdk }
-          - { sdk: dotnet,     repos: dotnet-sdk }
-          - { sdk: cpp,        repos: cpp-sdk }
-          - { sdk: elixir,     repos: elixir-sdk }
-          - { sdk: dart,       repos: flutter-sdk }
-          - { sdk: flutter,    repos: flutter-sdk }
-          - { sdk: liquid,     repos: "liquid-sdk ruby-sdk" }
-          - { sdk: react,      repos: "react-sdk javascript-sdk" }
-          - { sdk: vue2,       repos: "vue2-sdk javascript-sdk" }
-          - { sdk: vue3,       repos: "vue3-sdk javascript-sdk" }
-          - { sdk: angular,    repos: "angular-sdk javascript-sdk" }
+      matrix: ${{ fromJSON(needs.harness.outputs.matrix) }}
     steps:
       # The wrapper Dockerfiles use build context `..` and COPY sibling
       # <name>-sdk/ directories, so this repo and the SDK source repos must be
@@ -143,7 +151,7 @@ jobs:
   # its failure fails the workflow like any other required job.
   cross-sdk-consistency:
     name: cross-sdk-consistency
-    needs: cross-sdk
+    needs: [harness, cross-sdk]
     if: ${{ always() && needs.cross-sdk.result != 'cancelled' && needs.cross-sdk.result != 'skipped' }}
     runs-on: ubuntu-latest
     steps:
@@ -164,11 +172,14 @@ jobs:
           path: lane-reports
 
       - name: Compare all lanes
+        env:
+          EXPECTED_SDKS: ${{ join(fromJSON(needs.harness.outputs.matrix).include.*.sdk, ',') }}
         run: |
           set -euo pipefail
           mapfile -t reports < <(find lane-reports -name report.json | sort)
           echo "lane reports: ${#reports[@]}"
           python orchestrator/test_runner.py --report consistency-report.json \
+            --expected-sdks "$EXPECTED_SDKS" \
             --compare-reports "${reports[@]}"
 
       - name: Upload consistency report

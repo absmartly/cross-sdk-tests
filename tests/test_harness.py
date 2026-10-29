@@ -753,11 +753,54 @@ class ConsistencyTests(unittest.TestCase):
         with open(os.path.join(self.tmp, "out.json")) as src:
             self.assertEqual(json.load(src)["consistency_failures"], {"c": ["s [step 0 treatment]"]})
 
+    def test_compare_reports_requires_expected_lanes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for sdk in ("javascript", "python", "go"):
+                orch = make_orchestrator(sdks={sdk: ""})
+                self.run_obs(orch, "s", sdk, 0, "treatment", {"result": 1, "events": []}, {"result": 1})
+                path = os.path.join(tmp, f"{sdk}.json")
+                with quiet():
+                    orch.generate_report(path)
+                paths.append(path)
+            expected = ["javascript", "python", "go"]
+            with quiet():
+                self.assertEqual(test_runner.compare_reports(paths, expected_sdks=expected), 0)
+            with quiet() as out:
+                self.assertEqual(test_runner.compare_reports(paths[:2], expected_sdks=expected), 1)
+            self.assertIn("missing SDKs ['go']", out.getvalue())
+            with quiet() as out:
+                self.assertEqual(test_runner.compare_reports(paths, expected_sdks=expected[:2]), 1)
+            self.assertIn("unexpected SDKs ['go']", out.getvalue())
+            with quiet():
+                self.assertEqual(test_runner.compare_reports(paths, expected_sdks=[]), 1)
+
+    def test_expected_sdks_cli(self):
+        args = test_runner.build_arg_parser().parse_args([
+            "--expected-sdks", "javascript, python,go", "--compare-reports", "a.json", "b.json"
+        ])
+        self.assertEqual(args.expected_sdks, ["javascript", "python", "go"])
+        with mock.patch.object(test_runner, "compare_reports", return_value=1) as compare:
+            with self.assertRaises(SystemExit) as exc:
+                test_runner.main([
+                    "--expected-sdks", "javascript,python,go", "--report", "out.json",
+                    "--compare-reports", "a.json", "b.json"
+                ])
+        self.assertEqual(exc.exception.code, 1)
+        compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()
         self.assertIn("--compare-reports", text)
         self.assertIn("pattern: report-*", text)
+        self.assertIn('matrix: ${{ fromJSON(needs.harness.outputs.matrix) }}', text)
+        self.assertIn("EXPECTED_SDKS: ${{ join(fromJSON(needs.harness.outputs.matrix).include.*.sdk, ',') }}", text)
+        self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
+        self.assertIn("needs: [harness, cross-sdk]", text)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
+        self.assertEqual(len(matrix["include"]), 20)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 20)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
