@@ -1013,7 +1013,6 @@ class TestOrchestrator:
         prior_responses: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
-        prior_responses = prior_responses or []
 
         def fail(field: str, expected_value: Any, actual_value: Any) -> None:
             failures.append(
