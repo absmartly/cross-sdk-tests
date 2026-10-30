@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 229-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 259-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -8,8 +8,9 @@
 # (race-free service discovery over the compose network).
 #
 # SDK unit tests run in each SDK's own repo CI. The fast `harness` job below
-# runs the orchestrator's own Docker-free unit tests (tests/) before any
-# wrapper image is built; every Docker job depends on it.
+# runs the orchestrator's own Docker-free unit tests (tests/ and
+# orchestrator/tests/) before any wrapper image is built; every Docker job
+# depends on it.
 # The live-backend e2e suite is intentionally not run here (needs secrets +
 # the abs CLI and mutates real experiments).
 name: Cross-SDK Tests
@@ -74,6 +75,14 @@ jobs:
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
+
+      - name: Switchback harness unit tests (no Docker)
+        run: |
+          pip install pytest
+          python -m pytest orchestrator/tests -v
+
+      - name: Switchback scenarios match their generator
+        run: python generate_switchback_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}

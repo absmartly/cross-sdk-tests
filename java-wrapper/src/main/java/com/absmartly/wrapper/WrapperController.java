@@ -13,12 +13,22 @@ import org.springframework.web.bind.annotation.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 
 @RestController
 public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SwitchbackFunctions switchback;
+
+    public WrapperController() {
+        this(SwitchbackFunctions.LINKED);
+    }
+
+    WrapperController(SwitchbackFunctions switchback) {
+        this.switchback = switchback;
+    }
 
     private String translateEndpoint(String endpoint) {
         if (endpoint == null) return null;
@@ -89,6 +99,7 @@ public class WrapperController {
         response.put("readyError", true);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
+        response.put("switchback", SwitchbackSelfTest.run());
         return response;
     }
 
@@ -128,6 +139,94 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(errorBody(errorMessage(e), Collections.emptyList()));
         }
+    }
+
+    // clusterUnit is the assigner input (the SDK's hashed unit) and is not hashed again; 64-bit
+    // values arrive as decimal strings. See WRAPPER_API_SPEC.md, capability `switchback`.
+    @PostMapping("/switchback/assign")
+    public ResponseEntity<?> switchbackAssign(@RequestBody Map<String, Object> request) {
+        return switchbackCall(() -> switchback.assign(stringParam(request, "clusterUnit"),
+            longParam(request, "periodIndex"), longParam(request, "seed"), armCountParam(request)));
+    }
+
+    @PostMapping("/switchback/permutation")
+    public ResponseEntity<?> switchbackPermutation(@RequestBody Map<String, Object> request) {
+        return switchbackCall(() -> {
+            int[] permutation = switchback.permutation(stringParam(request, "clusterUnit"),
+                longParam(request, "cycleIndex"), longParam(request, "seed"), armCountParam(request));
+            List<Integer> result = new ArrayList<>(permutation.length);
+            for (int arm : permutation) {
+                result.add(arm);
+            }
+            return result;
+        });
+    }
+
+    // key is the cluster key hashed as-is (a hashed unit or a normalized attribute value); seed is
+    // the 64-bit experiment seed as a decimal string. The wrapper rejects a count outside {10, 50, 100}.
+    @PostMapping("/switchback/bucket")
+    public ResponseEntity<?> switchbackBucket(@RequestBody Map<String, Object> request) {
+        if (!switchback.isBucketAvailable()) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(Collections.singletonMap("error", "linked SDK has no switchback bucket function"));
+        }
+        return switchbackCall(() -> switchback.bucketOf(stringParam(request, "key"), longParam(request, "seed"),
+            countParam(request)));
+    }
+
+    // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
+    // assigner reports its actual outputs rather than a blanket refusal.
+    private ResponseEntity<?> switchbackCall(Supplier<Object> call) {
+        if (!switchback.isAvailable()) {
+            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
+                .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
+        }
+        try {
+            Map<String, Object> response = new HashMap<>();
+            response.put("result", call.get());
+            response.put("events", Collections.emptyList());
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Collections.singletonMap("error", String.valueOf(e.getMessage())));
+        }
+    }
+
+    private static String stringParam(Map<String, Object> request, String name) {
+        if (!(request.get(name) instanceof String value)) {
+            throw new IllegalArgumentException(name + " must be a string");
+        }
+        return value;
+    }
+
+    // Long.parseLong is exact over the full signed 64-bit range and rejects anything else.
+    private static long longParam(Map<String, Object> request, String name) {
+        return Long.parseLong(stringParam(request, name));
+    }
+
+    // The 400-on-armCount<2 contract is the wrapper's, so it must not depend on how the linked
+    // assigner reacts (a regressed one could return a value or throw something unexpected).
+    private static int armCountParam(Map<String, Object> request) {
+        int armCount = intParam(request, "armCount");
+        if (armCount < 2) {
+            throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
+        }
+        return armCount;
+    }
+
+    private static int countParam(Map<String, Object> request) {
+        int count = intParam(request, "count");
+        if (count != 10 && count != 50 && count != 100) {
+            throw new IllegalArgumentException("count must be 10, 50 or 100, got " + count);
+        }
+        return count;
+    }
+
+    private static int intParam(Map<String, Object> request, String name) {
+        if (!(request.get(name) instanceof Integer value)) {
+            throw new IllegalArgumentException(name + " must be an integer");
+        }
+        return value;
     }
 
     @PutMapping("/context_payload/{payloadId}")

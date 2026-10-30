@@ -23,18 +23,22 @@
     "getAttributes": "POST /context/{id}/getAttributes",
     "readyError": "POST /context/{id}/readyError reports the error of a failed context",
     "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
-    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test"
+    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test",
+    "switchback": "switchback assignment (POST /switchback/assign, /permutation, /bucket and context serving of switchback experiments), advertised from a behavioral self-test"
   },
   "sdks": {
     "javascript": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
-      "unsupported": {}
+      "unsupported": {
+        "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (Phase 1B)"
+      }
     },
     "python": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
+        "switchback": "switchback serving not implemented in python3-sdk; java-sdk only (Phase 1B)"
       }
     },
     "ruby": {
@@ -42,7 +46,8 @@
       "unsupported": {
         "diagnosticsIsPromise": "ruby-sdk has no promise abstraction or isPromise helper",
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
+        "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (Phase 1B)"
       }
     },
     "liquid": {
@@ -50,7 +55,8 @@
       "unsupported": {
         "diagnosticsIsPromise": "wraps ruby-sdk, which has no promise abstraction or isPromise helper",
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
-        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks"
+        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
+        "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (Phase 1B)"
       }
     },
     "php": {
@@ -58,7 +64,8 @@
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
+        "switchback": "switchback serving not implemented in php-sdk; java-sdk only (Phase 1B)"
       }
     },
     "go": {
@@ -68,7 +75,8 @@
         "diagnosticsIsPromise": "go-sdk has no isPromise helper (Go has no promise type)",
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
+        "switchback": "switchback serving not implemented in go-sdk; java-sdk only (Phase 1B)"
       }
     },
     "rust": {
@@ -76,11 +84,12 @@
       "unsupported": {
         "diagnosticsIsPromise": "rust-sdk has no promise/future type check (src/utils.rs)",
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
+        "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (Phase 1B)"
       }
     },
     "java": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "switchback"],
       "unsupported": {
         "diagnosticsBase64": "java-sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
         "diagnosticsTypeChecks": "java-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -93,14 +102,16 @@
         "diagnosticsTypeChecks": "kotlin-sdk has no isObject/isNumeric helpers (statically typed API)",
         "diagnosticsIsPromise": "kotlin-sdk has no isPromise helper",
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
+        "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (Phase 1B)"
       }
     },
     "scala": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
+        "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (Phase 1B)"
       }
     },
     "swift": {
@@ -109,7 +120,8 @@
         "diagnosticsTypeChecks": "swift-sdk has no isObject/isNumeric helpers (statically typed API; Internal/Hashing has only hash, base64UrlNoPadding, utf8Bytes)",
         "diagnosticsIsPromise": "swift-sdk has no isPromise helper",
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
+        "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (Phase 1B)"
       }
     },
     "dart": {
@@ -119,7 +131,8 @@
         "diagnosticsTypeChecks": "dart_sdk has no isObject/isNumeric helpers (statically typed API)",
         "diagnosticsIsPromise": "dart_sdk has no isPromise helper",
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
+        "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (Phase 1B)"
       }
     },
     "flutter": {
@@ -129,7 +142,8 @@
         "diagnosticsTypeChecks": "flutter-sdk dart_sdk has no isObject/isNumeric helpers (statically typed API)",
         "diagnosticsIsPromise": "flutter-sdk dart_sdk has no isPromise helper",
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
+        "switchback": "switchback serving not implemented in flutter-sdk; java-sdk only (Phase 1B)"
       }
     },
     "dotnet": {
@@ -138,7 +152,8 @@
         "diagnosticsTypeChecks": "dotnet-sdk has no isObject/isNumeric helpers (statically typed API)",
         "diagnosticsIsPromise": "dotnet-sdk has no isPromise helper (.NET has no promise type)",
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
+        "switchback": "switchback serving not implemented in dotnet-sdk; java-sdk only (Phase 1B)"
       }
     },
     "cpp": {
@@ -148,31 +163,41 @@
         "diagnosticsTypeChecks": "cpp-sdk has no isObject/isNumeric helpers; it uses nlohmann::json type queries internally",
         "diagnosticsIsPromise": "cpp-sdk has no promise type or isPromise helper",
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
+        "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (Phase 1B)"
       }
     },
     "elixir": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
+        "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (Phase 1B)"
       }
     },
     "react": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
-      "unsupported": {}
+      "unsupported": {
+        "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (Phase 1B)"
+      }
     },
     "vue2": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
-      "unsupported": {}
+      "unsupported": {
+        "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (Phase 1B)"
+      }
     },
     "vue3": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
-      "unsupported": {}
+      "unsupported": {
+        "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (Phase 1B)"
+      }
     },
     "angular": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
-      "unsupported": {}
+      "unsupported": {
+        "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (Phase 1B)"
+      }
     }
   }
 }

@@ -22,6 +22,10 @@ worktree) without touching the default CI path:
    ```bash
    JAVA_SDK_DIR=java-sdk-holdouts docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml build java-sdk
    JAVA_SDK_DIR=java-sdk-holdouts docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml up -d java-sdk
+
+   # any other sibling checkout, e.g. the switchback branch
+   JAVA_SDK_DIR=java-sdk-switchback \
+     docker compose -f docker-compose.yml -f docker-compose.local-sdk.yml build java-sdk
    ```
 
    `SDK_SOURCE_DIR` defaults to `java-sdk` (the Dockerfile's `ARG`), so the override
