@@ -28059,8 +28059,8 @@
     ]
   },
   {
-    "name": "237 - Shared Variable Key - Key Only In Unassigned Or Unserved Variants Returns Default, Every Visited Experiment Exposed",
-    "description": "(g) Payload order 74, 73, 72, 71. svk.color is defined by 71 (unit type user_id absent, unassigned), 72 (strict audience mismatch, unassigned) and 73's A (73 serves B, null config). variableValue(svk.color) returns the default and exposes 71, 72 and 73 in id order. svk.size (73's A, 74's B) then falls through 73 to 74 and exposes only 74. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "name": "237 - Shared Variable Key - Key Only In Unassigned Experiments Returns Default, Every Visited Experiment Exposed",
+    "description": "(g) Payload order 74, 73, 72, 71. svk.color is defined only by 71 (unit type user_id absent, unassigned) and 72 (strict audience mismatch, unassigned). variableValue(svk.color) returns the default and exposes both 71 and 72 in id order. svk.size (73's A, 74's B) then visits 73 (assigned, serves B with null config), falls through to 74 and exposes [73, 74]. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
     "contextData": {
       "experiments": [
         {
@@ -28126,7 +28126,7 @@
           "variants": [
             {
               "name": "A",
-              "config": "{\"svk.color\":\"dflt-73-A\",\"svk.size\":\"dflt-73-A\"}"
+              "config": "{\"svk.size\":\"dflt-73-A\"}"
             },
             {
               "name": "B",
@@ -28307,7 +28307,19 @@
                 "custom": false,
                 "audienceMismatch": true
               }
-            },
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "dflt-74-B",
+          "events": [
             {
               "type": "exposure",
               "data": {
@@ -28322,19 +28334,7 @@
                 "custom": false,
                 "audienceMismatch": false
               }
-            }
-          ]
-        }
-      },
-      {
-        "action": "variableValue",
-        "params": {
-          "key": "svk.size",
-          "defaultValue": "default"
-        },
-        "expect": {
-          "result": "dflt-74-B",
-          "events": [
+            },
             {
               "type": "exposure",
               "data": {
@@ -30261,8 +30261,8 @@
     ]
   },
   {
-    "name": "245 - Shared Variable Key - Peek - Key Only In Unassigned Or Unserved Variants Returns Default, Every Visited Experiment Exposed",
-    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (g) Payload order 74, 73, 72, 71. svk.color is defined by 71 (unit type user_id absent, unassigned), 72 (strict audience mismatch, unassigned) and 73's A (73 serves B, null config). variableValue(svk.color) returns the default and exposes 71, 72 and 73 in id order. svk.size (73's A, 74's B) then falls through 73 to 74 and exposes only 74. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "name": "245 - Shared Variable Key - Peek - Key Only In Unassigned Experiments Returns Default, Every Visited Experiment Exposed",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (g) Payload order 74, 73, 72, 71. svk.color is defined only by 71 (unit type user_id absent, unassigned) and 72 (strict audience mismatch, unassigned). variableValue(svk.color) returns the default and exposes both 71 and 72 in id order. svk.size (73's A, 74's B) then visits 73 (assigned, serves B with null config), falls through to 74 and exposes [73, 74]. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
     "contextData": {
       "experiments": [
         {
@@ -30328,7 +30328,7 @@
           "variants": [
             {
               "name": "A",
-              "config": "{\"svk.color\":\"dflt-73-A\",\"svk.size\":\"dflt-73-A\"}"
+              "config": "{\"svk.size\":\"dflt-73-A\"}"
             },
             {
               "name": "B",
@@ -30539,7 +30539,19 @@
                 "custom": false,
                 "audienceMismatch": true
               }
-            },
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "dflt-74-B",
+          "events": [
             {
               "type": "exposure",
               "data": {
@@ -30554,19 +30566,7 @@
                 "custom": false,
                 "audienceMismatch": false
               }
-            }
-          ]
-        }
-      },
-      {
-        "action": "variableValue",
-        "params": {
-          "key": "svk.size",
-          "defaultValue": "default"
-        },
-        "expect": {
-          "result": "dflt-74-B",
-          "events": [
+            },
             {
               "type": "exposure",
               "data": {
