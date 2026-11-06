@@ -26370,5 +26370,4229 @@
         }
       }
     ]
+  },
+  {
+    "name": "230 - Shared Variable Key - Lowest Id Wins When Both Assigned",
+    "description": "(a/b) Experiments 11 and 12, payload in id order (10, 11, 12), both serve the unit variant B. svk.color is defined by both B configs with different values: variableValue returns id 11's, the walk being sorted by experiment id whatever the payload order, and exposes only 11. svk.size is defined by 10 (guard), 11's A (not served) and 12's B: read second, it visits 10 (exposed, unassigned), 11 (already exposed, B lacks the key) and returns 12's value, exposing [10, 12]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 10,
+          "name": "exp_svk_lo_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"lo-10-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"lo-10-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 11,
+          "name": "exp_svk_lo_11",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"lo-11-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"lo-11-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 12,
+          "name": "exp_svk_lo_12",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"lo-12-B\",\"svk.size\":\"lo-12-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 10,
+                    "name": "exp_svk_lo_10"
+                  },
+                  {
+                    "id": 11,
+                    "name": "exp_svk_lo_11"
+                  },
+                  {
+                    "id": 12,
+                    "name": "exp_svk_lo_12"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-11-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 11,
+                "name": "exp_svk_lo_11",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-12-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 10,
+                "name": "exp_svk_lo_10",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 12,
+                "name": "exp_svk_lo_12",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "231 - Shared Variable Key - Payload Order Irrelevant, Lowest Id Still Wins",
+    "description": "(a/b) Experiments 11 and 12, payload in descending id order (12, 11, 10), both serve the unit variant B. svk.color is defined by both B configs with different values: variableValue returns id 11's, the walk being sorted by experiment id whatever the payload order, and exposes only 11. svk.size is defined by 10 (guard), 11's A (not served) and 12's B: read second, it visits 10 (exposed, unassigned), 11 (already exposed, B lacks the key) and returns 12's value, exposing [10, 12]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 12,
+          "name": "exp_svk_rev_12",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"rev-12-B\",\"svk.size\":\"rev-12-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 11,
+          "name": "exp_svk_rev_11",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"rev-11-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"rev-11-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 10,
+          "name": "exp_svk_rev_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"rev-10-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"rev-10-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 12,
+                    "name": "exp_svk_rev_12"
+                  },
+                  {
+                    "id": 11,
+                    "name": "exp_svk_rev_11"
+                  },
+                  {
+                    "id": 10,
+                    "name": "exp_svk_rev_10"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-11-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 11,
+                "name": "exp_svk_rev_11",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-12-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 10,
+                "name": "exp_svk_rev_10",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 12,
+                "name": "exp_svk_rev_12",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "232 - Shared Variable Key - Unassigned Lowest Id (Missing Unit Type) Falls Through And Is Exposed",
+    "description": "(c) Payload order 22, 23, 21. experiment 21 is on unit type user_id, which the context lacks, so it is unassigned (assigned:false, variant 0); both its variants define svk.color, so a model that ignores `assigned` would serve its control value. variableValue(svk.color) skips it and returns 22's B value; BOTH are exposed, 21 first with assigned:false. Then svk.size (defined by 22's A, not served, and 23's B) falls through 22 to 23 and exposes only 23. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 22,
+          "name": "exp_svk_nounit_22",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"nounit-22-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nounit-22-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 23,
+          "name": "exp_svk_nounit_23",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nounit-23-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 21,
+          "name": "exp_svk_nounit_21",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"nounit-21-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nounit-21-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 22,
+                    "name": "exp_svk_nounit_22"
+                  },
+                  {
+                    "id": 23,
+                    "name": "exp_svk_nounit_23"
+                  },
+                  {
+                    "id": 21,
+                    "name": "exp_svk_nounit_21"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-22-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 21,
+                "name": "exp_svk_nounit_21",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 22,
+                "name": "exp_svk_nounit_22",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-23-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 23,
+                "name": "exp_svk_nounit_23",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "233 - Shared Variable Key - Unassigned Lowest Id (Strict Audience Mismatch) Falls Through And Is Exposed",
+    "description": "(c) Payload order 32, 33, 31. experiment 31 has a strict audience (tier == gold) and the context's tier is silver, so it is unassigned (assigned:false, audienceMismatch:true, variant 0); both its variants define svk.color, so a model that ignores `assigned` would serve its control value. variableValue(svk.color) skips it and returns 32's B value; BOTH are exposed, 31 first with assigned:false. Then svk.size (defined by 32's A, not served, and 33's B) falls through 32 to 33 and exposes only 33. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 32,
+          "name": "exp_svk_aud_32",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"aud-32-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"aud-32-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 33,
+          "name": "exp_svk_aud_33",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"aud-33-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 31,
+          "name": "exp_svk_aud_31",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"aud-31-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"aud-31-B\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"tier\"},{\"value\":\"gold\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 32,
+                    "name": "exp_svk_aud_32"
+                  },
+                  {
+                    "id": 33,
+                    "name": "exp_svk_aud_33"
+                  },
+                  {
+                    "id": 31,
+                    "name": "exp_svk_aud_31"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "tier",
+          "value": "silver"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-32-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 31,
+                "name": "exp_svk_aud_31",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 32,
+                "name": "exp_svk_aud_32",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-33-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 33,
+                "name": "exp_svk_aud_33",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "234 - Shared Variable Key - Traffic-Ineligible Lowest Id Is Assigned And Serves Its Control Value",
+    "description": "Payload order 42, 40, 41. Experiment 41 has trafficSplit [1, 0]: the unit IS assigned (assigned:true, eligible:false) and served variant A. svk.size, defined by 40 (guard), 41's B and 42's B, falls through 40 and 41 (A lacks it) to 42 with exposures [40, 41, 42]. svk.color, defined by 41's A and 42's B, then returns 41's control value with no new exposure: an ineligible assignment is still assigned, so it wins over the higher id. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 42,
+          "name": "exp_svk_inel_42",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"inel-42-B\",\"svk.size\":\"inel-42-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 40,
+          "name": "exp_svk_inel_40",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"inel-40-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"inel-40-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 41,
+          "name": "exp_svk_inel_41",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            1,
+            0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"inel-41-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"inel-41-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 42,
+                    "name": "exp_svk_inel_42"
+                  },
+                  {
+                    "id": 40,
+                    "name": "exp_svk_inel_40"
+                  },
+                  {
+                    "id": 41,
+                    "name": "exp_svk_inel_41"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-42-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 40,
+                "name": "exp_svk_inel_40",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 41,
+                "name": "exp_svk_inel_41",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 42,
+                "name": "exp_svk_inel_42",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-41-A",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "235 - Shared Variable Key - Override On Unassigned Lowest Id Wins",
+    "description": "(d) Payload order 52, 51, 50. Experiment 51 is on unit type user_id, which the context lacks (unassigned), and is overridden to variant B. svk.color (51's B, 52's B) returns 51's B value, exposing only 51 (overridden:true, assigned:false, variant 1): assigned OR overridden qualifies. svk.size (50 guard, 51's A, 52's B) then falls through 50 and the overridden variant B, which lacks it, to 52, exposing [50, 52]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 52,
+          "name": "exp_svk_ovr_52",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"ovr-52-B\",\"svk.size\":\"ovr-52-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 51,
+          "name": "exp_svk_ovr_51",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"ovr-51-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"ovr-51-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 50,
+          "name": "exp_svk_ovr_50",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"ovr-50-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"ovr-50-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 52,
+                    "name": "exp_svk_ovr_52"
+                  },
+                  {
+                    "id": 51,
+                    "name": "exp_svk_ovr_51"
+                  },
+                  {
+                    "id": 50,
+                    "name": "exp_svk_ovr_50"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_svk_ovr_51",
+          "variant": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-51-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 51,
+                "name": "exp_svk_ovr_51",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-52-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 50,
+                "name": "exp_svk_ovr_50",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 52,
+                "name": "exp_svk_ovr_52",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "236 - Shared Variable Key - Assigned Lowest Id Whose Variant Lacks The Key Falls Through",
+    "description": "(e) Payload order 62, 61, 60. Experiment 61 assigns the unit variant B, whose config lacks svk.color (only 61's A defines it). variableValue(svk.color) visits 61 (exposed), falls through and returns 62's B value; exposures [61, 62]. svk.size (60 guard, 61's B) then exposes 60 and returns 61's B value. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 62,
+          "name": "exp_svk_nokey_62",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nokey-62-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 61,
+          "name": "exp_svk_nokey_61",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"nokey-61-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nokey-61-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 60,
+          "name": "exp_svk_nokey_60",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"nokey-60-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nokey-60-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 62,
+                    "name": "exp_svk_nokey_62"
+                  },
+                  {
+                    "id": 61,
+                    "name": "exp_svk_nokey_61"
+                  },
+                  {
+                    "id": 60,
+                    "name": "exp_svk_nokey_60"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-62-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 61,
+                "name": "exp_svk_nokey_61",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 62,
+                "name": "exp_svk_nokey_62",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-61-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 60,
+                "name": "exp_svk_nokey_60",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "237 - Shared Variable Key - Key Only In Unassigned Or Unserved Variants Returns Default, Every Visited Experiment Exposed",
+    "description": "(g) Payload order 74, 73, 72, 71. svk.color is defined by 71 (unit type user_id absent, unassigned), 72 (strict audience mismatch, unassigned) and 73's A (73 serves B, null config). variableValue(svk.color) returns the default and exposes 71, 72 and 73 in id order. svk.size (73's A, 74's B) then falls through 73 to 74 and exposes only 74. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 74,
+          "name": "exp_svk_dflt_74",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"dflt-74-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 73,
+          "name": "exp_svk_dflt_73",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-73-A\",\"svk.size\":\"dflt-73-A\"}"
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 72,
+          "name": "exp_svk_dflt_72",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-72-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"dflt-72-B\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"tier\"},{\"value\":\"gold\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 71,
+          "name": "exp_svk_dflt_71",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-71-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"dflt-71-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 74,
+                    "name": "exp_svk_dflt_74"
+                  },
+                  {
+                    "id": 73,
+                    "name": "exp_svk_dflt_73"
+                  },
+                  {
+                    "id": 72,
+                    "name": "exp_svk_dflt_72"
+                  },
+                  {
+                    "id": 71,
+                    "name": "exp_svk_dflt_71"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "tier",
+          "value": "silver"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "default",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 71,
+                "name": "exp_svk_dflt_71",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 72,
+                "name": "exp_svk_dflt_72",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 73,
+                "name": "exp_svk_dflt_73",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "dflt-74-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 74,
+                "name": "exp_svk_dflt_74",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 4,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "238 - Shared Variable Key - Peek - Lowest Id Wins When Both Assigned",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (a/b) Experiments 11 and 12, payload in id order (10, 11, 12), both serve the unit variant B. svk.color is defined by both B configs with different values: variableValue returns id 11's, the walk being sorted by experiment id whatever the payload order, and exposes only 11. svk.size is defined by 10 (guard), 11's A (not served) and 12's B: read second, it visits 10 (exposed, unassigned), 11 (already exposed, B lacks the key) and returns 12's value, exposing [10, 12]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 10,
+          "name": "exp_svk_lo_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"lo-10-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"lo-10-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 11,
+          "name": "exp_svk_lo_11",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"lo-11-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"lo-11-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 12,
+          "name": "exp_svk_lo_12",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"lo-12-B\",\"svk.size\":\"lo-12-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 10,
+                    "name": "exp_svk_lo_10"
+                  },
+                  {
+                    "id": 11,
+                    "name": "exp_svk_lo_11"
+                  },
+                  {
+                    "id": 12,
+                    "name": "exp_svk_lo_12"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-11-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-12-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-11-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 11,
+                "name": "exp_svk_lo_11",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "lo-12-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 10,
+                "name": "exp_svk_lo_10",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 12,
+                "name": "exp_svk_lo_12",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "239 - Shared Variable Key - Peek - Payload Order Irrelevant, Lowest Id Still Wins",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (a/b) Experiments 11 and 12, payload in descending id order (12, 11, 10), both serve the unit variant B. svk.color is defined by both B configs with different values: variableValue returns id 11's, the walk being sorted by experiment id whatever the payload order, and exposes only 11. svk.size is defined by 10 (guard), 11's A (not served) and 12's B: read second, it visits 10 (exposed, unassigned), 11 (already exposed, B lacks the key) and returns 12's value, exposing [10, 12]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 12,
+          "name": "exp_svk_rev_12",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"rev-12-B\",\"svk.size\":\"rev-12-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 11,
+          "name": "exp_svk_rev_11",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"rev-11-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"rev-11-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 10,
+          "name": "exp_svk_rev_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"rev-10-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"rev-10-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 12,
+                    "name": "exp_svk_rev_12"
+                  },
+                  {
+                    "id": 11,
+                    "name": "exp_svk_rev_11"
+                  },
+                  {
+                    "id": 10,
+                    "name": "exp_svk_rev_10"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-11-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-12-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-11-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 11,
+                "name": "exp_svk_rev_11",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "rev-12-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 10,
+                "name": "exp_svk_rev_10",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 12,
+                "name": "exp_svk_rev_12",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "240 - Shared Variable Key - Peek - Unassigned Lowest Id (Missing Unit Type) Falls Through And Is Exposed",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (c) Payload order 22, 23, 21. experiment 21 is on unit type user_id, which the context lacks, so it is unassigned (assigned:false, variant 0); both its variants define svk.color, so a model that ignores `assigned` would serve its control value. variableValue(svk.color) skips it and returns 22's B value; BOTH are exposed, 21 first with assigned:false. Then svk.size (defined by 22's A, not served, and 23's B) falls through 22 to 23 and exposes only 23. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 22,
+          "name": "exp_svk_nounit_22",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"nounit-22-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nounit-22-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 23,
+          "name": "exp_svk_nounit_23",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nounit-23-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 21,
+          "name": "exp_svk_nounit_21",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"nounit-21-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nounit-21-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 22,
+                    "name": "exp_svk_nounit_22"
+                  },
+                  {
+                    "id": 23,
+                    "name": "exp_svk_nounit_23"
+                  },
+                  {
+                    "id": 21,
+                    "name": "exp_svk_nounit_21"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-22-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-23-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-22-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 21,
+                "name": "exp_svk_nounit_21",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 22,
+                "name": "exp_svk_nounit_22",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nounit-23-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 23,
+                "name": "exp_svk_nounit_23",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "241 - Shared Variable Key - Peek - Unassigned Lowest Id (Strict Audience Mismatch) Falls Through And Is Exposed",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (c) Payload order 32, 33, 31. experiment 31 has a strict audience (tier == gold) and the context's tier is silver, so it is unassigned (assigned:false, audienceMismatch:true, variant 0); both its variants define svk.color, so a model that ignores `assigned` would serve its control value. variableValue(svk.color) skips it and returns 32's B value; BOTH are exposed, 31 first with assigned:false. Then svk.size (defined by 32's A, not served, and 33's B) falls through 32 to 33 and exposes only 33. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 32,
+          "name": "exp_svk_aud_32",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"aud-32-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"aud-32-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 33,
+          "name": "exp_svk_aud_33",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"aud-33-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 31,
+          "name": "exp_svk_aud_31",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"aud-31-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"aud-31-B\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"tier\"},{\"value\":\"gold\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 32,
+                    "name": "exp_svk_aud_32"
+                  },
+                  {
+                    "id": 33,
+                    "name": "exp_svk_aud_33"
+                  },
+                  {
+                    "id": 31,
+                    "name": "exp_svk_aud_31"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "tier",
+          "value": "silver"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-32-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-33-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-32-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 31,
+                "name": "exp_svk_aud_31",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 32,
+                "name": "exp_svk_aud_32",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "aud-33-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 33,
+                "name": "exp_svk_aud_33",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "242 - Shared Variable Key - Peek - Traffic-Ineligible Lowest Id Is Assigned And Serves Its Control Value",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: Payload order 42, 40, 41. Experiment 41 has trafficSplit [1, 0]: the unit IS assigned (assigned:true, eligible:false) and served variant A. svk.size, defined by 40 (guard), 41's B and 42's B, falls through 40 and 41 (A lacks it) to 42 with exposures [40, 41, 42]. svk.color, defined by 41's A and 42's B, then returns 41's control value with no new exposure: an ineligible assignment is still assigned, so it wins over the higher id. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 42,
+          "name": "exp_svk_inel_42",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"inel-42-B\",\"svk.size\":\"inel-42-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 40,
+          "name": "exp_svk_inel_40",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"inel-40-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"inel-40-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 41,
+          "name": "exp_svk_inel_41",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            1,
+            0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"inel-41-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"inel-41-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 42,
+                    "name": "exp_svk_inel_42"
+                  },
+                  {
+                    "id": 40,
+                    "name": "exp_svk_inel_40"
+                  },
+                  {
+                    "id": 41,
+                    "name": "exp_svk_inel_41"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-42-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-41-A",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-42-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 40,
+                "name": "exp_svk_inel_40",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 41,
+                "name": "exp_svk_inel_41",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 42,
+                "name": "exp_svk_inel_42",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "inel-41-A",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "243 - Shared Variable Key - Peek - Override On Unassigned Lowest Id Wins",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (d) Payload order 52, 51, 50. Experiment 51 is on unit type user_id, which the context lacks (unassigned), and is overridden to variant B. svk.color (51's B, 52's B) returns 51's B value, exposing only 51 (overridden:true, assigned:false, variant 1): assigned OR overridden qualifies. svk.size (50 guard, 51's A, 52's B) then falls through 50 and the overridden variant B, which lacks it, to 52, exposing [50, 52]. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 52,
+          "name": "exp_svk_ovr_52",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"ovr-52-B\",\"svk.size\":\"ovr-52-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 51,
+          "name": "exp_svk_ovr_51",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"ovr-51-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"ovr-51-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 50,
+          "name": "exp_svk_ovr_50",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"ovr-50-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"ovr-50-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 52,
+                    "name": "exp_svk_ovr_52"
+                  },
+                  {
+                    "id": 51,
+                    "name": "exp_svk_ovr_51"
+                  },
+                  {
+                    "id": 50,
+                    "name": "exp_svk_ovr_50"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_svk_ovr_51",
+          "variant": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-51-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-52-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-51-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 51,
+                "name": "exp_svk_ovr_51",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "ovr-52-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 50,
+                "name": "exp_svk_ovr_50",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 52,
+                "name": "exp_svk_ovr_52",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "244 - Shared Variable Key - Peek - Assigned Lowest Id Whose Variant Lacks The Key Falls Through",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (e) Payload order 62, 61, 60. Experiment 61 assigns the unit variant B, whose config lacks svk.color (only 61's A defines it). variableValue(svk.color) visits 61 (exposed), falls through and returns 62's B value; exposures [61, 62]. svk.size (60 guard, 61's B) then exposes 60 and returns 61's B value. The lowest id (guard) is on unit type user_id, which the context lacks, and defines svk.size in both variants: it is exposed with assigned:false and never serves. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 62,
+          "name": "exp_svk_nokey_62",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"nokey-62-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 61,
+          "name": "exp_svk_nokey_61",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"nokey-61-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nokey-61-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 60,
+          "name": "exp_svk_nokey_60",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.size\":\"nokey-60-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"nokey-60-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 62,
+                    "name": "exp_svk_nokey_62"
+                  },
+                  {
+                    "id": 61,
+                    "name": "exp_svk_nokey_61"
+                  },
+                  {
+                    "id": 60,
+                    "name": "exp_svk_nokey_60"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-62-B",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-61-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-62-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 61,
+                "name": "exp_svk_nokey_61",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 62,
+                "name": "exp_svk_nokey_62",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "nokey-61-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 60,
+                "name": "exp_svk_nokey_60",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "245 - Shared Variable Key - Peek - Key Only In Unassigned Or Unserved Variants Returns Default, Every Visited Experiment Exposed",
+    "description": "(f) peekVariableValue returns the same values as variableValue and queues nothing (pending stays 0); the variableValue reads that follow then expose exactly as without the peeks. Context: (g) Payload order 74, 73, 72, 71. svk.color is defined by 71 (unit type user_id absent, unassigned), 72 (strict audience mismatch, unassigned) and 73's A (73 serves B, null config). variableValue(svk.color) returns the default and exposes 71, 72 and 73 in id order. svk.size (73's A, 74's B) then falls through 73 to 74 and exposes only 74. Expected results recorded from @absmartly/javascript-sdk 1.13.4.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 74,
+          "name": "exp_svk_dflt_74",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.size\":\"dflt-74-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 73,
+          "name": "exp_svk_dflt_73",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-73-A\",\"svk.size\":\"dflt-73-A\"}"
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 72,
+          "name": "exp_svk_dflt_72",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-72-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"dflt-72-B\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"tier\"},{\"value\":\"gold\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 71,
+          "name": "exp_svk_dflt_71",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"svk.color\":\"dflt-71-A\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"svk.color\":\"dflt-71-B\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 74,
+                    "name": "exp_svk_dflt_74"
+                  },
+                  {
+                    "id": 73,
+                    "name": "exp_svk_dflt_73"
+                  },
+                  {
+                    "id": 72,
+                    "name": "exp_svk_dflt_72"
+                  },
+                  {
+                    "id": 71,
+                    "name": "exp_svk_dflt_71"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "tier",
+          "value": "silver"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "default",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "dflt-74-B",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.color",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "default",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 71,
+                "name": "exp_svk_dflt_71",
+                "unit": "user_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 72,
+                "name": "exp_svk_dflt_72",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 73,
+                "name": "exp_svk_dflt_73",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "svk.size",
+          "defaultValue": "default"
+        },
+        "expect": {
+          "result": "dflt-74-B",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 74,
+                "name": "exp_svk_dflt_74",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 4,
+          "events": []
+        }
+      }
+    ]
   }
 ]
