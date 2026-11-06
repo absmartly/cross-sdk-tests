@@ -122,7 +122,7 @@ READS = ("variableValue", "peekVariableValue")
 
 # Keys. COLOR is the focal key of each scenario; SIZE is a fall-through probe: it is defined by
 # an earlier experiment's variant the unit is NOT served (so the walk must skip it) and by a
-# later experiment's served variant. Reading SIZE first makes every scenario visit and expose a
+# later experiment's served variant. Reading SIZE makes every scenario visit and expose a
 # non-winning experiment, so models that stop early, never fall through, read one experiment
 # per key or expose only the winner give a different value or exposure list.
 COLOR = "svk.color"
@@ -229,13 +229,13 @@ def spec_missing_key(tag: str) -> tuple:
 def spec_default(tag: str) -> tuple:
     absent = experiment(71, tag, (COLOR,), (COLOR,), unit_type=ABSENT_UNIT_TYPE)
     strict = experiment(72, tag, (COLOR,), (COLOR,), strict_mismatch=True)
-    lacking = experiment(73, tag, (COLOR, SIZE), ())
+    lacking = experiment(73, tag, (SIZE,), ())
     other = experiment(74, tag, (), (SIZE,))
-    return ("Key Only In Unassigned Or Unserved Variants Returns Default, Every Visited Experiment Exposed",
-            f"(g) Payload order 74, 73, 72, 71. {COLOR} is defined by 71 (unit type {ABSENT_UNIT_TYPE} absent, "
-            f"unassigned), 72 (strict audience mismatch, unassigned) and 73's A (73 serves B, null config). "
-            f"variableValue({COLOR}) returns the default and exposes 71, 72 and 73 in id order. {SIZE} (73's A, "
-            f"74's B) then falls through 73 to 74 and exposes only 74.",
+    return ("Key Only In Unassigned Experiments Returns Default, Every Visited Experiment Exposed",
+            f"(g) Payload order 74, 73, 72, 71. {COLOR} is defined only by 71 (unit type {ABSENT_UNIT_TYPE} absent, "
+            f"unassigned) and 72 (strict audience mismatch, unassigned). variableValue({COLOR}) returns the "
+            f"default and exposes both 71 and 72 in id order. {SIZE} (73's A, 74's B) then visits 73 "
+            f"(assigned, serves B with null config), falls through to 74 and exposes [73, 74].",
             [other, lacking, strict, absent],
             [MISMATCH_ATTRIBUTE, variable_value(COLOR), variable_value(SIZE), PENDING])
 
@@ -244,7 +244,7 @@ def peek_variant(spec: tuple) -> tuple:
     """The same context, every read first done with peekVariableValue: same values, no events,
     pending 0; then the variableValue reads, which must expose exactly as in the base scenario."""
     title, description, exps, steps = spec
-    setup = [s for s in steps if s[0] not in READS and s is not PENDING]
+    setup = [s for s in steps if s[0] not in READS and s[0] != "pending"]
     reads = [s for s in steps if s[0] in READS]
     peeks = [peek_variable_value(p["key"]) for _, p in reads]
     return (f"Peek - {title}",
@@ -285,6 +285,8 @@ def run_reference(specs: list) -> list:
     out = json.loads(proc.stdout)
     if out["sdkVersion"] != JS_SDK_VERSION:
         raise SystemExit(f"JS reference is {out['sdkVersion']}, expected {JS_SDK_VERSION}")
+    if len(out["cases"]) != len(specs):
+        raise SystemExit("JS reference returned an incomplete scenario list")
     return out["cases"]
 
 
@@ -302,6 +304,8 @@ def build_scenario(spec: tuple, ran: dict) -> dict:
     title, description, exps, steps = spec
     if ran["ready"] != {"ready": True, "failed": False, "finalized": False}:
         raise SystemExit(f"{title}: JS context not ready: {ran['ready']}")
+    if len(ran["steps"]) != len(steps):
+        raise SystemExit(f"{title}: JS reference returned an incomplete step list")
     out_steps = [{
         "action": "createContextWith",
         "params": {"units": {PRESENT_UNIT_TYPE: UNIT}, "options": {"publishDelay": -1, "refreshPeriod": 0}},

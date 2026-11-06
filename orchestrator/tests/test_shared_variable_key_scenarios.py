@@ -50,7 +50,6 @@ class Ctx:
         assert create["action"] == "createContextWith", scenario["name"]
         self.units = dict(create["params"]["units"])
         self.experiments = scenario["contextData"]["experiments"]
-        self.by_name = {e["name"]: e for e in self.experiments}
         self.attributes = {}
         self.overrides = {}
         self.exposed = set()
@@ -126,12 +125,11 @@ def js_rule(ctx, key, default, expose):
 def walk(order, stop_unassigned=False, stop_assigned=False, expose_winner_only=False, ignore_assigned=False):
     """A resolution model walking `order(experiments)`; flags turn on each wrong behaviour."""
     def model(ctx, key, default, expose):
-        events, visited = [], []
+        events = []
         for exp in order(ctx.defining(key)):
             a = ctx.assign(exp)
             if a["variables"] is None:
                 continue
-            visited.append(a)
             if expose and not expose_winner_only:
                 ctx.expose(a, events)
             served = a["assigned"] or a["overridden"]
@@ -234,15 +232,15 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
         scenarios whose payload is already in id order (the (a) baseline and its peek twin): there
         the payload walk IS the id walk; the reversed-payload scenarios kill it instead."""
         for s in self.group:
-            expected = recorded(s)
+            expected = [step for step in recorded(s) if step[1] in READS]
             ids = [e["id"] for e in s["contextData"]["experiments"]]
             for name, model in WRONG_MODELS.items():
                 if name == "payload-order-walk" and ids == sorted(ids):
                     continue
                 with self.subTest(scenario=s["name"], model=name):
-                    got = replay(s, model)
+                    got = [step for step in replay(s, model) if step[1] in READS]
                     self.assertFalse(same(got, expected),
-                                     f"wrong model {name!r} reproduces every step of {s['name']}")
+                                     f"wrong model {name!r} reproduces every read of {s['name']}")
 
     def test_payload_order_walk_is_killed(self):
         unsorted = [s for s in self.group

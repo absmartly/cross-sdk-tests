@@ -56,6 +56,7 @@ async function runCase(c) {
   };
   for (const step of c.steps) {
     const p = step.params || {};
+    const queuedBefore = context._exposures.length;
     let result;
     switch (step.action) {
       case 'variableValue': result = context.variableValue(p.key, p.defaultValue); break;
@@ -68,7 +69,17 @@ async function runCase(c) {
       case 'publish': await context.publish(); result = null; break;
       default: throw new Error(`unsupported action ${step.action}`);
     }
-    out.steps.push({ result: result === undefined ? null : result, events: log.splice(0) });
+    const events = log.splice(0);
+    if (step.action === 'variableValue' || step.action === 'peekVariableValue') {
+      // Cross-check the event logger against what the pinned SDK actually queued, not just
+      // its callbacks. This private queue is intentionally used only by this pinned oracle.
+      const queued = context._exposures.slice(queuedBefore).map(e => strip('exposure', e));
+      const logged = events.filter(e => e.type === 'exposure').map(e => e.data);
+      if (JSON.stringify(queued) !== JSON.stringify(logged)) {
+        throw new Error('queued exposures differ from eventLogger exposures');
+      }
+    }
+    out.steps.push({ result: result === undefined ? null : result, events });
   }
   return out;
 }
