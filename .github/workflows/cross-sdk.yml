@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 229-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 245-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -8,7 +8,8 @@
 # (race-free service discovery over the compose network).
 #
 # SDK unit tests run in each SDK's own repo CI. The fast `harness` job below
-# runs the orchestrator's own Docker-free unit tests (tests/) before any
+# runs the orchestrator's own Docker-free unit tests (tests/, orchestrator/tests/)
+# and the generated-group staleness checks before any
 # wrapper image is built; every Docker job depends on it.
 # The live-backend e2e suite is intentionally not run here (needs secrets +
 # the abs CLI and mutates real experiments).
@@ -74,6 +75,18 @@ jobs:
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
+
+      - name: Scenario group unit tests (no Docker)
+        run: python -m unittest discover -s orchestrator/tests -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Shared Variable Key group is up to date (computed by the pinned JS SDK)
+        run: |
+          npm ci --prefix tools/shared-variable-keys --ignore-scripts
+          python generate_shared_variable_key_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}

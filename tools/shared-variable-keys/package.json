@@ -1,0 +1,8 @@
+{
+  "name": "shared-variable-keys-reference",
+  "private": true,
+  "description": "Runs the shared-variable-key scenario cases through the real JavaScript SDK (pinned).",
+  "dependencies": {
+    "@absmartly/javascript-sdk": "1.13.4"
+  }
+}
