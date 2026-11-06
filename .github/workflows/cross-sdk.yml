@@ -77,9 +77,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Scenario group unit tests (no Docker)
-        run: |
-          pip install pytest
-          python -m pytest orchestrator/tests -v
+        run: python -m unittest discover -s orchestrator/tests -v
 
       - uses: actions/setup-node@v4
         with:
