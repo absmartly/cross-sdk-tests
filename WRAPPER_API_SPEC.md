@@ -1138,3 +1138,51 @@ exposure sequence published (which experiments/holdouts fire, in what order,
 at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
+
+### Capability: `assignmentRules`
+
+No new endpoint — this capability gates correct handling of the per-experiment
+`assignmentRules` wire field (a JSON **string** of `{"rules": [ ... ]}`) on the
+existing `treatment`/`peek`/`variableValue`/`publish` endpoints. An experiment's
+rules are evaluated in order; the first matching rule sets the variant and the
+resulting exposure is flagged `ruleOverride: true` with `assigned: false`, so the
+backend can exclude it from analysis (like an override). A matching rule takes
+precedence over audience targeting and custom assignments, is beaten only by an
+explicit override, and serves variable values. An `assign` rule gives a fixed
+variant; a `split` rule randomizes the unit over its own `percentages`. If the
+first matching rule's variant is out of range (or a split lacks one percentage
+per variant), normal assignment applies and later rules are not tried. Rules may
+carry an `environments` array (empty = all environments). A rule variant for an
+experiment removed from the context data on refresh is rebuilt, not served stale.
+
+Wrappers must advertise `assignmentRules` truthfully and dynamically from a
+BEHAVIORAL self-test (the same discipline as `holdouts`): build a real context
+with an `assignmentRules` experiment, drive `treatment()`/`variableValue()`, and
+assert both the returned variant and the exposure's `ruleOverride`/`assigned`
+flags. A wire-model marker (an `Experiment.assignmentRules` field existing) is
+necessary but not sufficient — an SDK can carry and deserialize the field yet not
+implement rule resolution. The probe must fail closed (report `false`) on any
+exception. Scenarios 230-239 (`requires: ["assignmentRules"]`) are skipped by
+SDKs that report `false`.
+
+Exposure events gain one field for this capability: `ruleOverride` (boolean),
+`true` only on an exposure whose variant came from a matching assignment rule.
+It is reported alongside the existing `assigned`/`overridden`/`custom` flags and
+is compared only where a scenario asserts it.
+
+### Capability: `semverOperators`
+
+No new endpoint — this capability gates the semantic-version comparison
+operators `semver_eq`, `semver_gt`, `semver_gte`, `semver_lt` and `semver_lte`
+in audience filters (and rule conditions). They compare version strings
+semantically and locale-independently: a leading `v`/`V` is ignored, `+build`
+metadata is ignored, a missing version part is `0`, numeric identifiers are
+compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
+pre-release ranks below its release.
+
+Wrappers advertise `semverOperators` from a BEHAVIORAL self-test: a strict
+audience using `semver_gt` must assign the experiment's variant when the
+attribute version is greater (numeric comparison) and variant 0 with
+`audienceMismatch: true` when it is not. The probe fails closed on any
+exception. Scenarios 240-245 (`requires: ["semverOperators"]`) are skipped by
+SDKs that report `false`.
