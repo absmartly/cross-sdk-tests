@@ -9,6 +9,7 @@ const Vue = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
+const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
 const vue2sdk = require('@absmartly/vue2-sdk');
 
 process.on('uncaughtException', (err) => {
@@ -137,13 +138,20 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+    holdoutSelfTest.runHoldouts(),
+    holdoutSelfTest.runHoldoutArms(),
+    assignmentRulesSelfTest.runAssignmentRules(),
+    assignmentRulesSelfTest.runSemverOperators(),
+  ]);
   res.json({diagnosticsUtf8: true,
     diagnosticsBase64: true,
     diagnosticsTypeChecks: true,
     diagnosticsIsPromise: true,
     holdouts,
     holdout_arms: holdoutArms,
+    assignmentRules,
+    semverOperators,
     diagnostics: true,
     attrsSeq: true,
     isWrapper: true,

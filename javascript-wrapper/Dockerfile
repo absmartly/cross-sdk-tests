@@ -16,6 +16,7 @@ RUN npm install
 
 COPY cross-sdk-tests/javascript-wrapper/server.js ./
 COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
+COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 
 EXPOSE 3000
 
