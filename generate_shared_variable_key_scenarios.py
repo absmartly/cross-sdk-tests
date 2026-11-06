@@ -338,11 +338,6 @@ def build_group(first_number: int) -> list:
     return group
 
 
-def write(scenarios: list, path: str) -> None:
-    with open(path, "w", encoding="utf-8") as out:
-        out.write(json.dumps(scenarios, indent=2, ensure_ascii=False) + "\n")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate the Shared Variable Key scenario group.")
     parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
