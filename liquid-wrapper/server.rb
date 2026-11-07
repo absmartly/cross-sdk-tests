@@ -39,8 +39,13 @@ class EventCollector
   end
 
   def handle_event(event_type, data)
+    # The underlying ruby-sdk emits "close" for the lifecycle seal; the
+    # cross-SDK contract (and the JS reference) name this event "finalize".
+    # Normalise it here the way the other wrappers do.
+    type = event_type.to_s
+    type = 'finalize' if type == 'close'
     @events << {
-      type: event_type.to_s,
+      type: type,
       data: deep_copy(data),
       timestamp: (Time.now.to_f * 1000).to_i
     }
@@ -174,8 +179,15 @@ def events_since(collector, events_before)
   collector.events[events_before..-1] || []
 end
 
+def canonical_error(message)
+  # The underlying ruby-sdk keeps its v1 error text ("Unit 'x' already set.");
+  # the cross-SDK contract words this "Unit 'x' UID already set.". Map the
+  # wording rather than masking it.
+  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
+end
+
 def error_response(status, error, collector, events_before)
-  body = { error: error.message }
+  body = { error: canonical_error(error.message) }
   body[:events] = collector ? events_since(collector, events_before) : []
   halt status, body.to_json
 end
@@ -587,7 +599,7 @@ post '/context/:context_id/readyError' do
 end
 
 post '/context/:context_id/variableKeysMap' do
-  sdk_route(params['context_id']) { |context| context.variable_keys.transform_keys(&:to_s) }
+  sdk_route(params['context_id']) { |context| context.variable_keys_list.transform_keys(&:to_s) }
 end
 
 post '/context/:context_id/globalCustomFieldKeys' do
@@ -945,8 +957,8 @@ post '/diagnostic' do
            when 'hashUnit' then Hashing.hash_unit(value)
            when 'base64UrlNoPadding' then Hashing.base64_url_no_padding(Hashing.to_utf8(value))
            when 'utf8Bytes' then Hashing.to_utf8(value).bytes
-           when 'isObject' then TypeUtils.object?(value)
-           when 'isNumeric' then TypeUtils.numeric?(value)
+           when 'isObject' then Absmartly::TypeUtils.object?(value)
+           when 'isNumeric' then Absmartly::TypeUtils.numeric?(value)
            else
              # isPromise has no Ruby SDK implementation, so it is not offered.
              halt 400, { error: "Unsupported diagnostic operation: #{op}", events: [] }.to_json

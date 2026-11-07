@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 229-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 247-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
