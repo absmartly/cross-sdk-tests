@@ -5,7 +5,13 @@
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="feat/angular-sdk-complete"
   ["cpp-sdk"]="feat/initial-sdk"
-  ["dotnet-sdk"]="feat/sdk-entry-point-rename"
+  # dotnet-sdk#8 (fix/audit-operator-fixes, bedc3b9) carries the JSON custom-field
+  # fix (scenarios 16, 54-57: full JSON value returned like the JS SDK). PR #10
+  # (feat/sdk-entry-point-rename) is stacked on #8 but has diverged and does NOT
+  # contain bedc3b9, so the dotnet lane is pinned to #8 until #10 picks the fix up.
+  # The wrapper constructs the #8 entry point (class ABsmartly, ABsmartlyConfig);
+  # ABSdk/ABSdkConfig remain as [Obsolete] aliases on this branch.
+  ["dotnet-sdk"]="fix/audit-operator-fixes"
   ["elixir-sdk"]="feat/initial-implementation"
   ["flutter-sdk"]="fix/audit-operator-fixes"
   ["go-sdk"]="fix/all-tests-passing"

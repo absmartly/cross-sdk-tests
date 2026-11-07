@@ -202,7 +202,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                     new ABSmartly.Services.DefaultContextDataDeserializer(),
                     new ABSmartly.Services.DefaultContextEventSerializer())));
 
-            var e2eSdk = new ABsmartly.Sdk(
+            var e2eSdk = new ABsmartly(
                 e2eHttpClientFactory,
                 e2eServiceConfig,
                 new ABsmartlyConfig
@@ -323,7 +323,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var publishFailFlag = new PublishFailFlag();
 
-        var sdk = new ABsmartly.Sdk(
+        var sdk = new ABsmartly(
             // payloadThrottle only delays the HTTP GET of context data (simulated
             // network latency); everything else is the SDK's own fetch path.
             new DummyHttpClientFactory(payloadThrottle),
