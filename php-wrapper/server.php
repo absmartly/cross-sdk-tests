@@ -35,6 +35,13 @@ class EventCollector implements ContextEventLogger
 
         $eventName = strtolower($eventName);
 
+        // The php-sdk emits "Close" (owner kept it deliberately); the cross-SDK
+        // contract and the JS reference name this lifecycle event "finalize".
+        // Translate it here the way the other wrappers normalise event names.
+        if ($eventName === 'close') {
+            $eventName = 'finalize';
+        }
+
         $data = null;
         if ($eventData !== null) {
             $data = $this->deepCopy($eventData);
@@ -160,8 +167,23 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 $contexts = [];
 $payloadStore = [];
 
+function canonicalError(string $message): string
+{
+    // The php-sdk deliberately keeps its v1 error text
+    // ('Unit "x" UID is already set'); the cross-SDK contract (and the JS
+    // reference) word this "Unit 'x' UID already set.". Map the wording rather
+    // than masking it.
+    if (preg_match('/^Unit "([^"]+)" UID is already set\.?$/', $message, $m)) {
+        return "Unit '{$m[1]}' UID already set.";
+    }
+    return $message;
+}
+
 function jsonResponse(int $status, $data): Response
 {
+    if (is_array($data) && isset($data['error']) && is_string($data['error'])) {
+        $data['error'] = canonicalError($data['error']);
+    }
     return new Response(
         $status,
         ['Content-Type' => 'application/json'],
@@ -322,7 +344,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             if (isset($body->units)) {
                 foreach ((array)$body->units as $unitType => $uid) {
-                    $contextConfig->setUnit($unitType, $uid);
+                    // php-sdk keeps units as strings (owner decision) and
+                    // ContextConfig::setUnit is strict-typed string, so a
+                    // numeric uid from the JSON body must be coerced here or
+                    // the wrapper crashes with an uncaught TypeError.
+                    $contextConfig->setUnit($unitType, is_scalar($uid) ? (string)$uid : $uid);
                 }
             }
 
@@ -405,7 +431,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         if (isset($body->units)) {
             foreach ((array)$body->units as $unitType => $uid) {
-                $contextConfig->setUnit($unitType, $uid);
+                // See the note above: coerce numeric units to strings so the
+                // strict-typed ContextConfig::setUnit does not throw.
+                $contextConfig->setUnit($unitType, is_scalar($uid) ? (string)$uid : $uid);
             }
         }
 

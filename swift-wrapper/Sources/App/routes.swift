@@ -77,7 +77,10 @@ class EventCollector: ContextEventLogger {
                 "data": convertGoalToDict(goal),
                 "timestamp": timestamp
             ]
-        case .finalize:
+        case .close:
+            // The swift-sdk's real enum case is `.close` (`.finalize` is only a
+            // static alias and cannot be matched as a switch pattern). Emit the
+            // cross-SDK event name "finalize", like the other wrappers.
             eventRecord = [
                 "type": "finalize",
                 "data": NSNull(),
