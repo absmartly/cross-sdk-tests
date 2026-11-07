@@ -212,7 +212,9 @@ get '/capabilities' do
     getAttributes: true,
     readyError: true,
     numericUnitIds: true,
-    publishThrowsOnFailure: true }.to_json
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true }.to_json
 end
 
 put '/context_payload/:payload_id' do

@@ -4187,6 +4187,9 @@
   {
     "name": "39 - Error Handling - Invalid Goal Properties Array",
     "description": "Should throw when goal properties is an array instead of object",
+    "requires": [
+      "trackRejectsNonObjectProperties"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -26249,7 +26252,8 @@
     "name": "229 - Ready Error - Refresh On Failed Context Is A No-Op",
     "description": "refresh() on a context whose initial load failed succeeds without fetching: no refresh or error event, the context stays failed, and data offered for the refresh is not applied",
     "requires": [
-      "readyError"
+      "readyError",
+      "refreshNoOpOnFailedContext"
     ],
     "contextData": {
       "experiments": []

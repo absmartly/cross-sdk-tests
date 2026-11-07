@@ -305,7 +305,9 @@ async fn capabilities_handler() -> impl IntoResponse {
         "getAttributes": true,
         "readyError": true,
         "numericUnitIds": true,
-        "publishThrowsOnFailure": true
+        "publishThrowsOnFailure": true,
+        "trackRejectsNonObjectProperties": true,
+        "refreshNoOpOnFailedContext": true
     }))
 }
 

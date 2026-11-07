@@ -261,6 +261,8 @@ Future<void> startServer() async {
         'readyError': true,
         'numericUnitIds': true,
         'publishThrowsOnFailure': true,
+        'trackRejectsNonObjectProperties': true,
+        'refreshNoOpOnFailedContext': true,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',

@@ -250,7 +250,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'numericUnitIds' => false,
             //  - publish()/flush() log a collector failure and return instead
             //    of throwing; only close() surfaces the error (scenario 193).
-            'publishThrowsOnFailure' => false
+            'publishThrowsOnFailure' => false,
+            'trackRejectsNonObjectProperties' => true,
+            'refreshNoOpOnFailedContext' => true
         ]);
     }
 

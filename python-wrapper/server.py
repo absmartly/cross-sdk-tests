@@ -166,7 +166,9 @@ def capabilities():
         'getAttributes': True,
         'readyError': True,
         'numericUnitIds': True,
-        'publishThrowsOnFailure': True
+        'publishThrowsOnFailure': True,
+        'trackRejectsNonObjectProperties': False,
+        'refreshNoOpOnFailedContext': False
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])

@@ -27,7 +27,9 @@
     "assignmentRules": "custom assignment rules: an experiment's assignmentRules string is evaluated and a matching rule wins with a ruleOverride:true exposure (advertised from a behavioral self-test)",
     "semverOperators": "semver_eq/gt/gte/lt/lte operators in audience filters, compared numerically and locale-independently (advertised from a behavioral self-test)",
     "numericUnitIds": "a numeric unit uid keeps its numeric JSON type end to end: getUnit/getUnits return the number the unit was set with (12345), not a stringified copy (\"12345\")",
-    "publishThrowsOnFailure": "a direct publish() call whose collector/transport fails surfaces the failure to the caller by throwing; the pending events are preserved and an error event is logged"
+    "publishThrowsOnFailure": "a direct publish() call whose collector/transport fails surfaces the failure to the caller by throwing; the pending events are preserved and an error event is logged",
+    "trackRejectsNonObjectProperties": "track() rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing \"Goal '<name>' properties must be of type object.\", matching the JS reference",
+    "refreshNoOpOnFailedContext": "refresh() on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference)"
   },
   "sdks": {
     "javascript": {
@@ -48,7 +50,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {}
     },
@@ -72,7 +76,9 @@
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
         "assignmentRules": "python-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "python-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "python-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
+        "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)"
       }
     },
     "ruby": {
@@ -88,7 +94,9 @@
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "ruby-sdk has no promise abstraction or isPromise helper",
@@ -111,7 +119,9 @@
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "wraps ruby-sdk, which has no promise abstraction or isPromise helper",
@@ -132,7 +142,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
-        "diagnosticsIsPromise"
+        "diagnosticsIsPromise",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
@@ -155,7 +167,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "go-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -180,7 +194,9 @@
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "rust-sdk has no promise/future type check (src/utils.rs)",
@@ -205,7 +221,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsBase64": "java-sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -225,7 +243,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "kotlin-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -250,7 +270,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -271,7 +293,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "swift-sdk has no isObject/isNumeric helpers (statically typed API; Internal/Hashing has only hash, base64UrlNoPadding, utf8Bytes)",
@@ -293,7 +317,9 @@
         "readyError",
         "diagnosticsUtf8",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsBase64": "dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -316,7 +342,9 @@
         "readyError",
         "diagnosticsUtf8",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsBase64": "flutter-sdk dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -339,7 +367,9 @@
         "readyError",
         "diagnosticsUtf8",
         "diagnosticsBase64",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "dotnet-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -362,7 +392,9 @@
         "readyError",
         "diagnosticsBase64",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
@@ -388,7 +420,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -415,7 +449,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {}
     },
@@ -437,7 +473,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {}
     },
@@ -459,7 +497,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {}
     },
@@ -481,7 +521,9 @@
         "assignmentRules",
         "semverOperators",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext"
       ],
       "unsupported": {}
     }

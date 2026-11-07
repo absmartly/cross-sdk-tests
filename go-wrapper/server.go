@@ -248,6 +248,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"readyError": false,
 		"numericUnitIds":         true,
 		"publishThrowsOnFailure": true,
+		"trackRejectsNonObjectProperties": true,
+		"refreshNoOpOnFailedContext":      true,
 	})
 }
 

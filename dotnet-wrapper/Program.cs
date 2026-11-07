@@ -80,7 +80,9 @@ app.MapGet("/capabilities", () => Results.Ok(new
     // number. Advertised false and reviewed as an exception, like php — the
     // wrapper does not re-type the SDK's string back to a number.
     numericUnitIds = false,
-    publishThrowsOnFailure = true
+    publishThrowsOnFailure = true,
+    trackRejectsNonObjectProperties = true,
+    refreshNoOpOnFailedContext = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>

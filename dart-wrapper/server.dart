@@ -286,6 +286,8 @@ void main() async {
         'readyError': true,
         'numericUnitIds': true,
         'publishThrowsOnFailure': true,
+        'trackRejectsNonObjectProperties': true,
+        'refreshNoOpOnFailedContext': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );

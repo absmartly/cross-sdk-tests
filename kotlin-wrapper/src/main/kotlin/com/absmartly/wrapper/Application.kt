@@ -81,7 +81,9 @@ fun Application.configureRouting() {
                 "getAttributes" to true,
                 "readyError" to true,
                 "numericUnitIds" to true,
-                "publishThrowsOnFailure" to true
+                "publishThrowsOnFailure" to true,
+                "trackRejectsNonObjectProperties" to true,
+                "refreshNoOpOnFailedContext" to true
             ))
         }
 

@@ -324,7 +324,8 @@ int main() {
                     {"getAttributes", true}, {"readyError", true},
                     {"diagnosticsUtf8", false}, {"diagnosticsBase64", true},
                     {"diagnosticsTypeChecks", false}, {"diagnosticsIsPromise", false},
-                    {"numericUnitIds", true}, {"publishThrowsOnFailure", true}};
+                    {"numericUnitIds", true}, {"publishThrowsOnFailure", true},
+                    {"trackRejectsNonObjectProperties", true}, {"refreshNoOpOnFailedContext", true}};
                 res.set_content(resp.dump(), "application/json");
             });
 

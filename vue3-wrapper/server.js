@@ -178,6 +178,8 @@ app.get('/capabilities', async (req, res) => {
     readyError: true,
     numericUnitIds: true,
     publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
