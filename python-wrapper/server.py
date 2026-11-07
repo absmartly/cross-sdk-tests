@@ -75,15 +75,17 @@ class EventCollector(ContextEventLogger):
         # The python3-sdk emits the legacy "close" event *and* its cross-SDK
         # alias "finalize" for the same lifecycle transition. The contract (and
         # the JS reference) name this event "finalize" and expect it once, so
-        # translate "close" -> "finalize" and drop the resulting duplicate,
-        # the way the other wrappers normalise event names.
+        # translate "close" -> "finalize" and drop the raw "finalize" the SDK
+        # pairs it with, the way the other wrappers normalise event names.
+        # Dropping the raw "finalize" (rather than de-duplicating on the last
+        # stored event) keeps one "finalize" per transition without masking a
+        # future "finalize" that the SDK might emit on a repeated close().
         if event_type_str == 'close':
             event_type_str = 'finalize'
+        elif event_type_str == 'finalize':
+            return
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
-            if event_type_str == 'finalize' and self.events and \
-                    self.events[-1]['type'] == 'finalize':
-                return
             self.events.append({
                 'type': event_type_str,
                 'data': serialized_data,
