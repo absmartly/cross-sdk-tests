@@ -200,10 +200,10 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                     new ABSmartly.Services.DefaultContextDataDeserializer(),
                     new ABSmartly.Services.DefaultContextEventSerializer())));
 
-            var e2eSdk = new ABSdk(
+            var e2eSdk = new ABsmartly.Sdk(
                 e2eHttpClientFactory,
                 e2eServiceConfig,
-                new ABSdkConfig
+                new ABsmartlyConfig
                 {
                     ContextEventLogger = e2eEventCollector,
                     ContextPublisher = e2ePublisher
@@ -321,7 +321,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var publishFailFlag = new PublishFailFlag();
 
-        var sdk = new ABSdk(
+        var sdk = new ABsmartly.Sdk(
             // payloadThrottle only delays the HTTP GET of context data (simulated
             // network latency); everything else is the SDK's own fetch path.
             new DummyHttpClientFactory(payloadThrottle),
@@ -332,7 +332,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                 Application = "test",
                 Environment = "test"
             },
-            new ABSdkConfig
+            new ABsmartlyConfig
             {
                 ContextEventLogger = eventCollector,
                 ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag)
@@ -369,10 +369,10 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
-        IContext context;
+        IContextV2 context;
         if (contextData != null)
         {
-            context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
+            context = (IContextV2)sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
         }
         else if (payloadThrottle > 0)
         {
@@ -383,7 +383,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         else
         {
             // Returns once the SDK has loaded (ready event) or failed (error event).
-            context = sdk.CreateContext(contextConfig);
+            context = (IContextV2)sdk.CreateContext(contextConfig);
         }
 
         var storedData = new ContextData
@@ -1358,7 +1358,7 @@ public class EventData
 
 public class ContextData
 {
-    public IContext Context { get; set; }
+    public IContextV2 Context { get; set; }
     public EventCollector EventCollector { get; set; }
     public Dictionary<string, UnitValue> Units { get; set; }
     public Dictionary<string, object> Attributes { get; set; }

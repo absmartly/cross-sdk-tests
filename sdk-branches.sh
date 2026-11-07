@@ -5,7 +5,7 @@
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="feat/angular-sdk-complete"
   ["cpp-sdk"]="feat/initial-sdk"
-  ["dotnet-sdk"]="fix/audit-operator-fixes"
+  ["dotnet-sdk"]="feat/sdk-entry-point-rename"
   ["elixir-sdk"]="feat/initial-implementation"
   ["flutter-sdk"]="fix/audit-operator-fixes"
   ["go-sdk"]="fix/all-tests-passing"
