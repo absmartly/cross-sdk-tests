@@ -246,6 +246,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
 		// so the wrapper cannot report it without fabricating it.
 		"readyError": false,
+		"numericUnitIds":         true,
+		"publishThrowsOnFailure": true,
 	})
 }
 

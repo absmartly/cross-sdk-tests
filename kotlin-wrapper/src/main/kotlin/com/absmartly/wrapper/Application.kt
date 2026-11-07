@@ -79,7 +79,9 @@ fun Application.configureRouting() {
                 "globalCustomFieldKeys" to true,
                 "getUnits" to true,
                 "getAttributes" to true,
-                "readyError" to true
+                "readyError" to true,
+                "numericUnitIds" to true,
+                "publishThrowsOnFailure" to true
             ))
         }
 

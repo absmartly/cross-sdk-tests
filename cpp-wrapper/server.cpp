@@ -323,7 +323,8 @@ int main() {
                     {"globalCustomFieldKeys", true}, {"getUnits", true},
                     {"getAttributes", true}, {"readyError", true},
                     {"diagnosticsUtf8", false}, {"diagnosticsBase64", true},
-                    {"diagnosticsTypeChecks", false}, {"diagnosticsIsPromise", false}};
+                    {"diagnosticsTypeChecks", false}, {"diagnosticsIsPromise", false},
+                    {"numericUnitIds", true}, {"publishThrowsOnFailure", true}};
                 res.set_content(resp.dump(), "application/json");
             });
 

@@ -74,7 +74,9 @@ app.MapGet("/capabilities", () => Results.Ok(new
     globalCustomFieldKeys = true,
     getUnits = true,
     getAttributes = true,
-    readyError = true
+    readyError = true,
+    numericUnitIds = true,
+    publishThrowsOnFailure = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>

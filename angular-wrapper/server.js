@@ -140,7 +140,9 @@ app.get('/capabilities', async (req, res) => {
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true
+    readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true
   });
 });
 

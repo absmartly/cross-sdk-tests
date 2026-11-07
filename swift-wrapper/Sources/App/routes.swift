@@ -405,6 +405,37 @@ func call(_ storage: ContextStorage, _ body: () async throws -> Any?) async thro
     }
 }
 
+// The swift-sdk public API is intentionally non-throwing (v1.4.0 contract, kept
+// by maintainer decision on swift-sdk#7). Misuse that every other SDK throws on
+// — a blank or duplicate unit UID, a mutation after finalize, or a read before
+// the context is ready — does NOT throw here: the SDK leaves state unchanged and
+// reports the failure by logging an `.error` event instead (see Context.swift
+// `reportError`/`ensureReady`/`ensureNotClosed`, "The public API never throws").
+//
+// The cross-SDK scenarios and the JS reference expect that misuse to surface to
+// the caller as an error, so this helper bridges the two models: if the SDK
+// logged an `.error` event during the call, we surface its message as the HTTP
+// error the scenario asserts. The JS reference throws synchronously WITHOUT
+// emitting an event, so the surfaced error's events window excludes the
+// consumed `.error` event (any other events the call produced are preserved).
+// When no `.error` is logged this behaves exactly like `call`.
+func callSurfacingLoggedError(_ storage: ContextStorage, _ body: () async throws -> Any?) async throws -> HTTPResponse {
+    let before = storage.eventCollector.events.count
+    do {
+        let value = try await body()
+        let newEvents = Array(storage.eventCollector.events.suffix(from: before))
+        if let errorEvent = newEvents.first(where: { ($0["type"] as? String) == "error" }) {
+            let message = ((errorEvent["data"] as? [String: Any])?["message"] as? String) ?? "Context error"
+            let passthrough = newEvents.filter { ($0["type"] as? String) != "error" }
+            return try reply(["error": message, "events": sanitizeForJSON(passthrough)], status: .badRequest)
+        }
+        return try reply(["result": sanitizeForJSON(value), "events": sanitizeForJSON(newEvents)])
+    } catch {
+        let newEvents = Array(storage.eventCollector.events.suffix(from: before))
+        return try reply(["error": error.localizedDescription, "events": sanitizeForJSON(newEvents)], status: .badRequest)
+    }
+}
+
 func errorReply(_ message: String, status: HTTPResponseStatus = .badRequest) throws -> HTTPResponse {
     return try reply(["error": message, "events": [] as [Any]], status: status)
 }
@@ -450,7 +481,9 @@ func routes(_ app: VaporApplication) throws {
             "globalCustomFieldKeys": true,
             "getUnits": true,
             "getAttributes": true,
-            "readyError": true
+            "readyError": true,
+            "numericUnitIds": true,
+            "publishThrowsOnFailure": true
         ])
     }
 
@@ -584,7 +617,9 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "setUnit") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) {
+        // Non-throwing SDK: a blank/duplicate/post-finalize unit logs `.error`
+        // instead of throwing (scenarios 34, 35, 149). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.setUnit(unitType: request["unitType"].stringValue, value: request["uid"])
             return nil
         }
@@ -606,7 +641,9 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "attribute") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) {
+        // Non-throwing SDK: a post-finalize setAttribute logs `.error` instead
+        // of throwing (scenarios 148, 188). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.setAttribute(name: request["name"].stringValue, value: request["value"])
             return nil
         }
@@ -626,20 +663,26 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "treatment") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
+        // Non-throwing SDK: treatment() on a not-ready context logs `.error`
+        // instead of throwing (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
     }
 
     app.post("context", ":contextId", "peek") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
+        // Non-throwing SDK: peek() on a not-ready context logs `.error`
+        // instead of throwing (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
     }
 
     app.post("context", ":contextId", "variableValue") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        return try await call(storage) {
+        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
+        // (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.getVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
     }
@@ -648,7 +691,9 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        return try await call(storage) {
+        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
+        // (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.peekVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
     }
@@ -669,7 +714,7 @@ func routes(_ app: VaporApplication) throws {
             // value is rejected at the type boundary with the SDK-wide message.
             return try errorReply("Goal '\(goalName)' properties must be of type object.")
         }
-        return try await call(storage) {
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.track(goalName, properties: props)
             return nil
         }
@@ -715,7 +760,9 @@ func routes(_ app: VaporApplication) throws {
 
     app.post("context", ":contextId", "variableKeys") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { Array(try storage.context.getVariableKeys().keys) }
+        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
+        // (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) { Array(try storage.context.getVariableKeys().keys) }
     }
 
     app.post("context", ":contextId", "variableKeysMap") { req async throws -> HTTPResponse in
@@ -752,7 +799,9 @@ func routes(_ app: VaporApplication) throws {
 
     app.get("context", ":contextId", "experiments") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { try storage.context.getExperiments() }
+        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
+        // (scenario 201). Surface it as the error.
+        return try await callSurfacingLoggedError(storage) { try storage.context.getExperiments() }
     }
 
     app.post("context", ":contextId", "readyError") { req async throws -> HTTPResponse in

@@ -259,6 +259,8 @@ Future<void> startServer() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'numericUnitIds': true,
+        'publishThrowsOnFailure': true,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',

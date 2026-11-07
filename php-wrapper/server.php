@@ -241,7 +241,16 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'globalCustomFieldKeys' => true,
             'getUnits' => true,
             'getAttributes' => true,
-            'readyError' => true
+            'readyError' => true,
+            // Reviewed PHP exceptions (owner decisions by Marcio, for v1.0.3
+            // compatibility), see orchestrator/expected-capabilities.json:
+            //  - numeric unit uids are stored and returned as strings, so a
+            //    numeric uid does not round-trip as a number through
+            //    getUnit/getUnits (scenarios 02, 116, 196, 197).
+            'numericUnitIds' => false,
+            //  - publish()/flush() log a collector failure and return instead
+            //    of throwing; only close() surfaces the error (scenario 193).
+            'publishThrowsOnFailure' => false
         ]);
     }
 

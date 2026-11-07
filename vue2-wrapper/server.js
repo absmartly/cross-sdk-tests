@@ -162,6 +162,8 @@ app.get('/capabilities', async (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',

@@ -162,7 +162,9 @@ def capabilities():
         'globalCustomFieldKeys': True,
         'getUnits': True,
         'getAttributes': True,
-        'readyError': True
+        'readyError': True,
+        'numericUnitIds': True,
+        'publishThrowsOnFailure': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])

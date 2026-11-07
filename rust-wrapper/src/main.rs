@@ -303,7 +303,9 @@ async fn capabilities_handler() -> impl IntoResponse {
         "globalCustomFieldKeys": true,
         "getUnits": true,
         "getAttributes": true,
-        "readyError": true
+        "readyError": true,
+        "numericUnitIds": true,
+        "publishThrowsOnFailure": true
     }))
 }
 

@@ -284,6 +284,8 @@ void main() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'numericUnitIds': true,
+        'publishThrowsOnFailure': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );

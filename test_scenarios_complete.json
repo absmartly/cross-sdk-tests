@@ -81,6 +81,9 @@
   {
     "name": "02 - Unit Management - Set Unit",
     "description": "Should be able to set a unit after context creation",
+    "requires": [
+      "numericUnitIds"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -12665,6 +12668,9 @@
   {
     "name": "116 - SDK Config - Unit Type Coercion",
     "description": "Numeric unit values keep their numeric type: getUnit returns the number the context was created with",
+    "requires": [
+      "numericUnitIds"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -19543,7 +19549,8 @@
     "name": "193 - Publish Failure - Preserves Pending Events",
     "description": "When publish fails, pending event count must be preserved so events are not lost",
     "requires": [
-      "publishFail"
+      "publishFail",
+      "publishThrowsOnFailure"
     ],
     "contextData": {
       "experiments": [
@@ -19932,6 +19939,9 @@
   {
     "name": "196 - Unit Getters - getUnit Returns Set Value",
     "description": "getUnit() must return the UID that was set for each unit type",
+    "requires": [
+      "numericUnitIds"
+    ],
     "contextData": {
       "experiments": []
     },
@@ -19996,7 +20006,8 @@
     "name": "197 - Unit Getters - getUnits Returns All Units",
     "description": "getUnits() must return a map of all unit types to their UIDs",
     "requires": [
-      "getUnits"
+      "getUnits",
+      "numericUnitIds"
     ],
     "contextData": {
       "experiments": []

@@ -243,6 +243,8 @@ get '/capabilities' do
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
     passThroughOperations: [
       'attribute', 'override', 'customAssignment', 'pending', 'isFinalized',
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',

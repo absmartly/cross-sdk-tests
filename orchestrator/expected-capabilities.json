@@ -25,7 +25,9 @@
     "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
     "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test",
     "assignmentRules": "custom assignment rules: an experiment's assignmentRules string is evaluated and a matching rule wins with a ruleOverride:true exposure (advertised from a behavioral self-test)",
-    "semverOperators": "semver_eq/gt/gte/lt/lte operators in audience filters, compared numerically and locale-independently (advertised from a behavioral self-test)"
+    "semverOperators": "semver_eq/gt/gte/lt/lte operators in audience filters, compared numerically and locale-independently (advertised from a behavioral self-test)",
+    "numericUnitIds": "a numeric unit uid keeps its numeric JSON type end to end: getUnit/getUnits return the number the unit was set with (12345), not a stringified copy (\"12345\")",
+    "publishThrowsOnFailure": "a direct publish() call whose collector/transport fails surfaces the failure to the caller by throwing; the pending events are preserved and an error event is logged"
   },
   "sdks": {
     "javascript": {
@@ -44,7 +46,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {}
     },
@@ -60,7 +64,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
-        "diagnosticsIsPromise"
+        "diagnosticsIsPromise",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -80,7 +86,9 @@
         "readyError",
         "diagnosticsUtf8",
         "diagnosticsBase64",
-        "diagnosticsTypeChecks"
+        "diagnosticsTypeChecks",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "ruby-sdk has no promise abstraction or isPromise helper",
@@ -101,7 +109,9 @@
         "readyError",
         "diagnosticsUtf8",
         "diagnosticsBase64",
-        "diagnosticsTypeChecks"
+        "diagnosticsTypeChecks",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "wraps ruby-sdk, which has no promise abstraction or isPromise helper",
@@ -129,7 +139,9 @@
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
         "assignmentRules": "php-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "php-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "php-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
+        "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception"
       }
     },
     "go": {
@@ -141,7 +153,9 @@
         "getUnits",
         "getAttributes",
         "diagnosticsUtf8",
-        "diagnosticsBase64"
+        "diagnosticsBase64",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "go-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -164,7 +178,9 @@
         "readyError",
         "diagnosticsUtf8",
         "diagnosticsBase64",
-        "diagnosticsTypeChecks"
+        "diagnosticsTypeChecks",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsIsPromise": "rust-sdk has no promise/future type check (src/utils.rs)",
@@ -187,7 +203,9 @@
         "holdout_arms",
         "diagnosticsUtf8",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsBase64": "java-sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -205,7 +223,9 @@
         "getAttributes",
         "readyError",
         "diagnosticsUtf8",
-        "diagnosticsBase64"
+        "diagnosticsBase64",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "kotlin-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -228,7 +248,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
-        "diagnosticsIsPromise"
+        "diagnosticsIsPromise",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -247,7 +269,9 @@
         "getAttributes",
         "readyError",
         "diagnosticsUtf8",
-        "diagnosticsBase64"
+        "diagnosticsBase64",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "swift-sdk has no isObject/isNumeric helpers (statically typed API; Internal/Hashing has only hash, base64UrlNoPadding, utf8Bytes)",
@@ -267,7 +291,9 @@
         "getUnits",
         "getAttributes",
         "readyError",
-        "diagnosticsUtf8"
+        "diagnosticsUtf8",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsBase64": "dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -288,7 +314,9 @@
         "getUnits",
         "getAttributes",
         "readyError",
-        "diagnosticsUtf8"
+        "diagnosticsUtf8",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsBase64": "flutter-sdk dart_sdk has no plain base64UrlNoPadding; MD5.digestBase64UrlNoPadding only encodes an MD5 digest",
@@ -310,7 +338,9 @@
         "getAttributes",
         "readyError",
         "diagnosticsUtf8",
-        "diagnosticsBase64"
+        "diagnosticsBase64",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsTypeChecks": "dotnet-sdk has no isObject/isNumeric helpers (statically typed API)",
@@ -330,7 +360,9 @@
         "getUnits",
         "getAttributes",
         "readyError",
-        "diagnosticsBase64"
+        "diagnosticsBase64",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
@@ -354,7 +386,9 @@
         "diagnosticsUtf8",
         "diagnosticsBase64",
         "diagnosticsTypeChecks",
-        "diagnosticsIsPromise"
+        "diagnosticsIsPromise",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -379,7 +413,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {}
     },
@@ -399,7 +435,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {}
     },
@@ -419,7 +457,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {}
     },
@@ -439,7 +479,9 @@
         "diagnosticsTypeChecks",
         "diagnosticsIsPromise",
         "assignmentRules",
-        "semverOperators"
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure"
       ],
       "unsupported": {}
     }

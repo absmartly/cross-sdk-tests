@@ -210,7 +210,9 @@ get '/capabilities' do
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true }.to_json
+    readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true }.to_json
 end
 
 put '/context_payload/:payload_id' do
