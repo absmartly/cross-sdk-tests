@@ -617,8 +617,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "setUnit") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        // Non-throwing SDK: a blank/duplicate/post-finalize unit logs `.error`
-        // instead of throwing (scenarios 34, 35, 149). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenarios 34, 35, 149.
         return try await callSurfacingLoggedError(storage) {
             try storage.context.setUnit(unitType: request["unitType"].stringValue, value: request["uid"])
             return nil
@@ -641,8 +640,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "attribute") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        // Non-throwing SDK: a post-finalize setAttribute logs `.error` instead
-        // of throwing (scenarios 148, 188). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenarios 148, 188.
         return try await callSurfacingLoggedError(storage) {
             try storage.context.setAttribute(name: request["name"].stringValue, value: request["value"])
             return nil
@@ -663,16 +661,14 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "treatment") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        // Non-throwing SDK: treatment() on a not-ready context logs `.error`
-        // instead of throwing (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
     }
 
     app.post("context", ":contextId", "peek") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        // Non-throwing SDK: peek() on a not-ready context logs `.error`
-        // instead of throwing (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
     }
 
@@ -680,8 +676,7 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
-        // (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) {
             try storage.context.getVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
@@ -691,8 +686,7 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
-        // (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) {
             try storage.context.peekVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
@@ -760,8 +754,7 @@ func routes(_ app: VaporApplication) throws {
 
     app.post("context", ":contextId", "variableKeys") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
-        // (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) { Array(try storage.context.getVariableKeys().keys) }
     }
 
@@ -799,8 +792,7 @@ func routes(_ app: VaporApplication) throws {
 
     app.get("context", ":contextId", "experiments") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        // Non-throwing SDK: a not-ready read logs `.error` instead of throwing
-        // (scenario 201). Surface it as the error.
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
         return try await callSurfacingLoggedError(storage) { try storage.context.getExperiments() }
     }
 
