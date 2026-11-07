@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs the 2026-11 SDK-round scenario cases through the real @absmartly/javascript-sdk, pinned by
-// commit in package.json / package-lock.json to javascript-sdk#67 (fix/assignment-rules-edge-cases),
-// and prints what the SDK did at every step.
+// PINNED_COMMIT in generate_sdk_round_2026_11_scenarios.py to javascript-sdk#67
+// (fix/assignment-rules-edge-cases), and prints what the SDK did at every step.
 //
 // That branch is the reference the other SDKs are being aligned to this round: it is main (already
 // the TypeScript rewrite, custom assignment rules from #66, and the semver_* operators) plus the
