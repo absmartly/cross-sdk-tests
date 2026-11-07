@@ -60,7 +60,7 @@ are unchanged.
 
 | capability | meaning | gated scenarios | exempted SDK (reason) |
 | --- | --- | --- | --- |
-| `numericUnitIds` | a numeric unit uid keeps its numeric JSON type end to end: `getUnit`/`getUnits` return the number the unit was set with (`12345`), not a stringified copy (`"12345"`) | 02, 116, 196, 197 | **php** — php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so a numeric uid does not round-trip as a number |
+| `numericUnitIds` | a numeric unit uid keeps its numeric JSON type end to end: `getUnit`/`getUnits` return the number the unit was set with (`12345`), not a stringified copy (`"12345"`) | 02, 116, 196, 197 | **php** and **dotnet** — both store unit uids as strings (php: owner decision, Marcio required units be stored as strings for v1.0.3 compatibility; dotnet: the SDK's unit API is string-typed — `SetUnit(string, string)`, `Units` is `Dictionary<string,string>`), so a numeric uid does not round-trip as a number. Neither wrapper re-types the SDK's string back to a number. |
 | `publishThrowsOnFailure` | a direct `publish()` whose collector/transport fails surfaces the failure to the caller by throwing; pending events are preserved and an error event is logged | 193 | **php** — php-sdk `publish()`/`flush()` log the collector failure and return instead of throwing (owner decision: Marcio approved logging and returning for v1.0.3 compatibility; only `close()` throws), so a direct `publish()` failure does not surface to the caller |
 
 The **swift** log-instead-of-throw behaviour (scenarios 34, 35, 147, 148, 149,
