@@ -339,7 +339,6 @@
         "readyError",
         "diagnosticsUtf8",
         "diagnosticsBase64",
-        "numericUnitIds",
         "publishThrowsOnFailure"
       ],
       "unsupported": {
@@ -348,7 +347,8 @@
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
         "assignmentRules": "dotnet-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "dotnet-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "dotnet-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php"
       }
     },
     "cpp": {

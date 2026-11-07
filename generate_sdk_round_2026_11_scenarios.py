@@ -320,7 +320,16 @@ def reeval_specs():
 # ---------------------------------------------------------------------------
 
 def ensure_reference_build():
-    """Build the sibling javascript-sdk checkout (lib/) if needed, and verify the pinned commit."""
+    """Build the sibling javascript-sdk checkout (lib/) from the pinned commit.
+
+    Both the commit *and* the working tree are verified: a detached HEAD at the
+    pin is not enough if the tree (including any previously built ``lib/``) has
+    been modified, because the generator would then record results from code
+    other than the pin. We therefore (a) require HEAD == the pin, (b) require a
+    clean working tree, and (c) always rebuild ``lib/`` from source so its
+    provenance is the checked-out, unmodified pin rather than a stale artifact
+    left over from an earlier checkout.
+    """
     if not os.path.isdir(SDK_PATH):
         raise SystemExit(f"javascript-sdk checkout not found at {SDK_PATH} (set SDK_PATH)")
     head = subprocess.run(["git", "-C", SDK_PATH, "rev-parse", "HEAD"],
@@ -330,13 +339,26 @@ def ensure_reference_build():
             f"javascript-sdk checkout is at {head}, not the pinned reference {PINNED_COMMIT} "
             f"(javascript-sdk#67 head). Check it out (sdk-branches.sh pins this branch for CI)."
         )
+    # A modified working tree (including a hand-edited or stale lib/) means the
+    # build no longer corresponds to the pin, so refuse rather than record
+    # results from unknown code. lib/ itself is gitignored, so it does not show
+    # up here; we rebuild it unconditionally below to guarantee its provenance.
+    dirty = subprocess.run(["git", "-C", SDK_PATH, "status", "--porcelain"],
+                           capture_output=True, text=True, check=False).stdout.strip()
+    if dirty:
+        raise SystemExit(
+            "javascript-sdk checkout has uncommitted changes; the reference build would not "
+            f"match the pinned commit {PINNED_COMMIT}. Reset the checkout to a clean pin and retry.\n"
+            + dirty
+        )
     lib_index = os.path.join(SDK_PATH, "lib", "index.js")
-    if not os.path.isfile(lib_index):
-        print("building the javascript-sdk reference (npm install + compile + build-cjs)...", file=sys.stderr)
-        subprocess.run(["npm", "install", "--ignore-scripts"], cwd=SDK_PATH, check=True)
-        subprocess.run(["npm", "run", "generate-version"], cwd=SDK_PATH, check=True)
-        subprocess.run(["npm", "run", "compile"], cwd=SDK_PATH, check=True)
-        subprocess.run(["npm", "run", "build-cjs"], cwd=SDK_PATH, check=True)
+    # Always rebuild lib/ from the (verified-clean, verified-pinned) source so a
+    # leftover artifact from an earlier checkout can never leak into the oracle.
+    print("building the javascript-sdk reference (npm install + compile + build-cjs)...", file=sys.stderr)
+    subprocess.run(["npm", "install", "--ignore-scripts"], cwd=SDK_PATH, check=True)
+    subprocess.run(["npm", "run", "generate-version"], cwd=SDK_PATH, check=True)
+    subprocess.run(["npm", "run", "compile"], cwd=SDK_PATH, check=True)
+    subprocess.run(["npm", "run", "build-cjs"], cwd=SDK_PATH, check=True)
     if not os.path.isfile(lib_index):
         raise SystemExit("javascript-sdk build did not produce lib/index.js")
 
@@ -398,10 +420,12 @@ def build_scenario(spec, ran, strip_rule_override=False):
                 if event["type"] != "exposure":
                     raise SystemExit(f"{title}: unexpected {event['type']} event from {action}")
             if strip_rule_override:
-                # The ungated groups run on every SDK, including those that have no custom
-                # assignment rules and therefore never emit the `ruleOverride` exposure field.
-                # Asserting `ruleOverride: false` there would wrongly fail an SDK that simply omits
-                # the field, so drop it: these scenarios are about audience re-evaluation, not rules.
+                # Groups that do not require the assignment-rules capability can run on SDKs
+                # that have no custom assignment rules and therefore never emit the
+                # `ruleOverride` exposure field (e.g. an SDK with the semver operators but not
+                # rules, or the ungated re-evaluation group). Asserting `ruleOverride: false`
+                # there would wrongly fail an SDK that simply omits the field, so drop it;
+                # only the assignment-rules group keeps it.
                 events = [
                     {**e, "data": {k: v for k, v in e["data"].items() if k != "ruleOverride"}}
                     if e["type"] == "exposure" and isinstance(e.get("data"), dict) else e
@@ -418,7 +442,7 @@ def build_group(specs, marker, requires, first_number):
     if len(set(titles)) != len(titles):
         raise SystemExit(f"duplicate scenario titles in {marker}")
     group = []
-    strip_rule_override = requires is None
+    strip_rule_override = RULES_CAPABILITY not in (requires or [])
     for spec, ran in zip(specs, run_reference(specs)):
         scenario = build_scenario(spec, ran, strip_rule_override=strip_rule_override)
         scenario["name"] = f"{first_number + len(group)}{marker}{scenario['name']}"
