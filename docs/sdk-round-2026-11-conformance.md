@@ -48,6 +48,31 @@ scala/elixir/cpp/liquid), so each lists both capabilities as a reviewed
 exception. When an SDK ports the feature, move the capability from `unsupported`
 to `required` for that SDK.
 
+### Reviewed per-SDK exceptions recorded this round
+
+Two further `requires` capabilities encode **owner-approved** behavioural
+differences from the JS reference as reviewed per-SDK exceptions, using the same
+`orchestrator/expected-capabilities.json` mechanism. They are advertised `true`
+by every wrapper that honours the JS behaviour and listed as a reviewed
+`unsupported` exception (with reason) only for the SDK the owner exempted, so the
+gated scenarios SKIP for that SDK instead of failing. The scenarios themselves
+are unchanged.
+
+| capability | meaning | gated scenarios | exempted SDK (reason) |
+| --- | --- | --- | --- |
+| `numericUnitIds` | a numeric unit uid keeps its numeric JSON type end to end: `getUnit`/`getUnits` return the number the unit was set with (`12345`), not a stringified copy (`"12345"`) | 02, 116, 196, 197 | **php** — php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so a numeric uid does not round-trip as a number |
+| `publishThrowsOnFailure` | a direct `publish()` whose collector/transport fails surfaces the failure to the caller by throwing; pending events are preserved and an error event is logged | 193 | **php** — php-sdk `publish()`/`flush()` log the collector failure and return instead of throwing (owner decision: Marcio approved logging and returning for v1.0.3 compatibility; only `close()` throws), so a direct `publish()` failure does not surface to the caller |
+
+The **swift** log-instead-of-throw behaviour (scenarios 34, 35, 147, 148, 149,
+188, 189, 201) is handled in the swift wrapper rather than as a capability
+exception: the swift-sdk public API is intentionally non-throwing (v1.4.0
+contract, kept by maintainer decision on swift-sdk#7) and reports misuse (blank
+or duplicate unit UID, mutation after finalize, read before ready) through an
+`.error` event instead of throwing. The wrapper's `callSurfacingLoggedError`
+helper surfaces that logged `.error` as the HTTP error the scenario expects —
+matching the JS reference, which throws without emitting an event — so the
+scenarios pass unchanged against the real SDK behaviour.
+
 ## Branch pins (sdk-branches.sh)
 
 Pinned to each SDK's open-PR head so the scenarios run against the code under
