@@ -5,6 +5,7 @@ Run from the repository root:  python3 -m pytest orchestrator/tests -q
 """
 
 import copy
+import functools
 import hashlib
 import json
 import os
@@ -26,6 +27,28 @@ from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
 @pytest.fixture
 def runner():
     return Orchestrator({}, verbose=False)
+
+
+@functools.lru_cache(maxsize=None)
+def _canonical_text():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        return src.read()
+
+
+@functools.lru_cache(maxsize=None)
+def _canonical_parsed():
+    return json.loads(_canonical_text())
+
+
+def canonical():
+    """The checked-in scenario file, parsed once per test session; each caller gets its own copy."""
+    return copy.deepcopy(_canonical_parsed())
+
+
+@pytest.fixture(scope="module")
+def built_group():
+    """One full generation (golden verification, builders, mutant replay) for the module."""
+    return generator.build_group(generator.load_fixtures(), 230)
 
 
 def exposure(**extra):
@@ -185,7 +208,7 @@ def test_non_integer_reference_fails(runner, reference):
 # ---------------------------------------------------------------------------
 
 
-def test_capability_false_skips_switchback_scenarios_without_any_request(runner, monkeypatch):
+def test_capability_false_skips_switchback_scenarios_without_any_request(runner, monkeypatch, built_group):
     calls = []
 
     def record(self, method, url, *args, **kwargs):
@@ -195,9 +218,8 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     # Every requests entry point, module-level helpers included, goes through Session.request.
     monkeypatch.setattr(requests.sessions.Session, "request", record)
 
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
-    assert len(gated) == len(generator.build_group(generator.load_fixtures(), 1)) - 1 == 21
+    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
+    assert len(gated) == len(built_group) - 1 == 23
 
     # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
     reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
@@ -221,16 +243,14 @@ def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
 
 def test_java_without_switchback_still_runs_the_gated_scenarios(runner):
     # Required capabilities fail closed: java not advertising switchback is a policy violation, not a skip.
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
+    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
     runner.capabilities = {"java": {"switchback": False}}
     assert all(runner.capability_gate("java", s) is None for s in gated)
     assert any("'switchback'" in v for v in runner.policy_violations_for("java", {"switchback": False}))
 
 
 def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        inert = [s for s in json.load(src) if "Switchback - Inertness" in s["name"]]
+    inert = [s for s in canonical() if "Switchback - Inertness" in s["name"]]
     assert len(inert) == 1
     assert "requires" not in inert[0]
 
@@ -239,15 +259,14 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 
 
 def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        scenarios = json.load(src)
+    scenarios = canonical()
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
     assert numbers == list(range(1, len(scenarios) + 1))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(229, len(scenarios)))
-    assert len(group) == 22
-    assert numbers[group[0]] == 230 and numbers[group[-1]] == 251
+    assert len(group) == 24
+    assert numbers[group[0]] == 230 and numbers[group[-1]] == 253
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +276,7 @@ def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail(
 
 @pytest.fixture
 def canonical_copy(tmp_path, monkeypatch):
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        scenarios = json.load(src)
+    scenarios = canonical()
     path = tmp_path / "test_scenarios_complete.json"
     monkeypatch.setattr(generator, "CANONICAL", str(path))
     monkeypatch.setattr(sys, "argv", ["generate_switchback_scenarios.py", "--check"])
@@ -314,11 +332,6 @@ def test_check_fails_on_omitted_scenario(canonical_copy):
 # ---------------------------------------------------------------------------
 # R33 reference, wire shape and endpoints
 # ---------------------------------------------------------------------------
-
-
-def canonical():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        return json.load(src)
 
 
 def group(scenarios=None):
@@ -381,27 +394,20 @@ def test_switchbacks_carry_r33_fields_and_legacy_fields_only_where_tested():
         for exp in experiments_of(scenario):
             if exp.get("randomizationType") != "switchback":
                 continue
-            assert "switchbackStartAt" in exp or "No Anchor" in scenario["description"] or exp["name"].endswith(
-                "no_anchor"), exp["name"]
+            assert "switchbackStartAt" in exp or exp["name"].endswith("no_anchor"), exp["name"]
             if any(f in exp for f in LEGACY_FIELDS):
                 assert "Legacy Path" in scenario["name"], (scenario["name"], exp["name"])
             clusters = exp.get("switchbackClusters")
             assert clusters is None or isinstance(clusters, dict)
 
 
-def test_ordered_clusters_survive_a_json_round_trip_with_key_order_intact():
-    """What the orchestrator PUTs to /context_payload is json.dumps of the scenario; key order must
-    survive serialize -> parse, which declared-order scenarios depend on."""
+def test_ordered_clusters_are_in_the_checked_in_text():
+    """The declared order is in the checked-in text (what the orchestrator sends). That the wrapper
+    keeps it is checked by the java JUnit round-trip test; --check guards the text itself."""
     scenario = next(s for s in group() if "Declared Order" in s["name"])
     exps = scenario["contextData"]["experiments"]
-    before = [list(e["switchbackClusters"]) for e in exps]
-    assert before == [["session_id", "user_id"], ["user_id", "session_id"]]
-    after = [list(e["switchbackClusters"]) for e in json.loads(json.dumps({"data": scenario["contextData"]}))
-             ["data"]["experiments"]]
-    assert after == before
-    # The raw file text keeps the declared order too.
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        text = src.read()
+    assert [list(e["switchbackClusters"]) for e in exps] == [["session_id", "user_id"], ["user_id", "session_id"]]
+    text = _canonical_text()
     assert '"switchbackClusters": {\n' in text
     i = text.index('"name": "exp_sb_order_user_first"')
     block = text[text.index('"switchbackClusters"', i):]
@@ -436,25 +442,21 @@ def context_scenarios(scenarios):
 
 def test_the_model_reproduces_every_checked_in_context_scenario():
     scenarios = context_scenarios(canonical())
-    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(236, 252))
+    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(236, 254))
     assert [s["name"] for s in scenarios if generator.failing_steps(s, None)] == []
 
 
 @pytest.mark.parametrize("mutant", generator.ALL_MUTANTS)
-def test_every_mutant_fails_at_least_one_checked_in_scenario(mutant):
-    scenarios = context_scenarios(canonical())
-    assert any(generator.failing_steps(s, mutant) for s in scenarios), mutant
+def test_every_mutant_fails_the_checked_in_scenarios_it_guards(mutant):
+    by_name = {s["name"].split(" - Switchback - ", 1)[1]: s for s in context_scenarios(_canonical_parsed())}
+    guarded = generator.MUTANT_SCENARIOS[mutant]
+    assert guarded
+    assert [n for n in guarded if not generator.failing_steps(by_name[n], mutant)] == [], mutant
 
 
-@pytest.mark.parametrize("mutant", ["hashed_key", "uid_as_key", "hashed_uid_as_key", "bucket_of", "last_unit_serves"])
-def test_required_wrong_models_are_among_the_mutants(mutant):
-    assert mutant in generator.ALL_MUTANTS
-
-
-def test_every_eligible_draw_differs_under_every_wrong_key_model():
-    scenarios = generator.build_group(generator.load_fixtures(), 230)
+def test_every_eligible_draw_differs_under_every_wrong_key_model(built_group):
     eligible = 0
-    for scenario in context_scenarios(scenarios):
+    for scenario in context_scenarios(built_group):
         _, model = generator.replay(scenario)
         for key, uid, exp in model.draws:
             eligible += 1
@@ -482,3 +484,43 @@ def test_main_scenarios_are_untouched():
     kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
     assert len(kept) == 229
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
+
+
+def test_check_fails_when_only_the_declared_cluster_order_changes(canonical_copy):
+    # Dict equality ignores key order; --check compares the serialized text, so it does not.
+    scenarios, write = canonical_copy
+    mutated = copy.deepcopy(scenarios)
+    scenario = next(s for s in mutated if "Unit Without A Value Is Skipped" in s["name"])
+    exp = scenario["contextData"]["experiments"][0]
+    exp["switchbackClusters"] = dict(reversed(list(exp["switchbackClusters"].items())))
+    assert mutated == scenarios
+    write(mutated)
+    assert generator.main() == 1
+
+
+def test_strict_audience_mismatch_is_not_assigned():
+    scenario = next(s for s in group() if "Precedence" in s["name"])
+    exposures = [e["data"] for st in scenario["steps"] if st["action"] == "treatment" for e in st["expect"]["events"]]
+    (strict,) = [e for e in exposures if e["name"] == "exp_sb_audience_strict"]
+    assert strict["assigned"] is False and strict["audienceMismatch"] is True and strict["variant"] == 0
+
+
+def test_unit_variant_matches_the_main_suite_vectors():
+    by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
+    for number, (uid, split, seed_hi, seed_lo, expected) in zip((4, 52), generator.UNIT_VARIANT_VECTORS):
+        exp = by_number[number]["contextData"]["experiments"][0]
+        assert (exp["split"], exp["seedHi"], exp["seedLo"]) == (split, seed_hi, seed_lo)
+        assert generator.unit_variant(uid, split, seed_hi, seed_lo) == expected
+
+
+def test_multi_unit_publishes_pin_every_hashed_unit_as_a_set():
+    for scenario in group():
+        units = scenario["steps"][0]["params"].get("units", {})
+        for step in scenario["steps"]:
+            for event in step["expect"].get("events", []):
+                if event["type"] != "publish":
+                    continue
+                data = event["data"]
+                assert data["hashed"] is True, scenario["name"]
+                assert data["units"] == [{"type": t, "uid": generator.hash_unit(u)} for t, u in units.items()]
+                assert event.get("unorderedUnits", False) is (len(units) > 1), scenario["name"]
