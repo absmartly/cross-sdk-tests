@@ -46,6 +46,7 @@ import json
 import math
 import os
 import sys
+import unicodedata
 from collections import OrderedDict
 from typing import NamedTuple, Optional
 
@@ -303,6 +304,26 @@ def lax_parse_attribute_path(path: str) -> list:
     return [(s.strip("'\""), _index_segment(s)) for s in path.split("/") if s]
 
 
+def _java_lax_index(segment: str) -> Optional[int]:
+    """Integer.parseInt's reading of a segment: an optional '+' or '-' and Unicode decimal digits
+    (Character.digit), e.g. "+0" and "\u0660" are 0. Used only to pick discriminating seeds."""
+    sign, digits = (segment[0], segment[1:]) if segment[:1] in "+-" and len(segment) > 1 else ("", segment)
+    if not digits or not all(unicodedata.digit(c, None) is not None for c in digits):
+        return None
+    value = int("".join(str(unicodedata.digit(c)) for c in digits))
+    return -value if sign == "-" else value
+
+
+def java_lax_parse_attribute_path(path: str) -> list:
+    """A reader whose index test is Integer.parseInt rather than Guava Ints.tryParse."""
+    return [(s.strip("'\""), _java_lax_index(s)) for s in path.split("/") if s]
+
+
+def negative_index_as_key_path(path: str) -> list:
+    """A reader that takes a negative integer segment as an object key ("geo/-1" -> "minus-one-key")."""
+    return [(s.strip("'\""), None if s.startswith("-") else _index_segment(s)) for s in path.split("/") if s]
+
+
 def supported_attribute_path(path) -> Optional[list]:
     """Segments of a path serving and analysis accept, else None: well formed, non-empty, and every
     index non-negative and between two key segments."""
@@ -392,9 +413,21 @@ KEY_MUTANTS = {
 }
 
 
-def draw(key: str, exp: dict, now: int = NOW) -> int:
+def draw(key: str, exp: dict, now: int = NOW, mutant: Optional[str] = None) -> int:
+    """The schedule draw; `mutant` selects a wrong period or seed arithmetic (M3 mutants)."""
     period = (now - exp["switchbackStartAt"]) // exp["switchbackPeriodMs"]
-    return assign_switchback(key, period, experiment_seed(exp["seedHi"], exp["seedLo"]), len(exp["split"]))
+    seed = experiment_seed(exp["seedHi"], exp["seedLo"])
+    if mutant == "period_zero":
+        period = 0
+    elif mutant == "period_plus_one":
+        period += 1
+    elif mutant == "unmasked_seed_lo":
+        # (seedHi << 32) | seedLo with seedLo sign-extended: a negative seedLo sets every high bit.
+        unsigned = ((exp["seedHi"] << 32) | exp["seedLo"]) & MASK64
+        seed = unsigned - (1 << 64) if unsigned >> 63 else unsigned
+    elif mutant == "swapped_seed":
+        seed = experiment_seed(exp["seedLo"], exp["seedHi"])
+    return assign_switchback(key, period, seed, len(exp["split"]))
 
 
 def wrong_key_variants(key: str, uid: str, exp: dict) -> dict:
@@ -604,8 +637,16 @@ SERVING_MUTANTS = (
     "ignore_full_on",
     "ignore_rules",
     "strict_mismatch_assigned",  # a strict audience mismatch records assigned=true
-    "rules_after_cluster_check_only_when_servable",  # rules skipped before the anchor
+    "rules_skipped_unless_servable",  # rules skipped before the anchor or with an unservable schedule
     "ignore_custom",
+    "override_requires_cluster",  # an override applies only to an eligible cluster
+    "precedence_on_ineligible",   # full-on (and rules) evaluated for an ineligible cluster
+    "custom_before_traffic",      # a custom assignment wins over a traffic miss
+    "reread_attributes",          # a setAttribute in the same period re-resolves the cached slot
+    "period_zero",                # the draw always uses period 0
+    "period_plus_one",            # the draw uses periodIndex + 1 (off by one)
+    "unmasked_seed_lo",           # seed = (seedHi << 32) | seedLo without masking seedLo to 32 bits
+    "swapped_seed",               # seed = (seedLo << 32) | seedHi
     "round_anchor",            # an unaligned anchor is ceiled to the hour and served
     "legacy_fields",           # switchbackClusterUnitType/Attribute read instead of switchbackClusters
     "lax_values",              # booleans, floats, objects and arrays keyed by their text
@@ -616,6 +657,7 @@ SERVING_MUTANTS = (
     "unit_experiment_as_switchback",  # a unit experiment carrying switchback fields served as one
 )
 ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
+ARITHMETIC_MUTANTS = ("period_zero", "period_plus_one", "unmasked_seed_lo", "swapped_seed")
 
 
 def _audience_matches(audience: Optional[str], attributes: dict) -> Optional[bool]:
@@ -636,13 +678,25 @@ def _assign_rule_variant(rules: Optional[str]) -> Optional[int]:
     return None
 
 
-def _servable(exp: dict, mutant) -> bool:
+def _variant_config(exp: dict, variant: int) -> dict:
+    variants = exp.get("variants") or []
+    config = variants[variant].get("config") if 0 <= variant < len(variants) else None
+    return json.loads(config) if config else {}
+
+
+def _variant_keys(exp: dict) -> set:
+    return {k for i in range(len(exp.get("variants") or [])) for k in _variant_config(exp, i)}
+
+
+def _servable(exp: dict, mutant) -> Optional[int]:
+    """The anchor the draw uses when the schedule is servable, else None. Never mutates exp."""
     start, period = exp.get("switchbackStartAt"), exp.get("switchbackPeriodMs")
     if mutant == "round_anchor" and isinstance(start, int):
         start = -(-start // HOUR_MS) * HOUR_MS
-        exp["switchbackStartAt"] = start
-    return (isinstance(start, int) and 0 <= start < MAX_ANCHOR_MS and start % HOUR_MS == 0
-            and isinstance(period, int) and period > 0 and len(exp["split"]) >= 2)
+    if (isinstance(start, int) and 0 <= start < MAX_ANCHOR_MS and start % HOUR_MS == 0
+            and isinstance(period, int) and period > 0 and len(exp["split"]) >= 2):
+        return start
+    return None
 
 
 def _identity(model, exp: Optional[dict]):
@@ -765,7 +819,8 @@ class ContextModel:
         if not is_switchback:
             return self._resolve_unit(exp)
 
-        if name in self.overrides and m != "ignore_override":
+        if name in self.overrides and m != "ignore_override" and not (
+                m == "override_requires_cluster" and status != "eligible"):
             unit = unit_type or (next(iter(exp.get("switchbackClusters") or {}), None) or exp["unitType"])
             return self.overrides[name], exposure(exp, self.overrides[name], unit, assigned=False, overridden=True)
         if status == "absent":
@@ -773,13 +828,16 @@ class ContextModel:
         if status == "ineligible":
             if m == "ineligible_exposes":
                 return 0, exposure(exp, 0, unit_type, eligible=False)
+            if m == "precedence_on_ineligible" and exp["fullOnVariant"]:
+                return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True)
             return 0, None
 
         rule = _assign_rule_variant(exp.get("assignmentRules"))
-        servable = _servable(exp, m)
-        before_anchor = servable and NOW < exp["switchbackStartAt"]
+        anchor = _servable(exp, m)
+        servable = anchor is not None
+        before_anchor = servable and NOW < anchor
         if rule is not None and m != "ignore_rules" and not (
-                m == "rules_after_cluster_check_only_when_servable" and (not servable or before_anchor)):
+                m == "rules_skipped_unless_servable" and (not servable or before_anchor)):
             out = exposure(exp, rule, unit_type, assigned=False)
             out["ruleOverride"] = True
             return rule, out
@@ -796,6 +854,9 @@ class ContextModel:
             return 0, None
         if exp.get("holdoutIds") and m == "holdout_applies":
             return 0, None
+        if name in self.customs and m == "custom_before_traffic":
+            return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
+                                                audience_mismatch=mismatch)
         traffic_uid = self.unit_map.get(exp["unitType"], uid) if m == "traffic_on_unit_type" else uid
         if unit_variant(traffic_uid, exp["trafficSplit"], exp["trafficSeedHi"], exp["trafficSeedLo"]) != 1:
             if m == "traffic_miss_silent":
@@ -804,10 +865,11 @@ class ContextModel:
         if name in self.customs and m != "ignore_custom":
             return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
                                                 audience_mismatch=mismatch)
+        exp["switchbackStartAt"] = anchor
         if m in KEY_MUTANTS:
             variant = draw(KEY_MUTANTS[m](key, uid, exp), exp)
         else:
-            variant = draw(key, exp)
+            variant = draw(key, exp, mutant=m if m in ARITHMETIC_MUTANTS else None)
             if m is None:
                 self.draws.append((key, uid, exp))
         return variant, exposure(exp, variant, unit_type, audience_mismatch=mismatch)
@@ -828,11 +890,28 @@ class ContextModel:
 
     # -- steps -------------------------------------------------------------
 
+    def _assignment(self, name: str, expose: bool):
+        """(variant, events) of one resolving call. The slot is resolved once (and cached) whether
+        the call exposes or peeks; the exposure is queued on the first exposing call only."""
+        exp = self.experiments[name]
+        identity = _identity(self, exp)
+        cached = self.cache.get(name)
+        if cached is None or not (cached[0] == identity or self.mutant == "no_refresh_epoch"):
+            variant, exposed = self.resolve(exp)
+            cached = self.cache[name] = [identity, variant, exposed]
+        if not expose or cached[2] is None:
+            return cached[1], []
+        exposed, cached[2] = cached[2], None
+        self.pending.append(exposed)
+        return cached[1], [{"type": "exposure", "data": exposed}]
+
     def run(self, step: dict) -> dict:
         """The expect block of one step after the create step."""
         action, params = step["action"], step["params"]
         if action == "attribute":
             self.attributes[params["name"]] = params["value"]
+            if self.mutant == "reread_attributes":
+                self.cache.clear()
             return {"result": None, "events": []}
         if action == "override":
             self.overrides[params["experimentName"]] = params["variant"]
@@ -842,19 +921,20 @@ class ContextModel:
             return {"result": None, "events": []}
         if action == "pending":
             return {"result": len(self.pending), "events": []}
-        if action == "treatment":
-            name = params["experimentName"]
-            exp = self.experiments[name]
-            identity = _identity(self, exp)
-            cached = self.cache.get(name)
-            if cached is not None and (cached[0] == identity or self.mutant == "no_refresh_epoch"):
-                return {"result": cached[1], "events": []}
-            variant, exposed = self.resolve(exp)
-            self.cache[name] = (identity, variant)
-            if exposed is None:
-                return {"result": variant, "events": []}
-            self.pending.append(exposed)
-            return {"result": variant, "events": [{"type": "exposure", "data": exposed}]}
+        if action in ("treatment", "peek"):
+            variant, events = self._assignment(params["experimentName"], expose=action == "treatment")
+            return {"result": variant, "events": events}
+        if action in ("variableValue", "peekVariableValue"):
+            # The experiments that declare the key, in payload order: the first one assigned,
+            # overridden or rule-won serves the variable (getVariableAssignment); these
+            # scenarios declare each key in one switchback experiment only.
+            key = params["key"]
+            owners = [e for e in self.experiments.values() if key in _variant_keys(e)]
+            if len(owners) != 1:
+                raise ValueError(f"variable {key!r} must be declared by exactly one experiment")
+            variant, events = self._assignment(owners[0]["name"], expose=action == "variableValue")
+            config = _variant_config(owners[0], variant)
+            return {"result": config.get(key, params.get("defaultValue")), "events": events}
         if action == "publish":
             if not self.pending:
                 if self.mutant is None:
@@ -1064,13 +1144,17 @@ def path_scenarios(paths: dict) -> list:
         if supported and value is not None:
             exp.update(pick_seeds(value, uid, exp))
         else:
-            # Where a lax reader would find a value, make that draw nonzero.
-            lax = resolve_attribute_path({**paths["attributes"], **extra_attributes},
-                                         lax_parse_attribute_path(path.replace(".", "/")))
-            lax_key = normalize_cluster_value(lax)
-            if lax_key is not None:
+            # Where a lax reader would find a value, make every such draw nonzero (the strict
+            # expectation is the ineligible control, 0), so the treatment check alone catches it.
+            attributes = {**paths["attributes"], **extra_attributes}
+            lax_keys = {normalize_cluster_value(resolve_attribute_path(attributes, segments))
+                        for segments in (lax_parse_attribute_path(path.replace(".", "/")),
+                                         java_lax_parse_attribute_path(path), negative_index_as_key_path(path))}
+            lax_keys.discard(None)
+            if lax_keys:
                 exp.update(next({"seedHi": SEED_SEARCH_HI, "seedLo": k} for k in range(1, 999)
-                                if draw(lax_key, dict(exp, seedHi=SEED_SEARCH_HI, seedLo=k)) != 0))
+                                if all(draw(key, dict(exp, seedHi=SEED_SEARCH_HI, seedLo=k)) != 0
+                                       for key in lax_keys)))
         experiments.append(exp)
     sc = Scenario(
         "Attribute Paths - Platform Path Cases And Malformed Paths",
@@ -1185,7 +1269,19 @@ def precedence_scenarios() -> list:
     custom = switchback_experiment(405, "exp_sb_custom", [("store_id", "city")], 3)
     full_on_pre = switchback_experiment(406, "exp_sb_full_on_pre_anchor", [("store_id", "city")], 3,
                                         anchor=ANCHOR_FUTURE, fullOnVariant=other)
-    experiments = [overridden, full_on, ruled, ruled_pre, strict, custom, full_on_pre]
+    # Override with no cluster value (path unset): the override still applies, under the first
+    # declared unit type.
+    override_no_value = switchback_experiment(407, "exp_sb_override_no_value", [("store_id", "unset_zone")], 3)
+    # fullOnVariant with a value outside the allow-list: an ineligible cluster never reaches full-on.
+    full_on_ineligible = switchback_experiment(408, "exp_sb_full_on_ineligible", [("store_id", "city")], 3,
+                                               values=[city + "-other"], fullOnVariant=other)
+    # A traffic miss (the serving uid misses these traffic seeds) beats a custom assignment.
+    miss_seeds = next((1, k) for k in range(1, 10_000) if unit_variant(uid, [0.5, 0.5], 1, k) == 0)
+    custom_miss = switchback_experiment(409, "exp_sb_custom_traffic_miss", [("store_id", "city")], 3,
+                                        trafficSplit=[0.5, 0.5], trafficSeedHi=miss_seeds[0],
+                                        trafficSeedLo=miss_seeds[1])
+    experiments = [overridden, full_on, ruled, ruled_pre, strict, custom, full_on_pre, override_no_value,
+                   full_on_ineligible, custom_miss]
     return [Scenario(
         "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
         (f"The cluster's period-0 draw is {drawn}. An override to {other} wins (assigned=false, overridden=true); "
@@ -1193,9 +1289,16 @@ def precedence_scenarios() -> list:
          "audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and "
          "audienceMismatch=true, recorded, as for unit experiments; "
          f"fullOnVariant={other} wins (fullOn=true), also before the anchor; a custom assignment to {other} is "
-         "served after traffic (custom=true). Every exposure is under the serving unit store_id."),
+         "served after traffic (custom=true). Every exposure is under the serving unit store_id. "
+         f"exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to {other} "
+         "still applies (overridden=true, under the first declared unit type store_id); exp_sb_full_on_ineligible "
+         f"has fullOnVariant={other} but a value outside switchbackClusterValues, so it is an ineligible control "
+         "(0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has "
+         f"trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to {other}: the traffic "
+         "miss wins (0, recorded eligible=false, custom=false)."),
         experiments, {"store_id": uid},
     ).attr("city", city).attr("tier", "silver").override(overridden, other).custom(custom, other)
+        .override(override_no_value, other).custom(custom_miss, other)
         .treat(*experiments).publish().build()]
 
 
@@ -1203,8 +1306,13 @@ def holdout_scenarios() -> list:
     uid = pick_uid("holdout", QUIET3)
     exp = switchback_experiment(410, "exp_sb_holdout_ignored", [("store_id", "city")], 3, holdoutIds=[1])
     city = pick_value(lambda k: f"held-{k}", uid, exp)
+    # The full holdout shape of scenarios 203-227, so a holdout-applying SDK holds out rather than
+    # failing to parse a truncated holdout.
     holdouts = [{"id": 1, "name": "holdout_sb_everyone", "iteration": 1, "unitType": "store_id", "seedHi": 13,
-                 "seedLo": 111, "split": [1.0, 0.0]}]
+                 "seedLo": 111, "split": [1.0, 0.0], "trafficSeedHi": 0, "trafficSeedLo": 0, "trafficSplit": [0, 1],
+                 "fullOnVariant": 0, "applications": [],
+                 "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
+                 "audience": None, "audienceStrict": False, "customFieldValues": None, "holdoutType": "full"}]
     return [Scenario(
         "Holdouts Never Apply To A Switchback",
         ("The switchback is covered by a holdout whose split [1, 0] holds every unit out (variant 0). Holdouts "
@@ -1359,6 +1467,53 @@ def inertness_scenarios() -> list:
     return [scenario]
 
 
+def read_once_scenarios() -> list:
+    """The serving unit and cluster key are read once per period slot (SWITCHBACK.md)."""
+    uid = pick_uid("once", QUIET3)
+    moved = switchback_experiment(450, "exp_sb_read_once", [("store_id", "city")], 3)
+    late = switchback_experiment(451, "exp_sb_read_once_ineligible", [("store_id", "zone")], 3)
+    first = pick_value(lambda k: f"once-a-{k}", uid, moved)
+    second = pick_value(lambda k: f"once-b-{k}", uid, moved, avoid={draw(first, moved)})
+    zone = pick_value(lambda k: f"once-z-{k}", uid, late)
+    return [Scenario(
+        "Read Once Per Period - A Later setAttribute Does Not Move The Slot",
+        (f"city={first!r} draws {draw(first, moved)}; city is then set to {second!r}, which alone would draw "
+         f"{draw(second, moved)}. The second treatment in the same period keeps the first variant and records no "
+         "second exposure (one exposure in total). exp_sb_read_once_ineligible is read while zone is unset "
+         f"(ineligible: 0, no exposure); zone is then set to {zone!r} (which would draw {draw(zone, late)}), and "
+         "the next treatment in the same period is still 0 with no exposure."),
+        [moved, late], {"store_id": uid},
+    ).attr("city", first).treat(moved).treat(late).attr("city", second).attr("zone", zone).treat(moved)
+        .treat(late).pending().publish().build()]
+
+
+VARIABLE_KEY = "sb_banner"
+
+
+def variable_scenarios() -> list:
+    """peekTreatment, getVariableValue and peekVariableValue resolve the switchback like getTreatment."""
+    uid = pick_uid("variable", QUIET3)
+    variants = [{"name": chr(ord("A") + i), "config": json.dumps({VARIABLE_KEY: f"banner-{i}"}, separators=(",", ":"))}
+                for i in range(3)]
+    exp = switchback_experiment(460, "exp_sb_variables", [("store_id", "city")], 3, variants=variants)
+    city = pick_value(lambda k: f"var-{k}", uid, exp)
+    variant = draw(city, exp)
+    sc = Scenario(
+        "Peek And Variable Values Resolve The Cluster Draw",
+        (f"Every arm has a different {VARIABLE_KEY} value. The cluster's draw is {variant}: peekVariableValue "
+         f"and peek return banner-{variant} / {variant} with no exposure; variableValue returns banner-{variant} "
+         "and records the one exposure; a later treatment returns the same variant and records nothing."),
+        [exp], {"store_id": uid},
+    ).attr("city", city)
+    sc.ops += [
+        {"action": "peekVariableValue", "params": {"key": VARIABLE_KEY, "defaultValue": "none"}},
+        {"action": "peek", "params": {"experimentName": exp["name"]}},
+        {"action": "pending", "params": {}},
+        {"action": "variableValue", "params": {"key": VARIABLE_KEY, "defaultValue": "none"}},
+    ]
+    return [sc.treat(exp).pending().publish().build()]
+
+
 # ---------------------------------------------------------------------------
 # Rule map, discrimination checks and assembly
 # ---------------------------------------------------------------------------
@@ -1399,7 +1554,61 @@ RULES = OrderedDict([
         "Exposure And Publish Payload Carry No New Fields"]),
     ("ungated inertness: unit experiments carrying switchback fields are served as unit experiments", [
         "Inertness - Unit Experiments Unaffected By Switchback Data"]),
+    ("serving unit and cluster key read once per period slot (eligible and ineligible)", [
+        "Read Once Per Period - A Later setAttribute Does Not Move The Slot"]),
+    ("peek / peekVariableValue / variableValue resolve the cluster draw; only exposing calls expose", [
+        "Peek And Variable Values Resolve The Cluster Draw"]),
 ])
+
+
+# Each mutant -> the scenarios (names without number) that must fail under it: the scenario of the
+# rule it breaks. check_discrimination fails generation when a mutant stops failing one of them.
+_SINGLE = "Single Source - Raw Attribute Value Is The Cluster Key"
+_ORDER = "Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order"
+_PREC = "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw"
+_TRAFFIC = "Traffic - Miss On An Eligible Cluster Is Recorded Eligible=False Under The Serving Unit"
+_LEGACY = "Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E Fields Ignored"
+_PATHS = "Attribute Paths - Platform Path Cases And Malformed Paths"
+_ALLOW = "Allow-List - In, Out, Null And Empty"
+_SCHEDULE = "Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls"
+MUTANT_SCENARIOS = {
+    **{m: [_SINGLE, "Peek And Variable Values Resolve The Cluster Draw"] for m in KEY_MUTANTS},
+    "sticky": [_SINGLE],
+    "last_unit_serves": [_ORDER],
+    "units_outer": [_ORDER],
+    "units_outer_reversed": [_ORDER],
+    "no_disagreement": ["Disagreement - Different Values Are An Ineligible Control With No Exposure"],
+    "ignore_allow_list": [_ALLOW],
+    "empty_allow_list_blocks": [_ALLOW],
+    "ineligible_exposes": ["Disagreement - Different Values Are An Ineligible Control With No Exposure",
+                           "Read Once Per Period - A Later setAttribute Does Not Move The Slot"],
+    "pre_anchor_exposes": [_SCHEDULE],
+    "traffic_miss_silent": [_TRAFFIC, _PREC],
+    "traffic_on_unit_type": [_TRAFFIC],
+    "holdout_applies": ["Holdouts Never Apply To A Switchback"],
+    "ignore_override": [_PREC],
+    "ignore_full_on": [_PREC],
+    "ignore_rules": [_PREC],
+    "strict_mismatch_assigned": [_PREC],
+    "rules_skipped_unless_servable": [_PREC],
+    "ignore_custom": [_PREC],
+    "override_requires_cluster": [_PREC],
+    "precedence_on_ineligible": [_PREC],
+    "custom_before_traffic": [_PREC],
+    "reread_attributes": ["Read Once Per Period - A Later setAttribute Does Not Move The Slot"],
+    "period_zero": [_SINGLE],
+    "period_plus_one": [_SINGLE],
+    "unmasked_seed_lo": [_SINGLE, _LEGACY],
+    "swapped_seed": [_SINGLE],
+    "round_anchor": [_SCHEDULE],
+    "legacy_fields": [_LEGACY],
+    "lax_values": ["Values - Strings And Whole Numbers Only"],
+    "dotted_nesting": [_PATHS],
+    "lax_index_position": [_PATHS],
+    "legacy_unit_fallback": [_PATHS, _LEGACY],
+    "no_refresh_epoch": ["Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes"],
+    "unit_experiment_as_switchback": ["Inertness - Unit Experiments Unaffected By Switchback Data"],
+}
 
 
 class Fixtures(NamedTuple):
@@ -1407,8 +1616,26 @@ class Fixtures(NamedTuple):
     paths: dict
 
 
+# (uid, split, seedHi, seedLo, expected variant) from the main suite: scenario 4 (exp_test_ab,
+# variant 1), scenario 52 (3-way split, variant 2) and scenario 13's traffic draw (a miss, 0).
+UNIT_VARIANT_VECTORS = (
+    ("e791e240fcd3df7d238cfc285f475e8152fcc0ec", [0.5, 0.5], 3603515, 233373850, 1),
+    ("e791e240fcd3df7d238cfc285f475e8152fcc0ec", [0.34, 0.33, 0.33], 55006150, 47189152, 2),
+    ("123456789", [0.99, 0.01], 87768905, 511357582, 0),
+)
+
+
+def verify_unit_variant() -> None:
+    """unit_variant drives traffic, the sticky mutant and every inertness expectation: pin it."""
+    for uid, split, seed_hi, seed_lo, expected in UNIT_VARIANT_VECTORS:
+        actual = unit_variant(uid, split, seed_hi, seed_lo)
+        if actual != expected:
+            raise SystemExit(f"unit_variant({uid!r}, {split}, {seed_hi}, {seed_lo}) = {actual}, main suite says {expected}")
+
+
 def load_fixtures() -> Fixtures:
     """Every copied fixture, each verified against the reference; builders read only these."""
+    verify_unit_variant()
     golden = load_golden()
     verify_reference(golden)
     paths = load_path_cases()
@@ -1423,6 +1650,8 @@ def builders(fixtures: Fixtures) -> list:
         value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
         schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
         refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
+        # Added after the inertness scenario so the ids of 230-251 do not move.
+        read_once_scenarios, variable_scenarios,
     ]
 
 
@@ -1463,6 +1692,14 @@ def check_discrimination(scenarios: list, draws: dict) -> dict:
     survivors = [m for m, names in caught.items() if not names]
     if survivors:
         raise SystemExit(f"mutants no scenario catches: {survivors}")
+    unmapped = sorted(set(ALL_MUTANTS) ^ set(MUTANT_SCENARIOS))
+    if unmapped:
+        raise SystemExit(f"MUTANT_SCENARIOS and ALL_MUTANTS differ: {unmapped}")
+    short = {m: [n.split(" - Switchback - ", 1)[1] for n in names] for m, names in caught.items()}
+    missed = {m: [n for n in MUTANT_SCENARIOS[m] if n not in short[m]] for m in ALL_MUTANTS}
+    missed = {m: names for m, names in missed.items() if names}
+    if missed:
+        raise SystemExit(f"mutants that no longer fail the scenario they guard: {missed}")
     inert = [s for s in context if "requires" not in s]
     if len(inert) != 1 or failing_steps(inert[0], "unit_experiment_as_switchback") == []:
         raise SystemExit("the inertness scenario must catch a unit experiment served as a switchback")
@@ -1516,7 +1753,11 @@ def main() -> int:
             print(f"mutant {mutant}: fails {[int(n.split(' - ', 1)[0]) for n in names]}")
 
     if args.check:
-        if updated != existing:
+        # Compare the text write() would produce: key order (switchbackClusters) is semantic and
+        # dict equality would ignore it.
+        with open(CANONICAL, encoding="utf-8") as src:
+            text = src.read()
+        if text != json.dumps(updated, indent=2, ensure_ascii=False) + "\n":
             print("test_scenarios_complete.json is stale: run generate_switchback_scenarios.py")
             return 1
         print(f"up to date: {len(group)} switchback scenarios")

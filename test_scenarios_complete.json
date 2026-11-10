@@ -50076,8 +50076,8 @@
           "name": "exp_sb_path_1",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": -559038737,
-          "seedLo": 1234567890,
+          "seedHi": 1234567,
+          "seedLo": 1,
           "split": [
             0.34,
             0.33,
@@ -50182,8 +50182,8 @@
           "name": "exp_sb_path_3",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": -559038737,
-          "seedLo": 1234567890,
+          "seedHi": 1234567,
+          "seedLo": 2,
           "split": [
             0.34,
             0.33,
@@ -50288,8 +50288,8 @@
           "name": "exp_sb_path_5",
           "iteration": 1,
           "unitType": "store_id",
-          "seedHi": -559038737,
-          "seedLo": 1234567890,
+          "seedHi": 1234567,
+          "seedLo": 1,
           "split": [
             0.34,
             0.33,
@@ -52325,7 +52325,7 @@
   },
   {
     "name": "246 - Switchback - Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
-    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id.",
+    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id. exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to 2 still applies (overridden=true, under the first declared unit type store_id); exp_sb_full_on_ineligible has fullOnVariant=2 but a value outside switchbackClusterValues, so it is an ineligible control (0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to 2: the traffic miss wins (0, recorded eligible=false, custom=false).",
     "contextData": {
       "experiments": [
         {
@@ -52700,6 +52700,168 @@
           "switchbackBurnOutDurationMs": 0,
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 407,
+          "name": "exp_sb_override_no_value",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "unset_zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 408,
+          "name": "exp_sb_full_on_ineligible",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 2,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackClusterValues": [
+            "prec-4-other"
+          ],
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 409,
+          "name": "exp_sb_custom_traffic_miss",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 1,
+          "trafficSplit": [
+            0.5,
+            0.5
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
         }
       ]
     },
@@ -52753,6 +52915,18 @@
                   {
                     "id": 406,
                     "name": "exp_sb_full_on_pre_anchor"
+                  },
+                  {
+                    "id": 407,
+                    "name": "exp_sb_override_no_value"
+                  },
+                  {
+                    "id": 408,
+                    "name": "exp_sb_full_on_ineligible"
+                  },
+                  {
+                    "id": 409,
+                    "name": "exp_sb_custom_traffic_miss"
                   }
                 ]
               }
@@ -52797,6 +52971,28 @@
         "action": "customAssignment",
         "params": {
           "experimentName": "exp_sb_custom",
+          "variant": 2
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_sb_override_no_value",
+          "variant": 2
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customAssignment",
+        "params": {
+          "experimentName": "exp_sb_custom_traffic_miss",
           "variant": 2
         },
         "expect": {
@@ -52989,6 +53185,68 @@
         }
       },
       {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_override_no_value"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 407,
+                "name": "exp_sb_override_no_value",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_full_on_ineligible"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_custom_traffic_miss"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 409,
+                "name": "exp_sb_custom_traffic_miss",
+                "unit": "store_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
         "action": "publish",
         "params": {},
         "expect": {
@@ -53090,6 +53348,30 @@
                     "fullOn": true,
                     "custom": false,
                     "audienceMismatch": false
+                  },
+                  {
+                    "id": 407,
+                    "name": "exp_sb_override_no_value",
+                    "unit": "store_id",
+                    "variant": 2,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": true,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 409,
+                    "name": "exp_sb_custom_traffic_miss",
+                    "unit": "store_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": false,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
                   }
                 ]
               }
@@ -53175,7 +53457,29 @@
           "split": [
             1.0,
             0.0
-          ]
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
         }
       ]
     },
@@ -55065,6 +55369,511 @@
           ]
         }
       }
+    ]
+  },
+  {
+    "name": "252 - Switchback - Read Once Per Period - A Later setAttribute Does Not Move The Slot",
+    "description": "city='once-a-2' draws 2; city is then set to 'once-b-18', which alone would draw 1. The second treatment in the same period keeps the first variant and records no second exposure (one exposure in total). exp_sb_read_once_ineligible is read while zone is unset (ineligible: 0, no exposure); zone is then set to 'once-z-1' (which would draw 1), and the next treatment in the same period is still 0 with no exposure.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 450,
+          "name": "exp_sb_read_once",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 451,
+          "name": "exp_sb_read_once_ineligible",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "once-23"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 450,
+                    "name": "exp_sb_read_once"
+                  },
+                  {
+                    "id": 451,
+                    "name": "exp_sb_read_once_ineligible"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "city",
+          "value": "once-a-2"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_read_once"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 450,
+                "name": "exp_sb_read_once",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_read_once_ineligible"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "city",
+          "value": "once-b-18"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "zone",
+          "value": "once-z-1"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_read_once"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_read_once_ineligible"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "SDGT600SM2ahgAwfkdegcQ"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 450,
+                    "name": "exp_sb_read_once",
+                    "unit": "store_id",
+                    "variant": 2,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "253 - Switchback - Peek And Variable Values Resolve The Cluster Draw",
+    "description": "Every arm has a different sb_banner value. The cluster's draw is 2: peekVariableValue and peek return banner-2 / 2 with no exposure; variableValue returns banner-2 and records the one exposure; a later treatment returns the same variant and records nothing.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 460,
+          "name": "exp_sb_variables",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb_banner\":\"banner-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb_banner\":\"banner-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"sb_banner\":\"banner-2\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "variable-3"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 460,
+                    "name": "exp_sb_variables"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "city",
+          "value": "var-0"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "sb_banner",
+          "defaultValue": "none"
+        },
+        "expect": {
+          "result": "banner-2",
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_sb_variables"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "sb_banner",
+          "defaultValue": "none"
+        },
+        "expect": {
+          "result": "banner-2",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 460,
+                "name": "exp_sb_variables",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_variables"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "JNcVDz4JVc3tPvNkoA8xWQ"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 460,
+                    "name": "exp_sb_variables",
+                    "unit": "store_id",
+                    "variant": 2,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
     ]
   }
 ]
