@@ -649,7 +649,7 @@ SERVING_MUTANTS = (
     "rules_skipped_unless_servable",  # rules skipped before the anchor or with an unservable schedule
     "ignore_custom",
     "override_requires_cluster",  # an override applies only to an eligible cluster
-    "precedence_on_ineligible",   # full-on (and rules) evaluated for an ineligible cluster
+    "precedence_on_ineligible",   # an ineligible cluster serves its assign rule (ruleOverride) or, without one, its fullOnVariant (fullOn), exposed
     "custom_before_traffic",      # a custom assignment wins over a traffic miss
     "reread_attributes",          # a setAttribute in the same period re-resolves the cached slot
     "period_zero",                # the draw always uses period 0
@@ -837,8 +837,14 @@ class ContextModel:
         if status == "ineligible":
             if m == "ineligible_exposes":
                 return 0, exposure(exp, 0, unit_type, eligible=False)
-            if m == "precedence_on_ineligible" and exp["fullOnVariant"]:
-                return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True)
+            if m == "precedence_on_ineligible":
+                rule = _assign_rule_variant(exp.get("assignmentRules"))
+                if rule is not None:
+                    out = exposure(exp, rule, unit_type, assigned=False)
+                    out["ruleOverride"] = True
+                    return rule, out
+                if exp["fullOnVariant"]:
+                    return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True)
             return 0, None
 
         rule = _assign_rule_variant(exp.get("assignmentRules"))
@@ -1288,8 +1294,15 @@ def precedence_scenarios() -> list:
     custom_miss = switchback_experiment(409, "exp_sb_custom_traffic_miss", [("store_id", "city")], 3,
                                         trafficSplit=[0.5, 0.5], trafficSeedHi=miss_seeds[0],
                                         trafficSeedLo=miss_seeds[1])
+    # An assign rule with a value outside the allow-list, and a strict audience (which tier silver
+    # mismatches) with no cluster value: both ineligible controls, so neither the rule nor the
+    # strict mismatch is ever evaluated or recorded.
+    rule_ineligible = switchback_experiment(411, "exp_sb_rule_ineligible", [("store_id", "city")], 3,
+                                            values=[city + "-other"], assignmentRules=assign_rule)
+    strict_ineligible = switchback_experiment(412, "exp_sb_strict_ineligible", [("store_id", "unset_zone")], 3,
+                                              audience=audience, audienceStrict=True)
     experiments = [overridden, full_on, ruled, ruled_pre, strict, custom, full_on_pre, override_no_value,
-                   full_on_ineligible, custom_miss]
+                   full_on_ineligible, custom_miss, rule_ineligible, strict_ineligible]
     return [Scenario(
         "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
         (f"The cluster's period-0 draw is {drawn}. An override to {other} wins (assigned=false, overridden=true); "
@@ -1303,7 +1316,10 @@ def precedence_scenarios() -> list:
          f"has fullOnVariant={other} but a value outside switchbackClusterValues, so it is an ineligible control "
          "(0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has "
          f"trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to {other}: the traffic "
-         "miss wins (0, recorded eligible=false, custom=false)."),
+         "miss wins (0, recorded eligible=false, custom=false). exp_sb_rule_ineligible has an assign rule to "
+         f"{other} but a value outside switchbackClusterValues, and exp_sb_strict_ineligible has a strict audience "
+         "the context mismatches but no cluster value (unset_zone): both are ineligible controls (0, no exposure; "
+         "neither the rule nor the audience is evaluated for an ineligible cluster)."),
         experiments, {"store_id": uid},
     ).attr("city", city).attr("tier", "silver").override(overridden, other).custom(custom, other)
         .override(override_no_value, other).custom(custom_miss, other)

@@ -78,7 +78,7 @@ across languages.
   | `switchbackClusterValues`: in, out, null, `[]` | 243 |
   | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 244 |
   | traffic miss on an eligible cluster recorded `eligible=false`; traffic hashes the serving unit | 245 |
-  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on never on an ineligible cluster; traffic miss before custom | 246 |
+  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on, assignment rules and strict audiences never on an ineligible cluster; traffic miss before custom | 246 |
   | holdouts never apply | 247 |
   | missing or empty cluster map: legacy control; no linked unit: not applicable; Phase 1E fields ignored | 248 |
   | refresh with a changed cluster map re-resolves | 249 |

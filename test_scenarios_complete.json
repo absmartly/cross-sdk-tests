@@ -52385,7 +52385,7 @@
   },
   {
     "name": "246 - Switchback - Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
-    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id. exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to 2 still applies (overridden=true, under the first declared unit type store_id); exp_sb_full_on_ineligible has fullOnVariant=2 but a value outside switchbackClusterValues, so it is an ineligible control (0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to 2: the traffic miss wins (0, recorded eligible=false, custom=false).",
+    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id. exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to 2 still applies (overridden=true, under the first declared unit type store_id); exp_sb_full_on_ineligible has fullOnVariant=2 but a value outside switchbackClusterValues, so it is an ineligible control (0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to 2: the traffic miss wins (0, recorded eligible=false, custom=false). exp_sb_rule_ineligible has an assign rule to 2 but a value outside switchbackClusterValues, and exp_sb_strict_ineligible has a strict audience the context mismatches but no cluster value (unset_zone): both are ineligible controls (0, no exposure; neither the rule nor the audience is evaluated for an ineligible cluster).",
     "contextData": {
       "experiments": [
         {
@@ -52922,6 +52922,116 @@
           "switchbackBurnOutDurationMs": 0,
           "switchbackDesignType": "balanced_block",
           "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 411,
+          "name": "exp_sb_rule_ineligible",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackClusterValues": [
+            "prec-4-other"
+          ],
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "assignmentRules": "{\"rules\":[{\"type\":\"assign\",\"environments\":[],\"variant\":2}]}"
+        },
+        {
+          "id": 412,
+          "name": "exp_sb_strict_ineligible",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"tier\"},{\"value\":\"gold\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "unset_zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
         }
       ]
     },
@@ -52987,6 +53097,14 @@
                   {
                     "id": 409,
                     "name": "exp_sb_custom_traffic_miss"
+                  },
+                  {
+                    "id": 411,
+                    "name": "exp_sb_rule_ineligible"
+                  },
+                  {
+                    "id": 412,
+                    "name": "exp_sb_strict_ineligible"
                   }
                 ]
               }
@@ -53304,6 +53422,26 @@
               }
             }
           ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_rule_ineligible"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_strict_ineligible"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
         }
       },
       {

@@ -505,6 +505,17 @@ def test_strict_audience_mismatch_is_not_assigned():
     assert strict["assigned"] is False and strict["audienceMismatch"] is True and strict["variant"] == 0
 
 
+def test_rules_full_on_and_strict_audiences_never_apply_to_an_ineligible_cluster():
+    scenario = next(s for s in group() if "Precedence" in s["name"])
+    steps = {st["params"]["experimentName"]: (i, st) for i, st in enumerate(scenario["steps"])
+             if st["action"] == "treatment"}
+    for name in ("exp_sb_full_on_ineligible", "exp_sb_rule_ineligible", "exp_sb_strict_ineligible"):
+        assert steps[name][1]["expect"] == {"result": 0, "events": []}, name
+    failing = generator.failing_steps(scenario, "precedence_on_ineligible")
+    assert steps["exp_sb_rule_ineligible"][0] in failing
+    assert steps["exp_sb_full_on_ineligible"][0] in failing
+
+
 def test_unit_variant_matches_the_main_suite_vectors():
     by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
     for number, (uid, split, seed_hi, seed_lo, expected) in zip((4, 52), generator.UNIT_VARIANT_VECTORS):
