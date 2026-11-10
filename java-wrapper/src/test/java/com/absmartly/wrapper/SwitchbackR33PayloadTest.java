@@ -141,9 +141,9 @@ class SwitchbackR33PayloadTest {
         throw new AssertionError("probe payload has no sb_declared_order");
     }
 
-    // The linked SDK (java-sdk feat/switchback-phase1b in CI; head at time of writing: 91b9b31416)
-    // must pass the whole probe: golden sample, R33 context serving, payload shape and
-    // unit-experiment inertness.
+    // The linked SDK (java-sdk feat/switchback-phase1b in CI; head at time of writing: d5b1a6e5;
+    // requires >= d5b1a6e5) must pass the whole probe: golden sample, R33 context serving, payload
+    // shape and unit-experiment inertness.
     @Test
     void linkedSdkPassesTheSelfTest() {
         assumeTrue(SwitchbackSelfTest.hasR33WireModel(Experiment.class), "linked core-api has no R33 wire model");

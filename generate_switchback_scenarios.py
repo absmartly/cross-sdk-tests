@@ -8,7 +8,8 @@ collector blob 7b1d3fed5985). The independent reference below must reproduce eve
 before anything is written.
 
 The contract is R33 as the Collector serves it (absmartly/abs#5801 @ 9bd2b5ca35) and as java-sdk
-implements it (absmartly/java-sdk#15, SWITCHBACK.md; head at time of writing: 91b9b31416):
+implements it (absmartly/java-sdk#15, SWITCHBACK.md; head at time of writing: d5b1a6e5; requires
+>= d5b1a6e5 (strict-mismatch assigned=false)):
 
   * switchbackClusters is an ordered object unitTypeName -> attributePath (declared order, unit
     type id ascending). Sources are iterated in that order, then the context units of each type.
