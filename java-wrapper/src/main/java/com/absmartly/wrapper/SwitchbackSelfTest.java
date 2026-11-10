@@ -8,13 +8,13 @@ import com.absmartly.sdk.ContextEventLogger;
 import com.absmartly.sdk.DefaultContextEventSerializer;
 import com.absmartly.sdk.json.ContextData;
 import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.ExperimentApplication;
-import com.absmartly.sdk.json.ExperimentVariant;
 import com.absmartly.sdk.json.Exposure;
 import com.absmartly.sdk.json.PublishEvent;
 import com.absmartly.sdk.json.Unit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java8.util.concurrent.CompletableFuture;
 
 import java.lang.reflect.Field;
@@ -26,11 +26,12 @@ import java.util.TreeSet;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Behavioral self-test behind the `switchback` capability. It mirrors the Switchback scenario
- * group: a sample of the platform golden vectors through SwitchbackAssigner, then switchback
- * serving through a real Context on the same clock-free grids the scenarios use. Switchback
- * fields are set by reflection so the wrapper still compiles against pre-switchback core-api;
- * the verdict always comes from observed treatments and exposures.
+ * Behavioral self-test behind the `switchback` capability (R33, cluster-defined switchbacks). It
+ * mirrors the Switchback scenario group: a sample of the platform golden vectors through
+ * SwitchbackAssigner, then switchback serving through a real Context on an R33 payload (ordered
+ * switchbackClusters, switchbackClusterValues) deserialized from JSON on the same clock-free grid
+ * the scenarios use. Fields are read by reflection so the wrapper still compiles against
+ * pre-switchback core-api; the verdict always comes from observed treatments and exposures.
  */
 final class SwitchbackSelfTest {
     private SwitchbackSelfTest() {}
@@ -38,21 +39,12 @@ final class SwitchbackSelfTest {
     private static final String PREFIX = "[switchback probe]";
 
     // Grid constants shared with generate_switchback_scenarios.py: with a 400,000 h period "now"
-    // stays in period 0 (or 1 for the earlier anchor) until 2069, and is before ANCHOR_FUTURE.
+    // stays in period 0 until 2069.
     private static final long PERIOD_MS = 400_000L * 3_600_000L;
     private static final long ANCHOR_PERIOD_0 = 1_704_067_200_000L;
-    private static final long ANCHOR_PERIOD_1 = ANCHOR_PERIOD_0 - PERIOD_MS;
-    private static final long ANCHOR_FUTURE = 4_102_444_800_000L;
 
     // hashUnit("serving-9"): base64url-no-pad MD5, as published in PublishEvent.units.
     private static final String SERVING_UNIT_HASH = "r5uxZRoi-JuM5yYJa0kmSQ";
-
-    // {key, seed, count, expectedBucket}: hashlib-computed vectors pinned by the platform contract.
-    private static final String[][] BUCKET_CASES = {
-        {"1tdwU5K8evYzMovqjExpBA", "0", "10", "6"},
-        {"\u6771\u4eac", "-123456789012345", "50", "19"},
-        {"a\u001fb", "-9223372036854775808", "100", "43"},
-    };
 
     // {clusterUnit, periodIndex, seed, armCount, expectedVariant}, taken from the platform
     // golden vectors, including Long.MIN_VALUE/MAX_VALUE periods and seeds.
@@ -119,17 +111,6 @@ final class SwitchbackSelfTest {
                 return false;
             }
         }
-        if (!functions.isBucketAvailable()) {
-            System.out.println(PREFIX + " FAILED: linked core-api has no SwitchbackBuckets");
-            return false;
-        }
-        for (String[] c : BUCKET_CASES) {
-            int actual = functions.bucketOf(c[0], Long.parseLong(c[1]), Integer.parseInt(c[2]));
-            if (actual != Integer.parseInt(c[3])) {
-                System.out.println(PREFIX + " golden bucket FAILED for " + Arrays.toString(c) + ": got " + actual);
-                return false;
-            }
-        }
         for (Object[] c : PERMUTATION_CASES) {
             int[] expected = (int[]) c[3];
             int[] actual = functions.permutation((String) c[0], Long.parseLong((String) c[1]),
@@ -143,56 +124,73 @@ final class SwitchbackSelfTest {
         return true;
     }
 
+    // The R33 wire model: an ordered switchbackClusters map and switchbackClusterValues, and none of
+    // the abandoned Phase 1E bucket fields. A core-api that still has switchbackClusterCount serves
+    // the bucket design, which the Collector no longer emits.
+    static boolean hasR33WireModel(Class<?> experimentClass) {
+        return HoldoutProbeSupport.findField(experimentClass, "randomizationType") != null
+            && HoldoutProbeSupport.findField(experimentClass, "switchbackClusters") != null
+            && HoldoutProbeSupport.findField(experimentClass, "switchbackClusterValues") != null
+            && HoldoutProbeSupport.findField(experimentClass, "switchbackStartAt") != null
+            && HoldoutProbeSupport.findField(experimentClass, "switchbackPeriodMs") != null
+            && HoldoutProbeSupport.findField(experimentClass, "switchbackClusterCount") == null;
+    }
+
+    // The probe payload, as the Collector serves it (R33). Built as JSON and deserialized the way
+    // the wrapper deserializes scenario payloads, so the cluster map's key order is exercised too.
+    // Every expected variant is a platform golden vector:
+    //   assignSwitchback("market_1", 0, 1, 10) = 9, assignSwitchback("market_1", 0, 1, 3) = 1,
+    //   assignSwitchback("123456789", 0, 0, 3) = 2 (and "market_2" alone would draw 4 in 10 arms).
+    static String probePayload() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode data = mapper.createObjectNode();
+        ArrayNode experiments = data.putArray("experiments");
+        experiments.add(switchback(mapper, 521, "sb_agree", 0, 1, 10,
+            new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/city"}}));
+        experiments.add(switchback(mapper, 522, "sb_declared_order", 0, 1, 10,
+            new String[][] {{"unit_user", "profile/city"}, {"unit_serving", "city"}}));
+        experiments.add(switchback(mapper, 523, "sb_disagree", 0, 1, 10,
+            new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/zone"}}));
+        experiments.add(switchback(mapper, 524, "sb_whole_number", 0, 0, 3,
+            new String[][] {{"unit_serving", "store_number"}}));
+        ObjectNode filtered = switchback(mapper, 525, "sb_value_filtered", 0, 1, 10,
+            new String[][] {{"unit_serving", "city"}});
+        filtered.putArray("switchbackClusterValues").add("market_2");
+        experiments.add(filtered);
+        // Only the abandoned Phase 1E fields: no cluster map, so the legacy ineligible control.
+        ObjectNode legacy = switchback(mapper, 526, "sb_phase1e_only", 0, 1, 10, null);
+        legacy.put("switchbackClusterUnitType", "unit_serving");
+        legacy.put("switchbackClusterCount", 10);
+        legacy.put("switchbackClusterAttribute", "city");
+        experiments.add(legacy);
+        experiments.add(switchback(mapper, 513, "sb_payload", 0, 1, 3, new String[][] {{"unit_serving", "city"}}));
+        experiments.add(unit(mapper, 514, "sb_unit_baseline"));
+        ObjectNode withFields = unit(mapper, 527, "sb_unit_with_fields");
+        withFields.put("randomizationType", "unit");
+        ObjectNode clusters = withFields.putObject("switchbackClusters");
+        clusters.put("unit_serving", "city");
+        withFields.putArray("switchbackClusterValues").add("market_1");
+        withFields.put("switchbackStartAt", ANCHOR_PERIOD_0);
+        withFields.put("switchbackPeriodMs", PERIOD_MS);
+        withFields.put("switchbackDesignType", "balanced_block");
+        experiments.add(withFields);
+        return mapper.writeValueAsString(data);
+    }
+
     private static boolean checkContextServing() throws Exception {
-        if (HoldoutProbeSupport.findField(Experiment.class, "randomizationType") == null
-            || HoldoutProbeSupport.findField(Experiment.class, "switchbackStartAt") == null
-            || HoldoutProbeSupport.findField(Experiment.class, "switchbackPeriodMs") == null
-            || HoldoutProbeSupport.findField(Experiment.class, "switchbackClusterCount") == null
-            || HoldoutProbeSupport.findField(Experiment.class, "switchbackClusterAttribute") == null) {
-            System.out.println(PREFIX + " FAILED: linked core-api has no switchback wire model");
+        if (!hasR33WireModel(Experiment.class)) {
+            System.out.println(PREFIX + " FAILED: linked core-api has no R33 switchback wire model "
+                + "(switchbackClusters + switchbackClusterValues, no switchbackClusterCount)");
             return false;
         }
 
-        // Each check uses its own unit type. The uids and expected variants are the ones the
-        // Switchback scenarios pin: period checks use 10 buckets, the others 100.
-        List<Experiment> experiments = new ArrayList<>();
-        experiments.add(switchback(501, "sb_p0_a2", "unit_p0_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_0, 0, 10));
-        experiments.add(switchback(502, "sb_p0_a3", "unit_p0_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 10));
-        experiments.add(switchback(503, "sb_p0_a10", "unit_p0_a10", 2147483647, -1, 10, ANCHOR_PERIOD_0, 0, 10));
-        experiments.add(switchback(504, "sb_p1_a2", "unit_p1_a2", 3603515, 233373850, 2, ANCHOR_PERIOD_1, 0, 10));
-        experiments.add(switchback(505, "sb_p1_a3", "unit_p1_a3", -559038737, 1234567890, 3, ANCHOR_PERIOD_1, 0, 10));
-        experiments.add(switchback(506, "sb_p1_a10", "unit_p1_a10", 2147483647, -1, 10, ANCHOR_PERIOD_1, 0, 10));
-        experiments.add(switchback(507, "sb_pre_anchor", "unit_store", -559038737, 1234567890, 3, ANCHOR_FUTURE, 0, 100));
-        experiments.add(switchback(508, "sb_no_anchor", "unit_store", -559038737, 1234567890, 3, null, 0, 100));
-        experiments.add(switchback(509, "sb_no_cluster_unit", "unit_absent", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0, 100));
-        // eligibility-0 draws 2 under every allowed count, so a fallback from 1000 to any of them fails.
-        experiments.add(switchback(517, "sb_cluster_count_1000", "unit_store", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0, 1000));
-        experiments.add(switchback(510, "sb_dedup", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
-        // The period-0 draw for serving-9 is 2, so fullOnVariant 1 tells full-on apart from the draw.
-        experiments.add(switchback(511, "sb_full_on", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 1, 100));
-        experiments.add(switchback(512, "sb_override", "unit_serving", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0, 100));
-        experiments.add(switchback(513, "sb_payload", "unit_serving", -559038737, 1234567890, 3, ANCHOR_PERIOD_0, 0, 100));
-        Experiment attributeCity = switchback(515, "sb_attr_city", "unit_serving", -559038737, 1234567890, 3,
-            ANCHOR_PERIOD_0, 0, 100);
-        set(attributeCity, "switchbackClusterAttribute", "city");
-        experiments.add(attributeCity);
-        Experiment attributeMissing = switchback(516, "sb_attr_missing", "unit_serving", -559038737, 1234567890,
-            3, ANCHOR_PERIOD_0, 0, 100);
-        set(attributeMissing, "switchbackClusterAttribute", "zone");
-        experiments.add(attributeMissing);
-        Experiment unitBaseline = switchback(514, "sb_unit_baseline", "unit_serving", -559038737, 1234567890, 3,
-            null, 0, null);
-        set(unitBaseline, "randomizationType", null);
-        set(unitBaseline, "switchbackClusterUnitType", null);
-        set(unitBaseline, "switchbackPeriodMs", null);
-        set(unitBaseline, "switchbackDesignType", null);
-        experiments.add(unitBaseline);
-
-        ContextData contextData = new ContextData();
-        contextData.experiments = experiments.toArray(new Experiment[0]);
+        ObjectMapper mapper = new ObjectMapper();
+        ContextData contextData = mapper.readValue(probePayload(), ContextData.class);
+        if (!clusterKeys(contextData, "sb_declared_order").equals(Arrays.asList("unit_user", "unit_serving"))) {
+            System.out.println(PREFIX + " FAILED: switchbackClusters lost its declared order: "
+                + clusterKeys(contextData, "sb_declared_order"));
+            return false;
+        }
 
         List<Exposure> exposures = new CopyOnWriteArrayList<>();
         ContextEventLogger logger = (context, type, data) -> {
@@ -201,14 +199,9 @@ final class SwitchbackSelfTest {
             }
         };
 
+        // unit_user is set first, so declared order, not context order, must pick the serving unit.
         ContextConfig contextConfig = ContextConfig.create()
-            .setUnit("unit_p0_a2", "p0-a2-a-28")
-            .setUnit("unit_p0_a3", "p0-a3-a-15")
-            .setUnit("unit_p0_a10", "p0-a10-a-2")
-            .setUnit("unit_p1_a2", "p1-a2-a-64")
-            .setUnit("unit_p1_a3", "p1-a3-a-2")
-            .setUnit("unit_p1_a10", "p1-a10-a-4")
-            .setUnit("unit_store", "eligibility-0")
+            .setUnit("unit_user", "probe-user")
             .setUnit("unit_serving", "serving-9")
             .setPublishDelay(-1)
             .setRefreshInterval(0);
@@ -223,46 +216,79 @@ final class SwitchbackSelfTest {
             .setContextEventLogger(logger);
 
         Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
-        context.setAttribute("city", "city-29");
         context.waitUntilReady();
         if (!context.isReady() || context.isFailed()) {
             System.out.println(PREFIX + " FAILED: context not ready (failed=" + context.isFailed() + ")");
             return false;
         }
+        context.setAttribute("city", "market_1");
+        context.setAttribute("profile", java.util.Map.of("city", "market_1", "zone", "market_2"));
+        context.setAttribute("store_number", 123456789);
 
         try {
-            return expect(context, exposures, "period 0, 2 arms", "sb_p0_a2", 1, served(501, "sb_p0_a2", 1))
-                && expect(context, exposures, "period 0, 3 arms", "sb_p0_a3", 1, served(502, "sb_p0_a3", 1))
-                && expect(context, exposures, "period 0, 10 arms", "sb_p0_a10", 1, served(503, "sb_p0_a10", 1))
-                && expect(context, exposures, "period 1, 2 arms", "sb_p1_a2", 1, served(504, "sb_p1_a2", 1))
-                && expect(context, exposures, "period 1, 3 arms", "sb_p1_a3", 1, served(505, "sb_p1_a3", 1))
-                && expect(context, exposures, "period 1, 10 arms", "sb_p1_a10", 3, served(506, "sb_p1_a10", 3))
-                && expect(context, exposures, "pre-anchor", "sb_pre_anchor", 0,
-                    new Exposure(507, "sb_pre_anchor", "unit_store", 0, 0, true, false, false, false, false, false))
-                && expect(context, exposures, "pre-anchor repeat", "sb_pre_anchor", 0)
-                && expect(context, exposures, "missing anchor", "sb_no_anchor", 0,
-                    new Exposure(508, "sb_no_anchor", "unit_store", 0, 0, true, false, false, false, false, false))
-                && expect(context, exposures, "cluster unit not set", "sb_no_cluster_unit", 0,
-                    new Exposure(509, "sb_no_cluster_unit", "unit_absent", 0, 0, false, true, false, false, false,
-                        false))
-                && expect(context, exposures, "cluster count 1000", "sb_cluster_count_1000", 0,
-                    new Exposure(517, "sb_cluster_count_1000", "unit_store", 0, 0, true, false, false, false, false,
-                        false))
-                && expect(context, exposures, "same period", "sb_dedup", 2,
-                    new Exposure(510, "sb_dedup", "unit_serving", 2, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "same period repeat", "sb_dedup", 2)
-                && expect(context, exposures, "attribute source", "sb_attr_city", 1,
-                    new Exposure(515, "sb_attr_city", "unit_serving", 1, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "attribute missing", "sb_attr_missing", 0,
-                    new Exposure(516, "sb_attr_missing", "unit_serving", 0, 0, true, false, false, false, false,
-                        false))
-                && expect(context, exposures, "full-on", "sb_full_on", 1,
-                    new Exposure(511, "sb_full_on", "unit_serving", 1, 0, true, true, false, true, false, false))
-                && checkOverride(context, exposures)
-                && checkPayloadShape(context, exposures, published);
+            return expect(context, exposures, "agreement", "sb_agree", 9,
+                    new Exposure(521, "sb_agree", "unit_serving", 9, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "agreement repeat", "sb_agree", 9)
+                && expect(context, exposures, "declared order", "sb_declared_order", 9,
+                    new Exposure(522, "sb_declared_order", "unit_user", 9, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "disagreement", "sb_disagree", 0)
+                && expect(context, exposures, "whole number", "sb_whole_number", 2,
+                    new Exposure(524, "sb_whole_number", "unit_serving", 2, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "value filtered out", "sb_value_filtered", 0)
+                && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0)
+                && checkPayloadShape(context, exposures, published)
+                && checkUnitExperimentInert(context, exposures, published, mapper);
         } finally {
             context.close();
         }
+    }
+
+    private static List<String> clusterKeys(ContextData data, String experimentName) throws Exception {
+        Field field = HoldoutProbeSupport.findField(Experiment.class, "switchbackClusters");
+        for (Experiment experiment : data.experiments) {
+            if (experimentName.equals(experiment.name)) {
+                Object clusters = field.get(experiment);
+                return (clusters instanceof java.util.Map<?, ?> map)
+                    ? new ArrayList<>(map.keySet().stream().map(String::valueOf).toList()) : List.of();
+            }
+        }
+        return List.of();
+    }
+
+    // A unit experiment carrying every R33 field (randomizationType "unit") must be served, exposed
+    // and published exactly like the plain baseline on the same unit and seeds: the serialized
+    // publish bytes are identical once id, name and exposedAt are aligned.
+    private static boolean checkUnitExperimentInert(Context context, List<Exposure> exposures,
+            List<PublishEvent> published, ObjectMapper mapper) throws Exception {
+        int before = exposures.size();
+        if (context.getTreatment("sb_unit_with_fields") != 1) {
+            System.out.println(PREFIX + " check unit inertness FAILED: sb_unit_with_fields did not serve 1");
+            return false;
+        }
+        PublishEvent event = publishOne(context, published);
+        if (event == null || exposures.size() != before + 1 || !servedAs(exposures.get(before),
+                new Exposure(527, "sb_unit_with_fields", "unit_serving", 1, 0, true, true, false, false, false, false))) {
+            System.out.println(PREFIX + " check unit inertness FAILED: exposures " + exposures.subList(before,
+                exposures.size()) + ", publish " + event);
+            return false;
+        }
+        DefaultContextEventSerializer serializer = new DefaultContextEventSerializer();
+        PublishEvent baseline = published.get(published.size() - 3);
+        ObjectNode baselineJson = (ObjectNode) mapper.readTree(serializer.serialize(baseline));
+        ObjectNode actualJson = (ObjectNode) mapper.readTree(serializer.serialize(event));
+        for (ObjectNode json : new ObjectNode[] {baselineJson, actualJson}) {
+            json.remove("publishedAt");
+            ObjectNode exposure = (ObjectNode) json.path("exposures").path(0);
+            exposure.put("id", 0);
+            exposure.put("name", "");
+            exposure.put("exposedAt", 0);
+        }
+        if (!mapper.writeValueAsString(baselineJson).equals(mapper.writeValueAsString(actualJson))) {
+            System.out.println(PREFIX + " check unit inertness FAILED: publish " + actualJson + " differs from "
+                + baselineJson);
+            return false;
+        }
+        return true;
     }
 
     // Mirrors the payload scenario: expose and publish a unit baseline, then expose and publish a
@@ -296,7 +322,8 @@ final class SwitchbackSelfTest {
 
         Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
             false, false);
-        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 2, 0, true, true, false, false,
+        // assignSwitchback("market_1", 0, 1, 3) = 1.
+        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
             false, false);
         if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
             System.out.println(PREFIX + " check published exposures FAILED: baseline " + baselineEvent
@@ -419,56 +446,53 @@ final class SwitchbackSelfTest {
         return null;
     }
 
-    private static boolean checkOverride(Context context, List<Exposure> exposures) {
-        // The period-0 draw for serving-9 is 2, so the override serves 1.
-        context.setOverride("sb_override", 1);
-        return expect(context, exposures, "override", "sb_override", 1,
-            new Exposure(512, "sb_override", "unit_serving", 1, 0, false, true, true, false, false, false));
-    }
-
-    private static Experiment switchback(int id, String name, String unitType, int seedHi, int seedLo, int arms,
-            Long startAt, int fullOnVariant, Integer clusterCount) throws Exception {
-        Experiment experiment = new Experiment();
-        experiment.id = id;
-        experiment.name = name;
-        experiment.iteration = 1;
-        experiment.unitType = unitType;
-        experiment.seedHi = seedHi;
-        experiment.seedLo = seedLo;
-        double[] split = new double[arms];
-        Arrays.fill(split, 1.0 / arms);
-        experiment.split = split;
-        experiment.trafficSeedHi = 1;
-        experiment.trafficSeedLo = 2;
-        experiment.trafficSplit = new double[] {0, 1};
-        experiment.fullOnVariant = fullOnVariant;
-        experiment.applications = new ExperimentApplication[] {new ExperimentApplication("website")};
-        ExperimentVariant[] variants = new ExperimentVariant[arms];
+    private static ObjectNode base(ObjectMapper mapper, int id, String name, int seedHi, int seedLo, int arms) {
+        ObjectNode experiment = mapper.createObjectNode();
+        experiment.put("id", id);
+        experiment.put("name", name);
+        experiment.put("iteration", 1);
+        experiment.put("unitType", "unit_serving");
+        experiment.put("seedHi", seedHi);
+        experiment.put("seedLo", seedLo);
+        ArrayNode split = experiment.putArray("split");
         for (int i = 0; i < arms; i++) {
-            variants[i] = new ExperimentVariant(String.valueOf((char) ('A' + i)), null);
+            split.add(1.0 / arms);
         }
-        experiment.variants = variants;
-
-        set(experiment, "randomizationType", "switchback");
-        set(experiment, "switchbackClusterUnitType", unitType);
-        set(experiment, "switchbackStartAt", startAt);
-        set(experiment, "switchbackPeriodMs", PERIOD_MS);
-        set(experiment, "switchbackDesignType", "balanced_block");
-        set(experiment, "switchbackClusterCount", clusterCount);
+        experiment.put("trafficSeedHi", 1);
+        experiment.put("trafficSeedLo", 2);
+        experiment.putArray("trafficSplit").add(0).add(1);
+        experiment.put("fullOnVariant", 0);
+        experiment.putArray("applications").addObject().put("name", "website");
+        ArrayNode variants = experiment.putArray("variants");
+        for (int i = 0; i < arms; i++) {
+            variants.addObject().put("name", String.valueOf((char) ('A' + i))).putNull("config");
+        }
+        experiment.put("audienceStrict", false);
         return experiment;
     }
 
-    private static void set(Experiment experiment, String fieldName, Object value) throws Exception {
-        Field field = HoldoutProbeSupport.findField(Experiment.class, fieldName);
-        if (field == null) {
-            throw new NoSuchFieldException(fieldName);
+    // clusters is the switchbackClusters map in declared order; null omits it.
+    private static ObjectNode switchback(ObjectMapper mapper, int id, String name, int seedHi, int seedLo, int arms,
+            String[][] clusters) {
+        ObjectNode experiment = base(mapper, id, name, seedHi, seedLo, arms);
+        experiment.put("randomizationType", "switchback");
+        if (clusters != null) {
+            ObjectNode map = experiment.putObject("switchbackClusters");
+            for (String[] entry : clusters) {
+                map.put(entry[0], entry[1]);
+            }
+            experiment.put("unitType", clusters[0][0]);
         }
-        field.set(experiment, value);
+        experiment.put("switchbackStartAt", ANCHOR_PERIOD_0);
+        experiment.put("switchbackPeriodMs", PERIOD_MS);
+        experiment.put("switchbackDesignType", "balanced_block");
+        experiment.put("switchbackEstimand", "global_average_treatment_effect");
+        return experiment;
     }
 
-    private static Exposure served(int id, String name, int variant) {
-        String unitType = "unit_" + name.substring("sb_".length());
-        return new Exposure(id, name, unitType, variant, 0, true, true, false, false, false, false);
+    // The unit baseline: seeds whose 3-arm unit draw for serving-9 is 1.
+    private static ObjectNode unit(ObjectMapper mapper, int id, String name) {
+        return base(mapper, id, name, -559038737, 1234567890, 3);
     }
 
     // One getTreatment call: the treatment and every exposure it emits must match exactly.

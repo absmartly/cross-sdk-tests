@@ -191,86 +191,17 @@ class SwitchbackEndpointsTest {
             controller.switchbackPermutation(permutationRequest()).getStatusCode());
     }
 
-    private static Map<String, Object> bucketRequest(String key, String seed, Object count) {
-        Map<String, Object> request = new HashMap<>();
-        request.put("key", key);
-        request.put("seed", seed);
-        request.put("count", count);
-        return request;
-    }
-
-    // The three hashlib vectors of the platform bucket contract, served by the linked SDK.
-    @ParameterizedTest
-    @MethodSource("bucketVectors")
-    void linkedBucketEndpointServesTheContractVectors(String key, String seed, int count, int expected) {
-        assumeTrue(SwitchbackFunctions.LINKED.isBucketAvailable(), "linked core-api has no SwitchbackBuckets");
-        ResponseEntity<?> response = new WrapperController().switchbackBucket(bucketRequest(key, seed, count));
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals(expected, body(response).get("result"));
-    }
-
-    static List<Object[]> bucketVectors() {
-        return Arrays.asList(
-            new Object[] {"1tdwU5K8evYzMovqjExpBA", "0", 10, 6},
-            new Object[] {"\u6771\u4eac", "-123456789012345", 50, 19},
-            new Object[] {"a\u001fb", "-9223372036854775808", 100, 43});
-    }
-
-    @ParameterizedTest
-    @ValueSource(ints = {1000, 0, 20, -10})
-    void linkedBucketEndpointRejectsDisallowedCountsWith400(int count) {
-        assumeTrue(SwitchbackFunctions.LINKED.isBucketAvailable(), "linked core-api has no SwitchbackBuckets");
-        ResponseEntity<?> response = new WrapperController().switchbackBucket(bucketRequest("k", "0", count));
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-    }
-
-    // The wrapper enforces the {10, 50, 100} count contract itself: a bucket function that accepts
-    // any count must never be called, and the response is 400.
-    @ParameterizedTest
-    @ValueSource(ints = {1000, 0, 20, -10, 1})
-    void rejectsDisallowedCountsWith400WithoutCallingTheBucketFunction(int count) {
-        AtomicInteger calls = new AtomicInteger();
-        WrapperController controller = new WrapperController(new FixedFunctions() {
-            @Override
-            public boolean isBucketAvailable() {
-                return true;
-            }
-
-            @Override
-            public int bucketOf(String key, long seed, int count) {
-                calls.incrementAndGet();
-                return 0;
-            }
-        });
-        assertEquals(HttpStatus.BAD_REQUEST,
-            controller.switchbackBucket(bucketRequest("k", "0", count)).getStatusCode());
-        assertEquals(0, calls.get());
-    }
-
     @Test
-    void bucketEndpointRejectsBadInputWith400() {
-        WrapperController controller = new WrapperController(new FixedFunctions() {
-            @Override
-            public boolean isBucketAvailable() {
-                return true;
+    void bucketEndpointIsGone() throws Exception {
+        for (java.lang.reflect.Method method : WrapperController.class.getDeclaredMethods()) {
+            org.springframework.web.bind.annotation.PostMapping mapping =
+                method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+            if (mapping != null) {
+                for (String path : mapping.value()) {
+                    assertFalse(path.contains("bucket"), path);
+                }
             }
-
-            @Override
-            public int bucketOf(String key, long seed, int count) {
-                return 0;
-            }
-        });
-        assertEquals(HttpStatus.BAD_REQUEST, controller.switchbackBucket(bucketRequest(null, "0", 10)).getStatusCode());
-        assertEquals(HttpStatus.BAD_REQUEST, controller.switchbackBucket(bucketRequest("k", "x", 10)).getStatusCode());
-        assertEquals(HttpStatus.BAD_REQUEST,
-            controller.switchbackBucket(bucketRequest("k", "0", "10")).getStatusCode());
-    }
-
-    @Test
-    void absentBucketFunctionAnswers501() {
-        WrapperController controller = new WrapperController(new FixedFunctions());
-        assertEquals(HttpStatus.NOT_IMPLEMENTED,
-            controller.switchbackBucket(bucketRequest("k", "0", 10)).getStatusCode());
+        }
     }
 
     @Test

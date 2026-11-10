@@ -141,7 +141,7 @@ public class WrapperController {
         }
     }
 
-    // clusterUnit is the assigner input (the SDK's hashed unit) and is not hashed again; 64-bit
+    // clusterUnit is the assigner input (the raw R33 cluster key) and is not hashed; 64-bit
     // values arrive as decimal strings. See WRAPPER_API_SPEC.md, capability `switchback`.
     @PostMapping("/switchback/assign")
     public ResponseEntity<?> switchbackAssign(@RequestBody Map<String, Object> request) {
@@ -160,18 +160,6 @@ public class WrapperController {
             }
             return result;
         });
-    }
-
-    // key is the cluster key hashed as-is (a hashed unit or a normalized attribute value); seed is
-    // the 64-bit experiment seed as a decimal string. The wrapper rejects a count outside {10, 50, 100}.
-    @PostMapping("/switchback/bucket")
-    public ResponseEntity<?> switchbackBucket(@RequestBody Map<String, Object> request) {
-        if (!switchback.isBucketAvailable()) {
-            return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-                .body(Collections.singletonMap("error", "linked SDK has no switchback bucket function"));
-        }
-        return switchbackCall(() -> switchback.bucketOf(stringParam(request, "key"), longParam(request, "seed"),
-            countParam(request)));
     }
 
     // Answers whenever the assigner links, independent of the self-test verdict, so a regressed
@@ -212,14 +200,6 @@ public class WrapperController {
             throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
         }
         return armCount;
-    }
-
-    private static int countParam(Map<String, Object> request) {
-        int count = intParam(request, "count");
-        if (count != 10 && count != 50 && count != 100) {
-            throw new IllegalArgumentException("count must be 10, 50 or 100, got " + count);
-        }
-        return count;
     }
 
     private static int intParam(Map<String, Object> request, String name) {
