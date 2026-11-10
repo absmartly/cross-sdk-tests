@@ -8,7 +8,7 @@ collector blob 7b1d3fed5985). The independent reference below must reproduce eve
 before anything is written.
 
 The contract is R33 as the Collector serves it (absmartly/abs#5801 @ 9bd2b5ca35) and as java-sdk
-implements it (absmartly/java-sdk#15 @ 91b9b31416, SWITCHBACK.md):
+implements it (absmartly/java-sdk#15, SWITCHBACK.md; head at time of writing: 91b9b31416):
 
   * switchbackClusters is an ordered object unitTypeName -> attributePath (declared order, unit
     type id ascending). Sources are iterated in that order, then the context units of each type.
@@ -17,7 +17,8 @@ implements it (absmartly/java-sdk#15 @ 91b9b31416, SWITCHBACK.md):
   * The variant is assignSwitchback(raw cluster key, floorDiv(now - startAt, periodMs), seed,
     arms): the key is never hashed, bucketed or replaced by the unit uid.
   * An ineligible cluster is variant 0 with no exposure; a traffic miss on an eligible cluster is
-    recorded with eligible=false; pre-anchor and unservable schedules are silent controls.
+    recorded with eligible=false; pre-anchor and unservable schedules are silent controls (SDK
+    choice; the Collector records it).
 
 Scenarios:
   * Golden-vector scenarios drive every assign and permutation case through the wrapper's

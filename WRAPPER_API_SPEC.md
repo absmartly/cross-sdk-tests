@@ -1206,7 +1206,8 @@ deterministic because their grids keep "now" inside one known period for
 decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the
 anchor `switchbackStartAt` is hour-aligned at 2024-01-01T00:00Z (period 0),
 one period earlier at 1978-05-15T08:00Z (period 1), or 2100-01-01T00:00Z
-(before the anchor, so a silent ineligible control). All three hold until
+(before the anchor, so a silent ineligible control: SDK choice; the Collector
+records it). All three hold until
 2069-08-18T16:00Z. Clock rollover between periods stays in the SDKs' own test
 suites.
 

@@ -10,7 +10,7 @@ declare -A SDK_BRANCHES=(
   ["flutter-sdk"]="fix/audit-operator-fixes"
   ["go-sdk"]="fix/all-tests-passing"
   # TEMPORARY (R33, revert once java-sdk#15 merges): feat/switchback-phase1b is the R33
-  # cluster-defined switchback head (91b9b31416), so the java lane runs scenarios 230-250
+  # cluster-defined switchback branch (head at time of writing: 91b9b31416), so the java lane runs scenarios 230-250
   # instead of failing its required `switchback` capability. The java wrapper builds against
   # core-api 1.7.0 (java-sdk main), so this branch must include java-sdk main.
   ["java-sdk"]="feat/switchback-phase1b"

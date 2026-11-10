@@ -142,7 +142,7 @@ class SwitchbackR33PayloadTest {
         throw new AssertionError("probe payload has no sb_declared_order");
     }
 
-    // The linked SDK (java-sdk 91b9b31416 in CI) must pass the whole probe: golden sample, R33
+    // The linked SDK (java-sdk feat/switchback-phase1b in CI; head at time of writing: 91b9b31416) must pass the whole probe: golden sample, R33
     // context serving, payload shape and unit-experiment inertness.
     @Test
     void linkedSdkPassesTheSelfTest() {
