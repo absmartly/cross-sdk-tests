@@ -101,25 +101,13 @@ across languages.
   this map and the mutant results.
 
   The java lane pins `java-sdk` to `feat/switchback-phase1b` (the R33 head) in
-  `sdk-branches.sh`. Merge order: abs#5801, then java-sdk#15, then this
-  branch; after java-sdk#15 merges, revert the pin to `main`.
+  `sdk-branches.sh`; it requires d5b1a6e5 or later (a strict audience mismatch
+  publishes `assigned=false`). Merge order: abs#5801, then java-sdk#15, then
+  this branch; after java-sdk#15 merges, revert the pin to `main`.
 
-  Lane status on this PR (CI run 42736259092 on 00db7a22; all six lanes below
-  pass the ungated inertness scenario 251 and have no switchback failure; no
-  non-java pin is changed here):
-
-  | Lane | Cause | Scenario ids | Status |
-  | --- | --- | --- | --- |
-  | python | checkout fails: the pinned `python3-sdk` branch `fix/python-sdk-all-tests-passing` was deleted upstream | none run | pre-existing / not this PR |
-  | dotnet | the wrapper no longer compiles against `dotnet-sdk` `fix/audit-operator-fixes` (branch moved) | none run | pre-existing / not this PR |
-  | go | pinned SDK branch moved; finalize / post-finalize / `variableKeys` scenarios fail | 5-19 failures, all ids <= 229 | pre-existing / not this PR |
-  | php | as go | 5-19 failures, all ids <= 229 | pre-existing / not this PR |
-  | ruby | as go | 5-19 failures, all ids <= 229 | pre-existing / not this PR |
-  | liquid | as go | 5-19 failures, all ids <= 229 | pre-existing / not this PR |
-
-  The go/php/ruby/liquid failures were green on the Oct-30 run of the same
-  pins. They belong to the SDK branches, which have moved since, not to this
-  change.
+  Of the non-java lanes, the four that run (go/php/ruby/liquid) pass 251;
+  python/dotnet never reach the scenarios. The per-lane status is in the PR
+  description.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
