@@ -21,6 +21,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -58,12 +59,15 @@ final class SwitchbackSelfTest {
         {"market_1", "5", "1", "10", "0"},
         {"market_2", "-11", "-9223372036854775808", "10", "3"},
         {"market_2", "9223372036854775807", "-9223372036854775808", "10", "2"},
+        {"market_1", "1", "9223372036854775807", "2", "1"},
     };
 
-    // {clusterUnit, cycleIndex, seed, expectedPermutation}, from the same fixture.
+    // {clusterUnit, cycleIndex, seed, expectedPermutation}, from the same fixture, including
+    // Long.MIN_VALUE/MAX_VALUE cycles.
     private static final Object[][] PERMUTATION_CASES = {
         {"market_1", "0", "0", new int[] {0, 3, 7, 5, 8, 2, 6, 4, 1, 9}},
         {"market_1", "-9223372036854775808", "0", new int[] {1, 0}},
+        {"market_1", "9223372036854775807", "1", new int[] {0, 1}},
         {"123456789", "0", "0", new int[] {2, 0, 1}},
     };
 
@@ -138,21 +142,31 @@ final class SwitchbackSelfTest {
 
     // The probe payload, as the Collector serves it (R33). Built as JSON and deserialized the way
     // the wrapper deserializes scenario payloads, so the cluster map's key order is exercised too.
-    // Every expected variant is a platform golden vector:
-    //   assignSwitchback("market_1", 0, 1, 10) = 9, assignSwitchback("market_1", 0, 1, 3) = 1,
-    //   assignSwitchback("123456789", 0, 0, 3) = 2 (and "market_2" alone would draw 4 in 10 arms).
+    // Every expected variant is a platform golden vector, chosen (with the Python reference) to
+    // differ from every wrong model for both context uids (serving-9, probe-user): the hashed key,
+    // the uid as key, the hashed uid as key, a Phase 1E bucket and the sticky unit assignment.
+    //   assignSwitchback("market_1", 0, 42, 10) = 3: hashed key 5, bucket 8; serving-9 uid 8,
+    //     hashed uid 8, sticky 5; probe-user uid 9, hashed uid 9, sticky 7.
+    //   assignSwitchback("123456789", 0, 42, 10) = 6: "123456789.0" 4, "1.23456789E8" 7,
+    //     "1.23456789e+08" 0, hashed key 0, bucket 4; serving-9 uid 8, hashed uid 8, sticky 5.
+    //   assignSwitchback("market_1", 0, 1, 3) = 1 (payload shape; sticky 0, hashed key 2).
     static String probePayload() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode data = mapper.createObjectNode();
         ArrayNode experiments = data.putArray("experiments");
-        experiments.add(switchback(mapper, 521, "sb_agree", 0, 1, 10,
+        experiments.add(switchback(mapper, 521, "sb_agree", 0, 42, 10,
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/city"}}));
-        experiments.add(switchback(mapper, 522, "sb_declared_order", 0, 1, 10,
+        experiments.add(switchback(mapper, 522, "sb_declared_order", 0, 42, 10,
             new String[][] {{"unit_user", "profile/city"}, {"unit_serving", "city"}}));
-        experiments.add(switchback(mapper, 523, "sb_disagree", 0, 1, 10,
+        experiments.add(switchback(mapper, 523, "sb_disagree", 0, 42, 10,
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/zone"}}));
-        experiments.add(switchback(mapper, 524, "sb_whole_number", 0, 0, 3,
+        experiments.add(switchback(mapper, 524, "sb_whole_number", 0, 42, 10,
             new String[][] {{"unit_serving", "store_number"}}));
+        // switchbackClusterValues [] admits every value, like null.
+        ObjectNode admitAll = switchback(mapper, 528, "sb_allow_empty", 0, 42, 10,
+            new String[][] {{"unit_serving", "city"}});
+        admitAll.putArray("switchbackClusterValues");
+        experiments.add(admitAll);
         ObjectNode filtered = switchback(mapper, 525, "sb_value_filtered", 0, 1, 10,
             new String[][] {{"unit_serving", "city"}});
         filtered.putArray("switchbackClusterValues").add("market_2");
@@ -222,22 +236,28 @@ final class SwitchbackSelfTest {
             return false;
         }
         context.setAttribute("city", "market_1");
-        context.setAttribute("profile", java.util.Map.of("city", "market_1", "zone", "market_2"));
+        context.setAttribute("profile", Map.of("city", "market_1", "zone", "market_2"));
         context.setAttribute("store_number", 123456789);
 
         try {
-            return expect(context, exposures, "agreement", "sb_agree", 9,
-                    new Exposure(521, "sb_agree", "unit_serving", 9, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "agreement repeat", "sb_agree", 9)
-                && expect(context, exposures, "declared order", "sb_declared_order", 9,
-                    new Exposure(522, "sb_declared_order", "unit_user", 9, 0, true, true, false, false, false, false))
+            boolean served = expect(context, exposures, "agreement", "sb_agree", 3,
+                    new Exposure(521, "sb_agree", "unit_serving", 3, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "agreement repeat", "sb_agree", 3)
+                && expect(context, exposures, "declared order", "sb_declared_order", 3,
+                    new Exposure(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "disagreement", "sb_disagree", 0)
-                && expect(context, exposures, "whole number", "sb_whole_number", 2,
-                    new Exposure(524, "sb_whole_number", "unit_serving", 2, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "whole number", "sb_whole_number", 6,
+                    new Exposure(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "value filtered out", "sb_value_filtered", 0)
-                && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0)
-                && checkPayloadShape(context, exposures, published)
-                && checkUnitExperimentInert(context, exposures, published, mapper);
+                && expect(context, exposures, "empty allow-list admits all", "sb_allow_empty", 3,
+                    new Exposure(528, "sb_allow_empty", "unit_serving", 3, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0);
+            if (!served) {
+                return false;
+            }
+            PublishEvent baselineEvent = checkPayloadShape(context, exposures, published);
+            return baselineEvent != null
+                && checkUnitExperimentInert(context, exposures, published, mapper, baselineEvent);
         } finally {
             context.close();
         }
@@ -248,7 +268,7 @@ final class SwitchbackSelfTest {
         for (Experiment experiment : data.experiments) {
             if (experimentName.equals(experiment.name)) {
                 Object clusters = field.get(experiment);
-                return (clusters instanceof java.util.Map<?, ?> map)
+                return (clusters instanceof Map<?, ?> map)
                     ? new ArrayList<>(map.keySet().stream().map(String::valueOf).toList()) : List.of();
             }
         }
@@ -259,7 +279,7 @@ final class SwitchbackSelfTest {
     // and published exactly like the plain baseline on the same unit and seeds: the serialized
     // publish bytes are identical once id, name and exposedAt are aligned.
     private static boolean checkUnitExperimentInert(Context context, List<Exposure> exposures,
-            List<PublishEvent> published, ObjectMapper mapper) throws Exception {
+            List<PublishEvent> published, ObjectMapper mapper, PublishEvent baseline) throws Exception {
         int before = exposures.size();
         if (context.getTreatment("sb_unit_with_fields") != 1) {
             System.out.println(PREFIX + " check unit inertness FAILED: sb_unit_with_fields did not serve 1");
@@ -273,7 +293,6 @@ final class SwitchbackSelfTest {
             return false;
         }
         DefaultContextEventSerializer serializer = new DefaultContextEventSerializer();
-        PublishEvent baseline = published.get(published.size() - 3);
         ObjectNode baselineJson = (ObjectNode) mapper.readTree(serializer.serialize(baseline));
         ObjectNode actualJson = (ObjectNode) mapper.readTree(serializer.serialize(event));
         for (ObjectNode json : new ObjectNode[] {baselineJson, actualJson}) {
@@ -294,8 +313,8 @@ final class SwitchbackSelfTest {
     // Mirrors the payload scenario: expose and publish a unit baseline, then expose and publish a
     // switchback experiment on the same unit. The switchback exposure and its publish event must
     // have exactly the baseline's fields at every depth, and the published exposure must carry
-    // the served values.
-    private static boolean checkPayloadShape(Context context, List<Exposure> exposures,
+    // the served values. Returns the baseline publish event, or null when a check fails.
+    private static PublishEvent checkPayloadShape(Context context, List<Exposure> exposures,
             List<PublishEvent> published) throws Exception {
         // Drain the exposures queued by the earlier checks so each publish below carries one.
         context.publish();
@@ -309,7 +328,7 @@ final class SwitchbackSelfTest {
         if (emitted.size() != 2 || baselineEvent == null || switchbackEvent == null) {
             System.out.println(PREFIX + " check payload shape FAILED: expected 2 exposures and 2 publish events, got "
                 + emitted + " and " + baselineEvent + ", " + switchbackEvent);
-            return false;
+            return null;
         }
 
         ObjectMapper mapper = new ObjectMapper();
@@ -317,7 +336,7 @@ final class SwitchbackSelfTest {
             "exposure");
         if (exposureMismatch != null) {
             System.out.println(PREFIX + " check payload shape FAILED: " + exposureMismatch);
-            return false;
+            return null;
         }
 
         Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
@@ -328,7 +347,7 @@ final class SwitchbackSelfTest {
         if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
             System.out.println(PREFIX + " check published exposures FAILED: baseline " + baselineEvent
                 + ", switchback " + switchbackEvent);
-            return false;
+            return null;
         }
 
         // Compare the bytes the SDK's own serializer would send, not the Java objects.
@@ -344,9 +363,9 @@ final class SwitchbackSelfTest {
         }
         if (publishMismatch != null) {
             System.out.println(PREFIX + " check publish payload FAILED: " + publishMismatch);
-            return false;
+            return null;
         }
-        return true;
+        return baselineEvent;
     }
 
     private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",

@@ -2,11 +2,11 @@ package com.absmartly.wrapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import com.absmartly.sdk.DefaultContextDataDeserializer;
 import com.absmartly.sdk.json.ContextData;
 import com.absmartly.sdk.json.Experiment;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -68,8 +69,9 @@ class SwitchbackR33PayloadTest {
         assertEquals(ORDER, keys(experiment.get("switchbackClusters")));
         assertEquals("[\"x\",\"y\"]", experiment.get("switchbackClusterValues").toString());
 
-        // And the SDK's own model after parsing that response.
-        ContextData parsed = MAPPER.readValue(json, ContextData.class);
+        // And the SDK's own model after its Client's deserializer parses the served bytes.
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        ContextData parsed = new DefaultContextDataDeserializer().deserialize(bytes, 0, bytes.length);
         Field clusters = Experiment.class.getField("switchbackClusters");
         assertEquals(ORDER, new ArrayList<>(((Map<String, String>) clusters.get(parsed.experiments[0])).keySet()));
     }
@@ -77,11 +79,8 @@ class SwitchbackR33PayloadTest {
     @Test
     void legacyPhase1eFieldsAreIgnored() throws Exception {
         assumeTrue(SwitchbackSelfTest.hasR33WireModel(Experiment.class), "linked core-api has no R33 wire model");
+        // Behaviour, not class structure: the legacy fields parse without error and do not survive.
         ContextData parsed = MAPPER.readValue(payload(), ContextData.class);
-        for (String legacy : new String[] {"switchbackClusterUnitType", "switchbackClusterCount",
-                "switchbackClusterAttribute"}) {
-            assertNull(HoldoutProbeSupport.findField(Experiment.class, legacy), legacy);
-        }
         JsonNode reserialized = MAPPER.valueToTree(parsed).get("experiments").get(0);
         assertFalse(reserialized.has("switchbackClusterCount"));
         assertFalse(reserialized.has("switchbackClusterUnitType"));
@@ -142,8 +141,9 @@ class SwitchbackR33PayloadTest {
         throw new AssertionError("probe payload has no sb_declared_order");
     }
 
-    // The linked SDK (java-sdk feat/switchback-phase1b in CI; head at time of writing: 91b9b31416) must pass the whole probe: golden sample, R33
-    // context serving, payload shape and unit-experiment inertness.
+    // The linked SDK (java-sdk feat/switchback-phase1b in CI; head at time of writing: 91b9b31416)
+    // must pass the whole probe: golden sample, R33 context serving, payload shape and
+    // unit-experiment inertness.
     @Test
     void linkedSdkPassesTheSelfTest() {
         assumeTrue(SwitchbackSelfTest.hasR33WireModel(Experiment.class), "linked core-api has no R33 wire model");

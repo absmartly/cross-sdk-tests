@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -16,7 +18,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class SwitchbackEndpointsTest {
 
@@ -191,17 +196,17 @@ class SwitchbackEndpointsTest {
             controller.switchbackPermutation(permutationRequest()).getStatusCode());
     }
 
+    // The Phase 1E bucket endpoint was removed: a POST to it must be a 404 from the real routing.
     @Test
     void bucketEndpointIsGone() throws Exception {
-        for (java.lang.reflect.Method method : WrapperController.class.getDeclaredMethods()) {
-            org.springframework.web.bind.annotation.PostMapping mapping =
-                method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
-            if (mapping != null) {
-                for (String path : mapping.value()) {
-                    assertFalse(path.contains("bucket"), path);
-                }
-            }
-        }
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WrapperController(new FixedFunctions())).build();
+        mvc.perform(post("/switchback/bucket").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clusterKey\":\"market_1\",\"seedHi\":0,\"seedLo\":1,\"clusterCount\":10}"))
+            .andExpect(status().isNotFound());
+        // The surviving endpoints are routed by the same setup.
+        mvc.perform(post("/switchback/assign").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clusterUnit\":\"market_1\",\"periodIndex\":\"0\",\"seed\":\"0\",\"armCount\":2}"))
+            .andExpect(status().isOk());
     }
 
     @Test
