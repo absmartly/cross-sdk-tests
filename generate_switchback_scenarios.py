@@ -1364,7 +1364,8 @@ RULES = OrderedDict([
         "Golden Vectors - fisherYatesPermutation - 3 Arms", "Golden Vectors - fisherYatesPermutation - 10 Arms"]),
     ("single source, single unit; raw value is the key; periodIndex = floorDiv(now - startAt, periodMs)", [
         "Single Source - Raw Attribute Value Is The Cluster Key"]),
-    ("two units of one type / two sources: lower-declared source serves whatever the context unit order", [
+    ("two sources: lower-declared source serves whatever the context unit order (an SDK context holds one uid "
+     "per unit type, so two units of one type cannot be expressed)", [
         "Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order"]),
     ("agreement serves", ["Agreement - Equal Values From Two Units Serve The Cluster"]),
     ("disagreement => ineligible, no exposure", [
