@@ -24,13 +24,13 @@
     "readyError": "POST /context/{id}/readyError reports the error of a failed context",
     "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
     "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test",
-    "switchback": "switchback assignment (POST /switchback/assign, /permutation, /bucket and context serving of switchback experiments), advertised from a behavioral self-test"
+    "switchback": "R33 cluster-defined switchback serving (ordered switchbackClusters, switchbackClusterValues) through a context, plus POST /switchback/assign and /switchback/permutation, advertised from a behavioral self-test"
   },
   "sdks": {
     "javascript": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
-        "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)"
       }
     },
     "python": {
@@ -38,7 +38,7 @@
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
-        "switchback": "switchback serving not implemented in python3-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in python3-sdk; java-sdk only (R33)"
       }
     },
     "ruby": {
@@ -47,7 +47,7 @@
         "diagnosticsIsPromise": "ruby-sdk has no promise abstraction or isPromise helper",
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
-        "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)"
       }
     },
     "liquid": {
@@ -56,7 +56,7 @@
         "diagnosticsIsPromise": "wraps ruby-sdk, which has no promise abstraction or isPromise helper",
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
         "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
-        "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)"
       }
     },
     "php": {
@@ -65,7 +65,7 @@
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
-        "switchback": "switchback serving not implemented in php-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in php-sdk; java-sdk only (R33)"
       }
     },
     "go": {
@@ -76,7 +76,7 @@
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
-        "switchback": "switchback serving not implemented in go-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)"
       }
     },
     "rust": {
@@ -85,7 +85,7 @@
         "diagnosticsIsPromise": "rust-sdk has no promise/future type check (src/utils.rs)",
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
-        "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (R33)"
       }
     },
     "java": {
@@ -103,7 +103,7 @@
         "diagnosticsIsPromise": "kotlin-sdk has no isPromise helper",
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
-        "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (R33)"
       }
     },
     "scala": {
@@ -111,7 +111,7 @@
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
-        "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (R33)"
       }
     },
     "swift": {
@@ -121,7 +121,7 @@
         "diagnosticsIsPromise": "swift-sdk has no isPromise helper",
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
-        "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)"
       }
     },
     "dart": {
@@ -132,7 +132,7 @@
         "diagnosticsIsPromise": "dart_sdk has no isPromise helper",
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
-        "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (R33)"
       }
     },
     "flutter": {
@@ -143,7 +143,7 @@
         "diagnosticsIsPromise": "flutter-sdk dart_sdk has no isPromise helper",
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
-        "switchback": "switchback serving not implemented in flutter-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in flutter-sdk; java-sdk only (R33)"
       }
     },
     "dotnet": {
@@ -153,7 +153,7 @@
         "diagnosticsIsPromise": "dotnet-sdk has no isPromise helper (.NET has no promise type)",
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
-        "switchback": "switchback serving not implemented in dotnet-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in dotnet-sdk; java-sdk only (R33)"
       }
     },
     "cpp": {
@@ -164,7 +164,7 @@
         "diagnosticsIsPromise": "cpp-sdk has no promise type or isPromise helper",
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
-        "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (R33)"
       }
     },
     "elixir": {
@@ -172,31 +172,31 @@
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
-        "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)"
       }
     },
     "react": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
-        "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)"
       }
     },
     "vue2": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
-        "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)"
       }
     },
     "vue3": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
-        "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)"
       }
     },
     "angular": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"],
       "unsupported": {
-        "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (Phase 1B)"
+        "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)"
       }
     }
   }

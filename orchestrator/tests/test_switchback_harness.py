@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import sys
-import time
 
 import pytest
 import requests
@@ -198,7 +197,7 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
 
     with open(generator.CANONICAL, encoding="utf-8") as src:
         gated = [s for s in json.load(src) if generator.CAPABILITY in s.get("requires", [])]
-    assert len(gated) == len(generator.build_group(generator.load_fixtures(), 1)) - 1 == 29
+    assert len(gated) == len(generator.build_group(generator.load_fixtures(), 1)) - 1 == 21
 
     # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
     reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
@@ -216,7 +215,8 @@ def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
     for sdk, entry in sdks.items():
         if sdk != "java":
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (Phase 1B)"), sdk
+            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+    assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
 def test_java_without_switchback_still_runs_the_gated_scenarios(runner):
@@ -246,7 +246,8 @@ def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail(
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(229, len(scenarios)))
-    assert len(group) == 30
+    assert len(group) == 22
+    assert numbers[group[0]] == 230 and numbers[group[-1]] == 251
 
 
 # ---------------------------------------------------------------------------
@@ -311,210 +312,166 @@ def test_check_fails_on_omitted_scenario(canonical_copy):
 
 
 # ---------------------------------------------------------------------------
-# Bucket reference
+# R33 reference, wire shape and endpoints
 # ---------------------------------------------------------------------------
 
 
-def test_bucket_of_matches_every_copied_bucket_vector():
-    buckets, _ = generator.load_bucket_fixtures()
-    assert len(buckets["buckets"]) == 702
-    mismatches = [c for c in buckets["buckets"]
-                  if generator.bucket_of(c["key"], generator.exact_long(c["seed"]), c["count"]) != c["expectedBucket"]]
-    assert mismatches == []
-
-
-@pytest.mark.parametrize("key, seed, count, bucket", [
-    ("1tdwU5K8evYzMovqjExpBA", 0, 10, 6),
-    ("\u6771\u4eac", -123456789012345, 50, 19),
-    ("a\x1fb", -(1 << 63), 100, 43),
-])
-def test_bucket_of_matches_the_independent_hashlib_vectors(key, seed, count, bucket):
-    assert generator.bucket_of(key, seed, count) == bucket
-
-
-@pytest.mark.parametrize("count", [1000, 0, 20])
-def test_bucket_of_rejects_disallowed_counts(count):
-    with pytest.raises(ValueError):
-        generator.bucket_of("k", 0, count)
-
-
-def test_attribute_reference_matches_the_copied_key_and_path_vectors():
-    buckets, paths = generator.load_bucket_fixtures()
-    for case in buckets["attributeKeys"]:
-        assert generator.normalize_attribute(case["value"]) == case["key"], case
-    for case in paths["cases"]:
-        supported = generator.supported_attribute_path(case["path"]) is not None
-        value = generator.resolve_attribute_path(paths["attributes"], generator.parse_attribute_path(case["path"]))
-        assert (supported, value) == (case["supported"], case["value"]), case
-    # Index-position rule: unsupported, although a lax reader would resolve both paths.
-    lax = {"tags": ["a", "b"], "m": [[{"city": "x"}]]}
-    for path, lax_value in (("tags/0", "a"), ("m/0/0/city", "x")):
-        assert generator.supported_attribute_path(path) is None, path
-        assert generator.resolve_attribute_path(lax, generator.parse_attribute_path(path)) == lax_value
-
-
-def test_bucket_vector_scenarios_replay_every_vector_through_the_bucket_endpoint():
+def canonical():
     with open(generator.CANONICAL, encoding="utf-8") as src:
-        steps = [st for s in json.load(src) for st in s["steps"] if st["action"] == "switchbackBucket"]
-    buckets, _ = generator.load_bucket_fixtures()
-    replayed = sorted((st["params"]["key"], st["params"]["seed"], st["params"]["count"], st["expect"]["result"])
-                      for st in steps)
-    fixture = sorted((c["key"], c["seed"], c["count"], c["expectedBucket"]) for c in buckets["buckets"])
-    assert replayed == fixture
-    assert SWITCHBACK_ACTIONS["switchbackBucket"] == "/switchback/bucket"
+        return json.load(src)
 
 
-def test_check_fails_on_stale_bucket_expectation(canonical_copy):
-    scenarios, write = canonical_copy
-    mutated = copy.deepcopy(scenarios)
-    scenario = next(s for s in mutated if "Bucket Vectors - bucketOf - 50 Buckets" in s["name"])
-    scenario["steps"][0]["expect"]["result"] = (scenario["steps"][0]["expect"]["result"] + 1) % 50
-    write(mutated)
-    assert generator.main() == 1
+def group(scenarios=None):
+    return [s for s in (scenarios or canonical()) if generator.GROUP_MARKER in s["name"]]
 
 
-def test_generation_fails_when_bucket_of_disagrees_with_the_vectors(monkeypatch):
-    monkeypatch.setattr(generator, "bucket_of", lambda key, seed, count: 0)
-    with pytest.raises(SystemExit):
-        generator.verify_bucket_reference(*generator.load_bucket_fixtures())
+def test_attribute_path_reference_matches_the_copied_cases():
+    paths = generator.load_path_cases()
+    for case in paths["cases"]:
+        segments = generator.supported_attribute_path(case["path"])
+        assert (segments is not None) == case["supported"], case
+        if segments is not None:
+            assert generator.resolve_attribute_path(paths["attributes"], segments) == case["value"], case
+
+
+@pytest.mark.parametrize("path", ["geo.city", "'geo.city'", '"geo.city"', "a/b.c", "'geo", "tags/0", "m/0/0/city",
+                                  "0/city", "items/-1/city", "", None, 5])
+def test_unsupported_paths(path):
+    assert generator.supported_attribute_path(path) is None
+
+
+@pytest.mark.parametrize("value, key", [("s-1", "s-1"), (42, "42"), (4_000_000_000, "4000000000"), (-7, "-7"),
+                                        ("", None), (None, None), (True, None), (False, None), (3.0, None),
+                                        (1.5, None), ({"a": 1}, None), (["a"], None)])
+def test_cluster_value_normalisation(value, key):
+    assert generator.normalize_cluster_value(value) == key
+
+
+def test_fixtures_are_the_pinned_platform_blobs():
+    def blob(path):
+        with open(path, "rb") as src:
+            data = src.read()
+        return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+    assert blob(generator.GOLDEN).startswith("b314abeb9e97")
+    assert blob(generator.PATH_CASES).startswith("7b1d3fed5985")
+    assert not os.path.exists(os.path.join(REPO, "fixtures", "switchback", "bucket-golden-vectors.json"))
+
+
+def test_only_assign_and_permutation_endpoints_remain():
+    assert SWITCHBACK_ACTIONS == {"switchbackAssign": "/switchback/assign",
+                                  "switchbackPermutation": "/switchback/permutation"}
+    actions = {st["action"] for s in canonical() for st in s["steps"]}
+    assert "switchbackBucket" not in actions
+
+
+LEGACY_FIELDS = ("switchbackClusterUnitType", "switchbackClusterCount", "switchbackClusterAttribute")
+
+
+def experiments_of(scenario):
+    found = list(scenario["contextData"]["experiments"])
+    for step in scenario["steps"]:
+        if step["action"] == "refresh":
+            found += step["params"]["newData"]["experiments"]
+    return found
+
+
+def test_switchbacks_carry_r33_fields_and_legacy_fields_only_where_tested():
+    for scenario in group():
+        for exp in experiments_of(scenario):
+            if exp.get("randomizationType") != "switchback":
+                continue
+            assert "switchbackStartAt" in exp or "No Anchor" in scenario["description"] or exp["name"].endswith(
+                "no_anchor"), exp["name"]
+            if any(f in exp for f in LEGACY_FIELDS):
+                assert "Legacy Path" in scenario["name"], (scenario["name"], exp["name"])
+            clusters = exp.get("switchbackClusters")
+            assert clusters is None or isinstance(clusters, dict)
+
+
+def test_ordered_clusters_survive_a_json_round_trip_with_key_order_intact():
+    """What the orchestrator PUTs to /context_payload is json.dumps of the scenario; key order must
+    survive serialize -> parse, which declared-order scenarios depend on."""
+    scenario = next(s for s in group() if "Declared Order" in s["name"])
+    exps = scenario["contextData"]["experiments"]
+    before = [list(e["switchbackClusters"]) for e in exps]
+    assert before == [["session_id", "user_id"], ["user_id", "session_id"]]
+    after = [list(e["switchbackClusters"]) for e in json.loads(json.dumps({"data": scenario["contextData"]}))
+             ["data"]["experiments"]]
+    assert after == before
+    # The raw file text keeps the declared order too.
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        text = src.read()
+    assert '"switchbackClusters": {\n' in text
+    i = text.index('"name": "exp_sb_order_user_first"')
+    block = text[text.index('"switchbackClusters"', i):]
+    assert block.index('"user_id"') < block.index('"session_id"')
+
+
+def test_legacy_fields_are_present_and_ignored_by_the_model():
+    scenario = next(s for s in group() if "Legacy Path" in s["name"])
+    mixed = next(e for e in scenario["contextData"]["experiments"] if e["name"] == "exp_sb_legacy_fields_ignored")
+    assert all(f in mixed for f in LEGACY_FIELDS) and mixed["switchbackClusters"] == {"store_id": "city"}
+    assert generator.failing_steps(scenario, None) == []
+    assert generator.failing_steps(scenario, "legacy_fields") != []
+
+
+def test_inertness_carries_r33_and_legacy_fields_on_unit_experiments():
+    (inert,) = [s for s in group() if "Inertness" in s["name"]]
+    units = [e for e in inert["contextData"]["experiments"] if e.get("switchbackClusters")
+             and e.get("randomizationType") != "switchback"]
+    assert len(units) == 2
+    assert all(list(e["switchbackClusters"]) == ["session_id", "store_id"] for e in units)
+    assert generator.failing_steps(inert, "unit_experiment_as_switchback") != []
 
 
 # ---------------------------------------------------------------------------
-# Discrimination: replay the canonical context scenarios against mutant SDK models
+# Discrimination: replay the canonical context scenarios against the R33 model and its mutants
 # ---------------------------------------------------------------------------
-
-BASE_MUTANTS = ("per_value", "sticky", "le", "count_10", "count_50", "count_100")
-# Serves the switchback draw even when fullOnVariant is set; only a full-on scenario can catch it.
-FULL_ON_MUTANTS = ("ignore_full_on",)
-ATTRIBUTE_MUTANTS = ("lax_attr", "unit_fallback")
-
-# Mutants that cannot change what a scenario serves, by scenario name suffix.
-EXEMPT = {
-    # Every experiment is ineligible or unassigned before any draw; only sticky reaches a variant.
-    "Ineligible - exp_switchback_pre_anchor": {"per_value", "le", "count_10", "count_50", "count_100"},
-    "Ineligible - exp_switchback_no_anchor": {"per_value", "le", "count_10", "count_50", "count_100"},
-    "Unassigned - Cluster Unit Not Set": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
-    # The count is rejected before any draw, so only a count or sticky mutant reaches a variant.
-    "Ineligible - Cluster Count Not 10, 50 Or 100": {"per_value", "le"},
-    # fullOnVariant and an override are served ahead of any draw.
-    "Full-On Serves The Full-On Variant": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
-    "Override Wins Over The Switchback Draw": {"per_value", "le", "count_10", "count_50", "count_100", "sticky"},
-    # The served variant is 0 (ineligible) either way; only a mutant that finds a key draws.
-    "No Bucket Key Is Ineligible": {"per_value", "le", "count_10", "count_50", "count_100"},
-    "Does Not Reassign Within The Period": {"per_value", "le", "count_10", "count_50", "count_100", "lax_attr"},
-    # Every attribute is set before the first read, so a unit fallback never triggers; 257's values
-    # are plain strings, which a lax reader keys identically.
-    "String, Whole Number, Nested And Array-Index Paths": {"unit_fallback"},
-    "Mid-Period setAttribute Keeps The Bucket": {"lax_attr", "unit_fallback"},
-}
-
-
-def lax_attribute_key(attributes, path):
-    """Any segment position, Python int() indices (+0, \\u0660, -1), and str()/JSON of any value."""
-    current = attributes
-    for segment in (s.strip("'\"") for s in path.split("/") if s):
-        if isinstance(current, list):
-            try:
-                current = current[int(segment)]
-            except (ValueError, IndexError):
-                return None
-        else:
-            current = current.get(segment) if isinstance(current, dict) else None
-        if current is None:
-            return None
-    if isinstance(current, bool):
-        return str(current).lower()
-    if isinstance(current, int) and abs(current) >= 1 << 31:
-        return str(float(current))
-    return json.dumps(current, separators=(",", ":")) if isinstance(current, (dict, list)) else str(current)
-
-
-def model_variant(exp, units, attributes, mutant, now):
-    split = exp["split"]
-    uid = units.get(exp.get("switchbackClusterUnitType", exp["unitType"]))
-    if uid is None:
-        return 0
-    if exp["fullOnVariant"] and mutant != "ignore_full_on":
-        return exp["fullOnVariant"]
-    if mutant == "sticky" or exp.get("randomizationType") != "switchback":
-        return generator.unit_variant(uid, split, exp["seedHi"], exp["seedLo"])
-    start, count = exp.get("switchbackStartAt"), exp.get("switchbackClusterCount")
-    count = int(mutant[6:]) if mutant.startswith("count_") else count
-    if start is None or now < start or count not in generator.CLUSTER_COUNTS:
-        return 0
-    key, path = generator.hash_unit(uid), exp.get("switchbackClusterAttribute")
-    if path is not None:
-        segments = generator.supported_attribute_path(path)
-        key = (lax_attribute_key(attributes, path) if mutant == "lax_attr" else
-               segments and generator.normalize_attribute(generator.resolve_attribute_path(attributes, segments)))
-        key = generator.hash_unit(uid) if key is None and mutant == "unit_fallback" else key
-        if key is None:
-            return 0
-    seed = generator.experiment_seed(exp["seedHi"], exp["seedLo"])
-    digest = hashlib.md5(f"sbcluster\x1f{exp['seedHi']}:{exp['seedLo']}\x1f{key}".encode()).digest()
-    bucket = int.from_bytes(digest[:4], "little" if mutant == "le" else "big") % count
-    cluster = key if mutant == "per_value" else str(bucket)
-    return generator.assign_switchback(cluster, (now - start) // generator.PERIOD_MS, seed, len(split))
-
-
-def failing_steps(scenario, mutant):
-    """Treatment steps whose expected result the model misses; each slot is read once, as in the SDK."""
-    create = scenario["steps"][0]
-    units, attributes, served, failures = create["params"]["units"], {}, {}, 0
-    experiments = {e["name"]: e for e in scenario["contextData"]["experiments"]}
-    now = int(time.time() * 1000)
-    for step in scenario["steps"][1:]:
-        params = step["params"]
-        if step["action"] == "attribute":
-            attributes[params["name"]] = params["value"]
-        elif step["action"] == "override":
-            served[params["experimentName"]] = params["variant"]
-        elif step["action"] == "treatment":
-            name = params["experimentName"]
-            if name not in served:
-                served[name] = model_variant(experiments[name], units, attributes, mutant, now)
-            failures += served[name] != step["expect"]["result"]
-    return failures
 
 
 def context_scenarios(scenarios):
-    return [s for s in scenarios if generator.GROUP_MARKER in s["name"] and "requires" in s
-            and s["steps"][0]["action"] == "createContextWith"]
+    return [s for s in scenarios if generator.GROUP_MARKER in s["name"] and s["steps"][0]["action"] == "createContextWith"]
 
 
-def applicable_mutants(scenario):
-    experiments = [e for e in scenario["contextData"]["experiments"] if e.get("randomizationType") == "switchback"]
-    has_attribute = any("switchbackClusterAttribute" in e for e in experiments)
-    has_full_on = any(e.get("fullOnVariant") for e in experiments)
-    mutants = [*BASE_MUTANTS, *(ATTRIBUTE_MUTANTS if has_attribute else ()), *(FULL_ON_MUTANTS if has_full_on else ())]
-    configured = {e.get("switchbackClusterCount") for e in experiments}
-    mutants = [m for m in mutants if not (m.startswith("count_") and configured == {int(m[6:])})]
-    exempt = next((v for k, v in EXEMPT.items() if scenario["name"].endswith(k)), set())
-    return [m for m in mutants if m not in exempt]
+def test_the_model_reproduces_every_checked_in_context_scenario():
+    scenarios = context_scenarios(canonical())
+    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(236, 252))
+    assert [s["name"] for s in scenarios if generator.failing_steps(s, None)] == []
 
 
-def test_every_context_scenario_fails_under_each_applicable_mutant():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        scenarios = context_scenarios(json.load(src))
-    numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
-    assert numbers == list(range(239, 259))
-    assert [s["name"] for s in scenarios if failing_steps(s, "correct")] == []
-    survivors = [(s["name"], m) for s in scenarios for m in applicable_mutants(s) if failing_steps(s, m) == 0]
-    assert survivors == []
+@pytest.mark.parametrize("mutant", generator.ALL_MUTANTS)
+def test_every_mutant_fails_at_least_one_checked_in_scenario(mutant):
+    scenarios = context_scenarios(canonical())
+    assert any(generator.failing_steps(s, mutant) for s in scenarios), mutant
 
 
-def test_full_on_scenario_fails_when_full_on_is_ignored():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        (scenario,) = [s for s in context_scenarios(json.load(src)) if s["name"].endswith("Full-On Serves The Full-On Variant")]
-    assert "ignore_full_on" in applicable_mutants(scenario)
-    assert failing_steps(scenario, "correct") == 0
-    assert failing_steps(scenario, "ignore_full_on") == 1
+@pytest.mark.parametrize("mutant", ["hashed_key", "uid_as_key", "hashed_uid_as_key", "bucket_of", "last_unit_serves"])
+def test_required_wrong_models_are_among_the_mutants(mutant):
+    assert mutant in generator.ALL_MUTANTS
 
 
-def test_every_exemption_names_a_scenario():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        names = [s["name"] for s in context_scenarios(json.load(src))]
-    assert all(sum(n.endswith(k) for n in names) == 1 for k in EXEMPT)
+def test_every_eligible_draw_differs_under_every_wrong_key_model():
+    scenarios = generator.build_group(generator.load_fixtures(), 230)
+    eligible = 0
+    for scenario in context_scenarios(scenarios):
+        _, model = generator.replay(scenario)
+        for key, uid, exp in model.draws:
+            eligible += 1
+            variant = generator.draw(key, exp)
+            assert variant != 0
+            assert variant not in generator.wrong_key_variants(key, uid, exp).values(), (scenario["name"], key)
+    assert eligible >= 20
+
+
+def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
+    scenarios, write = canonical_copy
+    mutated = copy.deepcopy(scenarios)
+    scenario = next(s for s in mutated if "Declared Order" in s["name"])
+    step = next(st for st in scenario["steps"] if st["action"] == "treatment")
+    step["expect"]["events"][0]["data"]["unit"] = "user_id"
+    write(mutated)
+    assert generator.main() == 1
 
 
 # The 229 scenarios inherited from main (4734dcc), serialized with sort_keys=True.
@@ -522,7 +479,6 @@ MAIN_SHA256 = "8ddb8e702cf86ddf9346560071e8ba75ca6b58901ad90ebe8f2acb9ac4b25e86"
 
 
 def test_main_scenarios_are_untouched():
-    with open(generator.CANONICAL, encoding="utf-8") as src:
-        kept = [s for s in json.load(src) if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
     assert len(kept) == 229
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
