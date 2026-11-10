@@ -526,11 +526,23 @@ def test_override_without_a_cluster_value_is_exposed_under_the_declared_unit_not
 
 
 def test_unit_variant_matches_the_main_suite_vectors():
+    # Each vector is read back from its main-suite scenario: the uid from the first create step's
+    # units, the split and seeds from the experiment (the traffic fields for 13), and the expected
+    # variant from the scenario's first treatment.
     by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
-    for number, (uid, split, seed_hi, seed_lo, expected) in zip((4, 52), generator.UNIT_VARIANT_VECTORS):
-        exp = by_number[number]["contextData"]["experiments"][0]
-        assert (exp["split"], exp["seedHi"], exp["seedLo"]) == (split, seed_hi, seed_lo)
-        assert generator.unit_variant(uid, split, seed_hi, seed_lo) == expected
+    numbers = (4, 52, 13)
+    assert len(numbers) == len(generator.UNIT_VARIANT_VECTORS)
+    for number, (uid, split, seed_hi, seed_lo, expected) in zip(numbers, generator.UNIT_VARIANT_VECTORS):
+        scenario = by_number[number]
+        exp = scenario["contextData"]["experiments"][0]
+        create = next(st for st in scenario["steps"] if st["action"].startswith("createContext"))
+        assert str(create["params"]["units"][exp["unitType"]]) == uid, number
+        fields = ("trafficSplit", "trafficSeedHi", "trafficSeedLo") if number == 13 else ("split", "seedHi", "seedLo")
+        assert tuple(exp[f] for f in fields) == (split, seed_hi, seed_lo), number
+        treatment = next(st for st in scenario["steps"] if st["action"] == "treatment"
+                         and st["params"]["experimentName"] == exp["name"])
+        assert treatment["expect"]["result"] == expected, number
+        assert generator.unit_variant(uid, split, seed_hi, seed_lo) == expected, number
 
 
 def test_multi_unit_publishes_pin_every_hashed_unit_as_a_set():
