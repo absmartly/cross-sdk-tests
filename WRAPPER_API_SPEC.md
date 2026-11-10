@@ -822,7 +822,6 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | POST | /diagnostic | Utility/class diagnostics |
 | POST | /switchback/assign | Switchback variant for a period (capability `switchback`) |
 | POST | /switchback/permutation | Switchback cycle permutation (capability `switchback`) |
-| POST | /switchback/bucket | Switchback cluster bucket (capability `switchback`) |
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
@@ -1144,50 +1143,59 @@ ordering wrong.
 
 ### Capability: `switchback`
 
-Gates the Switchback scenario group: switchback serving on existing endpoints
-(`treatment`, `publish`, ...) for experiments with
-`randomizationType: "switchback"`, plus the three pure-function endpoints below.
-The SDK contract is the SDK's own switchback documentation (for java-sdk,
-`SWITCHBACK.md`); the assignment algorithm is pinned by the platform's golden
-vectors and bucket golden vectors.
+Gates the Switchback scenario group: R33 (cluster-defined) switchback serving on
+existing endpoints (`treatment`, `publish`, ...) for experiments with
+`randomizationType: "switchback"`, plus the two pure-function endpoints below.
+The contract is the one the Collector serves (absmartly/abs#5801) and the SDK
+documents (for java-sdk, `SWITCHBACK.md`); the assignment algorithm is pinned
+by the platform's golden vectors.
+
+#### R33 wire fields the wrapper must pass through verbatim
+
+The wrapper deserializes each scenario payload into the SDK's own context data
+type and serves it back to the SDK's fetch (`/context_payload/{id}/context`).
+These `ContextExperiment` fields must survive that round trip unchanged:
+
+| Field | Shape |
+| --- | --- |
+| `randomizationType` | `"unit"` or `"switchback"`; absent means unit |
+| `switchbackClusters` | JSON object unit type name -> attribute path. **Key order is semantic** (declared order, unit type id ascending): the first unit, in that order, whose path yields a value serves. Use an insertion-ordered map; never sort or rehash it |
+| `switchbackClusterValues` | string array allow-list; `null` or `[]` admits every value |
+| `switchbackStartAt` | hour-aligned epoch ms (anything else is unservable) |
+| `switchbackPeriodMs`, `switchbackCarryoverDurationMs`, `switchbackBurnInDurationMs`, `switchbackBurnOutDurationMs` | ms |
+| `switchbackDesignType`, `switchbackEstimand` | strings |
+
+The abandoned Phase 1E fields `switchbackClusterUnitType`,
+`switchbackClusterCount` and `switchbackClusterAttribute` no longer exist. Some
+scenarios still carry them to check that a capable SDK ignores them.
 
 Advertise `switchback` truthfully and dynamically, on the same terms as
 `holdouts`: never as a static flag, and never because the SDK merely
-deserializes the switchback wire fields (`randomizationType`,
-`switchbackStartAt`, `switchbackPeriodMs`, ...) or links an assignment class.
-An SDK that parses the fields but serves sticky unit assignment, or whose
-assigner drifts from the golden vectors, must report `false`.
+deserializes the switchback wire fields or links an assignment class. An SDK
+that parses the fields but serves sticky unit assignment, hashes or buckets the
+cluster key, or whose assigner drifts from the golden vectors, must report
+`false`. An SDK whose experiment model still has `switchbackClusterCount` (the
+Phase 1E bucket design) must report `false`.
 
-The capability means a behavioral self-test passed. It must cover every
-semantic the group's scenarios exercise:
+The capability means a behavioral self-test passed. For java it covers:
 
+- the SDK's experiment model has `switchbackClusters` and
+  `switchbackClusterValues` and does not have `switchbackClusterCount`;
 - a sample of the golden vectors through the SDK's own assigner and
   permutation function, including `Long.MIN_VALUE`/`Long.MAX_VALUE` periods,
-  cycles and seeds and integer cluster units, and of the bucket vectors
-  through the SDK's own bucket function;
-- switchback serving through a real context on clock-free grids (see below):
-  2, 3 and 10 arms in period 0 and period 1, each checked against
-  `assignSwitchback(str(bucketOf(hashUnit(uid), seed, switchbackClusterCount)),
-  period, seed, arms)`;
-- an attribute-sourced switchback (`switchbackClusterAttribute`) served from
-  the attribute's bucket, and one whose attribute is unset resolving to
-  variant 0 with `assigned: true, eligible: false`;
-- pre-anchor and missing-anchor experiments resolving to variant 0 with
-  `assigned: true, eligible: false`, exposed once;
-- a cluster unit absent from the context resolving to variant 0 with
-  `assigned: false`;
-- a `switchbackClusterCount` other than 10, 50 or 100 (e.g. 1000) resolving
-  to variant 0 with `assigned: true, eligible: false`, on a unit that would
-  draw nonzero under every allowed count;
-- two treatments in one period exposing once;
-- a full-on switchback serving `fullOnVariant` with `fullOn: true`;
-- an override winning over the switchback draw;
-- through the SDK's real publish path (the event handler receives the
-  `PublishEvent`): a unit baseline and then a switchback experiment on the
-  same unit, each published on its own. The switchback publish must carry its
-  exposure with the served variant and every other exposure field, plus the
-  hashed unit. The switchback exposure and the serialized publish event must
-  have exactly the baseline's fields at every depth.
+  cycles and seeds and integer cluster units;
+- context serving of an R33 JSON payload, parsed the way scenario payloads are
+  parsed, with the cluster map's key order intact: two units that agree on
+  `city` serve `assignSwitchback(city, 0, seed, arms)` (a golden vector) under
+  the first declared unit, even when the context sets the other unit first;
+  disagreeing units, a value outside `switchbackClusterValues`, and an
+  experiment with only the Phase 1E fields are variant 0 with no exposure; a
+  whole-number attribute is keyed by its decimal text; two treatments in one
+  period expose once;
+- through the SDK's real publish path: a unit baseline and then a switchback on
+  the same unit, each published on its own, with the same fields at every
+  depth; and a unit experiment carrying every R33 field publishes the same
+  bytes as the plain unit baseline.
 
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
@@ -1198,8 +1206,9 @@ deterministic because their grids keep "now" inside one known period for
 decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the
 anchor `switchbackStartAt` is hour-aligned at 2024-01-01T00:00Z (period 0),
 one period earlier at 1978-05-15T08:00Z (period 1), or 2100-01-01T00:00Z
-(before the anchor, so ineligible). All three hold until 2069-08-18T16:00Z.
-Clock rollover between periods stays in the SDKs' own test suites.
+(before the anchor, so a silent ineligible control). All three hold until
+2069-08-18T16:00Z. Clock rollover between periods stays in the SDKs' own test
+suites.
 
 #### Switchback assign
 
@@ -1207,12 +1216,13 @@ Clock rollover between periods stays in the SDKs' own test suites.
 POST /switchback/assign
 Content-Type: application/json
 
-{"clusterUnit": "pENS7DC7K_G0ZstvAZTwRA", "periodIndex": "-9223372036854775808", "seed": "42", "armCount": 3}
+{"clusterUnit": "market_1", "periodIndex": "-9223372036854775808", "seed": "42", "armCount": 3}
 ```
 
 **Response:** `{"result": 0, "events": []}` — the variant
-`assignSwitchback(clusterUnit, periodIndex, seed, armCount)`. The cluster unit
-here is an arbitrary string; in a context it is the cluster's bucket number.
+`assignSwitchback(clusterUnit, periodIndex, seed, armCount)`. In a context the
+cluster unit is the raw R33 cluster key (the normalised attribute value), never
+hashed or bucketed.
 
 #### Switchback permutation
 
@@ -1228,46 +1238,22 @@ the Fisher-Yates permutation of `[0, armCount)` for that (cluster, cycle,
 seed), i.e. `fisherYatesPermutation(armCount, baseHash(clusterUnit,
 cycleIndex, seed))`.
 
-#### Switchback bucket
-
-```http
-POST /switchback/bucket
-Content-Type: application/json
-
-{"key": "1tdwU5K8evYzMovqjExpBA", "seed": "0", "count": 10}
-```
-
-**Response:** `{"result": 6, "events": []}` — the cluster bucket
-`int(MD5_HEX(utf8("sbcluster" + U+001F + seedHi + ":" + seedLo + U+001F + key))[:8], 16) mod count`,
-where `seedHi`/`seedLo` are the signed 32-bit halves of `seed` in base 10. Call
-the SDK's own bucket function; never re-implement the hash in the wrapper.
-
-All three endpoints are pure functions with no context. Request rules:
+Both endpoints are pure functions with no context. Request rules:
 
 - `periodIndex`, `cycleIndex` and `seed` are signed 64-bit values sent as
   **decimal strings** and must be parsed exactly (never through a double);
   JSON numbers lose precision above 2^53 in most languages. `seed` is the
   experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
-- `armCount` is a JSON integer, at least 2. `count` is a JSON integer; a
-  count other than 10, 50 or 100 returns 400.
-- `clusterUnit` and `key` are strings passed to the SDK **unchanged**; the
-  endpoint must not hash or normalize them. In a context the cluster key is
-  `hashUnit(uid)` (the base64url, no padding, MD5 of the UTF-8 uid, as
-  published in `units[].uid`) for a unit-sourced switchback, or the attribute
-  at `switchbackClusterAttribute` (a non-empty string as-is, an integer in
-  base 10, anything else ineligible) for an attribute-sourced one. The
-  scenarios never send an integral float such as `2.0`: JavaScript-family
-  runtimes decode it to the same number as `2`, and the platform stores it as
-  `"2"` for them. The integral-float rule is covered by the `attributeKeys` of
-  `bucket-golden-vectors.json` and by each typed SDK's own suite. Its bucket,
-  written in base 10 (`"0"`..`"99"`), is the `clusterUnit` the assigner
-  receives. Integer cluster units in the golden vectors are sent as their
-  decimal string.
+- `armCount` is a JSON integer, at least 2.
+- `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
+  not hash or normalize it. Integer cluster units in the golden vectors are
+  sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`, disallowed `count`) returns 400 with `{"error": "..."}`. A
-  wrapper whose SDK lacks the function returns 501.
+  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
+  lacks the function returns 501.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
-and `fixtures/switchback/bucket-golden-vectors.json` (byte-identical copies of
-the platform's `lib/utils` switchback resources) by
-`generate_switchback_scenarios.py`; do not edit them by hand.
+(a byte-identical copy of the platform's `lib/utils` resource, blob
+`b314abeb9e97`) and the path scenario from
+`fixtures/switchback/attribute-path-cases.json` (the Collector's copy, blob
+`7b1d3fed5985`) by `generate_switchback_scenarios.py`; do not edit them by hand.
