@@ -26,7 +26,8 @@ WORKDIR /build
 
 COPY --from=sdk-builder /root/.m2 /root/.m2
 COPY cross-sdk-tests/java-wrapper /build/java-wrapper
-RUN cd /build/java-wrapper && gradle bootJar -x test
+# The wrapper's JUnit tests run here, so a JUnit failure fails the image build (and the java lane).
+RUN cd /build/java-wrapper && gradle test bootJar --no-daemon
 
 # core-api's own tests run on the JDK that can build it, not the wrapper's.
 FROM sdk-builder AS tester
