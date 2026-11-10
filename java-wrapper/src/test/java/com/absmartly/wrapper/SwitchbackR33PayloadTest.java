@@ -79,8 +79,11 @@ class SwitchbackR33PayloadTest {
     @Test
     void legacyPhase1eFieldsAreIgnored() throws Exception {
         assumeTrue(SwitchbackSelfTest.hasR33WireModel(Experiment.class), "linked core-api has no R33 wire model");
-        // Behaviour, not class structure: the legacy fields parse without error and do not survive.
-        ContextData parsed = MAPPER.readValue(payload(), ContextData.class);
+        // Behaviour, not class structure: the SDK's own deserializer (what its Client uses) parses
+        // the legacy fields without error and they do not survive.
+        byte[] bytes = payload().getBytes(StandardCharsets.UTF_8);
+        ContextData parsed = new DefaultContextDataDeserializer().deserialize(bytes, 0, bytes.length);
+        assertEquals(1, parsed.experiments.length);
         JsonNode reserialized = MAPPER.valueToTree(parsed).get("experiments").get(0);
         assertFalse(reserialized.has("switchbackClusterCount"));
         assertFalse(reserialized.has("switchbackClusterUnitType"));
