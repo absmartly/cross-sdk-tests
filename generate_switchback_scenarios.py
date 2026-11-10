@@ -664,6 +664,8 @@ SERVING_MUTANTS = (
     "legacy_unit_fallback",    # a missing/unreadable cluster map falls back to unit assignment
     "no_refresh_epoch",        # a refresh with a changed cluster map keeps the cached assignment
     "unit_experiment_as_switchback",  # a unit experiment carrying switchback fields served as one
+    "peek_exposes",            # peek / peekVariableValue queue the exposure like treatment
+    "variable_value_silent",   # variableValue resolves the variant but never exposes
 )
 ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
 ARITHMETIC_MUTANTS = ("period_zero", "period_plus_one", "unmasked_seed_lo", "swapped_seed")
@@ -904,9 +906,13 @@ class ContextModel:
 
     # -- steps -------------------------------------------------------------
 
-    def _assignment(self, name: str, expose: bool):
+    def _assignment(self, name: str, expose: bool, variable: bool = False):
         """(variant, events) of one resolving call. The slot is resolved once (and cached) whether
         the call exposes or peeks; the exposure is queued on the first exposing call only."""
+        if self.mutant == "peek_exposes":
+            expose = True
+        elif self.mutant == "variable_value_silent" and variable:
+            expose = False
         exp = self.experiments[name]
         identity = _identity(self, exp)
         cached = self.cache.get(name)
@@ -946,7 +952,7 @@ class ContextModel:
             owners = [e for e in self.experiments.values() if key in _variant_keys(e)]
             if len(owners) != 1:
                 raise ValueError(f"variable {key!r} must be declared by exactly one experiment")
-            variant, events = self._assignment(owners[0]["name"], expose=action == "variableValue")
+            variant, events = self._assignment(owners[0]["name"], expose=action == "variableValue", variable=True)
             config = _variant_config(owners[0], variant)
             return {"result": config.get(key, params.get("defaultValue")), "events": events}
         if action == "publish":
@@ -1635,6 +1641,8 @@ MUTANT_SCENARIOS = {
     "legacy_unit_fallback": [_PATHS, _LEGACY],
     "no_refresh_epoch": ["Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes"],
     "unit_experiment_as_switchback": ["Inertness - Unit Experiments Unaffected By Switchback Data"],
+    "peek_exposes": ["Peek And Variable Values Resolve The Cluster Draw"],
+    "variable_value_silent": ["Peek And Variable Values Resolve The Cluster Draw"],
 }
 
 
