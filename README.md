@@ -197,8 +197,12 @@ Validation is strict by default:
   depth. Only the status records returned by `createContext`,
   `createContextWith`, `createContextFailed` and `readyError` are compared in
   part, because their contextId and error message differ per SDK.
-- Expected event data stays partial: keys a scenario does not assert
-  (timestamps, `publishedAt`, uids) are not compared.
+- Expected event data stays partial: only the keys a scenario lists are
+  compared (nested objects likewise by their listed keys; arrays must match
+  in length). Keys it leaves out (timestamps such as `exposedAt` and
+  `publishedAt`, SDK-specific fields) are not compared. A listed key is never
+  skipped, so a scenario that lists the published `units` (as the Switchback
+  group does) checks their hashed uids.
 
 With 2+ SDKs the run also compares what the SDKs actually returned, step by
 step: the asserted result fields, the event types, and the canonical exposure
