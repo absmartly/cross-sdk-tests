@@ -48649,6 +48649,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "user_id",
+                    "uid": "Hxk46ln_tURY_vQtKbS-wg"
+                  },
+                  {
+                    "type": "session_id",
+                    "uid": "YteAxC65Ig8-cA3ltGRHPg"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 310,
@@ -48675,7 +48686,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -48839,6 +48851,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "3db99gmV8yn8E7uzV988eg"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "_RsEf7YmXaNZrvSIfgOy9g"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 320,
@@ -48853,7 +48876,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -49158,6 +49182,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "3db99gmV8yn8E7uzV988eg"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "_RsEf7YmXaNZrvSIfgOy9g"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 322,
@@ -49172,7 +49207,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -49977,6 +50013,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "P_XkrCSHziYTu0TiQ6nLAA"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "atqYAaM0qqlrAxtNlgYSZw"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 340,
@@ -50003,7 +50050,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -52287,6 +52335,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "Td4Y4P-Wzie7hM4eObomOw"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "BoNgZxBT7IXihlL9hCh8jQ"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 390,
@@ -52313,7 +52372,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -54053,6 +54113,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "yrHCmg69Jyi_mfU0ojgw6w"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "yzI2745RObH369SJawY7sA"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 424,
@@ -54067,7 +54138,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -55182,6 +55254,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "kKQDGAlMKZMFsGO-4ecTxA"
+                  },
+                  {
+                    "type": "store_id",
+                    "uid": "Wk9gSoZrCPM5yMPltzXTTA"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 131,
@@ -55196,7 +55279,8 @@
                     "audienceMismatch": false
                   }
                 ]
-              }
+              },
+              "unorderedUnits": true
             }
           ]
         }
@@ -55237,6 +55321,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "kKQDGAlMKZMFsGO-4ecTxA"
+                  },
+                  {
+                    "type": "store_id",
+                    "uid": "Wk9gSoZrCPM5yMPltzXTTA"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 132,
@@ -55252,6 +55347,7 @@
                   }
                 ]
               },
+              "unorderedUnits": true,
               "sameShapeAs": 3
             }
           ]
@@ -55293,6 +55389,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "kKQDGAlMKZMFsGO-4ecTxA"
+                  },
+                  {
+                    "type": "store_id",
+                    "uid": "Wk9gSoZrCPM5yMPltzXTTA"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 133,
@@ -55308,6 +55415,7 @@
                   }
                 ]
               },
+              "unorderedUnits": true,
               "sameShapeAs": 3
             }
           ]
@@ -55349,6 +55457,17 @@
             {
               "type": "publish",
               "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "kKQDGAlMKZMFsGO-4ecTxA"
+                  },
+                  {
+                    "type": "store_id",
+                    "uid": "Wk9gSoZrCPM5yMPltzXTTA"
+                  }
+                ],
                 "exposures": [
                   {
                     "id": 134,
@@ -55364,6 +55483,7 @@
                   }
                 ]
               },
+              "unorderedUnits": true,
               "sameShapeAs": 3
             }
           ]

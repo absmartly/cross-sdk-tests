@@ -590,13 +590,20 @@ def attribute_step(name: str, value) -> dict:
     return {"action": "attribute", "params": {"name": name, "value": value}, "expect": {"result": None, "events": []}}
 
 
-def publish_step(exposures: list, units: Optional[dict] = None) -> dict:
-    """Every published exposure is pinned in full. The published units are pinned (hashed uids)
-    when the context has a single unit; with several, their order is the SDK's map order."""
-    data = {"exposures": exposures}
-    if units is not None and len(units) == 1:
-        data = {"hashed": True, "units": [{"type": t, "uid": hash_unit(u)} for t, u in units.items()], **data}
-    return {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": data}]}}
+def publish_event(exposures: list, units: dict) -> dict:
+    """Every published exposure is pinned in full, and so are the published units (hashed uids).
+    With several units their order is the SDK's map order, so they are matched as a set
+    (unorderedUnits)."""
+    event = {"type": "publish", "data": {"hashed": True,
+                                         "units": [{"type": t, "uid": hash_unit(u)} for t, u in units.items()],
+                                         "exposures": exposures}}
+    if len(units) > 1:
+        event["unorderedUnits"] = True
+    return event
+
+
+def publish_step(exposures: list, units: dict) -> dict:
+    return {"action": "publish", "params": {}, "expect": {"result": None, "events": [publish_event(exposures, units)]}}
 
 
 def context_scenario(name: str, description: str, experiments: list, units: dict, steps: list,
@@ -1445,7 +1452,7 @@ def inertness_scenarios() -> list:
         exposed = exposure(exp, variant)
         treatment = treatment_step(exp, variant, exposed)
         publish = {"action": "publish", "params": {},
-                   "expect": {"result": None, "events": [{"type": "publish", "data": {"exposures": [exposed]}}]}}
+                   "expect": {"result": None, "events": [publish_event([exposed], units)]}}
         if len(steps) > 1:
             treatment["expect"]["events"][0]["sameShapeAs"] = 2
             publish["expect"]["events"][0]["sameShapeAs"] = 3
