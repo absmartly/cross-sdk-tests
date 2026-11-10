@@ -9,10 +9,10 @@ declare -A SDK_BRANCHES=(
   ["elixir-sdk"]="feat/initial-implementation"
   ["flutter-sdk"]="fix/audit-operator-fixes"
   ["go-sdk"]="fix/all-tests-passing"
-  # TEMPORARY: switchback-capable branch so the java lane runs scenarios 230-258 instead of
-  # failing its required `switchback` capability. Revert to main once absmartly/java-sdk#15 merges.
-  # The java wrapper builds against core-api 1.7.0 (java-sdk main, #16), so this branch must
-  # include java-sdk main.
+  # TEMPORARY (R33, revert once java-sdk#15 merges): feat/switchback-phase1b is the R33
+  # cluster-defined switchback head (91b9b31416), so the java lane runs scenarios 230-250
+  # instead of failing its required `switchback` capability. The java wrapper builds against
+  # core-api 1.7.0 (java-sdk main), so this branch must include java-sdk main.
   ["java-sdk"]="feat/switchback-phase1b"
   ["javascript-sdk"]="main"
   ["kotlin-sdk"]="feat/public-hashing-object-take2"
