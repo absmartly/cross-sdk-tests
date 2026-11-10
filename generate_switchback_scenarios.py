@@ -645,11 +645,15 @@ def _servable(exp: dict, mutant) -> bool:
             and isinstance(period, int) and period > 0 and len(exp["split"]) >= 2)
 
 
-def _identity(exp: Optional[dict]):
+def _identity(model, exp: Optional[dict]):
+    """The fields whose change starts a new epoch. unitType counts only on the legacy path
+    (SWITCHBACK.md): with a readable cluster map the serving unit comes from the map."""
     if exp is None:
         return None
     keys = ("id", "iteration", "randomizationType", "switchbackClusterValues", "switchbackStartAt",
-            "switchbackPeriodMs", "switchbackDesignType", "unitType")
+            "switchbackPeriodMs", "switchbackDesignType")
+    if model._sources(exp) is None:
+        keys += ("unitType",)
     return json.dumps([[exp.get(k) for k in keys], list((exp.get("switchbackClusters") or {}).items())])
 
 
@@ -841,7 +845,7 @@ class ContextModel:
         if action == "treatment":
             name = params["experimentName"]
             exp = self.experiments[name]
-            identity = _identity(exp)
+            identity = _identity(self, exp)
             cached = self.cache.get(name)
             if cached is not None and (cached[0] == identity or self.mutant == "no_refresh_epoch"):
                 return {"result": cached[1], "events": []}
