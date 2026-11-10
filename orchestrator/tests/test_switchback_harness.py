@@ -455,15 +455,42 @@ def test_every_mutant_fails_the_checked_in_scenarios_it_guards(mutant):
 
 
 def test_every_eligible_draw_differs_under_every_wrong_key_model(built_group):
-    eligible = 0
+    eligible, zero = 0, []
     for scenario in context_scenarios(built_group):
         _, model = generator.replay(scenario)
         for key, uid, exp in model.draws:
             eligible += 1
             variant = generator.draw(key, exp)
+            wrong = generator.wrong_key_variants(key, uid, exp)
+            if exp["name"] in generator.ELIGIBLE_ZERO_CASES:
+                zero.append(exp["name"])
+                assert variant == 0 and all(wrong.values()), (scenario["name"], key, wrong)
+                continue
             assert variant != 0
-            assert variant not in generator.wrong_key_variants(key, uid, exp).values(), (scenario["name"], key)
+            assert variant not in wrong.values(), (scenario["name"], key)
     assert eligible >= 20
+    assert sorted(zero) == sorted(generator.ELIGIBLE_ZERO_CASES)
+
+
+def test_eligible_control_is_served_exposed_and_published():
+    """An eligible draw of 0 is variant 0 with assigned=true, eligible=true, exposed and published;
+    zero_maps_to_one fails 236 only through this experiment's treatment and publish."""
+    scenario = next(s for s in group() if "Single Source" in s["name"])
+    (control,) = [e for e in scenario["contextData"]["experiments"] if e["name"] == "exp_sb_eligible_control"]
+    assert len(control["split"]) >= 3 and control["switchbackStartAt"] == generator.ANCHOR_PERIOD_0
+    steps = scenario["steps"]
+    (i,) = [i for i, st in enumerate(steps) if st["action"] == "treatment"
+            and st["params"]["experimentName"] == control["name"]]
+    exposed = generator.exposure(control, 0, "store_id")
+    assert steps[i]["expect"] == {"result": 0, "events": [{"type": "exposure", "data": exposed}]}
+    (publish,) = [st for st in steps if st["action"] == "publish"]
+    data = publish["expect"]["events"][0]["data"]
+    assert exposed in data["exposures"] and data["units"] == [
+        {"type": "store_id", "uid": generator.hash_unit(steps[0]["params"]["units"]["store_id"])}]
+    j = steps.index(publish)
+    assert generator.failing_steps(scenario, "zero_maps_to_one") == [i, j]
+    others = [s for s in context_scenarios(canonical()) if "Single Source" not in s["name"]]
+    assert [s["name"] for s in others if generator.failing_steps(s, "zero_maps_to_one")] == []
 
 
 def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):

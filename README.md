@@ -68,7 +68,7 @@ across languages.
   | Rule | Scenarios |
   | --- | --- |
   | golden vectors via `POST /switchback/assign` and `/permutation` (882 + 504) | 230-235 |
-  | single source, raw value is the key, period 0 and 1 | 236 |
+  | single source, raw value is the key, period 0 and 1; an eligible draw of 0 is served and exposed (`assigned=true`, `eligible=true`) | 236 |
   | lower-declared source serves whatever the context unit order | 237 |
   | agreeing units serve | 238 |
   | disagreeing units: control, no exposure | 239 |

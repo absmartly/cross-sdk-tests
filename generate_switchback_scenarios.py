@@ -27,7 +27,9 @@ Scenarios:
   * Context scenarios are built from a small context model (ContextModel) that computes every
     expected treatment, exposure and publish from the Python reference, never from an SDK. The
     same operations are replayed against wrong models (MUTANTS); generation fails unless every
-    key-model mutant changes every eligible draw and every mutant fails at least one scenario.
+    key-model mutant changes every eligible draw and every mutant fails at least one scenario. Every
+    eligible draw is nonzero except the named ELIGIBLE_ZERO_CASES (an eligible control, variant 0,
+    exposed), where every wrong model must draw nonzero.
   * The inertness scenario is ungated: every SDK, switchback-aware or not, must serve its unit
     experiments unchanged when switchback experiments and fields are present in the payload.
 
@@ -441,6 +443,25 @@ def wrong_key_variants(key: str, uid: str, exp: dict) -> dict:
     return wrong
 
 
+# Eligible draws that are deliberately 0 (an eligible control: variant 0, assigned=true, eligible=true,
+# exposed). Every other eligible draw must be nonzero; these must be exactly 0, and every wrong
+# cluster-key model and the sticky assignment must draw nonzero there.
+ELIGIBLE_ZERO_CASES = {"exp_sb_eligible_control"}
+
+
+def pick_eligible_control(make, uid: str, exp: dict) -> tuple:
+    """(value, seed overrides): the first seeds (the arm count's own, then (SEED_SEARCH_HI, k)) and
+    value make(k) whose period draw is 0 while every wrong cluster-key model for the serving uid and
+    the sticky unit assignment draw nonzero."""
+    for seeds in [(exp["seedHi"], exp["seedLo"])] + [(SEED_SEARCH_HI, k) for k in range(1, 1000)]:
+        candidate = dict(exp, seedHi=seeds[0], seedLo=seeds[1])
+        for k in range(200):
+            value = make(k)
+            if draw(value, candidate) == 0 and all(wrong_key_variants(value, uid, candidate).values()):
+                return value, {"seedHi": seeds[0], "seedLo": seeds[1]}
+    raise SystemExit(f"no eligible-control value for {make(0)!r}")
+
+
 def discriminates(key: str, uid: str, exp: dict, avoid=()) -> bool:
     variant = draw(key, exp)
     return variant != 0 and variant not in avoid and variant not in wrong_key_variants(key, uid, exp).values()
@@ -667,6 +688,7 @@ SERVING_MUTANTS = (
     "unit_experiment_as_switchback",  # a unit experiment carrying switchback fields served as one
     "peek_exposes",            # peek / peekVariableValue queue the exposure like treatment
     "variable_value_silent",   # variableValue resolves the variant but never exposes
+    "zero_maps_to_one",        # an eligible draw of 0 is served as variant 1
 )
 ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
 ARITHMETIC_MUTANTS = ("period_zero", "period_plus_one", "unmasked_seed_lo", "swapped_seed")
@@ -887,6 +909,8 @@ class ContextModel:
             variant = draw(KEY_MUTANTS[m](key, uid, exp), exp, start=anchor)
         else:
             variant = draw(key, exp, mutant=m if m in ARITHMETIC_MUTANTS else None, start=anchor)
+            if m == "zero_maps_to_one" and variant == 0:
+                variant = 1
             if m is None:
                 self.draws.append((key, uid, exp))
         return variant, exposure(exp, variant, unit_type, audience_mismatch=mismatch)
@@ -1041,6 +1065,11 @@ def single_source_scenarios() -> list:
     city = pick_value(lambda k: f"city-{k}", uid, exp3)
     city10 = pick_value(lambda k: f"metro-{k}", uid, exp10)
     city2 = pick_value(lambda k: f"town-{k}", uid, dict(exp2))
+    # The eligible control: a value whose period-0 draw is 0 (served, assigned=true, eligible=true,
+    # exposed) while every wrong cluster-key model and the sticky assignment draw nonzero.
+    control = switchback_experiment(303, "exp_sb_eligible_control", [("store_id", "city0")], 3)
+    city0, control_seeds = pick_eligible_control(lambda k: f"control-{k}", uid, control)
+    control.update(control_seeds)
     return [Scenario(
         "Single Source - Raw Attribute Value Is The Cluster Key",
         ("switchbackClusters {store_id: <path>} with one store_id unit. The cluster key is the raw attribute "
@@ -1048,10 +1077,13 @@ def single_source_scenarios() -> list:
          "switchbackStartAt, switchbackPeriodMs) (period 0 for the 3- and 10-arm experiments, period 1 for the "
          "2-arm one). Each value is chosen so the draw is nonzero and differs from a hashed key, the uid as key, "
          "the hashed uid as key, a Phase 1E bucket and the sticky unit assignment. Each exposure is under the "
-         "serving unit store_id."),
-        [exp3, exp10, exp2], {"store_id": uid},
-    ).attr("city", city).attr("city10", city10).attr("city2", city2).treat(exp3, exp10, exp2).treat(exp3)
-        .publish().build()]
+         f"serving unit store_id. exp_sb_eligible_control (3 arms, period 0) is the eligible control: city0="
+         f"{city0!r} draws 0, so it serves variant 0 with assigned=true, eligible=true and the exposure is "
+         "recorded and published; a hashed key, the uid as key, the hashed uid as key, a Phase 1E bucket and the "
+         "sticky unit assignment all draw nonzero there, and so does a model that maps a 0 draw to 1."),
+        [exp3, exp10, exp2, control], {"store_id": uid},
+    ).attr("city", city).attr("city10", city10).attr("city2", city2).attr("city0", city0)
+        .treat(exp3, exp10, exp2, control).treat(exp3).publish().build()]
 
 
 def declared_order_scenarios() -> list:
@@ -1559,7 +1591,8 @@ RULES = OrderedDict([
         "Golden Vectors - assignSwitchback - 2 Arms", "Golden Vectors - assignSwitchback - 3 Arms",
         "Golden Vectors - assignSwitchback - 10 Arms", "Golden Vectors - fisherYatesPermutation - 2 Arms",
         "Golden Vectors - fisherYatesPermutation - 3 Arms", "Golden Vectors - fisherYatesPermutation - 10 Arms"]),
-    ("single source, single unit; raw value is the key; periodIndex = floorDiv(now - startAt, periodMs)", [
+    ("single source, single unit; raw value is the key; periodIndex = floorDiv(now - startAt, periodMs); "
+     "an eligible draw of 0 is served and exposed (assigned=true, eligible=true)", [
         "Single Source - Raw Attribute Value Is The Cluster Key"]),
     ("two sources: lower-declared source serves whatever the context unit order (an SDK context holds one uid "
      "per unit type, so two units of one type cannot be expressed)", [
@@ -1644,6 +1677,7 @@ MUTANT_SCENARIOS = {
     "unit_experiment_as_switchback": ["Inertness - Unit Experiments Unaffected By Switchback Data"],
     "peek_exposes": ["Peek And Variable Values Resolve The Cluster Draw"],
     "variable_value_silent": ["Peek And Variable Values Resolve The Cluster Draw"],
+    "zero_maps_to_one": [_SINGLE],
 }
 
 
@@ -1711,15 +1745,27 @@ def failing_steps(scenario: dict, mutant: Optional[str]) -> list:
 
 def check_discrimination(scenarios: list, draws: dict) -> dict:
     """Generation-time mutant replay. Every eligible schedule draw must be nonzero and differ from
-    every wrong cluster-key model and the sticky unit assignment of its serving uid; the correct
+    every wrong cluster-key model and the sticky unit assignment of its serving uid, except the
+    ELIGIBLE_ZERO_CASES, whose draw must be 0 while every wrong model draws nonzero; the correct
     model must reproduce every context scenario; every mutant must fail at least one scenario.
     Returns mutant -> names of the scenarios it fails."""
     for name, entries in draws.items():
         for key, uid, exp in entries:
             variant = draw(key, exp)
-            wrong = {m: v for m, v in wrong_key_variants(key, uid, exp).items() if v == variant}
+            wrong_variants = wrong_key_variants(key, uid, exp)
+            if exp["name"] in ELIGIBLE_ZERO_CASES:
+                # The deliberate eligible control: the draw is 0 and every wrong model draws nonzero.
+                zero = {m: v for m, v in wrong_variants.items() if v == 0}
+                if variant != 0 or zero:
+                    raise SystemExit(f"{name}: eligible control {key!r} for {exp['name']} draws {variant}, "
+                                     f"wrong models drawing 0: {zero}")
+                continue
+            wrong = {m: v for m, v in wrong_variants.items() if v == variant}
             if variant == 0 or wrong:
                 raise SystemExit(f"{name}: draw of {key!r} for {exp['name']} is {variant}, equal to {wrong}")
+    zero_cases = {exp["name"] for entries in draws.values() for _, _, exp in entries} & ELIGIBLE_ZERO_CASES
+    if zero_cases != ELIGIBLE_ZERO_CASES:
+        raise SystemExit(f"ELIGIBLE_ZERO_CASES without an eligible draw: {sorted(ELIGIBLE_ZERO_CASES - zero_cases)}")
     context = [s for s in scenarios if is_context_scenario(s)]
     for scenario in context:
         if failing_steps(scenario, None):
