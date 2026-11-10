@@ -52325,7 +52325,7 @@
   },
   {
     "name": "246 - Switchback - Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
-    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with audienceMismatch=true, recorded; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id.",
+    "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id.",
     "contextData": {
       "experiments": [
         {
@@ -52925,7 +52925,7 @@
                 "name": "exp_sb_audience_strict",
                 "unit": "store_id",
                 "variant": 0,
-                "assigned": true,
+                "assigned": false,
                 "eligible": true,
                 "overridden": false,
                 "fullOn": false,
@@ -53060,7 +53060,7 @@
                     "name": "exp_sb_audience_strict",
                     "unit": "store_id",
                     "variant": 0,
-                    "assigned": true,
+                    "assigned": false,
                     "eligible": true,
                     "overridden": false,
                     "fullOn": false,

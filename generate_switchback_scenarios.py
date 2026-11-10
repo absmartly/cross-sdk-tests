@@ -602,6 +602,7 @@ SERVING_MUTANTS = (
     "ignore_override",
     "ignore_full_on",
     "ignore_rules",
+    "strict_mismatch_assigned",  # a strict audience mismatch records assigned=true
     "rules_after_cluster_check_only_when_servable",  # rules skipped before the anchor
     "ignore_custom",
     "round_anchor",            # an unaligned anchor is ceiled to the hour and served
@@ -779,7 +780,8 @@ class ContextModel:
             return rule, out
         mismatch = _audience_matches(exp.get("audience"), self.attributes) is False
         if exp.get("audienceStrict") and mismatch:
-            return 0, exposure(exp, 0, unit_type, audience_mismatch=True)
+            # As for unit experiments: a strict mismatch is not an assignment (assigned=false).
+            return 0, exposure(exp, 0, unit_type, assigned=m == "strict_mismatch_assigned", audience_mismatch=True)
         if exp["fullOnVariant"] and m != "ignore_full_on":
             return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True,
                                                   audience_mismatch=mismatch)
@@ -1183,7 +1185,8 @@ def precedence_scenarios() -> list:
         "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
         (f"The cluster's period-0 draw is {drawn}. An override to {other} wins (assigned=false, overridden=true); "
          f"an assign rule to {other} wins (assigned=false, ruleOverride=true), also before the anchor; a strict "
-         "audience mismatch (tier silver, audience tier gold) serves 0 with audienceMismatch=true, recorded; "
+         "audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and "
+         "audienceMismatch=true, recorded, as for unit experiments; "
          f"fullOnVariant={other} wins (fullOn=true), also before the anchor; a custom assignment to {other} is "
          "served after traffic (custom=true). Every exposure is under the serving unit store_id."),
         experiments, {"store_id": uid},
