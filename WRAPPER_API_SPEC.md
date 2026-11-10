@@ -1189,9 +1189,12 @@ The capability means a behavioral self-test passed. For java it covers:
   `city` serve `assignSwitchback(city, 0, seed, arms)` (a golden vector) under
   the first declared unit, even when the context sets the other unit first;
   disagreeing units, a value outside `switchbackClusterValues`, and an
-  experiment with only the Phase 1E fields are variant 0 with no exposure; a
-  whole-number attribute is keyed by its decimal text; two treatments in one
-  period expose once;
+  experiment with only the Phase 1E fields are variant 0 with no exposure;
+  `switchbackClusterValues: []` admits every value; a whole-number attribute
+  is keyed by its decimal text; two treatments in one period expose once. Each
+  served variant differs from what a hashed key, the uid as key, the hashed uid
+  as key, a Phase 1E bucket, the sticky unit assignment or a double rendering
+  of the number would draw;
 - through the SDK's real publish path: a unit baseline and then a switchback on
   the same unit, each published on its own, with the same fields at every
   depth; and a unit experiment carrying every R33 field publishes the same
@@ -1200,6 +1203,18 @@ The capability means a behavioral self-test passed. For java it covers:
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
+
+The capability also needs the SDK's assignment-rule evaluation for
+switchbacks: scenario 246 serves an `assign` rule (also before the anchor) and
+expects the exposure to carry `ruleOverride: true` and `assigned: false`. A
+strict audience mismatch is recorded with `assigned: false` and
+`audienceMismatch: true`, as for unit experiments.
+
+Known limit for other languages: scenario 241 sends the attribute value `3.0`
+and expects no cluster value (a float never keys a cluster). An SDK whose JSON
+layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
+which the Collector keys as `"3"`; such an SDK cannot pass that case as
+written. Revisit the case before a second SDK gains the capability.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
