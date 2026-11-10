@@ -142,14 +142,17 @@ final class SwitchbackSelfTest {
 
     // The probe payload, as the Collector serves it (R33). Built as JSON and deserialized the way
     // the wrapper deserializes scenario payloads, so the cluster map's key order is exercised too.
-    // Every expected variant is a platform golden vector, chosen (with the Python reference) to
-    // differ from every wrong model for both context uids (serving-9, probe-user): the hashed key,
-    // the uid as key, the hashed uid as key, a Phase 1E bucket and the sticky unit assignment.
+    // Every expected variant is a platform golden vector. The 10-arm ones are chosen (with the
+    // Python reference) to differ from every wrong model for both context uids (serving-9,
+    // probe-user): the hashed key, the uid as key, the hashed uid as key, a Phase 1E bucket and the
+    // sticky unit assignment. sb_payload (3 arms, seed 1) exists for the payload shape and is not
+    // discriminating on its own: its bucket draw equals the correct one (sb_agree catches that).
     //   assignSwitchback("market_1", 0, 42, 10) = 3: hashed key 5, bucket 8; serving-9 uid 8,
     //     hashed uid 8, sticky 5; probe-user uid 9, hashed uid 9, sticky 7.
     //   assignSwitchback("123456789", 0, 42, 10) = 6: "123456789.0" 4, "1.23456789E8" 7,
     //     "1.23456789e+08" 0, hashed key 0, bucket 4; serving-9 uid 8, hashed uid 8, sticky 5.
-    //   assignSwitchback("market_1", 0, 1, 3) = 1 (payload shape; sticky 0, hashed key 2).
+    //   assignSwitchback("market_1", 0, 1, 3) = 1 (payload shape; hashed key 2, bucket 1 (caught by
+    //     sb_agree); serving-9 uid 0, hashed uid 0, sticky 0).
     static String probePayload() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode data = mapper.createObjectNode();
@@ -341,7 +344,7 @@ final class SwitchbackSelfTest {
 
         Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
             false, false);
-        // assignSwitchback("market_1", 0, 1, 3) = 1.
+        // assignSwitchback("market_1", 0, 1, 3) = 1; bucket 1 too (caught by sb_agree).
         Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
             false, false);
         if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
