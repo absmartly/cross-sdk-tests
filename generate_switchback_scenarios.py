@@ -1,20 +1,31 @@
 #!/usr/bin/env python3
-"""Generate the Switchback scenario group of test_scenarios_complete.json.
+"""Generate the Switchback scenario group of test_scenarios_complete.json (R33, cluster-defined).
 
-The group is derived, never hand-edited. Its inputs are byte-for-byte copies of the platform's
-lib/utils/src/test/resources/switchback/ fixtures in fixtures/switchback/:
-golden-vectors.json (assignSwitchback and fisherYatesPermutation), bucket-golden-vectors.json
-(bucketOf, the unit key and attribute keys) and attribute-path-cases.json (the attribute path
-grammar). The reference below must reproduce every one of them before anything is written.
+The group is derived, never hand-edited. Its inputs are byte-for-byte copies of platform fixtures
+in fixtures/switchback/: golden-vectors.json (assignSwitchback and fisherYatesPermutation; abs
+lib/utils blob b314abeb9e97) and attribute-path-cases.json (the cluster attribute path grammar; abs
+collector blob 7b1d3fed5985). The independent reference below must reproduce every one of them
+before anything is written.
 
+The contract is R33 as the Collector serves it (absmartly/abs#5801 @ 9bd2b5ca35) and as java-sdk
+implements it (absmartly/java-sdk#15 @ 91b9b31416, SWITCHBACK.md):
+
+  * switchbackClusters is an ordered object unitTypeName -> attributePath (declared order, unit
+    type id ascending). Sources are iterated in that order, then the context units of each type.
+    The first unit whose path yields a normalised value serves; its value is the cluster key. A
+    later different value is a disagreement. switchbackClusterValues (null or [] = all) filters.
+  * The variant is assignSwitchback(raw cluster key, floorDiv(now - startAt, periodMs), seed,
+    arms): the key is never hashed, bucketed or replaced by the unit uid.
+  * An ineligible cluster is variant 0 with no exposure; a traffic miss on an eligible cluster is
+    recorded with eligible=false; pre-anchor and unservable schedules are silent controls.
+
+Scenarios:
   * Golden-vector scenarios drive every assign and permutation case through the wrapper's
     /switchback/assign and /switchback/permutation endpoints.
-  * Bucket-vector scenarios drive every bucketOf case through /switchback/bucket.
-  * Context scenarios exercise switchback serving through createContextWith/treatment/publish.
-    Each cluster key is the SDK's hashed unit or, with switchbackClusterAttribute, the context
-    attribute at that path; its bucketOf bucket is the cluster unit of assignSwitchback. Uids and
-    attribute values are chosen so the expected variant differs from what sticky assignment,
-    per-value clustering, another bucket count or a little-endian bucket would serve.
+  * Context scenarios are built from a small context model (ContextModel) that computes every
+    expected treatment, exposure and publish from the Python reference, never from an SDK. The
+    same operations are replayed against wrong models (MUTANTS); generation fails unless every
+    key-model mutant changes every eligible draw and every mutant fails at least one scenario.
   * The inertness scenario is ungated: every SDK, switchback-aware or not, must serve its unit
     experiments unchanged when switchback experiments and fields are present in the payload.
 
@@ -28,16 +39,19 @@ and the file is serialized exactly as before (indent=2, ensure_ascii=False, trai
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import math
 import os
 import sys
+from collections import OrderedDict
 from typing import NamedTuple, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 GOLDEN = os.path.join(HERE, "fixtures", "switchback", "golden-vectors.json")
+PATH_CASES = os.path.join(HERE, "fixtures", "switchback", "attribute-path-cases.json")
 
 GROUP_MARKER = " - Switchback "
 CAPABILITY = "switchback"
@@ -179,132 +193,9 @@ def verify_reference(golden: dict) -> None:
             raise SystemExit(f"reference disagrees with golden vector {case}: got {actual}")
 
 
-# Cluster buckets: every switchback hashes its cluster key (the unit hash, or a normalized
-# attribute value) into one of CLUSTER_COUNTS buckets, and the bucket number is the cluster
-# passed to assign_switchback. Pinned by fixtures/switchback/bucket-golden-vectors.json.
-CLUSTER_COUNTS = (10, 50, 100)
-BUCKET_CASES = 702
-BUCKET_GOLDEN = os.path.join(HERE, "fixtures", "switchback", "bucket-golden-vectors.json")
-PATH_CASES = os.path.join(HERE, "fixtures", "switchback", "attribute-path-cases.json")
-
-
-def signed32(value: int) -> int:
-    return ((value + (1 << 31)) & MASK32) - (1 << 31)
-
-
-def cluster_digest(key: str, seed: int) -> bytes:
-    """MD5(utf8("sbcluster␟<seedHi>:<seedLo>␟" + key)), where seedHi and seedLo are the signed
-    32-bit halves of the 64-bit experiment seed in base 10."""
-    prefix = f"sbcluster{SEPARATOR}{signed32(seed >> 32)}:{signed32(seed)}{SEPARATOR}"
-    return hashlib.md5((prefix + key).encode("utf-8")).digest()
-
-
-def bucket_of(key: str, seed: int, count: int) -> int:
-    """The first four bytes of cluster_digest(key, seed), big-endian, mod count."""
-    if count not in CLUSTER_COUNTS:
-        raise ValueError(f"cluster count must be one of {CLUSTER_COUNTS}, got {count}")
-    return int.from_bytes(cluster_digest(key, seed)[:4], "big") % count
-
-
-def normalize_attribute(value) -> Optional[str]:
-    """Bucket key of an attribute value: a non-empty string as-is, an integer in base 10, and None
-    (ineligible) for anything else, floats such as 2.0 and booleans included."""
-    if isinstance(value, str):
-        return value or None
-    if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
-    return None
-
-
-def _index_segment(segment: str) -> Optional[int]:
-    """Guava Ints.tryParse: optional '-', ASCII digits only, within signed 32-bit range."""
-    digits = segment[1:] if segment.startswith("-") else segment
-    if not digits or not all("0" <= c <= "9" for c in digits):
-        return None
-    value = int(segment, 10)
-    return value if -(1 << 31) <= value < (1 << 31) else None
-
-
-def parse_attribute_path(path: str) -> list:
-    """(key, index) segments: '/' separates, a segment quoted with ' or " is a literal key, and an
-    unquoted integer segment is an array index. An unterminated quoted tail is dropped."""
-    segments, i = [], 0
-    while i < len(path):
-        if path[i] == "/":
-            i += 1
-            continue
-        if path[i] in "'\"":
-            end = path.find(path[i], i + 1)
-            if end < 0:
-                break
-            segments.append((path[i + 1:end], None))
-            i = end + 1
-        else:
-            end = path.find("/", i)
-            stop = len(path) if end < 0 else end
-            segments.append((path[i:stop], _index_segment(path[i:stop])))
-            i = stop
-    return segments
-
-
-def supported_attribute_path(path: str) -> Optional[list]:
-    """Segments of a path both serving and analysis accept, else None: every index is
-    non-negative and sits between two key segments."""
-    segments = parse_attribute_path(path)
-    if not segments:
-        return None
-    for i, (_, index) in enumerate(segments):
-        if index is not None and (index < 0 or i == 0 or i == len(segments) - 1 or segments[i - 1][1] is not None):
-            return None
-    return segments
-
-
-def resolve_attribute_path(attributes: dict, segments: list):
-    """An index segment reads only lists, a key segment only objects; None when missing."""
-    current = attributes
-    for key, index in segments:
-        if index is not None:
-            current = current[index] if isinstance(current, list) and 0 <= index < len(current) else None
-        else:
-            current = current.get(key) if isinstance(current, dict) else None
-        if current is None:
-            return None
-    return current
-
-
-def load_bucket_fixtures() -> tuple:
-    with open(BUCKET_GOLDEN, encoding="utf-8") as src:
-        buckets = json.load(src)
-    with open(PATH_CASES, encoding="utf-8") as src:
-        paths = json.load(src)
-    if len(buckets["buckets"]) != BUCKET_CASES:
-        raise SystemExit(f"expected {BUCKET_CASES} bucket vectors")
-    return buckets, paths
-
-
-def verify_bucket_reference(buckets: dict, paths: dict) -> None:
-    for case in buckets["buckets"]:
-        actual = bucket_of(case["key"], exact_long(case["seed"]), case["count"])
-        if actual != case["expectedBucket"]:
-            raise SystemExit(f"bucket_of disagrees with bucket vector {case}: got {actual}")
-    for case in buckets["unitKeys"]:
-        actual = hash_unit(cluster_unit_text(case["unitUid"]))
-        if actual != case["key"]:
-            raise SystemExit(f"hash_unit disagrees with unit key vector {case}: got {actual}")
-    for case in buckets["attributeKeys"]:
-        actual = normalize_attribute(case["value"])
-        if actual != case["key"]:
-            raise SystemExit(f"normalize_attribute disagrees with attribute key vector {case}: got {actual!r}")
-    for case in paths["cases"]:
-        segments = supported_attribute_path(case["path"])
-        value = resolve_attribute_path(paths["attributes"], parse_attribute_path(case["path"]))
-        if (segments is not None) != case["supported"] or value != case["value"]:
-            raise SystemExit(f"attribute path reference disagrees with {case}: supported={segments is not None}, "
-                             f"value={value!r}")
-
 
 # ---------------------------------------------------------------------------
-# Scenario construction
+# Golden-vector scenarios
 # ---------------------------------------------------------------------------
 
 
@@ -356,13 +247,116 @@ def golden_scenarios(golden: dict) -> list:
     return scenarios
 
 
-# Clock-free grids. Wrappers have no clock control, so every grid below keeps "now" inside one
-# known period from the time of writing until 2069-08-18T16:00Z (ANCHOR_PERIOD_0 + PERIOD_MS).
+# ---------------------------------------------------------------------------
+# R33 cluster attribute paths and values (Collector SwitchbackAttributePath / SwitchbackClusterKeys)
+# ---------------------------------------------------------------------------
+
+
+def normalize_cluster_value(value) -> Optional[str]:
+    """Cluster key of an attribute value: a non-empty string as-is, an integer in base 10, and None
+    (no value) for anything else, floats such as 3.0, booleans, objects, arrays and null included."""
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None
+
+
+def _index_segment(segment: str) -> Optional[int]:
+    """Guava Ints.tryParse: optional '-', ASCII digits only, within signed 32-bit range."""
+    digits = segment[1:] if segment.startswith("-") else segment
+    if not digits or not all("0" <= c <= "9" for c in digits):
+        return None
+    value = int(segment, 10)
+    return value if -(1 << 31) <= value < (1 << 31) else None
+
+
+def parse_attribute_path(path: str) -> Optional[list]:
+    """(key, index) segments, or None when malformed: '/' separates, a segment quoted with ' or "
+    is a literal key, an unquoted integer segment is an array index. An unterminated quote, or a '.'
+    in any segment key (quoted or not), is malformed: dotted paths are not a nesting syntax."""
+    segments, i = [], 0
+    while i < len(path):
+        if path[i] == "/":
+            i += 1
+            continue
+        if path[i] in "'\"":
+            end = path.find(path[i], i + 1)
+            if end < 0:
+                return None
+            segments.append((path[i + 1:end], None))
+            i = end + 1
+        else:
+            end = path.find("/", i)
+            stop = len(path) if end < 0 else end
+            segments.append((path[i:stop], _index_segment(path[i:stop])))
+            i = stop
+    if any("." in key for key, _ in segments):
+        return None
+    return segments
+
+
+def lax_parse_attribute_path(path: str) -> list:
+    """The pre-R33 reading (no '.' rule, unterminated tail dropped), used only by the replay of
+    index-position and dotted cases to show a lax reader would resolve them."""
+    return [(s.strip("'\""), _index_segment(s)) for s in path.split("/") if s]
+
+
+def supported_attribute_path(path) -> Optional[list]:
+    """Segments of a path serving and analysis accept, else None: well formed, non-empty, and every
+    index non-negative and between two key segments."""
+    if not isinstance(path, str):
+        return None
+    segments = parse_attribute_path(path)
+    if not segments:
+        return None
+    for i, (_, index) in enumerate(segments):
+        if index is not None and (index < 0 or i == 0 or i == len(segments) - 1 or segments[i - 1][1] is not None):
+            return None
+    return segments
+
+
+def resolve_attribute_path(attributes: dict, segments: list):
+    """An index segment reads only lists, a key segment only objects; None when missing."""
+    current = attributes
+    for key, index in segments:
+        if index is not None:
+            current = current[index] if isinstance(current, list) and 0 <= index < len(current) else None
+        else:
+            current = current.get(key) if isinstance(current, dict) else None
+        if current is None:
+            return None
+    return current
+
+
+def load_path_cases() -> dict:
+    with open(PATH_CASES, encoding="utf-8") as src:
+        return json.load(src)
+
+
+def verify_path_reference(paths: dict) -> None:
+    for case in paths["cases"]:
+        segments = supported_attribute_path(case["path"])
+        value = resolve_attribute_path(paths["attributes"], segments or lax_parse_attribute_path(case["path"]))
+        if (segments is not None) != case["supported"] or (segments is not None and value != case["value"]):
+            raise SystemExit(f"attribute path reference disagrees with {case}: supported={segments is not None}, "
+                             f"value={value!r}")
+
+
+# ---------------------------------------------------------------------------
+# Clock-free grids
+# ---------------------------------------------------------------------------
+
+# Wrappers have no clock control, so every grid below keeps "now" inside one known period from the
+# time of writing until 2069-08-18T16:00Z (ANCHOR_PERIOD_0 + PERIOD_MS). The model reads NOW only to
+# place it in that period; any instant in [2024, 2069) gives the same expectations.
 HOUR_MS = 3_600_000
 PERIOD_MS = 400_000 * HOUR_MS                   # 1,440,000,000,000 ms, about 45.6 years
 ANCHOR_PERIOD_0 = 1_704_067_200_000             # 2024-01-01T00:00Z: now is in period 0
 ANCHOR_PERIOD_1 = ANCHOR_PERIOD_0 - PERIOD_MS   # 1978-05-15T08:00Z: now is in period 1
 ANCHOR_FUTURE = 4_102_444_800_000               # 2100-01-01T00:00Z: now is before the anchor
+NOW = 1_794_268_800_000                         # 2026-11-10T00:00Z
+MAX_ANCHOR_MS = 253_402_300_800_000             # 10000-01-01T00:00Z
 
 # Per arm count: (seedHi, seedLo, split). Seeds cover a positive, a negative-hi and an all-ones-lo
 # 64-bit seed; only split.length matters to the switchback draw.
@@ -372,85 +366,110 @@ ARMS = {
     10: (2147483647, -1, [0.1] * 10),
 }
 
-# Path cases whose key collides with a mutant under every (arms, count) at ARMS' seeds use
-# (PATH_SEED_HI, k) for the first k that discriminates.
-PATH_SEED_HI = 1_234_567
+# Experiments whose fixed cluster value collides with a wrong model at ARMS' seeds use
+# (SEED_SEARCH_HI, k) for the first k that discriminates.
+SEED_SEARCH_HI = 1_234_567
 
 
-def key_variant(key: str, period: int, arm_count: int, count: int, seeds: Optional[tuple] = None) -> int:
-    """The switchback draw for a cluster key: its bucket is the cluster unit of assignSwitchback.
-    seeds is (seedHi, seedLo), ARMS[arm_count]'s by default."""
-    seed = experiment_seed(*(seeds or ARMS[arm_count][:2]))
-    return assign_switchback(str(bucket_of(key, seed, count)), period, seed, arm_count)
+# ---------------------------------------------------------------------------
+# Wrong cluster-key models (mutants of the draw). Each maps (key, serving uid, experiment) to the
+# string a wrong SDK would pass to assignSwitchback, or None to draw nothing.
+# ---------------------------------------------------------------------------
 
 
-def switchback_variant(uid: str, period: int, arm_count: int, count: int) -> int:
-    return key_variant(hash_unit(uid), period, arm_count, count)
+def _bucket_of_mutant(key: str, exp: dict) -> str:
+    """The abandoned Phase 1E bucket model (100 buckets): never correct under R33."""
+    prefix = f"sbcluster{SEPARATOR}{exp['seedHi']}:{exp['seedLo']}{SEPARATOR}"
+    return str(int.from_bytes(hashlib.md5((prefix + key).encode("utf-8")).digest()[:4], "big") % 100)
 
 
-def bucket_of_little_endian(key: str, seed: int, count: int) -> int:
-    """bucket_of with the first four digest bytes read little-endian: a byte-order mutant."""
-    return int.from_bytes(cluster_digest(key, seed)[:4], "little") % count
+KEY_MUTANTS = {
+    "hashed_key": lambda key, uid, exp: hash_unit(key),
+    "uid_as_key": lambda key, uid, exp: uid,
+    "hashed_uid_as_key": lambda key, uid, exp: hash_unit(uid),
+    "bucket_of": lambda key, uid, exp: _bucket_of_mutant(key, exp),
+}
 
 
-def wrong_key_variants(key: str, period: int, arm_count: int, count: int, seeds: Optional[tuple] = None) -> set:
-    """What an SDK that drew from the key itself (per-value clustering), applied another bucket
-    count or read the digest little-endian would serve."""
-    seed = experiment_seed(*(seeds or ARMS[arm_count][:2]))
-    wrong = {assign_switchback(key, period, seed, arm_count)}
-    wrong |= {key_variant(key, period, arm_count, other, seeds) for other in CLUSTER_COUNTS if other != count}
-    wrong.add(assign_switchback(str(bucket_of_little_endian(key, seed, count)), period, seed, arm_count))
+def draw(key: str, exp: dict, now: int = NOW) -> int:
+    period = (now - exp["switchbackStartAt"]) // exp["switchbackPeriodMs"]
+    return assign_switchback(key, period, experiment_seed(exp["seedHi"], exp["seedLo"]), len(exp["split"]))
+
+
+def wrong_key_variants(key: str, uid: str, exp: dict) -> dict:
+    """mutant -> the variant that cluster-key model would draw, plus the sticky unit assignment of
+    the serving uid (an SDK ignoring randomizationType)."""
+    wrong = {name: draw(make(key, uid, exp), exp) for name, make in KEY_MUTANTS.items()}
+    wrong["sticky"] = unit_variant(uid, exp["split"], exp["seedHi"], exp["seedLo"])
     return wrong
 
 
-def sticky_variant(uid: str, arm_count: int, seeds: Optional[tuple] = None) -> int:
-    """What an SDK ignoring randomizationType would serve: the ordinary unit assignment."""
-    seed_hi, seed_lo = seeds or ARMS[arm_count][:2]
-    return unit_variant(uid, ARMS[arm_count][2], seed_hi, seed_lo)
+def discriminates(key: str, uid: str, exp: dict, avoid=()) -> bool:
+    variant = draw(key, exp)
+    return variant != 0 and variant not in avoid and variant not in wrong_key_variants(key, uid, exp).values()
 
 
-def pick_uid(prefix: str, period: int, arm_count: int, count: int) -> str:
-    """First '<prefix>-<k>' whose switchback variant is nonzero and differs from the sticky unit
-    variant, from per-value clustering and from every other bucket count, so neither an ineligible
-    fallback, plain unit assignment nor the wrong cluster model can pass by accident."""
-    for k in range(10_000):
-        uid = f"{prefix}-{k}"
-        variant = switchback_variant(uid, period, arm_count, count)
-        if (variant not in (0, sticky_variant(uid, arm_count))
-                and variant not in wrong_key_variants(hash_unit(uid), period, arm_count, count)):
-            return uid
-    raise SystemExit(f"no discriminating uid for {prefix}")
-
-
-def pick_value(make, uid: str, period: int, arm_count: int, count: int, avoid=(), avoid_keys=lambda value: ()):
-    """First make(k) whose attribute-source variant is nonzero and differs from the unit-source
-    draw for uid, from the sticky unit assignment of uid, from per-value clustering, from every
-    other bucket count, from a little-endian bucket, from `avoid` and from the draw of every
-    wrong rendering in avoid_keys(value)."""
-    unit_draws = (0, switchback_variant(uid, period, arm_count, count), sticky_variant(uid, arm_count))
+def pick_value(make, uid: str, exp: dict, avoid=(), avoid_keys=lambda value: ()):
+    """First make(k) whose draw is nonzero, differs from every wrong cluster-key model for the
+    serving uid, from `avoid`, and from the draw of every wrong rendering in avoid_keys(value)."""
     for k in range(10_000):
         value = make(k)
-        key = normalize_attribute(value)
+        key = normalize_cluster_value(value)
         if key is None:
-            raise SystemExit(f"attribute value {value!r} has no bucket key")
-        variant = key_variant(key, period, arm_count, count)
-        if (variant not in unit_draws and variant not in avoid
-                and variant not in wrong_key_variants(key, period, arm_count, count)
-                and all(key_variant(wrong, period, arm_count, count) != variant for wrong in avoid_keys(value))):
+            raise SystemExit(f"attribute value {value!r} has no cluster key")
+        if discriminates(key, uid, exp, avoid) and all(draw(w, exp) != draw(key, exp) for w in avoid_keys(value)):
             return value
     raise SystemExit(f"no discriminating attribute value for {make(0)!r}")
 
 
+def quiet(*exps):
+    """Predicate on a serving uid: for each experiment of at most 3 arms, every uid-derived wrong
+    model (uid as key, hashed uid as key, sticky unit assignment) draws 0, which leaves room for a
+    nonzero cluster draw that differs from all of them. 10-arm experiments need no constraint."""
+    def predicate(uid):
+        for exp in exps:
+            if len(exp["split"]) <= 3:
+                wrong = wrong_key_variants("-", uid, exp)
+                if any(wrong[m] for m in ("uid_as_key", "hashed_uid_as_key", "sticky")):
+                    return False
+        return True
+    return predicate
+
+
+def pick_uid(prefix: str, predicate) -> str:
+    """First '<prefix>-<k>' satisfying predicate(uid)."""
+    for k in range(10_000):
+        uid = f"{prefix}-{k}"
+        if predicate(uid):
+            return uid
+    raise SystemExit(f"no uid for {prefix}")
+
+
+def pick_seeds(key: str, uid: str, exp: dict, avoid=()) -> dict:
+    """Seed overrides that make a fixed cluster key discriminate: the arm count's own seeds first."""
+    for seeds in [(exp["seedHi"], exp["seedLo"])] + [(SEED_SEARCH_HI, k) for k in range(1, 1000)]:
+        candidate = dict(exp, seedHi=seeds[0], seedLo=seeds[1])
+        if discriminates(key, uid, candidate, avoid):
+            return {"seedHi": seeds[0], "seedLo": seeds[1]}
+    raise SystemExit(f"no discriminating seeds for key {key!r}")
+
+
 def number_renderings(value: int) -> list:
-    """Keys an SDK would hash if it wrapped the integer to int32 or read it as a double:
+    """Keys an SDK would draw from if it wrapped the integer to int32 or read it as a double:
     "-294967290", "4000000006.0", "4.000000006E9" (Java), "4.000000006e+09" (C/Go %g)."""
     digits = str(abs(value)).rstrip("0") or "0"
     exponent = len(str(abs(value))) - 1
     mantissa = ("-" if value < 0 else "") + digits[0] + "." + (digits[1:] or "0")
-    return [str(signed32(value)), f"{value}.0", f"{mantissa}E{exponent}", f"{mantissa}e{exponent:+03d}"]
+    wrapped = ((value + (1 << 31)) & MASK32) - (1 << 31)
+    return [str(wrapped), f"{value}.0", f"{mantissa}E{exponent}", f"{mantissa}e{exponent:+03d}"]
 
 
-def experiment(exp_id: int, name: str, unit_type: str, arm_count: int, **overrides) -> dict:
+# ---------------------------------------------------------------------------
+# Payload builders
+# ---------------------------------------------------------------------------
+
+
+def experiment(exp_id: int, name: str, unit_type: Optional[str], arm_count: int, **overrides) -> dict:
     seed_hi, seed_lo, split = ARMS[arm_count]
     data = {
         "id": exp_id,
@@ -474,54 +493,57 @@ def experiment(exp_id: int, name: str, unit_type: str, arm_count: int, **overrid
     return data
 
 
-def switchback_experiment(exp_id: int, name: str, unit_type: str, arm_count: int, anchor, count: Optional[int],
-                          attribute: Optional[str] = None, **overrides) -> dict:
-    """count and attribute are switchbackClusterCount and switchbackClusterAttribute; None omits
-    the field, and a null attribute hashes the unit."""
-    fields = {
-        "randomizationType": "switchback",
-        "switchbackClusterUnitType": unit_type,
-        "switchbackPeriodMs": PERIOD_MS,
-        "switchbackCarryoverDurationMs": 0,
-        "switchbackBurnInDurationMs": 0,
-        "switchbackBurnOutDurationMs": 0,
-        "switchbackDesignType": "balanced_block",
-        "switchbackEstimand": "global_average_treatment_effect",
-    }
+def switchback_experiment(exp_id: int, name: str, clusters, arm_count: int = 3, anchor=ANCHOR_PERIOD_0,
+                          values=None, unit_type: Optional[str] = None, **overrides) -> dict:
+    """clusters is a list of (unitTypeName, attributePath) in declared order, emitted as the ordered
+    switchbackClusters object; None omits the field. values is switchbackClusterValues (omitted when
+    None). unitType defaults to the first declared unit type, as the Collector serves it."""
+    fields = OrderedDict(randomizationType="switchback")
+    if clusters is not None:
+        fields["switchbackClusters"] = OrderedDict(clusters)
+    if values is not None:
+        fields["switchbackClusterValues"] = list(values)
     if anchor is not None:
         fields["switchbackStartAt"] = anchor
-    if count is not None:
-        fields["switchbackClusterCount"] = count
-    if attribute is not None:
-        fields["switchbackClusterAttribute"] = attribute
+    fields.update(
+        switchbackPeriodMs=PERIOD_MS,
+        switchbackCarryoverDurationMs=0,
+        switchbackBurnInDurationMs=0,
+        switchbackBurnOutDurationMs=0,
+        switchbackDesignType="balanced_block",
+        switchbackEstimand="global_average_treatment_effect",
+    )
     fields.update(overrides)
+    if unit_type is None and clusters:
+        unit_type = clusters[0][0]
     return experiment(exp_id, name, unit_type, arm_count, **fields)
 
 
-def exposure(exp: dict, variant: int, assigned=True, eligible=True, overridden=False, full_on=False,
-             audience_mismatch=False) -> dict:
+def exposure(exp: dict, variant: int, unit: Optional[str] = None, assigned=True, eligible=True, overridden=False,
+             full_on=False, custom=False, audience_mismatch=False) -> dict:
     return {
         "id": exp["id"],
         "name": exp["name"],
-        "unit": exp["unitType"],
+        "unit": unit if unit is not None else exp["unitType"],
         "variant": variant,
         "assigned": assigned,
         "eligible": eligible,
         "overridden": overridden,
         "fullOn": full_on,
-        "custom": False,
+        "custom": custom,
         "audienceMismatch": audience_mismatch,
     }
+
+
+def ready_events(experiments: list) -> list:
+    return [{"type": "ready", "data": {"experiments": [{"id": e["id"], "name": e["name"]} for e in experiments]}}]
 
 
 def create_step(experiments: list, units: dict) -> dict:
     return {
         "action": "createContextWith",
         "params": {"units": units, "options": {"publishDelay": -1, "refreshPeriod": 0}},
-        "expect": {
-            "result": {"ready": True, "failed": False, "finalized": False},
-            "events": [{"type": "ready", "data": {"experiments": [{"id": e["id"], "name": e["name"]} for e in experiments]}}],
-        },
+        "expect": {"result": {"ready": True, "failed": False, "finalized": False}, "events": ready_events(experiments)},
     }
 
 
@@ -534,451 +556,733 @@ def attribute_step(name: str, value) -> dict:
     return {"action": "attribute", "params": {"name": name, "value": value}, "expect": {"result": None, "events": []}}
 
 
-def publish_step(exposures: list) -> dict:
-    summary = [{k: e[k] for k in ("id", "name", "variant")} for e in exposures]
-    return {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": {"exposures": summary}}]}}
+def publish_step(exposures: list, units: Optional[dict] = None) -> dict:
+    """Every published exposure is pinned in full. The published units are pinned (hashed uids)
+    when the context has a single unit; with several, their order is the SDK's map order."""
+    data = {"exposures": exposures}
+    if units is not None and len(units) == 1:
+        data = {"hashed": True, "units": [{"type": t, "uid": hash_unit(u)} for t, u in units.items()], **data}
+    return {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": data}]}}
 
 
-def context_scenario(name: str, description: str, experiments: list, units: dict, steps: list) -> dict:
+def context_scenario(name: str, description: str, experiments: list, units: dict, steps: list,
+                     holdouts: Optional[list] = None) -> dict:
+    context_data = {"experiments": experiments}
+    if holdouts is not None:
+        context_data["holdouts"] = holdouts
     return {
         "name": name,
         "description": description,
-        "contextData": {"experiments": experiments},
+        "contextData": context_data,
         "steps": [create_step(experiments, units)] + steps,
         "requires": [CAPABILITY],
     }
 
 
-def bucket_vector_scenarios(buckets: dict) -> list:
-    """One scenario per bucket count: every bucket vector of that count through /switchback/bucket."""
-    scenarios = []
-    for count in CLUSTER_COUNTS:
-        steps = [{
-            "action": "switchbackBucket",
-            "params": {"key": c["key"], "seed": c["seed"], "count": count},
-            "expect": {"result": c["expectedBucket"], "events": []},
-        } for c in buckets["buckets"] if c["count"] == count]
-        scenarios.append({
-            "name": f"Bucket Vectors - bucketOf - {count} Buckets",
-            "description": (f"Every count-{count} case ({len(steps)}) of the platform bucket golden vectors, driven "
-                            "through POST /switchback/bucket: int(MD5_HEX(utf8(\"sbcluster\" + U+001F + seedHi + "
-                            "\":\" + seedLo + U+001F + key))[:8], 16) mod count. The 64-bit seed travels as a "
-                            "decimal string; seedHi/seedLo are its signed 32-bit halves."),
-            "contextData": {"experiments": []},
-            "steps": steps,
-            "requires": [CAPABILITY],
-        })
-    return scenarios
+# ---------------------------------------------------------------------------
+# Context model: the R33 serving rules (Collector ContextAPI + java-sdk SWITCHBACK.md), executed
+# over a scenario's steps. Expectations are computed by this model and nothing else; replaying a
+# scenario under a mutant shows which wrong SDK behaviour the scenario catches.
+# ---------------------------------------------------------------------------
+
+# Mutants of the serving rules, replayed over every context scenario. Each must fail at least one
+# scenario (generation fails otherwise); test_switchback_harness.py replays them again from the file.
+SERVING_MUTANTS = (
+    "last_unit_serves",        # the last unit with a value serves, not the first
+    "units_outer",             # units iterated outer (context order), sources inner
+    "units_outer_reversed",    # the same with the context's units in the other order
+    "no_disagreement",         # the first value serves even when another unit disagrees
+    "ignore_allow_list",       # switchbackClusterValues ignored
+    "empty_allow_list_blocks", # switchbackClusterValues [] treated as "nothing allowed"
+    "ineligible_exposes",      # an ineligible cluster records an eligible=false exposure
+    "pre_anchor_exposes",      # pre-anchor / unservable draws record an eligible=false exposure
+    "traffic_miss_silent",     # a traffic miss on an eligible cluster records nothing
+    "traffic_on_unit_type",    # traffic hashed on the experiment's unitType uid, not the serving uid
+    "holdout_applies",         # a holdout holds the switchback out
+    "ignore_override",
+    "ignore_full_on",
+    "ignore_rules",
+    "rules_after_cluster_check_only_when_servable",  # rules skipped before the anchor
+    "ignore_custom",
+    "round_anchor",            # an unaligned anchor is ceiled to the hour and served
+    "legacy_fields",           # switchbackClusterUnitType/Attribute read instead of switchbackClusters
+    "lax_values",              # booleans, floats, objects and arrays keyed by their text
+    "dotted_nesting",          # '.' read as a nesting separator
+    "lax_index_position",      # an index at the tail or two in a row accepted
+    "legacy_unit_fallback",    # a missing/unreadable cluster map falls back to unit assignment
+    "no_refresh_epoch",        # a refresh with a changed cluster map keeps the cached assignment
+    "unit_experiment_as_switchback",  # a unit experiment carrying switchback fields served as one
+)
+ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
 
 
-# Bucket count per cluster letter, so each period scenario covers every allowed count.
-LETTER_COUNTS = {"a": 10, "b": 50, "c": 100}
+def _audience_matches(audience: Optional[str], attributes: dict) -> Optional[bool]:
+    """The audience filters these scenarios use: {"filter":[{"eq":[{"var":n},{"value":v}]}]}."""
+    if not audience:
+        return None
+    (clause,) = json.loads(audience)["filter"]
+    var, value = clause["eq"]
+    return attributes.get(var["var"]) == value["value"]
 
 
-def period_scenarios() -> list:
-    scenarios = []
-    for period, anchor in ((0, ANCHOR_PERIOD_0), (1, ANCHOR_PERIOD_1)):
-        for arm_count in (2, 3, 10):
-            experiments, units, steps, exposed = [], {}, [], []
-            for slot, letter in enumerate("abc"):
-                unit_type = f"store_{letter}"
-                count = LETTER_COUNTS[letter]
-                uid = pick_uid(f"p{period}-a{arm_count}-{letter}", period, arm_count, count)
-                exp = switchback_experiment(100 + slot, f"exp_switchback_{letter}", unit_type, arm_count, anchor,
-                                            count)
-                variant = switchback_variant(uid, period, arm_count, count)
-                experiments.append(exp)
-                units[unit_type] = uid
-                exposed.append(exposure(exp, variant))
-                steps.append(treatment_step(exp, variant, exposed[-1]))
-            steps.append(publish_step(exposed))
-            scenarios.append(context_scenario(
-                f"Period {period} - {arm_count} Arms - Unit Buckets 10, 50, 100",
-                (f"switchbackStartAt {anchor} with switchbackPeriodMs {PERIOD_MS} (400,000 h) puts now in period "
-                 f"{period} until 2069. Three unit-sourced switchbacks with switchbackClusterCount 10, 50 and 100: "
-                 f"each variant is assignSwitchback(str(bucketOf(hashUnit(uid), seed, count)), {period}, seed, "
-                 f"{arm_count}) with seed = (seedHi << 32) | seedLo. Every uid is chosen so that variant is nonzero "
-                 "and differs from the sticky unit assignment, from per-value clustering on hashUnit(uid), from "
-                 "the other two counts and from a little-endian bucket."),
-                experiments, units, steps))
-    return scenarios
+def _assign_rule_variant(rules: Optional[str]) -> Optional[int]:
+    if not rules:
+        return None
+    for rule in json.loads(rules)["rules"]:
+        if rule["type"] == "assign" and not rule.get("environments") and "conditions" not in rule:
+            return rule["variant"]
+    return None
 
 
-def shared_bucket_scenarios() -> list:
-    """Two units in one bucket share the variant although their per-value draws differ."""
-    count, arm_count = 10, 3
-    seed_hi, seed_lo, _ = ARMS[arm_count]
-    seed = experiment_seed(seed_hi, seed_lo)
-    first = pick_uid("shared-a", 0, arm_count, count)
-    bucket = bucket_of(hash_unit(first), seed, count)
-    per_value = assign_switchback(hash_unit(first), 0, seed, arm_count)
-    second = next(uid for uid in (f"shared-b-{k}" for k in range(10_000))
-                  if bucket_of(hash_unit(uid), seed, count) == bucket
-                  and assign_switchback(hash_unit(uid), 0, seed, arm_count) != per_value)
-    variant = switchback_variant(first, 0, arm_count, count)
-    exp_a = switchback_experiment(105, "exp_switchback_shared_a", "store_a", arm_count, ANCHOR_PERIOD_0, count)
-    exp_b = switchback_experiment(106, "exp_switchback_shared_b", "store_b", arm_count, ANCHOR_PERIOD_0, count)
-    exposed = [exposure(exp_a, variant), exposure(exp_b, variant)]
-    return [context_scenario(
-        "Units In One Bucket Share The Variant",
-        (f"Two experiments with the same seed and switchbackClusterCount {count} on different unit types. Both "
-         f"uids hash into bucket {bucket}, so both serve the bucket's period-0 variant {variant}, while "
-         "per-value clustering on the two hashed uids would serve different variants."),
-        [exp_a, exp_b],
-        {"store_a": first, "store_b": second},
-        [
-            treatment_step(exp_a, variant, exposed[0]),
-            treatment_step(exp_b, variant, exposed[1]),
-            publish_step(exposed),
-        ])]
+def _servable(exp: dict, mutant) -> bool:
+    start, period = exp.get("switchbackStartAt"), exp.get("switchbackPeriodMs")
+    if mutant == "round_anchor" and isinstance(start, int):
+        start = -(-start // HOUR_MS) * HOUR_MS
+        exp["switchbackStartAt"] = start
+    return (isinstance(start, int) and 0 <= start < MAX_ANCHOR_MS and start % HOUR_MS == 0
+            and isinstance(period, int) and period > 0 and len(exp["split"]) >= 2)
 
 
-def eligibility_scenarios() -> list:
-    pre_anchor = switchback_experiment(110, "exp_switchback_pre_anchor", "store_id", 3, ANCHOR_FUTURE, 100)
-    no_anchor = switchback_experiment(111, "exp_switchback_no_anchor", "store_id", 3, None, 100)
-    no_unit = switchback_experiment(112, "exp_switchback_no_cluster_unit", "warehouse_id", 3, ANCHOR_PERIOD_0, 100)
-    no_count = switchback_experiment(113, "exp_switchback_no_cluster_count", "store_id", 3, ANCHOR_PERIOD_0, None)
-    bad_count = switchback_experiment(114, "exp_switchback_cluster_count_1000", "store_id", 3, ANCHOR_PERIOD_0,
-                                      1000)
-    # Every ineligible case must differ from what a sticky SDK, or one falling back to any allowed
-    # count, would serve.
-    uid = next(uid for uid in (f"eligibility-{k}" for k in range(10_000))
-               if sticky_variant(uid, 3) != 0 and all(switchback_variant(uid, 0, 3, c) for c in CLUSTER_COUNTS))
-
-    def ineligible_steps(experiments):
-        steps = []
-        for exp in experiments:
-            steps += [treatment_step(exp, 0, exposure(exp, 0, eligible=False)), treatment_step(exp, 0)]
-        return steps + [publish_step([exposure(exp, 0, eligible=False) for exp in experiments])]
-
-    def ineligible(exp, description):
-        return context_scenario(f"Ineligible - {exp['name']}", description, [exp], {"store_id": uid},
-                                ineligible_steps([exp]))
-
-    return [
-        ineligible(pre_anchor, (
-            f"switchbackStartAt {ANCHOR_FUTURE} (2100-01-01T00:00Z) is after now, so the experiment is "
-            "ineligible: variant 0 with assigned=true, eligible=false, exposed once and never drawn from "
-            "split/seed.")),
-        ineligible(no_anchor, (
-            "switchbackStartAt is absent (an experiment that has not started), so the grid cannot be "
-            "evaluated: variant 0 with assigned=true, eligible=false, exposed once.")),
-        context_scenario(
-            "Unassigned - Cluster Unit Not Set",
-            ("The context has no warehouse_id unit, so the switchback experiment is unassigned: variant 0 "
-             "with assigned=false and eligible=true, and no fallback to any other unit."),
-            [no_unit],
-            {"store_id": uid},
-            [
-                treatment_step(no_unit, 0, exposure(no_unit, 0, assigned=False)),
-                publish_step([exposure(no_unit, 0, assigned=False)]),
-            ]),
-        context_scenario(
-            "Ineligible - Cluster Count Not 10, 50 Or 100",
-            ("switchbackClusterCount absent, and switchbackClusterCount 1000: only 10, 50 and 100 are servable, "
-             "so each experiment is ineligible (variant 0, assigned=true, eligible=false, exposed once) and "
-             "never falls back to per-value clustering or to another count. The uid draws nonzero under every "
-             "allowed count and under sticky unit assignment."),
-            [no_count, bad_count],
-            {"store_id": uid},
-            ineligible_steps([no_count, bad_count])),
-    ]
+def _identity(exp: Optional[dict]):
+    if exp is None:
+        return None
+    keys = ("id", "iteration", "randomizationType", "switchbackClusterValues", "switchbackStartAt",
+            "switchbackPeriodMs", "switchbackDesignType", "unitType")
+    return json.dumps([[exp.get(k) for k in keys], list((exp.get("switchbackClusters") or {}).items())])
 
 
-def serving_scenarios() -> list:
-    uid = pick_uid("serving", 0, 3, 100)
-    variant = switchback_variant(uid, 0, 3, 100)
-    dedup = switchback_experiment(120, "exp_switchback_dedup", "store_id", 3, ANCHOR_PERIOD_0, 100)
-    # Full-on and the override each serve a variant the switchback draw would not, so neither can
-    # pass by serving the draw.
-    other_variant = next(v for v in (1, 2) if v != variant)
-    full_on = switchback_experiment(121, "exp_switchback_full_on", "store_id", 3, ANCHOR_PERIOD_0, 100,
-                                    fullOnVariant=other_variant)
-    overridden = switchback_experiment(122, "exp_switchback_override", "store_id", 3, ANCHOR_PERIOD_0, 100)
-    override_variant = other_variant
-    payload = switchback_experiment(123, "exp_switchback_payload", "store_id", 3, ANCHOR_PERIOD_0, 100)
-    baseline = experiment(124, "exp_switchback_payload_baseline", "store_id", 3)
-    seed_hi, seed_lo, split = ARMS[3]
-    baseline_variant = unit_variant(uid, split, seed_hi, seed_lo)
-    units_published = [{"type": "store_id", "uid": hash_unit(uid)}]
+class ContextModel:
+    """One context: its units (in the order the scenario lists them), attributes, overrides, custom
+    assignments, the per-experiment cached resolution and the pending exposures."""
 
-    return [
-        context_scenario(
-            "Same Period - Exactly One Exposure",
-            "Two getTreatment calls within one period return the same variant and expose once.",
-            [dedup],
-            {"store_id": uid},
-            [
-                treatment_step(dedup, variant, exposure(dedup, variant)),
-                treatment_step(dedup, variant),
-                publish_step([exposure(dedup, variant)]),
-            ]),
-        context_scenario(
-            "Full-On Serves The Full-On Variant",
-            (f"The period-0 draw for this cluster is {variant}; fullOnVariant={other_variant} takes precedence "
-             f"over it: variant {other_variant} with fullOn=true."),
-            [full_on],
-            {"store_id": uid},
-            [
-                treatment_step(full_on, other_variant, exposure(full_on, other_variant, full_on=True)),
-                publish_step([exposure(full_on, other_variant, full_on=True)]),
-            ]),
-        context_scenario(
-            "Override Wins Over The Switchback Draw",
-            (f"The period-0 draw for this cluster is {variant}; an override to {override_variant} is served "
-             "instead with assigned=false and overridden=true."),
-            [overridden],
-            {"store_id": uid},
-            [
-                {"action": "override", "params": {"experimentName": overridden["name"], "variant": override_variant},
-                 "expect": {"result": None, "events": []}},
-                treatment_step(overridden, override_variant,
-                               exposure(overridden, override_variant, assigned=False, overridden=True)),
-                publish_step([exposure(overridden, override_variant, assigned=False, overridden=True)]),
-            ]),
-        context_scenario(
-            "Exposure And Publish Payload Carry No New Fields",
-            ("A unit experiment on the same cluster unit is exposed and published first as the baseline. The "
-             "switchback exposure and its publish event must then have exactly the baseline's fields at every "
-             "depth (sameShapeAs), with every exposure field value pinned, so a switchback-only field such as a "
-             "period index fails the scenario."),
-            [payload, baseline],
-            {"store_id": uid},
-            [
-                treatment_step(baseline, baseline_variant, exposure(baseline, baseline_variant)),
-                {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": {
-                    "hashed": True, "units": units_published,
-                    "exposures": [exposure(baseline, baseline_variant)]}}]}},
-                {"action": "treatment", "params": {"experimentName": payload["name"]},
-                 "expect": {"result": variant, "events": [
-                     {"type": "exposure", "sameShapeAs": 1, "data": exposure(payload, variant)}]}},
-                {"action": "publish", "params": {}, "expect": {"result": None, "events": [
-                    {"type": "publish", "sameShapeAs": 2, "data": {
-                        "hashed": True, "units": units_published, "exposures": [exposure(payload, variant)]}}]}},
-            ]),
-    ]
+    def __init__(self, context_data: dict, units: dict, mutant: Optional[str] = None):
+        self.mutant = mutant
+        self.experiments = {e["name"]: e for e in context_data["experiments"]}
+        self.units = list(units.items())
+        if mutant == "units_outer_reversed":
+            self.units.reverse()
+        self.unit_map = dict(units)
+        self.attributes = {}
+        self.overrides, self.customs = {}, {}
+        self.cache = {}
+        self.pending = []
+        self.draws = []  # (key, serving uid, experiment) of every eligible schedule draw
 
+    # -- serving -----------------------------------------------------------
 
-def attribute_source_scenarios() -> list:
-    """Bucket keys read from context attributes through switchbackClusterAttribute."""
-    uid = pick_uid("attribute", 0, 3, 100)
-    city = pick_value(lambda k: f"city-{k}", uid, 0, 3, 100)
-    number = pick_value(lambda k: 4_000_000_000 + k, uid, 0, 2, 50, avoid_keys=number_renderings)
-    nested = pick_value(lambda k: f"nested-{k}", uid, 0, 10, 10)
-    other_item = pick_value(lambda k: f"item-b-{k}", uid, 0, 10, 100)
-    first_item = pick_value(lambda k: f"item-a-{k}", uid, 0, 10, 100,
-                            avoid={key_variant(other_item, 0, 10, 100)})
-    sources = [
-        (switchback_experiment(140, "exp_switchback_attr_string", "store_id", 3, ANCHOR_PERIOD_0, 100, "city"),
-         "city", city, city),
-        (switchback_experiment(141, "exp_switchback_attr_number", "store_id", 2, ANCHOR_PERIOD_0, 50,
-                               "store_number"),
-         "store_number", number, str(number)),
-        (switchback_experiment(142, "exp_switchback_attr_nested", "store_id", 10, ANCHOR_PERIOD_0, 10, "geo/city"),
-         "geo", {"city": nested, "region": "north"}, nested),
-        (switchback_experiment(143, "exp_switchback_attr_array_index", "store_id", 10, ANCHOR_PERIOD_0, 100,
-                               "items/0/city"),
-         "items", [{"city": first_item}, {"city": other_item}], first_item),
-    ]
-    steps = [attribute_step(name, value) for _, name, value, _ in sources]
-    exposed = []
-    for exp, _, _, key in sources:
-        variant = key_variant(key, 0, len(exp["split"]), exp["switchbackClusterCount"])
-        exposed.append(exposure(exp, variant))
-        steps.append(treatment_step(exp, variant, exposed[-1]))
-    steps.append(publish_step(exposed))
-    return [context_scenario(
-        "Attribute Source - String, Whole Number, Nested And Array-Index Paths",
-        ("Four attribute-sourced switchbacks on one store_id unit: switchbackClusterAttribute \"city\" (a "
-         "top-level string, 100 buckets), \"store_number\" (a whole number above 2^31, keyed as its base-10 "
-         "string, 50 buckets), \"geo/city\" (a nested key, 10 buckets) and \"items/0/city\" (an array index "
-         "between two keys, 100 buckets). Each variant is assignSwitchback(str(bucketOf(key, seed, count)), 0, "
-         "seed, arms); every value is chosen so that variant is nonzero and differs from the unit-sourced draw, "
-         "from the sticky unit assignment, from per-value clustering on the key, from the other counts and from "
-         "a little-endian bucket, and items[1].city would draw differently from items[0].city. The whole "
-         "number's int32 wrap and its double renderings (\"<n>.0\", \"<m>E9\", \"<m>e+09\") would each serve "
-         "a different variant."),
-        [exp for exp, _, _, _ in sources],
-        {"store_id": uid},
-        steps)]
+    def _read(self, segments):
+        return normalize_cluster_value(resolve_attribute_path(self.attributes, segments)) if segments else None
 
+    def _lax_read(self, path):
+        value = resolve_attribute_path(self.attributes, lax_parse_attribute_path(path))
+        if value is None or value == "" or value == [] or value == {}:
+            return None
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, separators=(",", ":"))
+        return str(value)
 
-def attribute_ineligible_scenarios() -> list:
-    """No bucket key: variant 0, assigned=true, eligible=false. Each experiment's count and arms are
-    chosen so every lax reading of its value (and the unit hash) would draw nonzero."""
-    uid = pick_uid("attribute-ineligible", 0, 3, 100)
-    cases = [
-        ("missing", "absent_attr", None, "absent_attr", []),
-        ("empty", "empty_attr", "", "empty_attr", [""]),
-        ("fraction", "fraction_attr", 1.5, "fraction_attr", ["1.5", "1"]),
-        ("bool", "bool_attr", True, "bool_attr", ["true", "True", "1"]),
-        ("object", "object_attr", {"city": "Porto"}, "object_attr", ['{"city":"Porto"}', "Porto"]),
-        ("negative_index", "items", [{"city": "Lisbon"}, {"city": "Faro"}], "items/-1/city", ["Faro", "Lisbon"]),
-    ]
-    experiments, steps, exposed = [], [], []
-    for offset, (label, name, value, path, lax_keys) in enumerate(cases):
-        lax_keys = lax_keys + [hash_unit(uid)]
-        config = next(((arms, count) for arms in (3, 10, 2) for count in CLUSTER_COUNTS
-                       if all(key_variant(k, 0, arms, count) != 0 for k in lax_keys)), None)
-        if config is None:
-            raise SystemExit(f"no discriminating configuration for the {label} case")
-        exp = switchback_experiment(150 + offset, f"exp_switchback_attr_{label}", "store_id", config[0],
-                                    ANCHOR_PERIOD_0, config[1], path)
-        experiments.append(exp)
-        if value is not None:
-            steps.append(attribute_step(name, value))
-    for exp in experiments:
-        exposed.append(exposure(exp, 0, eligible=False))
-        steps += [treatment_step(exp, 0, exposed[-1]), treatment_step(exp, 0)]
-    steps.append(publish_step(exposed))
-    return [context_scenario(
-        "Attribute Source - No Bucket Key Is Ineligible",
-        ("Attribute-sourced switchbacks whose key is missing (never set), an empty string, a non-integral "
-         "number (1.5), a boolean, an object, or behind the unsupported path \"items/-1/city\" (a negative "
-         "index). Each serves variant 0 with assigned=true and eligible=false, exposed once, and never falls "
-         "back to the unit. Count and arms per experiment are chosen so that the unit-sourced draw and every "
-         "lax reading of the value (\"1.5\", \"true\", the last array element, ...) would serve a nonzero "
-         "variant. An integral float such as 2.0 is not a case here: JSON-number runtimes (JavaScript and its "
-         "frameworks) cannot tell 2.0 from 2. The integral-float rule is covered by bucket-golden-vectors.json "
-         "attributeKeys and each typed SDK's own suite."),
-        experiments,
-        {"store_id": uid},
-        steps)]
-
-
-def index_position_cases() -> tuple:
-    """Paths the grammar rejects for the index position (an index at the tail, or two in a row),
-    each over an attribute a lax reader would resolve: derived from the reference, so the copied
-    fixture stays byte-identical."""
-    attributes = {"tags": ["a", "b"], "m": [[{"city": "x"}]]}
-    cases = []
-    for path in ("tags/0", "m/0/0/city"):
-        lax_value = resolve_attribute_path(attributes, parse_attribute_path(path))
-        if supported_attribute_path(path) is not None or lax_value is None:
-            raise SystemExit(f"index-position case {path} must be unsupported and resolve laxly")
-        cases.append({"path": path, "supported": False, "value": lax_value})
-    return attributes, cases
-
-
-def attribute_path_case_scenarios(paths: dict) -> list:
-    """Every case of fixtures/switchback/attribute-path-cases.json plus the index-position cases: a
-    supported path with a value is served from that value's bucket, anything else is ineligible."""
-    extra_attributes, extra_cases = index_position_cases()
-    attributes = {**paths["attributes"], **extra_attributes}
-    cases = paths["cases"] + extra_cases
-    uid = pick_uid("attribute-path", 0, 3, 100)
-    unit_key = hash_unit(uid)
-    leaves = sorted({case["value"] for case in cases if case["value"] is not None}
-                    | {"Lisbon", "Faro", "Porto", "minus-one-key", "plus-one-key"})
-    candidates = leaves + [unit_key]
-    experiments, exposed, steps = [], [], [attribute_step(n, v) for n, v in attributes.items()]
-    for i, case in enumerate(cases):
-        key = case["value"] if case["supported"] else None
-
-        # Hard: an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit
-        # assignment, per-value clustering, the other counts and a little-endian bucket; an ineligible
-        # one sits where every leaf and the unit would draw nonzero. Soft: the most other leaves
-        # drawing differently.
-        def score(arms, count, seeds):
-            served = 0 if key is None else key_variant(key, 0, arms, count, seeds)
-            others = [key_variant(c, 0, arms, count, seeds) for c in candidates if c != key]
-            if key is None:
-                return 0 if 0 not in others else None
-            if (served in (0, key_variant(unit_key, 0, arms, count, seeds), sticky_variant(uid, arms, seeds))
-                    or served in wrong_key_variants(key, 0, arms, count, seeds)):
+    def _sources(self, exp: dict):
+        """[(unitType, segments or path)] in declared order, or None for the legacy path."""
+        m = self.mutant
+        clusters = exp.get("switchbackClusters")
+        if m == "legacy_fields" and exp.get("switchbackClusterUnitType"):
+            clusters = {exp["switchbackClusterUnitType"]: exp.get("switchbackClusterAttribute") or "-"}
+        if not isinstance(clusters, dict) or not clusters:
+            return None
+        sources = []
+        for unit_type, path in clusters.items():
+            segments = supported_attribute_path(path)
+            if segments is None and m in ("dotted_nesting", "lax_index_position", "lax_values") and isinstance(path, str):
+                dotted = "." in path
+                if (m == "dotted_nesting" and dotted) or (m == "lax_index_position" and not dotted):
+                    sources.append((unit_type, ("lax", path.replace(".", "/") if dotted else path)))
+                    continue
+            if segments is None:
                 return None
-            return sum(other != served for other in others)
+            sources.append((unit_type, segments))
+        return sources
 
-        # The arm count's own seeds first; with 2 to 10 arms some keys collide with a mutant under
-        # every count, and only then is the seed varied.
-        for seeds in [None] + [(PATH_SEED_HI, k) for k in range(1, 100)]:
-            scored = [(score(arms, count, seeds), arms, count) for arms in (10, 3, 2) for count in CLUSTER_COUNTS]
-            scored = [entry for entry in scored if entry[0] is not None]
-            if scored:
-                break
+    def _value(self, source):
+        _, segments = source
+        if isinstance(segments, tuple):
+            return self._lax_read(segments[1])
+        if self.mutant == "lax_values":
+            path = "/".join(k if i is None else str(i) for k, i in segments)
+            return self._lax_read(path)
+        return self._read(segments)
+
+    def serving(self, exp: dict):
+        """('absent' | 'ineligible' | 'eligible', unit type, uid, cluster key)."""
+        sources = self._sources(exp)
+        if sources is None:
+            uid = self.unit_map.get(exp.get("unitType"))
+            return ("absent", None, None, None) if uid is None else ("ineligible", exp["unitType"], uid, None)
+        pairs = []
+        if self.mutant in ("units_outer", "units_outer_reversed"):
+            for unit_type, uid in self.units:
+                pairs += [(unit_type, uid, s) for s in sources if s[0] == unit_type]
         else:
-            raise SystemExit(f"no discriminating configuration for path case {case}")
-        _, arms, count = max(scored, key=lambda entry: entry[0])
-        overrides = {} if seeds is None else {"seedHi": seeds[0], "seedLo": seeds[1]}
-        exp = switchback_experiment(160 + i, f"exp_switchback_path_{i}", "store_id", arms, ANCHOR_PERIOD_0,
-                                    count, case["path"], **overrides)
-        experiments.append(exp)
-        variant = 0 if key is None else key_variant(key, 0, arms, count, seeds)
-        exposed.append(exposure(exp, variant, eligible=key is not None))
-        steps.append(treatment_step(exp, variant, exposed[-1]))
-    steps.append(publish_step(exposed))
-    return [context_scenario(
-        "Attribute Source - Platform Attribute Path Cases",
-        ("Every case of the platform's attribute-path-cases.json, one experiment per path, with the fixture's "
-         "attributes set as top-level attributes, plus two index-position cases over tags=[\"a\",\"b\"] and "
-         "m=[[{\"city\":\"x\"}]]: \"tags/0\" (an index at the tail) and \"m/0/0/city\" (two indices in a row) "
-         "are unsupported although a lax reader would resolve them to \"a\" and \"x\". A supported path that "
-         "resolves to a value is served from that value's bucket; an unsupported path (a negative or "
-         "misplaced index) or a path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) "
-         "is ineligible. Count and arms per experiment are "
-         "chosen so an eligible case draws nonzero and unlike the unit-sourced draw, the sticky unit "
-         "assignment, per-value clustering, the other counts and a little-endian bucket, and unlike as many "
-         "other leaves as possible; an ineligible case sits where every leaf and the unit would draw nonzero."),
-        experiments,
-        {"store_id": uid},
-        steps)]
+            for source in sources:
+                pairs += [(t, u, source) for t, u in self.units if t == source[0]]
+        if not pairs:
+            return "absent", None, None, None
+        first = pairs[0]
+        valued = [(t, u, v) for t, u, s in pairs for v in [self._value(s)] if v is not None]
+        if not valued:
+            return "ineligible", first[0], first[1], None
+        serving = valued[-1] if self.mutant == "last_unit_serves" else valued[0]
+        if self.mutant != "no_disagreement" and any(v != serving[2] for _, _, v in valued):
+            return "ineligible", first[0], first[1], None
+        allowed = exp.get("switchbackClusterValues")
+        if self.mutant != "ignore_allow_list" and allowed is not None:
+            if (allowed or self.mutant == "empty_allow_list_blocks") and serving[2] not in allowed:
+                return "ineligible", first[0], first[1], None
+        return "eligible", serving[0], serving[1], serving[2]
+
+    def resolve(self, exp: dict):
+        """(variant, exposure or None) for one experiment, as getTreatment resolves it."""
+        m = self.mutant
+        exp = copy.deepcopy(exp)
+        is_switchback = exp.get("randomizationType") == "switchback"
+        if m == "unit_experiment_as_switchback" and exp.get("switchbackClusters") and not is_switchback:
+            is_switchback = True
+        if m == "sticky":
+            is_switchback = False
+        name = exp["name"]
+
+        if is_switchback:
+            status, unit_type, uid, key = self.serving(exp)
+            if m == "legacy_unit_fallback" and self._sources(exp) is None:
+                is_switchback = False
+        if not is_switchback:
+            return self._resolve_unit(exp)
+
+        if name in self.overrides and m != "ignore_override":
+            unit = unit_type or (next(iter(exp.get("switchbackClusters") or {}), None) or exp["unitType"])
+            return self.overrides[name], exposure(exp, self.overrides[name], unit, assigned=False, overridden=True)
+        if status == "absent":
+            return 0, None
+        if status == "ineligible":
+            if m == "ineligible_exposes":
+                return 0, exposure(exp, 0, unit_type, eligible=False)
+            return 0, None
+
+        rule = _assign_rule_variant(exp.get("assignmentRules"))
+        servable = _servable(exp, m)
+        before_anchor = servable and NOW < exp["switchbackStartAt"]
+        if rule is not None and m != "ignore_rules" and not (
+                m == "rules_after_cluster_check_only_when_servable" and (not servable or before_anchor)):
+            out = exposure(exp, rule, unit_type, assigned=False)
+            out["ruleOverride"] = True
+            return rule, out
+        mismatch = _audience_matches(exp.get("audience"), self.attributes) is False
+        if exp.get("audienceStrict") and mismatch:
+            return 0, exposure(exp, 0, unit_type, audience_mismatch=True)
+        if exp["fullOnVariant"] and m != "ignore_full_on":
+            return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True,
+                                                  audience_mismatch=mismatch)
+        if not servable or before_anchor:
+            if m == "pre_anchor_exposes":
+                return 0, exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
+            return 0, None
+        if exp.get("holdoutIds") and m == "holdout_applies":
+            return 0, None
+        traffic_uid = self.unit_map.get(exp["unitType"], uid) if m == "traffic_on_unit_type" else uid
+        if unit_variant(traffic_uid, exp["trafficSplit"], exp["trafficSeedHi"], exp["trafficSeedLo"]) != 1:
+            if m == "traffic_miss_silent":
+                return 0, None
+            return 0, exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
+        if name in self.customs and m != "ignore_custom":
+            return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
+                                                audience_mismatch=mismatch)
+        if m in KEY_MUTANTS:
+            variant = draw(KEY_MUTANTS[m](key, uid, exp), exp)
+        else:
+            variant = draw(key, exp)
+            if m is None:
+                self.draws.append((key, uid, exp))
+        return variant, exposure(exp, variant, unit_type, audience_mismatch=mismatch)
+
+    def _resolve_unit(self, exp: dict):
+        """Ordinary unit assignment (no rules, audiences or holdouts in these scenarios' unit experiments)."""
+        name, uid = exp["name"], self.unit_map.get(exp["unitType"])
+        if name in self.overrides:
+            return self.overrides[name], exposure(exp, self.overrides[name], assigned=False, overridden=True)
+        if uid is None:
+            return 0, exposure(exp, 0, assigned=False)
+        if exp["fullOnVariant"]:
+            return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], full_on=True)
+        if unit_variant(uid, exp["trafficSplit"], exp["trafficSeedHi"], exp["trafficSeedLo"]) != 1:
+            return 0, exposure(exp, 0, eligible=False)
+        variant = unit_variant(uid, exp["split"], exp["seedHi"], exp["seedLo"])
+        return variant, exposure(exp, variant)
+
+    # -- steps -------------------------------------------------------------
+
+    def run(self, step: dict) -> dict:
+        """The expect block of one step after the create step."""
+        action, params = step["action"], step["params"]
+        if action == "attribute":
+            self.attributes[params["name"]] = params["value"]
+            return {"result": None, "events": []}
+        if action == "override":
+            self.overrides[params["experimentName"]] = params["variant"]
+            return {"result": None, "events": []}
+        if action == "customAssignment":
+            self.customs[params["experimentName"]] = params["variant"]
+            return {"result": None, "events": []}
+        if action == "pending":
+            return {"result": len(self.pending), "events": []}
+        if action == "treatment":
+            name = params["experimentName"]
+            exp = self.experiments[name]
+            identity = _identity(exp)
+            cached = self.cache.get(name)
+            if cached is not None and (cached[0] == identity or self.mutant == "no_refresh_epoch"):
+                return {"result": cached[1], "events": []}
+            variant, exposed = self.resolve(exp)
+            self.cache[name] = (identity, variant)
+            if exposed is None:
+                return {"result": variant, "events": []}
+            self.pending.append(exposed)
+            return {"result": variant, "events": [{"type": "exposure", "data": exposed}]}
+        if action == "publish":
+            if not self.pending:
+                if self.mutant is None:
+                    raise ValueError("publish with nothing pending")
+                return {"result": None, "events": []}
+            expected = publish_step(self.pending, self.unit_map)["expect"]
+            self.pending = []
+            return expected
+        if action == "refresh":
+            self.experiments = {e["name"]: e for e in params["newData"]["experiments"]}
+            refreshed = ready_events(params["newData"]["experiments"])[0]
+            return {"result": None, "events": [dict(refreshed, type="refresh")]}
+        raise ValueError(f"model has no action {action}")
 
 
-def attribute_timing_scenarios() -> list:
-    """The cluster key is read once per period slot; wrappers cannot advance the clock, so the
-    next-period re-read stays in the SDKs' own suites."""
-    uid = pick_uid("attribute-timing", 0, 10, 100)
-    first = pick_value(lambda k: f"first-{k}", uid, 0, 10, 100)
-    first_variant = key_variant(first, 0, 10, 100)
-    second = pick_value(lambda k: f"second-{k}", uid, 0, 10, 100, avoid={first_variant})
-    if key_variant(second, 0, 10, 100) == first_variant:
-        raise SystemExit("the mid-period attribute must draw a different variant than the first")
-    # The audience re-exposure keeps the period's cached cluster key instead of re-reading city:
-    # java-sdk SWITCHBACK.md ("The cluster key is read once per period slot ... even when an
-    # audience change re-resolves the slot") and ContextSwitchbackClusterTest
-    # setAttributeMidPeriodDoesNotReassignWithinThePeriod /
-    # audienceRevalidationAfterSetAttributeKeepsThePeriodsBucket.
-    audience = json.dumps({"filter": [{"eq": [{"var": "tier"}, {"value": "gold"}]}]}, separators=(",", ":"))
-    moved = switchback_experiment(170, "exp_switchback_attr_mid_period", "store_id", 10, ANCHOR_PERIOD_0, 100,
-                                  "city", audience=audience)
-    late = switchback_experiment(171, "exp_switchback_attr_late", "store_id", 10, ANCHOR_PERIOD_0, 100, "zone")
-    late_value = pick_value(lambda k: f"zone-{k}", uid, 0, 10, 100)
+def replay(scenario: dict, mutant: Optional[str] = None) -> tuple:
+    """(expect blocks of every step after the create step, the model) under `mutant`."""
+    create = scenario["steps"][0]
+    model = ContextModel(scenario["contextData"], create["params"]["units"], mutant)
+    return [model.run(step) for step in scenario["steps"][1:]], model
+
+
+class Scenario:
+    """Collects steps; expectations are filled in by the model when the scenario is built."""
+
+    def __init__(self, name: str, description: str, experiments: list, units: dict, holdouts=None):
+        self.name, self.description = name, description
+        self.experiments, self.units, self.holdouts = experiments, units, holdouts
+        self.ops = []
+
+    def attr(self, name, value):
+        self.ops.append({"action": "attribute", "params": {"name": name, "value": value}})
+        return self
+
+    def treat(self, *exps):
+        for exp in exps:
+            self.ops.append({"action": "treatment", "params": {"experimentName": exp["name"]}})
+        return self
+
+    def override(self, exp, variant):
+        self.ops.append({"action": "override", "params": {"experimentName": exp["name"], "variant": variant}})
+        return self
+
+    def custom(self, exp, variant):
+        self.ops.append({"action": "customAssignment", "params": {"experimentName": exp["name"], "variant": variant}})
+        return self
+
+    def pending(self):
+        self.ops.append({"action": "pending", "params": {}})
+        return self
+
+    def publish(self):
+        self.ops.append({"action": "publish", "params": {}})
+        return self
+
+    def refresh(self, experiments):
+        self.ops.append({"action": "refresh", "params": {"newData": {"experiments": experiments}}})
+        return self
+
+    def build(self) -> dict:
+        scenario = context_scenario(self.name, self.description, self.experiments, self.units,
+                                    [dict(op, expect=None) for op in self.ops], self.holdouts)
+        expects, model = replay(scenario)
+        for step, expect in zip(scenario["steps"][1:], expects):
+            step["expect"] = expect
+        scenario["_draws"] = model.draws
+        return scenario
+
+
+# ---------------------------------------------------------------------------
+# Context scenarios, one or more per R33 rule (RULES maps each rule to its builders' scenarios)
+# ---------------------------------------------------------------------------
+
+# Every 3-arm period-0 experiment with ARMS[3]'s seeds draws alike for a given key and uid.
+QUIET3 = quiet(switchback_experiment(0, "quiet", [("unit", "path")], 3))
+
+
+def single_source_scenarios() -> list:
+    uid = pick_uid("single", quiet(switchback_experiment(0, "q", [("u", "p")], 2, anchor=ANCHOR_PERIOD_1), switchback_experiment(0, "q", [("u", "p")], 3)))
+    exp3 = switchback_experiment(300, "exp_sb_single_a3", [("store_id", "city")], 3)
+    exp10 = switchback_experiment(301, "exp_sb_single_a10", [("store_id", "city10")], 10)
+    exp2 = switchback_experiment(302, "exp_sb_single_p1_a2", [("store_id", "city2")], 2, anchor=ANCHOR_PERIOD_1)
+    city = pick_value(lambda k: f"city-{k}", uid, exp3)
+    city10 = pick_value(lambda k: f"metro-{k}", uid, exp10)
+    city2 = pick_value(lambda k: f"town-{k}", uid, dict(exp2))
+    return [Scenario(
+        "Single Source - Raw Attribute Value Is The Cluster Key",
+        ("switchbackClusters {store_id: <path>} with one store_id unit. The cluster key is the raw attribute "
+         "value: variant = assignSwitchback(value, periodIndex, seed, arms) with periodIndex = floorDiv(now - "
+         "switchbackStartAt, switchbackPeriodMs) (period 0 for the 3- and 10-arm experiments, period 1 for the "
+         "2-arm one). Each value is chosen so the draw is nonzero and differs from a hashed key, the uid as key, "
+         "the hashed uid as key, a Phase 1E bucket and the sticky unit assignment. Each exposure is under the "
+         "serving unit store_id."),
+        [exp3, exp10, exp2], {"store_id": uid},
+    ).attr("city", city).attr("city10", city10).attr("city2", city2).treat(exp3, exp10, exp2).treat(exp3)
+        .publish().build()]
+
+
+def declared_order_scenarios() -> list:
+    """Two sources: the lower-declared source serves whatever order the context sets the units in."""
+    session = pick_uid("order-session", QUIET3)
+    user = pick_uid("order-user", lambda u: u != session and QUIET3(u))
+    session_first = switchback_experiment(310, "exp_sb_order_session_first",
+                                          [("session_id", "session_store"), ("user_id", "profile/store")], 3)
+    user_first = switchback_experiment(311, "exp_sb_order_user_first",
+                                       [("user_id", "profile/store"), ("session_id", "session_store")], 3)
+    store = next(f"s-{k}" for k in range(10_000) if discriminates(f"s-{k}", session, session_first)
+                 and discriminates(f"s-{k}", user, user_first))
+    return [Scenario(
+        "Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order",
+        ("Both units carry the same cluster value (agreement), so both experiments are eligible. The context "
+         "sets user_id before session_id. exp_sb_order_session_first declares session_id first and must serve "
+         "and expose under session_id; exp_sb_order_user_first declares user_id first and must serve under "
+         "user_id. A units-outer iteration (context order) or a last-unit-serves model exposes the wrong unit in "
+         "at least one of them, whatever order the SDK keeps its units in."),
+        [session_first, user_first], {"user_id": user, "session_id": session},
+    ).attr("session_store", store).attr("profile", {"store": store}).treat(session_first, user_first)
+        .publish().build()]
+
+
+def agreement_disagreement_scenarios() -> list:
+    session = pick_uid("agree-session", QUIET3)
+    user = pick_uid("agree-user", QUIET3)
+    agree = switchback_experiment(320, "exp_sb_agree", [("session_id", "session_store"), ("user_id", "profile/store")], 3)
+    disagree = switchback_experiment(321, "exp_sb_disagree",
+                                     [("session_id", "session_store_d"), ("user_id", "profile/store_d")], 3)
+    skipped = switchback_experiment(322, "exp_sb_first_without_value",
+                                    [("session_id", "session_zone"), ("user_id", "profile/zone")], 3)
+    value = pick_value(lambda k: f"agree-{k}", session, agree)
+    # Each disagreeing value alone would draw nonzero, so serving either one is caught.
+    a = next(f"left-{k}" for k in range(10_000) if discriminates(f"left-{k}", session, disagree))
+    b = next(f"right-{k}" for k in range(10_000) if discriminates(f"right-{k}", user, disagree))
+    zone = pick_value(lambda k: f"zone-{k}", user, skipped)
     return [
-        context_scenario(
-            "Attribute Source - Mid-Period setAttribute Keeps The Bucket",
-            (f"city={first!r} draws variant {first_variant}. setAttribute(city, {second!r}) later in the same "
-             f"period would draw {key_variant(second, 0, 10, 100)}, but the period's bucket is already fixed: "
-             "the treatment stays the same with no new exposure. A non-strict audience flip (tier gold → "
-             "silver) then re-resolves the slot and re-exposes with audienceMismatch=true, still on the "
-             "first bucket. The next period reads the attribute again (not testable without clock control)."),
-            [moved],
-            {"store_id": uid},
-            [
-                attribute_step("tier", "gold"),
-                attribute_step("city", first),
-                treatment_step(moved, first_variant, exposure(moved, first_variant)),
-                attribute_step("city", second),
-                treatment_step(moved, first_variant),
-                attribute_step("tier", "silver"),
-                treatment_step(moved, first_variant, exposure(moved, first_variant, audience_mismatch=True)),
-                publish_step([exposure(moved, first_variant),
-                              exposure(moved, first_variant, audience_mismatch=True)]),
-            ]),
-        context_scenario(
-            "Attribute Source - Attribute Set After An Ineligible Read Does Not Reassign Within The Period",
-            (f"zone is unset at the first treatment, so the period resolves ineligible (variant 0, "
-             f"eligible=false). setAttribute(zone, {late_value!r}), which would draw "
-             f"{key_variant(late_value, 0, 10, 100)}, does not reassign within the period: the treatment stays "
-             "0 with no new exposure."),
-            [late],
-            {"store_id": uid},
-            [
-                treatment_step(late, 0, exposure(late, 0, eligible=False)),
-                attribute_step("zone", late_value),
-                treatment_step(late, 0),
-                publish_step([exposure(late, 0, eligible=False)]),
-            ]),
+        Scenario(
+            "Agreement - Equal Values From Two Units Serve The Cluster",
+            ("session_store and profile/store hold the same value: the units agree and the first declared "
+             "(session_id) serves with that raw value as the cluster key."),
+            [agree], {"session_id": session, "user_id": user},
+        ).attr("session_store", value).attr("profile", {"store": value}).treat(agree).publish().build(),
+        Scenario(
+            "Disagreement - Different Values Are An Ineligible Control With No Exposure",
+            (f"session_store={a!r} and profile/store_d={b!r} disagree: variant 0 and no exposure (pending stays "
+             "0). Either value alone would draw a nonzero variant, so a first-value-wins or last-value-wins SDK "
+             "fails, and an SDK that records the ineligible control (eligible=false) fails the exposure check."),
+            [disagree], {"session_id": session, "user_id": user},
+        ).attr("session_store_d", a).attr("profile", {"store_d": b}).treat(disagree).treat(disagree).pending().build(),
+        Scenario(
+            "Unit Without A Value Is Skipped - The Next Unit Serves",
+            ("session_id is declared first but session_zone is unset; user_id's profile/zone has a value, so "
+             "user_id serves and the exposure is under user_id."),
+            [skipped], {"session_id": session, "user_id": user},
+        ).attr("profile", {"zone": zone}).treat(skipped).publish().build(),
     ]
+
+
+INELIGIBLE_VALUES = [
+    ("fraction", 1.5), ("integral_float", 3.0), ("bool", True), ("object", {"a": 1}), ("array", ["a"]),
+    ("empty", ""), ("null", None),
+]
+
+
+def value_normalisation_scenarios() -> list:
+    uid = pick_uid("values", QUIET3)
+    ineligible, steps = [], []
+    for offset, (label, value) in enumerate(INELIGIBLE_VALUES):
+        base = switchback_experiment(330 + offset, f"exp_sb_value_{label}", [("store_id", f"v_{label}")], 3)
+        # A lax reader would key the value's text; choose seeds so that draw is nonzero.
+        lax = {"fraction": "1.5", "integral_float": "3", "bool": "true", "object": '{"a":1}', "array": '["a"]',
+               "empty": "", "null": "null"}[label]
+        seeds = next(s for s in [(base["seedHi"], base["seedLo"])] + [(SEED_SEARCH_HI, k) for k in range(1, 999)]
+                     if draw(lax, dict(base, seedHi=s[0], seedLo=s[1])) != 0
+                     and draw("3.0", dict(base, seedHi=s[0], seedLo=s[1])) != 0)
+        ineligible.append(dict(base, seedHi=seeds[0], seedLo=seeds[1]))
+    number_exp = switchback_experiment(340, "exp_sb_value_whole_number", [("store_id", "store_number")], 3)
+    number = pick_value(lambda k: 4_000_000_000 + k, uid, number_exp, avoid_keys=number_renderings)
+    agree_exp = switchback_experiment(341, "exp_sb_value_number_agrees_with_string",
+                                      [("store_id", "store_number"), ("user_id", "profile/number")], 3)
+    user = pick_uid("values-user", QUIET3)
+    sc = Scenario(
+        "Values - Strings And Whole Numbers Only",
+        ("A non-empty string is the key as-is and a whole number is keyed by its decimal text: store_number="
+         f"{number} draws assignSwitchback(\"{number}\", ...), unlike its int32 wrap or double renderings, and "
+         f"agrees with the string \"{number}\" from another unit type. 1.5, 3.0, true, an object, an array, \"\" "
+         "and null give no value: each such experiment is an ineligible control with no exposure, although its "
+         "lax text rendering would draw nonzero."),
+        ineligible + [number_exp, agree_exp], {"store_id": uid, "user_id": user},
+    )
+    for (label, value), exp in zip(INELIGIBLE_VALUES, ineligible):
+        sc.attr(f"v_{label}", value)
+    sc.attr("store_number", number).attr("profile", {"number": str(number)})
+    sc.treat(*ineligible).pending().treat(number_exp, agree_exp).publish()
+    return [sc.build()]
+
+
+def path_scenarios(paths: dict) -> list:
+    uid = pick_uid("path", QUIET3)
+    extra_attributes = {"tags": ["a", "b"], "m": [[{"city": "x"}]], "dot": {"city": "dotted"},
+                        "geo.city": "dotted-literal"}
+    cases = [(c["path"], c["supported"], c["value"]) for c in paths["cases"]]
+    cases += [("tags/0", False, None), ("m/0/0/city", False, None), ("geo.city", False, None),
+              ("'geo.city'", False, None), ('"geo.city"', False, None), ("dot.city", False, None),
+              ("'geo", False, None)]
+    experiments = []
+    for i, (path, supported, value) in enumerate(cases):
+        exp = switchback_experiment(350 + i, f"exp_sb_path_{i}", [("store_id", path)], 3)
+        if supported and value is not None:
+            exp.update(pick_seeds(value, uid, exp))
+        else:
+            # Where a lax reader would find a value, make that draw nonzero.
+            lax = resolve_attribute_path({**paths["attributes"], **extra_attributes},
+                                         lax_parse_attribute_path(path.replace(".", "/")))
+            lax_key = normalize_cluster_value(lax)
+            if lax_key is not None:
+                exp.update(next({"seedHi": SEED_SEARCH_HI, "seedLo": k} for k in range(1, 999)
+                                if draw(lax_key, dict(exp, seedHi=SEED_SEARCH_HI, seedLo=k)) != 0))
+        experiments.append(exp)
+    sc = Scenario(
+        "Attribute Paths - Platform Path Cases And Malformed Paths",
+        ("One experiment per case of the platform's attribute-path-cases.json (fixture attributes set as "
+         "top-level attributes): a supported path that resolves to a value serves that value as the cluster "
+         "key; a supported path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) is an "
+         "ineligible control with no exposure; an unsupported path (a negative or misplaced index) makes the "
+         "cluster map unreadable, which takes the legacy path (ineligible control under unitType, no exposure). "
+         "Added cases: \"tags/0\" and \"m/0/0/city\" (index at the tail, two indices in a row), \"geo.city\", "
+         "\"'geo.city'\", \"\\\"geo.city\\\"\" and \"dot.city\" (any '.' in a segment key is malformed, quoted "
+         "or not, even though dot/city resolves) and \"'geo\" (unterminated quote). Where a lax reader would "
+         "find a value, the seeds make that draw nonzero."),
+        experiments, {"store_id": uid},
+    )
+    for name, value in {**paths["attributes"], **extra_attributes}.items():
+        sc.attr(name, value)
+    sc.treat(*experiments).publish()
+    return [sc.build()]
+
+
+def allow_list_scenarios() -> list:
+    uid = pick_uid("allow", QUIET3)
+    inside = switchback_experiment(370, "exp_sb_allow_in", [("store_id", "zone_in")], 3, values=["s-1"])
+    outside = switchback_experiment(371, "exp_sb_allow_out", [("store_id", "zone_out")], 3, values=["s-1", "s-2"])
+    null = switchback_experiment(372, "exp_sb_allow_null", [("store_id", "zone_null")], 3, switchbackClusterValues=None)
+    empty = switchback_experiment(373, "exp_sb_allow_empty", [("store_id", "zone_empty")], 3, values=[])
+    value_in = pick_value(lambda k: f"in-{k}", uid, inside)
+    inside["switchbackClusterValues"] = ["s-1", value_in]
+    value_out = pick_value(lambda k: f"out-{k}", uid, outside)
+    value_null = pick_value(lambda k: f"null-{k}", uid, null)
+    value_empty = pick_value(lambda k: f"empty-{k}", uid, empty)
+    return [Scenario(
+        "Allow-List - In, Out, Null And Empty",
+        ("switchbackClusterValues filters the cluster key: a value in the list serves; a value outside it is an "
+         "ineligible control with no exposure (its draw would be nonzero); null and [] both admit every value "
+         "(the Collector builds its filter only for a non-empty list)."),
+        [inside, outside, null, empty], {"store_id": uid},
+    ).attr("zone_in", value_in).attr("zone_out", value_out).attr("zone_null", value_null)
+        .attr("zone_empty", value_empty).treat(outside).pending().treat(inside, null, empty).publish().build()]
+
+
+def schedule_scenarios() -> list:
+    uid = pick_uid("schedule", lambda u: unit_variant(u, ARMS[3][2], *ARMS[3][:2]) != 0)
+    pre = switchback_experiment(380, "exp_sb_pre_anchor", [("store_id", "city")], 3, anchor=ANCHOR_FUTURE)
+    unaligned = switchback_experiment(381, "exp_sb_unaligned_anchor", [("store_id", "city")], 3,
+                                      anchor=ANCHOR_PERIOD_0 + 1)
+    no_anchor = switchback_experiment(382, "exp_sb_no_anchor", [("store_id", "city")], 3, anchor=None)
+    bad_period = switchback_experiment(383, "exp_sb_zero_period", [("store_id", "city")], 3, switchbackPeriodMs=0)
+    one_arm = switchback_experiment(384, "exp_sb_one_arm", [("store_id", "city")], 2, split=[1.0],
+                                    variants=[{"name": "A", "config": None}])
+    rounded = dict(unaligned, switchbackStartAt=ANCHOR_PERIOD_0 + HOUR_MS)
+    city = next(f"sched-{k}" for k in range(10_000) if draw(f"sched-{k}", rounded) != 0)
+    return [Scenario(
+        "Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls",
+        ("The cluster is eligible (city is set) but the draw cannot run: now is before switchbackStartAt "
+         "(2100-01-01), the anchor is not hour aligned (anchor+1 ms; never rounded, though the hour-ceiled anchor "
+         "would draw nonzero), the anchor is absent, the period is 0, or the split has one arm. Each is variant "
+         "0 and records no exposure (the SDK's documented pre-anchor choice), and never falls back to sticky "
+         "unit assignment (the uid's unit draw is nonzero)."),
+        [pre, unaligned, no_anchor, bad_period, one_arm], {"store_id": uid},
+    ).attr("city", city).treat(pre, unaligned, no_anchor, bad_period, one_arm).pending().build()]
+
+
+def traffic_scenarios() -> list:
+    split = [0.5, 0.5]
+    probe = switchback_experiment(390, "x", [("session_id", "s")], 3, trafficSplit=split)
+
+    def traffic(u):
+        return unit_variant(u, split, probe["trafficSeedHi"], probe["trafficSeedLo"])
+
+    miss = pick_uid("traffic-miss", lambda u: traffic(u) == 0)
+    hit = pick_uid("traffic-hit", lambda u: traffic(u) == 1 and QUIET3(u))
+    session_serves = switchback_experiment(390, "exp_sb_traffic_session_serves",
+                                           [("session_id", "session_store"), ("user_id", "profile/store")], 3,
+                                           trafficSplit=split, unit_type="user_id")
+    user_serves = switchback_experiment(391, "exp_sb_traffic_user_serves",
+                                        [("user_id", "profile/store"), ("session_id", "session_store")], 3,
+                                        trafficSplit=split, unit_type="session_id")
+    store = next(f"t-{k}" for k in range(10_000) if discriminates(f"t-{k}", hit, user_serves))
+    return [Scenario(
+        "Traffic - Miss On An Eligible Cluster Is Recorded Eligible=False Under The Serving Unit",
+        ("trafficSplit 50/50, hashed on the serving unit's uid. Both units agree on the cluster value. In "
+         "exp_sb_traffic_session_serves session_id (declared first) serves and its uid misses traffic: variant 0 "
+         "and an exposure under session_id with eligible=false is recorded. In exp_sb_traffic_user_serves user_id "
+         "serves and its uid is in traffic, so the cluster's draw is served. Each experiment's unitType names the "
+         "other unit, so hashing traffic on unitType flips both outcomes."),
+        [session_serves, user_serves], {"session_id": miss, "user_id": hit},
+    ).attr("session_store", store).attr("profile", {"store": store}).treat(session_serves, user_serves)
+        .publish().build()]
+
+
+def _other(variant: int, arms: int = 3) -> int:
+    return next(v for v in range(1, arms) if v != variant)
+
+
+def precedence_scenarios() -> list:
+    uid = pick_uid("precedence", QUIET3)
+    probe = switchback_experiment(400, "probe", [("store_id", "city")], 3)
+    city = pick_value(lambda k: f"prec-{k}", uid, probe)
+    drawn = draw(city, probe)
+    other = _other(drawn)
+    assign_rule = json.dumps({"rules": [{"type": "assign", "environments": [], "variant": other}]},
+                             separators=(",", ":"))
+    audience = json.dumps({"filter": [{"eq": [{"var": "tier"}, {"value": "gold"}]}]}, separators=(",", ":"))
+    overridden = switchback_experiment(400, "exp_sb_override", [("store_id", "city")], 3)
+    full_on = switchback_experiment(401, "exp_sb_full_on", [("store_id", "city")], 3, fullOnVariant=other)
+    ruled = switchback_experiment(402, "exp_sb_assignment_rule", [("store_id", "city")], 3, assignmentRules=assign_rule)
+    ruled_pre = switchback_experiment(403, "exp_sb_assignment_rule_pre_anchor", [("store_id", "city")], 3,
+                                      anchor=ANCHOR_FUTURE, assignmentRules=assign_rule)
+    strict = switchback_experiment(404, "exp_sb_audience_strict", [("store_id", "city")], 3, audience=audience,
+                                   audienceStrict=True)
+    custom = switchback_experiment(405, "exp_sb_custom", [("store_id", "city")], 3)
+    full_on_pre = switchback_experiment(406, "exp_sb_full_on_pre_anchor", [("store_id", "city")], 3,
+                                        anchor=ANCHOR_FUTURE, fullOnVariant=other)
+    experiments = [overridden, full_on, ruled, ruled_pre, strict, custom, full_on_pre]
+    return [Scenario(
+        "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
+        (f"The cluster's period-0 draw is {drawn}. An override to {other} wins (assigned=false, overridden=true); "
+         f"an assign rule to {other} wins (assigned=false, ruleOverride=true), also before the anchor; a strict "
+         "audience mismatch (tier silver, audience tier gold) serves 0 with audienceMismatch=true, recorded; "
+         f"fullOnVariant={other} wins (fullOn=true), also before the anchor; a custom assignment to {other} is "
+         "served after traffic (custom=true). Every exposure is under the serving unit store_id."),
+        experiments, {"store_id": uid},
+    ).attr("city", city).attr("tier", "silver").override(overridden, other).custom(custom, other)
+        .treat(*experiments).publish().build()]
+
+
+def holdout_scenarios() -> list:
+    uid = pick_uid("holdout", QUIET3)
+    exp = switchback_experiment(410, "exp_sb_holdout_ignored", [("store_id", "city")], 3, holdoutIds=[1])
+    city = pick_value(lambda k: f"held-{k}", uid, exp)
+    holdouts = [{"id": 1, "name": "holdout_sb_everyone", "iteration": 1, "unitType": "store_id", "seedHi": 13,
+                 "seedLo": 111, "split": [1.0, 0.0]}]
+    return [Scenario(
+        "Holdouts Never Apply To A Switchback",
+        ("The switchback is covered by a holdout whose split [1, 0] holds every unit out (variant 0). Holdouts "
+         "never apply to a switchback: the cluster's draw is served, exactly one exposure (the switchback's own) "
+         "is recorded and the holdout records none."),
+        [exp], {"store_id": uid}, holdouts=holdouts,
+    ).attr("city", city).treat(exp).publish().build()]
+
+
+def legacy_scenarios() -> list:
+    uid = pick_uid("legacy", lambda u: unit_variant(u, ARMS[3][2], *ARMS[3][:2]) != 0)
+    missing = switchback_experiment(420, "exp_sb_clusters_missing", None, 3, unit_type="store_id")
+    empty = switchback_experiment(421, "exp_sb_clusters_empty", [], 3, unit_type="store_id")
+    empty["switchbackClusters"] = {}
+    absent = switchback_experiment(422, "exp_sb_no_linked_unit", [("warehouse_id", "city")], 3)
+    legacy_only = switchback_experiment(423, "exp_sb_only_legacy_fields", None, 3, unit_type="store_id",
+                                        switchbackClusterUnitType="store_id", switchbackClusterCount=10,
+                                        switchbackClusterAttribute="city")
+    # R33 fields plus the abandoned Phase 1E fields pointing at another unit and attribute.
+    mixed = switchback_experiment(424, "exp_sb_legacy_fields_ignored", [("store_id", "city")], 10,
+                                  switchbackClusterUnitType="user_id", switchbackClusterCount=100,
+                                  switchbackClusterAttribute="zone")
+    user = pick_uid("legacy-user", QUIET3)
+    city = pick_value(lambda k: f"legacy-{k}", uid, mixed)
+    zone = pick_value(lambda k: f"lzone-{k}", user, mixed, avoid={draw(city, mixed)})
+    return [Scenario(
+        "Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E Fields Ignored",
+        ("switchbackClusters absent or {} (also when only the abandoned switchbackClusterUnitType/Count/Attribute "
+         "fields are present) takes the Collector's legacy path: a store_id unit (the declared unitType) gets an "
+         "ineligible control, variant 0 and no exposure, never sticky unit assignment (the uid's unit draw is "
+         "nonzero). A cluster map whose only unit type the context lacks does not apply: variant 0, no exposure. "
+         "An experiment with switchbackClusters {store_id: city} that also carries the Phase 1E fields pointing "
+         "at user_id/zone is served from city under store_id; reading the legacy fields would draw differently."),
+        [missing, empty, absent, legacy_only, mixed], {"store_id": uid, "user_id": user},
+    ).attr("city", city).attr("zone", zone).treat(missing, empty, absent, legacy_only).pending().treat(mixed)
+        .publish().build()]
+
+
+def refresh_scenarios() -> list:
+    uid = pick_uid("refresh", QUIET3)
+    before = switchback_experiment(430, "exp_sb_refresh", [("store_id", "city")], 3)
+    after = switchback_experiment(430, "exp_sb_refresh", [("store_id", "zone")], 3)
+    city = pick_value(lambda k: f"rcity-{k}", uid, before)
+    zone = pick_value(lambda k: f"rzone-{k}", uid, after, avoid={draw(city, before)})
+    unchanged = switchback_experiment(431, "exp_sb_refresh_unchanged", [("store_id", "city")], 3)
+    unchanged.update(pick_seeds(city, uid, unchanged, avoid={0}))
+    return [Scenario(
+        "Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes",
+        (f"city={city!r} draws {draw(city, before)}. A refresh changes the cluster path to zone ({zone!r} draws "
+         f"{draw(zone, after)}): a new epoch, so the next treatment re-resolves and records a new exposure even "
+         "though the period is unchanged. An unchanged switchback keeps its cached assignment and exposes once."),
+        [before, unchanged], {"store_id": uid},
+    ).attr("city", city).attr("zone", zone).treat(before, unchanged).publish()
+        .refresh([after, unchanged]).treat(after, unchanged).publish().build()]
+
+
+def dedup_and_payload_scenarios() -> list:
+    uid = pick_uid("payload", QUIET3)
+    payload = switchback_experiment(440, "exp_sb_payload", [("store_id", "city")], 3)
+    baseline = experiment(441, "exp_sb_payload_baseline", "store_id", 3)
+    city = pick_value(lambda k: f"pay-{k}", uid, payload)
+    variant = draw(city, payload)
+    baseline_variant = unit_variant(uid, baseline["split"], baseline["seedHi"], baseline["seedLo"])
+    units_published = [{"type": "store_id", "uid": hash_unit(uid)}]
+    sc = context_scenario(
+        "Exposure And Publish Payload Carry No New Fields",
+        ("A unit experiment on the same unit is exposed and published first as the baseline. The switchback "
+         "exposure and its publish event must then have exactly the baseline's fields at every depth "
+         "(sameShapeAs), with every exposure field value pinned, so a switchback-only field such as a period "
+         "index or cluster key fails the scenario. A second treatment in the same period exposes nothing."),
+        [payload, baseline], {"store_id": uid},
+        [
+            attribute_step("city", city),
+            treatment_step(baseline, baseline_variant, exposure(baseline, baseline_variant)),
+            {"action": "publish", "params": {}, "expect": {"result": None, "events": [{"type": "publish", "data": {
+                "hashed": True, "units": units_published, "exposures": [exposure(baseline, baseline_variant)]}}]}},
+            {"action": "treatment", "params": {"experimentName": payload["name"]},
+             "expect": {"result": variant, "events": [
+                 {"type": "exposure", "sameShapeAs": 2, "data": exposure(payload, variant)}]}},
+            treatment_step(payload, variant),
+            {"action": "publish", "params": {}, "expect": {"result": None, "events": [
+                {"type": "publish", "sameShapeAs": 3, "data": {
+                    "hashed": True, "units": units_published, "exposures": [exposure(payload, variant)]}}]}},
+        ])
+    sc["_draws"] = [(city, uid, payload)]
+    return [sc]
 
 
 def inertness_scenarios() -> list:
@@ -986,69 +1290,111 @@ def inertness_scenarios() -> list:
     switchback data; the switchback experiment itself is never queried, because a non-capable
     SDK serves it a sticky unit assignment whose value differs per SDK."""
     seed_hi, seed_lo, split = ARMS[2]
-    sb_fields = {
-        "switchbackClusterUnitType": "session_id",
-        "switchbackStartAt": ANCHOR_PERIOD_0,
-        "switchbackPeriodMs": PERIOD_MS,
-        "switchbackCarryoverDurationMs": 0,
-        "switchbackBurnInDurationMs": 0,
-        "switchbackBurnOutDurationMs": 0,
-        "switchbackDesignType": "balanced_block",
-        "switchbackEstimand": "global_average_treatment_effect",
-        "switchbackClusterCount": 10,
-    }
+    probe = switchback_experiment(130, "probe", [("session_id", "city")], 2)
 
-    # A uid whose unit variant is 1 and whose switchback draw is 0: a unit experiment carrying
-    # switchback fields that were served as a switchback, or fell back to control, would differ.
-    def discriminating(k):
-        uid = f"inert-{k}"
-        return unit_variant(uid, split, seed_hi, seed_lo) == 1 and switchback_variant(uid, 0, 2, 10) == 0
-
-    session_uid = next(f"inert-{k}" for k in range(10_000) if discriminating(k))
+    # A uid whose unit variant is 1 while the cluster draw of the city it sits in is 0: a unit
+    # experiment carrying switchback fields that was served as a switchback would differ.
+    session_uid = pick_uid("inert", lambda u: unit_variant(u, split, seed_hi, seed_lo) == 1)
+    city = next(f"inert-city-{k}" for k in range(10_000) if draw(f"inert-city-{k}", probe) == 0)
     store_uid = "inert-store-0"
+    sb_fields = OrderedDict(
+        switchbackClusters=OrderedDict([("session_id", "city"), ("store_id", "city")]),
+        switchbackClusterValues=[city],
+        switchbackStartAt=ANCHOR_PERIOD_0,
+        switchbackPeriodMs=PERIOD_MS,
+        switchbackCarryoverDurationMs=0,
+        switchbackBurnInDurationMs=0,
+        switchbackBurnOutDurationMs=0,
+        switchbackDesignType="balanced_block",
+        switchbackEstimand="global_average_treatment_effect",
+        switchbackClusterUnitType="session_id",
+        switchbackClusterCount=10,
+        switchbackClusterAttribute="city",
+    )
 
-    switchback = switchback_experiment(130, "exp_inert_switchback", "store_id", 2, ANCHOR_PERIOD_0, 100)
+    switchback = switchback_experiment(130, "exp_inert_switchback", [("store_id", "city")], 2)
     plain = experiment(131, "exp_inert_unit_plain", "session_id", 2)
-    typed_unit = experiment(132, "exp_inert_unit_typed", "session_id", 2, randomizationType="unit",
-                            switchbackClusterAttribute="geo/city", **sb_fields)
+    typed_unit = experiment(132, "exp_inert_unit_typed", "session_id", 2, randomizationType="unit", **sb_fields)
     untyped = experiment(133, "exp_inert_unit_untyped", "session_id", 2, **sb_fields)
     same_unit = experiment(134, "exp_inert_unit_store", "store_id", 2)
     experiments = [switchback, plain, typed_unit, untyped, same_unit]
     units = {"session_id": session_uid, "store_id": store_uid}
 
-    # Each unit experiment is exposed and published on its own. The plain experiment (steps 1 and
-    # 2) is the shape baseline: the others' exposure and publish events must have exactly its
+    # Each unit experiment is exposed and published on its own. The plain experiment (steps 2 and
+    # 3) is the shape baseline: the others' exposure and publish events must have exactly its
     # fields at every depth, and every published exposure is pinned in full.
-    steps = []
+    steps = [attribute_step("city", city)]
     for exp, uid in ((plain, session_uid), (typed_unit, session_uid), (untyped, session_uid), (same_unit, store_uid)):
         variant = unit_variant(uid, exp["split"], exp["seedHi"], exp["seedLo"])
         exposed = exposure(exp, variant)
         treatment = treatment_step(exp, variant, exposed)
         publish = {"action": "publish", "params": {},
                    "expect": {"result": None, "events": [{"type": "publish", "data": {"exposures": [exposed]}}]}}
-        if steps:
-            treatment["expect"]["events"][0]["sameShapeAs"] = 1
-            publish["expect"]["events"][0]["sameShapeAs"] = 2
+        if len(steps) > 1:
+            treatment["expect"]["events"][0]["sameShapeAs"] = 2
+            publish["expect"]["events"][0]["sameShapeAs"] = 3
         steps += [treatment, publish]
 
     scenario = context_scenario(
         "Inertness - Unit Experiments Unaffected By Switchback Data",
         ("INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a "
-         "switchback experiment and unit experiments, two of which also carry every switchback wire field, "
-         "switchbackClusterCount and switchbackClusterAttribute included (one with randomizationType \"unit\", "
-         "one with it absent). Each unit experiment's treatment, "
-         "exposure and published exposure equal plain unit assignment in every field, the uid is chosen so "
-         "the switchback draw would differ, and each exposure and publish event has exactly the fields of "
-         "the plain unit experiment's at every depth. The switchback experiment is never queried: an SDK "
-         "without switchback serves it a sticky unit assignment that is documented and SDK-specific."),
+         "switchback experiment and unit experiments, two of which also carry every R33 switchback wire field "
+         "(an ordered switchbackClusters over both context units, switchbackClusterValues admitting the city "
+         "that is set) and the abandoned Phase 1E fields (one with randomizationType \"unit\", one with it "
+         "absent). Each unit experiment's treatment, exposure and published exposure equal plain unit "
+         "assignment in every field; the uid's unit variant is 1 while the city's cluster draw is 0, so serving "
+         "a unit experiment as a switchback fails. Each exposure and publish event has exactly the fields of the "
+         "plain unit experiment's at every depth. The switchback experiment is never queried: an SDK without "
+         "switchback serves it a sticky unit assignment that is documented and SDK-specific."),
         experiments, units, steps)
     del scenario["requires"]
     return [scenario]
 
 
+# ---------------------------------------------------------------------------
+# Rule map, discrimination checks and assembly
+# ---------------------------------------------------------------------------
+
+# Each R33 rule -> the scenario names (without number) that discriminate it. Reported in README and
+# checked: every name must exist in the group.
+RULES = OrderedDict([
+    ("assignSwitchback / fisherYatesPermutation golden vectors", [
+        "Golden Vectors - assignSwitchback - 2 Arms", "Golden Vectors - assignSwitchback - 3 Arms",
+        "Golden Vectors - assignSwitchback - 10 Arms", "Golden Vectors - fisherYatesPermutation - 2 Arms",
+        "Golden Vectors - fisherYatesPermutation - 3 Arms", "Golden Vectors - fisherYatesPermutation - 10 Arms"]),
+    ("single source, single unit; raw value is the key; periodIndex = floorDiv(now - startAt, periodMs)", [
+        "Single Source - Raw Attribute Value Is The Cluster Key"]),
+    ("two units of one type / two sources: lower-declared source serves whatever the context unit order", [
+        "Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order"]),
+    ("agreement serves", ["Agreement - Equal Values From Two Units Serve The Cluster"]),
+    ("disagreement => ineligible, no exposure", [
+        "Disagreement - Different Values Are An Ineligible Control With No Exposure"]),
+    ("unit without a value is skipped", ["Unit Without A Value Is Skipped - The Next Unit Serves"]),
+    ("normalisation: strings, whole numbers as decimal text; float/bool/object/array/empty/null => no value", [
+        "Values - Strings And Whole Numbers Only"]),
+    ("attribute paths: every attribute-path-cases.json case, nested/array, '.' rejected, index position", [
+        "Attribute Paths - Platform Path Cases And Malformed Paths"]),
+    ("switchbackClusterValues: in / out / null / []", ["Allow-List - In, Out, Null And Empty"]),
+    ("pre-anchor, unaligned anchor, missing anchor, bad period, <2 arms => silent ineligible control", [
+        "Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls"]),
+    ("traffic miss on an eligible cluster => recorded eligible=false; traffic hashed on the serving unit", [
+        "Traffic - Miss On An Eligible Cluster Is Recorded Eligible=False Under The Serving Unit"]),
+    ("precedence: override, assignment rule (also pre-anchor), strict audience, full-on (also pre-anchor), custom", [
+        "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw"]),
+    ("holdouts never apply", ["Holdouts Never Apply To A Switchback"]),
+    ("missing/empty cluster map => legacy ineligible control; no linked unit => not applicable; "
+     "Phase 1E fields ignored", [
+        "Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E Fields Ignored"]),
+    ("refresh with a changed cluster map re-resolves", ["Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes"]),
+    ("one exposure per period; exposure/publish payload has no switchback fields", [
+        "Exposure And Publish Payload Carry No New Fields"]),
+    ("ungated inertness: unit experiments carrying switchback fields are served as unit experiments", [
+        "Inertness - Unit Experiments Unaffected By Switchback Data"]),
+])
+
+
 class Fixtures(NamedTuple):
     golden: dict
-    buckets: dict
     paths: dict
 
 
@@ -1056,29 +1402,83 @@ def load_fixtures() -> Fixtures:
     """Every copied fixture, each verified against the reference; builders read only these."""
     golden = load_golden()
     verify_reference(golden)
-    buckets, paths = load_bucket_fixtures()
-    verify_bucket_reference(buckets, paths)
-    return Fixtures(golden, buckets, paths)
+    paths = load_path_cases()
+    verify_path_reference(paths)
+    return Fixtures(golden, paths)
 
 
 def builders(fixtures: Fixtures) -> list:
     return [
         lambda: golden_scenarios(fixtures.golden),
-        lambda: bucket_vector_scenarios(fixtures.buckets),
-        period_scenarios, shared_bucket_scenarios, eligibility_scenarios, serving_scenarios,
-        attribute_source_scenarios, attribute_ineligible_scenarios,
-        lambda: attribute_path_case_scenarios(fixtures.paths),
-        attribute_timing_scenarios, inertness_scenarios,
+        single_source_scenarios, declared_order_scenarios, agreement_disagreement_scenarios,
+        value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
+        schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
+        refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
     ]
 
 
-def build_group(fixtures: Fixtures, first_number: int) -> list:
-    scenarios = []
+def is_context_scenario(scenario: dict) -> bool:
+    return scenario["steps"][0]["action"] == "createContextWith"
+
+
+def strip_shape_refs(expect: dict) -> dict:
+    expect = copy.deepcopy(expect)
+    for event in expect.get("events", []):
+        event.pop("sameShapeAs", None)
+    return expect
+
+
+def failing_steps(scenario: dict, mutant: Optional[str]) -> list:
+    """Step indices whose checked-in expectation the model under `mutant` does not reproduce."""
+    expected = [strip_shape_refs(step["expect"]) for step in scenario["steps"][1:]]
+    actual, _ = replay(scenario, mutant)
+    return [i + 1 for i, (e, a) in enumerate(zip(expected, actual)) if e != a]
+
+
+def check_discrimination(scenarios: list, draws: dict) -> dict:
+    """Generation-time mutant replay. Every eligible schedule draw must be nonzero and differ from
+    every wrong cluster-key model and the sticky unit assignment of its serving uid; the correct
+    model must reproduce every context scenario; every mutant must fail at least one scenario.
+    Returns mutant -> names of the scenarios it fails."""
+    for name, entries in draws.items():
+        for key, uid, exp in entries:
+            variant = draw(key, exp)
+            wrong = {m: v for m, v in wrong_key_variants(key, uid, exp).items() if v == variant}
+            if variant == 0 or wrong:
+                raise SystemExit(f"{name}: draw of {key!r} for {exp['name']} is {variant}, equal to {wrong}")
+    context = [s for s in scenarios if is_context_scenario(s)]
+    for scenario in context:
+        if failing_steps(scenario, None):
+            raise SystemExit(f"model does not reproduce {scenario['name']}: steps {failing_steps(scenario, None)}")
+    caught = {m: [s["name"] for s in context if failing_steps(s, m)] for m in ALL_MUTANTS}
+    survivors = [m for m, names in caught.items() if not names]
+    if survivors:
+        raise SystemExit(f"mutants no scenario catches: {survivors}")
+    inert = [s for s in context if "requires" not in s]
+    if len(inert) != 1 or failing_steps(inert[0], "unit_experiment_as_switchback") == []:
+        raise SystemExit("the inertness scenario must catch a unit experiment served as a switchback")
+    return caught
+
+
+def build_group(fixtures: Fixtures, first_number: int, with_report: bool = False):
+    scenarios, draws = [], {}
     for builder in builders(fixtures):
         for scenario in builder():
             scenario["name"] = f"{first_number + len(scenarios)} - Switchback - {scenario['name']}"
+            draws[scenario["name"]] = scenario.pop("_draws", [])
             scenarios.append(scenario)
-    return scenarios
+    names = [s["name"].split(" - Switchback - ", 1)[1] for s in scenarios]
+    missing = [n for ns in RULES.values() for n in ns if n not in names]
+    if missing:
+        raise SystemExit(f"RULES names no scenario: {missing}")
+    caught = check_discrimination(scenarios, draws)
+    return (scenarios, caught) if with_report else scenarios
+
+
+def rule_map(scenarios: list) -> list:
+    """(rule, [scenario numbers]) for README and the report."""
+    numbers = {s["name"].split(" - Switchback - ", 1)[1]: int(s["name"].split(" - ", 1)[0]) for s in scenarios}
+    return [(rule, [numbers[n] for n in names]) for rule, names in RULES.items()]
 
 
 def write(scenarios: list, path: str) -> None:
@@ -1089,6 +1489,7 @@ def write(scenarios: list, path: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate the Switchback scenario group.")
     parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
+    parser.add_argument("--rules", action="store_true", help="print the rule -> scenario map and mutant results")
     args = parser.parse_args()
 
     fixtures = load_fixtures()
@@ -1096,8 +1497,14 @@ def main() -> int:
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
     kept = [s for s in existing if GROUP_MARKER not in s["name"]]
-    group = build_group(fixtures, len(kept) + 1)
+    group, caught = build_group(fixtures, len(kept) + 1, with_report=True)
     updated = kept + group
+
+    if args.rules:
+        for rule, numbers in rule_map(group):
+            print(f"{rule}: {numbers}")
+        for mutant, names in caught.items():
+            print(f"mutant {mutant}: fails {[int(n.split(' - ', 1)[0]) for n in names]}")
 
     if args.check:
         if updated != existing:
@@ -1107,7 +1514,8 @@ def main() -> int:
         return 0
 
     write(updated, CANONICAL)
-    print(f"wrote {len(updated)} scenarios ({len(group)} switchback)")
+    print(f"wrote {len(updated)} scenarios ({len(group)} switchback, {group[0]['name'].split(' - ')[0]}-"
+          f"{group[-1]['name'].split(' - ')[0]})")
     return 0
 
 
