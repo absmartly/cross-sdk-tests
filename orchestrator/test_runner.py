@@ -271,6 +271,24 @@ def values_match(actual: Any, expected: Any, unordered: bool = False, exact_obje
     return _scalar_key(actual) == _scalar_key(expected)
 
 
+def units_match_unordered(actual: Any, expected: Any) -> bool:
+    """A list of expected objects matched against a list of actual ones in any order: same
+    length, and a one-to-one assignment in which each expected object matches (values_match)
+    its actual partner. Used for publish `units` under `unorderedUnits: true`."""
+    if not isinstance(expected, list) or not isinstance(actual, list) or len(actual) != len(expected):
+        return False
+
+    def assign(i: int, used: frozenset) -> bool:
+        if i == len(expected):
+            return True
+        return any(
+            j not in used and values_match(candidate, expected[i]) and assign(i + 1, used | {j})
+            for j, candidate in enumerate(actual)
+        )
+
+    return assign(0, frozenset())
+
+
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
     exact = action not in PARTIAL_RESULT_ACTIONS
     if not ordered and action in UNORDERED_RESULT_ACTIONS:
@@ -1164,6 +1182,13 @@ class TestOrchestrator:
                             and expected_event.get("type") == "goal"
                             and key == "properties"
                         ):
+                            continue
+                        if key == "units" and expected_event.get("unorderedUnits") is True:
+                            # `unorderedUnits: true`: the published units are a set (an SDK
+                            # publishes them in its own map order); each expected unit must
+                            # match a distinct actual unit, and the counts must be equal.
+                            if not units_match_unordered(actual_value, expected_value):
+                                fail(f"events[{i}].data.units (unordered)", expected_value, actual_value)
                             continue
                         if not values_match(actual_value, expected_value):
                             fail(f"events[{i}].data.{key}", expected_value, actual_value)

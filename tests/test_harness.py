@@ -199,6 +199,28 @@ class ValidateStepTests(unittest.TestCase):
         expected = {"result": None, "events": [{"type": "publish", "data": {"hashed": True, "units": [{"type": "session_id"}]}}]}
         self.assertEqual(self.orch.validate_step(0, "publish", actual, expected), [])
 
+    def publish_units(self, actual_units, expected_units, unordered=True):
+        actual = {"result": None, "events": [{"type": "publish", "data": {"hashed": True, "units": actual_units}}]}
+        event = {"type": "publish", "data": {"hashed": True, "units": expected_units}}
+        if unordered:
+            event["unorderedUnits"] = True
+        return self.fields(self.orch.validate_step(0, "publish", actual, {"result": None, "events": [event]}))
+
+    def test_unordered_units_accept_any_order(self):
+        a, b = {"type": "user_id", "uid": "u"}, {"type": "store_id", "uid": "s"}
+        self.assertEqual(self.publish_units([b, a], [a, b]), [])
+        self.assertEqual(self.publish_units([a, b], [a, b]), [])
+        self.assertEqual(self.publish_units([b, a], [a, b], unordered=False), ["events[0].data.units"])
+
+    def test_unordered_units_still_check_values_and_count(self):
+        a, b = {"type": "user_id", "uid": "u"}, {"type": "store_id", "uid": "s"}
+        wrong = {"type": "store_id", "uid": "x"}
+        self.assertEqual(self.publish_units([wrong, a], [a, b]), ["events[0].data.units (unordered)"])
+        self.assertEqual(self.publish_units([a], [a, b]), ["events[0].data.units (unordered)"])
+        self.assertEqual(self.publish_units([a, a], [a, b]), ["events[0].data.units (unordered)"])
+        self.assertEqual(self.publish_units([a, b, b], [a, b]), ["events[0].data.units (unordered)"])
+        self.assertEqual(self.publish_units("x", [a, b]), ["events[0].data.units (unordered)"])
+
     def test_event_data_key_absent_vs_null(self):
         actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
         expected = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1, "custom": None}}]}
