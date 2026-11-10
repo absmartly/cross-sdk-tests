@@ -413,9 +413,11 @@ KEY_MUTANTS = {
 }
 
 
-def draw(key: str, exp: dict, now: int = NOW, mutant: Optional[str] = None) -> int:
-    """The schedule draw; `mutant` selects a wrong period or seed arithmetic (M3 mutants)."""
-    period = (now - exp["switchbackStartAt"]) // exp["switchbackPeriodMs"]
+def draw(key: str, exp: dict, now: int = NOW, mutant: Optional[str] = None, start: Optional[int] = None) -> int:
+    """The schedule draw; `mutant` selects a wrong period or seed arithmetic (M3 mutants). `start`
+    is the anchor the model resolved (default: exp's switchbackStartAt); exp is never written."""
+    anchor = exp["switchbackStartAt"] if start is None else start
+    period = (now - anchor) // exp["switchbackPeriodMs"]
     seed = experiment_seed(exp["seedHi"], exp["seedLo"])
     if mutant == "period_zero":
         period = 0
@@ -872,11 +874,10 @@ class ContextModel:
         if name in self.customs and m != "ignore_custom":
             return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
                                                 audience_mismatch=mismatch)
-        exp["switchbackStartAt"] = anchor
         if m in KEY_MUTANTS:
-            variant = draw(KEY_MUTANTS[m](key, uid, exp), exp)
+            variant = draw(KEY_MUTANTS[m](key, uid, exp), exp, start=anchor)
         else:
-            variant = draw(key, exp, mutant=m if m in ARITHMETIC_MUTANTS else None)
+            variant = draw(key, exp, mutant=m if m in ARITHMETIC_MUTANTS else None, start=anchor)
             if m is None:
                 self.draws.append((key, uid, exp))
         return variant, exposure(exp, variant, unit_type, audience_mismatch=mismatch)
