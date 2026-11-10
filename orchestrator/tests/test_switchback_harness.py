@@ -516,6 +516,15 @@ def test_rules_full_on_and_strict_audiences_never_apply_to_an_ineligible_cluster
     assert steps["exp_sb_full_on_ineligible"][0] in failing
 
 
+def test_override_without_a_cluster_value_is_exposed_under_the_declared_unit_not_unit_type():
+    scenario = next(s for s in group() if "Precedence" in s["name"])
+    (exp,) = [e for e in scenario["contextData"]["experiments"] if e["name"] == "exp_sb_override_no_value"]
+    assert exp["unitType"] == "user_id" and list(exp["switchbackClusters"]) == ["store_id"]
+    (step,) = [st for st in scenario["steps"] if st["action"] == "treatment"
+               and st["params"]["experimentName"] == "exp_sb_override_no_value"]
+    assert step["expect"]["events"][0]["data"]["unit"] == "store_id"
+
+
 def test_unit_variant_matches_the_main_suite_vectors():
     by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
     for number, (uid, split, seed_hi, seed_lo, expected) in zip((4, 52), generator.UNIT_VARIANT_VECTORS):

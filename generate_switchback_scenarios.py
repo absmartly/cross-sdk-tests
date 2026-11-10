@@ -1284,8 +1284,10 @@ def precedence_scenarios() -> list:
     full_on_pre = switchback_experiment(406, "exp_sb_full_on_pre_anchor", [("store_id", "city")], 3,
                                         anchor=ANCHOR_FUTURE, fullOnVariant=other)
     # Override with no cluster value (path unset): the override still applies, under the first
-    # declared unit type.
-    override_no_value = switchback_experiment(407, "exp_sb_override_no_value", [("store_id", "unset_zone")], 3)
+    # declared unit type (store_id). unitType names another unit type (user_id), so an SDK that
+    # exposes the override under experiment.unitType fails the exposure's unit.
+    override_no_value = switchback_experiment(407, "exp_sb_override_no_value", [("store_id", "unset_zone")], 3,
+                                              unit_type="user_id")
     # fullOnVariant with a value outside the allow-list: an ineligible cluster never reaches full-on.
     full_on_ineligible = switchback_experiment(408, "exp_sb_full_on_ineligible", [("store_id", "city")], 3,
                                                values=[city + "-other"], fullOnVariant=other)
@@ -1312,7 +1314,8 @@ def precedence_scenarios() -> list:
          f"fullOnVariant={other} wins (fullOn=true), also before the anchor; a custom assignment to {other} is "
          "served after traffic (custom=true). Every exposure is under the serving unit store_id. "
          f"exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to {other} "
-         "still applies (overridden=true, under the first declared unit type store_id); exp_sb_full_on_ineligible "
+         "still applies (overridden=true, under the first declared unit type store_id, not its unitType "
+         "user_id); exp_sb_full_on_ineligible "
          f"has fullOnVariant={other} but a value outside switchbackClusterValues, so it is an ineligible control "
          "(0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has "
          f"trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to {other}: the traffic "
