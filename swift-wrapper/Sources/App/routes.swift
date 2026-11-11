@@ -448,7 +448,6 @@ func routes(_ app: VaporApplication) throws {
         ])
     }
 
-    // hashUnit and utf8Bytes call the SDK's Hashing helpers.
     app.post("diagnostic") { req -> HTTPResponse in
         let request = try requestBody(req)
         let value = request["value"]
