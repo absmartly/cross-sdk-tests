@@ -10,7 +10,6 @@ require 'context_publisher'
 require 'a_b_smartly_config'
 require 'default_context_data_deserializer'
 require 'hashing'
-require 'type_utils'
 
 # Register Liquid SDK filters and tags
 ABsmartly::Liquid.register_all
@@ -219,9 +218,6 @@ get '/capabilities' do
   content_type :json
   {diagnostics: true,
     diagnosticsUtf8: true,
-    diagnosticsBase64: true,
-    diagnosticsTypeChecks: true,
-    diagnosticsIsPromise: false,
     attrsSeq: false,
     isWrapper: true,
     wrapsSDK: 'ruby',
@@ -943,12 +939,8 @@ post '/diagnostic' do
 
   result = case op
            when 'hashUnit' then Hashing.hash_unit(value)
-           when 'base64UrlNoPadding' then Hashing.base64_url_no_padding(Hashing.to_utf8(value))
            when 'utf8Bytes' then Hashing.to_utf8(value).bytes
-           when 'isObject' then TypeUtils.object?(value)
-           when 'isNumeric' then TypeUtils.numeric?(value)
            else
-             # isPromise has no Ruby SDK implementation, so it is not offered.
              halt 400, { error: "Unsupported diagnostic operation: #{op}", events: [] }.to_json
            end
 

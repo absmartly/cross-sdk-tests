@@ -77,9 +77,6 @@ public class WrapperController {
         Map<String, Object> response = new HashMap<>();
         response.put("diagnostics", true);
         response.put("diagnosticsUtf8", true);
-        response.put("diagnosticsBase64", false);
-        response.put("diagnosticsTypeChecks", false);
-        response.put("diagnosticsIsPromise", false);
         response.put("attrsSeq", false);
         response.put("publishFail", true);
         response.put("variableKeysMap", true);
@@ -114,8 +111,6 @@ public class WrapperController {
                     break;
                 }
                 default:
-                    // base64UrlNoPadding, isObject, isNumeric and isPromise have no
-                    // public implementation in the Java SDK.
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(errorBody("Unsupported diagnostic operation: " + operation, Collections.emptyList()));
             }

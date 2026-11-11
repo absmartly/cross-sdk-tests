@@ -322,8 +322,7 @@ int main() {
                     {"publishFail", true}, {"variableKeysMap", true},
                     {"globalCustomFieldKeys", true}, {"getUnits", true},
                     {"getAttributes", true}, {"readyError", true},
-                    {"diagnosticsUtf8", false}, {"diagnosticsBase64", true},
-                    {"diagnosticsTypeChecks", false}, {"diagnosticsIsPromise", false}};
+                    {"diagnosticsUtf8", false}};
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -345,12 +344,8 @@ int main() {
                  json result;
                  if (op == "hashUnit") {
                      result = absmartly::hash_unit(text);
-                 } else if (op == "base64UrlNoPadding") {
-                     result = absmartly::base64url_no_padding(
-                         reinterpret_cast<const uint8_t*>(text.data()), text.size());
                  } else {
-                     // utf8Bytes, isObject, isNumeric and isPromise have no
-                     // C++ SDK implementation to call.
+                     // utf8Bytes has no C++ SDK implementation to call.
                      res.status = 501;
                      res.set_content(
                          make_error_response("Unsupported diagnostic operation: " + op, "BAD_REQUEST").dump(),
