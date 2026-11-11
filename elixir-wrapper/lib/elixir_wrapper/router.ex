@@ -26,9 +26,6 @@ defmodule ElixirWrapper.Router do
   get "/capabilities" do
     send_json(conn, 200, %{diagnostics: true,
       diagnosticsUtf8: true,
-      diagnosticsBase64: true,
-      diagnosticsTypeChecks: true,
-      diagnosticsIsPromise: true,
       attrsSeq: false,
       publishFail: true,
       variableKeysMap: true,
@@ -54,11 +51,7 @@ defmodule ElixirWrapper.Router do
     result =
       case op do
         "hashUnit" -> ABSmartly.Utils.hash_unit(if is_number(value), do: value, else: text)
-        "base64UrlNoPadding" -> ABSmartly.Utils.base64_url_no_padding(text)
         "utf8Bytes" -> :binary.bin_to_list(ABSmartly.Utils.utf8_bytes(text))
-        "isObject" -> ABSmartly.Utils.object?(value)
-        "isNumeric" -> ABSmartly.Utils.numeric?(value)
-        "isPromise" -> ABSmartly.Utils.promise?(value)
         _ -> :unsupported
       end
 

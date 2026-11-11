@@ -15,7 +15,6 @@ require 'default_context_data_deserializer'
 require 'context_publisher'
 require 'context_event_logger'
 require 'hashing'
-require 'type_utils'
 
 set :port, 3000
 set :bind, '0.0.0.0'
@@ -194,9 +193,6 @@ get '/capabilities' do
   content_type :json
   { diagnostics: true,
     diagnosticsUtf8: true,
-    diagnosticsBase64: true,
-    diagnosticsTypeChecks: true,
-    diagnosticsIsPromise: false,
     attrsSeq: true,
     publishFail: true,
     variableKeysMap: true,
@@ -332,10 +328,7 @@ post '/diagnostic' do
 
   result = case req_data[:operation]
            when 'hashUnit' then Hashing.hash_unit(value)
-           when 'base64UrlNoPadding' then Hashing.base64_url_no_padding(Hashing.to_utf8(value))
            when 'utf8Bytes' then Hashing.to_utf8(value).bytes
-           when 'isObject' then TypeUtils.object?(value)
-           when 'isNumeric' then TypeUtils.numeric?(value)
            else
              halt 400, { error: "Unsupported diagnostic operation: #{req_data[:operation]}", events: [] }.to_json
            end

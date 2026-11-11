@@ -213,9 +213,6 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"diagnostics": true,
 		"diagnosticsUtf8":       true,
-		"diagnosticsBase64":     true,
-		"diagnosticsTypeChecks": false,
-		"diagnosticsIsPromise":  false,
 		"attrsSeq":              false,
 		"publishFail":           true,
 		"variableKeysMap":       true,
@@ -251,25 +248,19 @@ func diagnosticHandler(w http.ResponseWriter, r *http.Request) {
 			hashedBytes[i] = byte(b)
 		}
 		result = string(hashedBytes)
-	case "base64UrlNoPadding", "utf8Bytes":
+	case "utf8Bytes":
 		value, ok := req.Value.(string)
 		if !ok {
 			writeSDKError(w, http.StatusBadRequest, fmt.Errorf("%s expects a string value", req.Operation), nil)
 			return
 		}
 		encoded := sdk.UTF8Bytes(value)
-		if req.Operation == "base64UrlNoPadding" {
-			result = sdk.Base64UrlNoPadding(encoded)
-		} else {
-			out := make([]int, len(encoded))
-			for i, b := range encoded {
-				out[i] = int(b)
-			}
-			result = out
+		out := make([]int, len(encoded))
+		for i, b := range encoded {
+			out[i] = int(b)
 		}
+		result = out
 	default:
-		// isObject, isNumeric and isPromise are JavaScript type checks the Go
-		// SDK has no counterpart for.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Unsupported diagnostic operation: %s", req.Operation)})

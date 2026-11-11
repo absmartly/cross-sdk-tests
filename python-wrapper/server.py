@@ -138,9 +138,6 @@ def health():
 def capabilities():
     return jsonify({'diagnostics': True,
         'diagnosticsUtf8': True,
-        'diagnosticsBase64': True,
-        'diagnosticsTypeChecks': True,
-        'diagnosticsIsPromise': True,
         'attrsSeq': False,
         'publishFail': True,
         'variableKeysMap': True,
@@ -831,16 +828,8 @@ def diagnostic():
 
         if op == 'hashUnit':
             result = sdk_utils.hash_unit(value)
-        elif op == 'base64UrlNoPadding':
-            result = sdk_utils.base64_url_no_padding(sdk_utils.utf8_bytes(value))
         elif op == 'utf8Bytes':
             result = list(sdk_utils.utf8_bytes(value))
-        elif op == 'isObject':
-            result = sdk_utils.is_object(value)
-        elif op == 'isNumeric':
-            result = sdk_utils.is_numeric(value)
-        elif op == 'isPromise':
-            result = sdk_utils.is_promise(value)
         else:
             return jsonify({'error': f'Unsupported diagnostic operation: {op}'}), 400
 
