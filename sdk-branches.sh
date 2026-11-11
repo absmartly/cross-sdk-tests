@@ -31,7 +31,9 @@ declare -A SDK_BRANCHES=(
   ["kotlin-sdk"]="feat/public-hashing-object-take2"
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
   ["php-sdk"]="fix/audit-operator-fixes"
-  ["python3-sdk"]="fix/python-sdk-all-tests-passing"
+  # python3-sdk#11 (fix/python-sdk-all-tests-passing) is merged and its branch deleted;
+  # main contains it (plus #12), so the python lane builds from main.
+  ["python3-sdk"]="main"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   ["ruby-sdk"]="feat/ruby-3.3-compatibility"
   ["rust-sdk"]="fix/all-tests-passing"
