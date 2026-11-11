@@ -472,9 +472,6 @@ func routes(_ app: VaporApplication) throws {
         return try reply([
             "diagnostics": true,
             "diagnosticsUtf8": true,
-            "diagnosticsBase64": true,
-            "diagnosticsTypeChecks": false,
-            "diagnosticsIsPromise": false,
             "attrsSeq": true,
             "publishFail": true,
             "variableKeysMap": true,
@@ -489,9 +486,6 @@ func routes(_ app: VaporApplication) throws {
         ])
     }
 
-    // hashUnit, utf8Bytes and base64UrlNoPadding call the SDK's Hashing helpers.
-    // The SDK has no isObject/isNumeric/isPromise (JavaScript type checks), so
-    // those are not answered.
     app.post("diagnostic") { req -> HTTPResponse in
         let request = try requestBody(req)
         let value = request["value"]
@@ -499,8 +493,6 @@ func routes(_ app: VaporApplication) throws {
         switch request["operation"].stringValue {
         case "hashUnit":
             result = value.type == .number ? Hashing.hash(value.doubleValue) : Hashing.hash(value.stringValue)
-        case "base64UrlNoPadding":
-            result = Hashing.base64UrlNoPadding(Data(value.stringValue.utf8))
         case "utf8Bytes":
             result = Hashing.utf8Bytes(value.stringValue).map(Int.init)
         default:

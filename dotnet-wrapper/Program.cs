@@ -65,9 +65,6 @@ app.MapGet("/capabilities", () => Results.Ok(new
 {
     diagnostics = true,
     diagnosticsUtf8 = true,
-    diagnosticsBase64 = true,
-    diagnosticsTypeChecks = false,
-    diagnosticsIsPromise = false,
     attrsSeq = true,
     publishFail = true,
     variableKeysMap = true,
@@ -108,11 +105,9 @@ app.MapPost("/diagnostic", async (HttpContext httpContext) =>
             _ => value.ToString()
         };
 
-        // Only helpers the SDK implements; the SDK has no isObject/isNumeric/isPromise.
         object? result = op switch
         {
             "hashUnit" => Md5.Hash(text),
-            "base64UrlNoPadding" => Md5.Base64UrlNoPadding(Md5.Utf8Bytes(text)),
             "utf8Bytes" => Md5.Utf8Bytes(text).Select(b => (int)b).ToArray(),
             _ => null
         };

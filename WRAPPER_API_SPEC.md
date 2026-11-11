@@ -200,9 +200,6 @@ the helpers its SDK implements:
 |---|---|
 | `hashUnit` | `diagnostics` |
 | `utf8Bytes` | `diagnosticsUtf8` |
-| `base64UrlNoPadding` (of the value's UTF-8 bytes) | `diagnosticsBase64` |
-| `isObject`, `isNumeric` | `diagnosticsTypeChecks` |
-| `isPromise` | `diagnosticsIsPromise` |
 
 The wrapper must call the SDK's own helper for every operation it advertises.
 If the SDK has no such helper, the wrapper reports the capability as `false`
@@ -763,7 +760,7 @@ idiomatic error (exception, Go `error`, Rust `Err`, Elixir `{:error, _}`) to a
 transport where a scenario asks for one (`publishFail`, `failLoad`,
 `payloadThrottle`). A `failLoad` transport must fail the fetch the way a real
 network failure does (reject or raise); it must not return malformed data.
-Diagnostic helpers (`hashUnit`, `utf8Bytes`, `base64UrlNoPadding`, …) call the
+Diagnostic helpers (`hashUnit`, `utf8Bytes`) call the
 SDK's own implementation when the SDK has one.
 
 ### Context Lifecycle
@@ -818,7 +815,7 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | /health | Health check |
-| GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, `diagnosticsBase64`, `diagnosticsTypeChecks`, `diagnosticsIsPromise`, etc.) |
+| GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |

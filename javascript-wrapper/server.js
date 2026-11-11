@@ -102,9 +102,6 @@ app.get('/capabilities', async (req, res) => {
   ]);
 
   res.json({diagnosticsUtf8: true,
-    diagnosticsBase64: true,
-    diagnosticsTypeChecks: true,
-    diagnosticsIsPromise: true,
 
     diagnostics: true,
     attrsSeq: true,
@@ -743,25 +740,11 @@ app.post('/diagnostic', (req, res) => {
       case 'hashUnit':
         result = sdkUtils.hashUnit(body.value);
         break;
-      case 'base64UrlNoPadding': {
-        const input = body.value == null ? '' : String(body.value);
-        result = sdkUtils.base64UrlNoPadding(sdkUtils.stringToUint8Array(input));
-        break;
-      }
       case 'utf8Bytes': {
         const input = body.value == null ? '' : String(body.value);
         result = Array.from(sdkUtils.stringToUint8Array(input));
         break;
       }
-      case 'isObject':
-        result = sdkUtils.isObject(body.value);
-        break;
-      case 'isNumeric':
-        result = sdkUtils.isNumeric(body.value);
-        break;
-      case 'isPromise':
-        result = sdkUtils.isPromise(body.value);
-        break;
       default:
         return res.status(400).json({ error: `Unsupported diagnostic operation: ${op}` });
     }

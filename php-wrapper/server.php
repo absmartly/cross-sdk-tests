@@ -229,9 +229,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
     if ($method === 'GET' && $path === '/capabilities') {
         return jsonResponse(200, ['diagnostics' => true,
             'diagnosticsUtf8' => true,
-            'diagnosticsBase64' => true,
-            'diagnosticsTypeChecks' => true,
-            'diagnosticsIsPromise' => true,
             'attrsSeq' => false,
             'publishFail' => true,
             // php-sdk Context::getVariableKeys() returns key => single experiment
@@ -264,16 +261,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         try {
             if ($op === 'hashUnit') {
                 $result = Utils::hashUnit($value);
-            } elseif ($op === 'base64UrlNoPadding') {
-                $result = Utils::base64UrlNoPadding($value);
             } elseif ($op === 'utf8Bytes') {
                 $result = Utils::utf8Bytes($value);
-            } elseif ($op === 'isObject') {
-                $result = Utils::isObject($value);
-            } elseif ($op === 'isNumeric') {
-                $result = Utils::isNumeric($value);
-            } elseif ($op === 'isPromise') {
-                $result = Utils::isPromise($value);
             } else {
                 return jsonResponse(400, ['error' => "Unsupported diagnostic operation: {$op}", 'events' => []]);
             }
