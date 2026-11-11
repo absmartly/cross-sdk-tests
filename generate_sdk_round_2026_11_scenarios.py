@@ -478,7 +478,9 @@ def main():
         raw = src.read()
     existing = json.loads(raw)
     kept = [s for s in existing if not any(m in s["name"] for m in GROUP_MARKERS)]
-    groups = build_all_groups(len(kept) + 1)
+    # Number after the highest retained ID, not the count: earlier scenarios may
+    # have been deleted without renumbering (e.g. #18), leaving gaps.
+    groups = build_all_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
     updated = kept + groups
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
