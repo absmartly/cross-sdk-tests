@@ -691,6 +691,11 @@ class TestOrchestrator:
         })
         outcome: Dict[str, Any] = {}
         context_id = None
+
+        def serves(expected: Dict[str, Any]) -> bool:
+            names = self._wrapper_result(requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
+            return names == [e["name"] for e in expected["experiments"]]
+
         try:
             try:
                 response = requests.post(
@@ -709,9 +714,7 @@ class TestOrchestrator:
                 outcome["ready"] = result.get("ready")
                 outcome["failed"] = result.get("failed")
                 if context_id and outcome["ready"] is True and outcome["failed"] is False:
-                    names = self._wrapper_result(
-                        requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
-                    outcome["decoded"] = names == [e["name"] for e in data["experiments"]]
+                    outcome["decoded"] = serves(data)
                     if refresh_data is not None:
                         # New data on the server, an empty refresh to the wrapper:
                         # only the SDK's own fetch can bring the change in.
@@ -719,9 +722,7 @@ class TestOrchestrator:
                         refreshed = requests.post(f"{base_url}/context/{context_id}/refresh", json={},
                                                   timeout=timeout)
                         outcome["refreshStatus"] = refreshed.status_code
-                        names = self._wrapper_result(
-                            requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
-                        outcome["refreshDecoded"] = names == [e["name"] for e in refresh_data["experiments"]]
+                        outcome["refreshDecoded"] = serves(refresh_data)
                 elif context_id and outcome["failed"] is True:
                     # Best effort: the SDK's own load error (wrappers without readyError 404 here).
                     ready_error = requests.post(f"{base_url}/context/{context_id}/readyError", timeout=timeout)
