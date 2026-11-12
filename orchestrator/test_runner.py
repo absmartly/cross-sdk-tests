@@ -1048,8 +1048,9 @@ class TestOrchestrator:
                         print(f"  {sdk_name:20} {Colors.YELLOW}⊘ SKIP{Colors.RESET} ({reason})")
                     else:
                         print(f"{Colors.YELLOW}SKIP{Colors.RESET}  {scenario['name']}: {reason}")
-                elif result.get("harness_error"):
+                elif result.get("harness_error") and not result["failures"]:
                     # Fails the run, but is the harness's fault: never the SDK's FAIL.
+                    # (A harness error after an SDK failure is still that SDK FAIL, below.)
                     self.record_outcome(scenario["name"], sdk_name, "harness_error")
                     if self.verbose:
                         print(f"  {sdk_name:20} {Colors.RED}✗ HARNESS ERROR{Colors.RESET}: {result['harness_error']}")
@@ -1072,6 +1073,8 @@ class TestOrchestrator:
                         first_failure = result["failures"][0] if result["failures"] else {}
                         error_msg = first_failure.get("error", first_failure.get("actual", ""))
                         print(f"{Colors.RED}FAIL{Colors.RESET}  {scenario['name']}: {error_msg}")
+                    if result.get("harness_error"):
+                        print(f"      {Colors.RED}then HARNESS ERROR{Colors.RESET}: {result['harness_error']}")
             except Exception as exc:
                 self.record_outcome(scenario["name"], sdk_name, "error")
                 if self.verbose:
@@ -1751,6 +1754,7 @@ class TestOrchestrator:
             skipped = 0
             passthrough_skipped = 0
             harness_errors = 0
+            harness_only = 0  # harness errors with no SDK failure before them
 
             for scenario_result in self.results:
                 sdk_result = scenario_result["sdks"].get(sdk_name, {})
@@ -1758,23 +1762,28 @@ class TestOrchestrator:
                     skipped += 1
                     if sdk_result.get("passthrough"):
                         passthrough_skipped += 1
-                elif sdk_result.get("harness_error"):
+                elif sdk_result.get("harness_error") and not sdk_result.get("failures"):
                     harness_errors += 1
+                    harness_only += 1
                 elif "error" in sdk_result:
                     errors += 1
                 elif sdk_result.get("passed"):
                     passed += 1
                 else:
+                    # An SDK failure stays an SDK failure even if a harness error
+                    # stopped the scenario afterwards; both are reported.
                     failed += 1
+                    if sdk_result.get("harness_error"):
+                        harness_errors += 1
 
-            # A harness error tested nothing about the SDK: not in `tested`.
-            tested = total_tests - skipped - harness_errors
+            # A harness error with no SDK failure tested nothing about the SDK: not in `tested`.
+            tested = total_tests - skipped - harness_only
             consistency_failed = self.consistency_failures.get(sdk_name, [])
             capabilities_failed = sdk_name in self.capabilities_fetch_failed
             # An SDK that ran zero scenarios (everything skipped) while scenarios
             # exist has proven nothing - treat it as a failing "NO TESTS RUN"
             # state rather than a vacuous 100%.
-            no_tests_run = tested == 0 and total_tests > 0 and harness_errors == 0
+            no_tests_run = tested == 0 and total_tests > 0 and harness_only == 0
 
             sdk_stats[sdk_name] = {
                 "passed": passed,

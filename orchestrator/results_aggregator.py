@@ -527,8 +527,12 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
                 # A run-level failure flag (DOWN / CAPS FAIL / MEASURE FAIL /
                 # HARNESS ERROR / CAPS POLICY / NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
                 # passed/failed tally: the run failed even if zero individual
-                # scenarios reported a failure.
-                cells.append(f"{RED}{forced_status}{RESET}")
+                # scenarios reported a failure. SDK failures are still shown next
+                # to it, so e.g. a harness error never hides them.
+                label = forced_status
+                if c_failed:
+                    label = f"{format_result(c_passed, c_failed, c_total, c_skipped)} + {forced_status}"
+                cells.append(f"{RED}{label}{RESET}")
                 cross_sdk_total += 1
                 any_failure = True
             else:

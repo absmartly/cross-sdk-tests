@@ -292,6 +292,35 @@ def test_failing_control_call_is_a_harness_error_not_an_sdk_failure(
         assert results_aggregator.print_results_table({}, {"fake": row}, ["fake"], False, True) is True
 
 
+def test_sdk_failure_before_a_harness_error_is_still_an_sdk_failure(server_url, wrapper_factory, group, tmp_path):
+    """An SDK failure already found in the scenario is not absorbed by a later harness error."""
+    wrapper = wrapper_factory("gzip")
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    real_call = orch._context_server_call
+
+    def call(m, path, **kwargs):
+        if m == "GET" and "/requests/" in path:
+            raise test_runner.requests.ConnectionError("context server reset")
+        return real_call(m, path, **kwargs)
+
+    wrong = [{"step": 0, "action": "createContext", "field": "x", "expected": 1, "actual": 2}]
+    with mock.patch.object(orch, "_context_server_call", side_effect=call), \
+            mock.patch.object(orch, "validate_step", return_value=wrong), mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "context server reset" in result["harness_error"] and result["failures"] == wrong
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
+
+    report_path = tmp_path / "report.json"
+    with mock.patch("builtins.print"):
+        assert orch.generate_report(str(report_path), []) == 1
+    stats = json.loads(report_path.read_text())["sdk_stats"]["fake"]
+    assert stats["failed"] == 1 and stats["harness_errors"] == 1 and stats["tested"] == 1
+    row = results_aggregator.load_cross_sdk_report(str(report_path))["fake"]
+    assert row["forced_status"] == "HARNESS ERROR" and row["failed"] == 1
+
+
 @pytest.mark.parametrize("mutate, reason", [
     (lambda s: s.update(directData=False), "'directData' must be true"),
     (lambda s: s.update(directData=True, contextServer={}), "cannot be combined"),

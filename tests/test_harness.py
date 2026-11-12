@@ -905,6 +905,14 @@ class AggregatorTests(unittest.TestCase):
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
 
+    def test_harness_error_does_not_hide_sdk_failures(self):
+        row = self.load(dict(self.base, passed=8, failed=1, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertTrue(results_aggregator.print_results_table({}, {"x": row}, ["x"], False, True))
+        self.assertIn("8/9 FAIL + HARNESS ERROR", re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()))
+
     def test_harness_error_flag_is_distinct_from_sdk_failure(self):
         row = self.load(dict(self.base, passed=9, tested=9, harness_errors=1))
         self.assertEqual(row["forced_status"], "HARNESS ERROR")
