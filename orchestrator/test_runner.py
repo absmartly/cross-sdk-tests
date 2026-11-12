@@ -1195,8 +1195,13 @@ class TestOrchestrator:
                             reference, error = self.resolve_reference(
                                 prior_responses, expected_event["sameExposureShapeAs"], step_index, i
                             )
+                            baseline_type = None
+                            if error is None:
+                                baseline_type = prior_responses[expected_event["sameExposureShapeAs"]]["events"][i].get("type")
                             if error is not None:
                                 fail(f"events[{i}].sameExposureShapeAs", "a usable baseline exposure", error)
+                            elif baseline_type != "exposure":
+                                fail(f"events[{i}].sameExposureShapeAs", "an exposure event baseline", baseline_type)
                             elif isinstance(actual_value, list):
                                 for j, actual_exposure in enumerate(actual_value):
                                     mismatch = self.shape_mismatch(actual_exposure, reference, f"data.exposures[{j}]")

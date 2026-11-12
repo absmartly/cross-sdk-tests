@@ -149,3 +149,37 @@ def test_check_detects_drift(tmp_path, monkeypatch, mutation):
     monkeypatch.setattr(generator, "CANONICAL", str(path))
     monkeypatch.setattr(sys, "argv", ["generate_absent_keys_scenarios.py", "--check"])
     assert generator.main() == (0 if mutation is None else 1)
+
+
+def _exposure(**extra):
+    return {"id": 1, "name": "e", "variant": 1, "exposedAt": 1, "assigned": True, "eligible": True, **extra}
+
+
+def _check_publish(baseline_event, actual_exposures, reference=0):
+    runner = Orchestrator({}, verbose=False)
+    expected = {"events": [{"type": "publish", "sameExposureShapeAs": reference,
+                            "data": {"exposures": actual_exposures}}]}
+    actual = [{"type": "publish", "data": {"exposures": actual_exposures}}]
+    prior = [{"events": [baseline_event]}]
+    return [f["field"] for f in runner.validate_events(1, "publish", actual, expected, prior_responses=prior)]
+
+
+def test_same_exposure_shape_accepts_matching_exposures():
+    assert _check_publish({"type": "exposure", "data": _exposure()}, [_exposure(), _exposure()]) == []
+
+
+def test_same_exposure_shape_rejects_non_exposure_baseline():
+    fields = _check_publish({"type": "goal", "data": _exposure()}, [_exposure()])
+    assert fields == ["events[0].sameExposureShapeAs"]
+
+
+@pytest.mark.parametrize("reference", ["0", 1, -1, True])
+def test_same_exposure_shape_rejects_unusable_reference(reference):
+    fields = _check_publish({"type": "exposure", "data": _exposure()}, [_exposure()], reference=reference)
+    assert fields == ["events[0].sameExposureShapeAs"]
+
+
+def test_same_exposure_shape_rejects_a_key_missing_from_the_actual_exposure():
+    baseline = {"type": "exposure", "data": _exposure(audienceMismatch=False)}
+    fields = _check_publish(baseline, [_exposure()])
+    assert fields == ["events[0].data.exposures[0] keys (sameExposureShapeAs)"]
