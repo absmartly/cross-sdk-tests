@@ -342,36 +342,33 @@ if [ -n "$SDK_NAMES" ]; then
   # are identical.
   ensure_requests
 
+  # published_port <service> <container port>: the host port, polled for 30s.
+  published_port() {
+    local port=""
+    for _ in $(seq 1 30); do
+      port=$(docker compose port "$1" "$2" 2>/dev/null | awk -F: '{print $NF}')
+      [ -n "$port" ] && break
+      sleep 1
+    done
+    if [ -z "$port" ]; then
+      echo "ERROR: could not resolve published port for $1 after 30s" >&2
+      return 1
+    fi
+    echo "$port"
+  }
+
   # Derive SDK URLs from published ports in docker compose.yml
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
   for sdk in "${SDKS[@]}"; do
-    PORT=""
-    for _ in $(seq 1 30); do
-      PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
-      [ -n "$PORT" ] && break
-      sleep 1
-    done
-    if [ -z "$PORT" ]; then
-      echo "ERROR: could not resolve published port for ${sdk}-sdk after 30s" >&2
-      exit 1
-    fi
+    PORT=$(published_port "${sdk}-sdk" 3000) || exit 1
     SDK_URLS="${SDK_URLS}${sdk}=http://localhost:${PORT},"
   done
   SDK_URLS="${SDK_URLS%,}"
 
   # The host-side orchestrator drives the context server through its published
   # port; the wrapper containers reach it by service name.
-  CS_PORT=""
-  for _ in $(seq 1 30); do
-    CS_PORT=$(docker compose port context-server 8080 2>/dev/null | awk -F: '{print $NF}')
-    [ -n "$CS_PORT" ] && break
-    sleep 1
-  done
-  if [ -z "$CS_PORT" ]; then
-    echo "ERROR: could not resolve published port for context-server after 30s" >&2
-    exit 1
-  fi
+  CS_PORT=$(published_port context-server 8080) || exit 1
 
   CONTEXT_SERVER_URL="http://localhost:${CS_PORT}" \
   CONTEXT_SERVER_SDK_URL="http://context-server:8080" \

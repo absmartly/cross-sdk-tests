@@ -11,10 +11,14 @@ zstd > br > gzip, picked from the request's `Accept-Encoding`. On a large tenant
 1,554,927 B when the request sends no `Accept-Encoding`.
 
 How it was measured: the negotiating context server (`context-server/`) records
-the `Accept-Encoding` and `User-Agent` of every `GET /context` per payload. The
-orchestrator probes each SDK once at startup (create + refresh with a
-zstd > br > gzip > identity preference, then one create with gzip forced on a
-request that did not ask for it) and scenarios 230 and 232 check every fetch.
+the `Accept-Encoding` and `User-Agent` of every `GET /context` per payload and
+serves gzip when the request advertised it, identity otherwise (it never serves
+br or zstd; whether an SDK lists them is only reported). The orchestrator probes
+each SDK once at startup (create, then a refresh after the server's data
+changed, both negotiated) and scenarios 230 and 232 check every fetch. A second,
+REPORT-ONLY probe forces gzip on a request that did not ask for it (5 s timeout,
+gates nothing): it is the evidence below for which SDKs fail on such a body.
+The User-Agent tells a reviewer that the SDK's own client made the request.
 "Observed" below means seen on the wire from that SDK's lane in this sandbox.
 "From code" means read from source with no lane run, because the image could not
 be built here (no network access to nuget.org, hex.pm, repo.scala-sbt.org,
@@ -77,7 +81,7 @@ stated.
   `emptyRequest.acceptEncoding("gzip, deflate")` (`sttp/client3/SttpApi.scala:44`).
 - Decodes, from code: gzip and deflate (`HttpURLConnectionBackend.scala:283-291`);
   any other coding throws `UnsupportedEncodingException`.
-- Fix: none needed for gzip. Policy keeps it a reviewed exception until a lane observes it.
+- Fix: none needed for gzip. Policy: `required` from this reading; the CI lane proves it.
 - br/zstd: not without extra codecs. gzip is enough.
 
 ## dotnet (dotnet-sdk `fix/audit-operator-fixes` ea172a6) — lane not built here
@@ -207,7 +211,10 @@ stated.
   libcurl `CURLOPT_ACCEPT_ENCODING ""` (`EasyHandle.swift:254-259`, enabled at
   `HTTPURLProtocol.swift:439`), so it advertises and decodes every coding the system
   libcurl supports.
-- Fix: none expected. The image build fails here at `swift test --filter EventCollectorTests` (`fatalError`), so this was not observed.
+- Fix: none expected. The image build fails here at `swift test --filter EventCollectorTests` (`fatalError`),
+  and the swift lane already fails on main CI (cross-sdk run 43008024985 on
+  `chore/drop-js-helper-scenarios`), so no lane can provide evidence. Policy: a
+  reviewed exception saying exactly that, until the lane passes.
 
 ## dart and flutter (flutter-sdk `fix/audit-operator-fixes` 7aec273) — lanes not built here
 
@@ -217,14 +224,15 @@ stated.
 - Accept-Encoding, **from code**: `gzip`. dart:io adds it on every request
   (`sdk/lib/_http/http_impl.dart:2367`), and `autoUncompress` defaults to true (`:2862`).
 - Decodes, from code: gzip only (`http_impl.dart:615-621`).
-- Fix: none for gzip. br/zstd: not in dart:io.
+- Fix: none for gzip. br/zstd: not in dart:io. Policy: `required` (dart and flutter) from this reading; CI proves it.
 
 ## javascript (javascript-sdk `main` 96aa665) — the reference; react, vue2, vue3, angular wrap it
 
 - Client: global `fetch` (Node's undici in the node:24 image), else `node-fetch`
   (`src/fetch.ts:22-27`). Fetch at `src/client.ts:98-107`/`:194`.
 - Accept-Encoding: **observed `gzip, deflate`** on javascript, vue2, vue3 and angular
-  (User-Agent `node`). react: lane not built here (yarn registry unreachable); same SDK and runtime.
+  (User-Agent `node`). react: lane not built here (yarn registry unreachable); same SDK and runtime,
+  so react is `required` too and its CI lane proves it.
 - Decodes: gzip, br and zstd. **Observed** in the lane image (Node v24.22.3,
   undici 7.30.2) with a local server forcing each coding: global `fetch`
   advertises only `gzip, deflate` but decoded all three. Unrequested gzip,
@@ -235,9 +243,15 @@ stated.
 
 ## Summary of the gate (`contextFetchCompression`)
 
-Required, because a lane observed gzip on create and refresh: javascript,
-python, ruby, liquid, vue2, vue3, angular. Every other SDK is a reviewed
-exception with its reason in `orchestrator/expected-capabilities.json`. The
-capability is measured by the orchestrator, not reported by the wrappers. An
-exception that starts measuring true fails the run until the policy moves it
-to `required`.
+Required, observed or from code; CI proves it. Observed on a lane here:
+javascript, python, ruby, liquid, vue2, vue3, angular. From code: scala, dart,
+flutter, react. Every other SDK is a reviewed exception with its reason in
+`orchestrator/expected-capabilities.json`: java, kotlin, php, go, rust, cpp
+(observed, fix pending), dotnet and elixir (code sends no Accept-Encoding, fix
+pending), and swift (its lane already fails on main CI, so it cannot provide
+evidence). The capability is measured by the orchestrator, not reported by the
+wrappers. An exception that starts measuring true fails the run until the policy
+moves it to `required`; a required SDK that measures false fails with the
+observed header. A probe that cannot measure (context server unreachable, no
+GET /context recorded) fails the run and skips only the scenarios that require
+the capability.
