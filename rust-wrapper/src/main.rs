@@ -514,7 +514,11 @@ async fn create_context_handler(
     let (client_application, client_environment) = client_names(&req.client);
 
     let (mut context, ready, failed) = if let Some(data) = req.data {
-        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        // Honour the requested client config: seed the inline-data context with
+        // the same application/environment the endpoint path uses, so a strict
+        // audience on either configured name matches here too (WRAPPER_API_SPEC
+        // promises client config in both create modes).
+        let sdk = ABsmartly::new("http://dummy", "test-key", &client_application, &client_environment).expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
@@ -538,6 +542,11 @@ async fn create_context_handler(
             // The context exists (not ready) before its data arrives, so calls
             // made meanwhile (e.g. track before ready) land on this context.
             let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
+            // Seed the configured system names on the context that will actually
+            // evaluate the fetched data. `become_ready(data)` below does not carry
+            // over the temporary fetching context's names, so without this the
+            // delayed path would misassign configured-name audiences (finding 2).
+            ctx.set_system_attributes(Some(&client_application), Some(&client_environment));
             for (unit_type, uid) in &units {
                 if let Err(e) = ctx.set_unit(unit_type, uid.clone()) {
                     return err_with_events(StatusCode::BAD_REQUEST, e, &event_collector, 0).into_response();

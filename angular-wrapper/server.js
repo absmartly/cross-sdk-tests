@@ -23,7 +23,10 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
   let hasEnvironment = true;
   let environment = 'test';
   if (clientConfig != null) {
-    if (typeof clientConfig.application === 'string' && clientConfig.application.length > 0) {
+    // An explicitly provided application is forwarded as-is so the SDK still
+    // validates it (e.g. rejects an empty string); only an omitted application
+    // falls back to the default, instead of silently repairing a rejected name.
+    if (clientConfig.application !== undefined) {
       application = clientConfig.application;
     }
     hasEnvironment =
@@ -47,6 +50,14 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
     environment: 'placeholder',
   });
   return new absmartly.SDK({ client, eventLogger, publisher });
+}
+
+// The SDK's Client constructor rejects invalid configuration with
+// `Invalid '<key>' in options argument` / `Missing '<key>' in options argument`.
+// Such a rejection is a 400 (bad request), not a 500.
+function isSdkOptionsValidationError(error) {
+  return typeof error?.message === 'string' &&
+    /^(Invalid|Missing) '.*' in options argument$/.test(error.message);
 }
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
@@ -343,7 +354,8 @@ app.post('/context', async (req, res) => {
     });
   } catch (error) {
     console.error('Context creation error:', error);
-    res.status(500).json({ error: error.message, type: error.constructor.name });
+    const status = isSdkOptionsValidationError(error) ? 400 : 500;
+    res.status(status).json({ error: error.message, type: error.constructor.name });
   }
 });
 

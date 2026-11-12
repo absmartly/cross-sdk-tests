@@ -24,10 +24,12 @@ class NoEnvironmentClient extends Client {
 
 // Build an SDK with the requested client application/environment. When `client`
 // is omitted entirely the wrapper uses its own defaults, so every pre-2026-11
-// scenario is unaffected. When `client` is present, its application name is used
-// (falling back to the default only when blank), and the environment is used only
-// when it is a non-empty string — an absent/blank environment means "no
-// environment configured".
+// scenario is unaffected. When `client` is present, an explicitly provided
+// application is used as-is so the SDK still validates it (e.g. rejects an empty
+// string) — only an omitted application falls back to the default. The
+// environment is used only when it is a non-empty string; an absent/blank
+// environment means "no environment configured" (the spec treats a blank
+// environment as valid, unlike a blank application).
 function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
   const eventLogger = (ctx, eventName, eventData) => {
     eventCollector.handleEvent(ctx, eventName, eventData);
@@ -36,7 +38,10 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
   let hasEnvironment = true;
   let environment = DEFAULT_ENVIRONMENT;
   if (clientConfig != null) {
-    if (typeof clientConfig.application === 'string' && clientConfig.application.length > 0) {
+    if (clientConfig.application !== undefined) {
+      // Explicitly provided: do not silently repair a rejected name. An empty
+      // or otherwise invalid value is forwarded so the real SDK rejects it,
+      // instead of masking the error behind the default application.
       application = clientConfig.application;
     }
     hasEnvironment =
@@ -60,6 +65,15 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
     environment: 'placeholder',
   });
   return new absmartly.SDK({ client, eventLogger, publisher });
+}
+
+// The SDK's Client constructor rejects invalid configuration with
+// `Invalid '<key>' in options argument` / `Missing '<key>' in options argument`.
+// Such a rejection is a 400 (bad request), not a 500: the caller sent invalid
+// client configuration that the SDK legitimately refuses.
+function isSdkOptionsValidationError(error) {
+  return typeof error?.message === 'string' &&
+    /^(Invalid|Missing) '.*' in options argument$/.test(error.message);
 }
 
 process.on('uncaughtException', (err) => {
@@ -317,7 +331,10 @@ app.post('/context', async (req, res) => {
     });
   } catch (error) {
     console.error('Context creation error:', error);
-    res.status(500).json({ error: error.message, type: error.constructor.name });
+    // Invalid client configuration the SDK rejects is a 400, not a 500: the
+    // caller sent bad input (e.g. an empty application), not a server fault.
+    const status = isSdkOptionsValidationError(error) ? 400 : 500;
+    res.status(status).json({ error: error.message, type: error.constructor.name });
   }
 });
 

@@ -584,9 +584,16 @@ func routes(_ app: VaporApplication) throws {
             } catch {
                 return try errorReply("Invalid context data: \(error.localizedDescription)")
             }
+            // Honour the requested client config for inline-data contexts too, so
+            // an audience on application/environment matches here as it does in
+            // endpoint mode (finding 1). The SDK reads these names from the config
+            // client; inline data never fetches, so the endpoint is a dummy.
+            let dataClient = try DefaultClient(config: ClientConfig(
+                apiKey: "test-api-key", application: clientApplication,
+                endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
-                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: nil))
+                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: dataClient))
             context = sdk.createContextWithData(config: config, contextData: contextData)
         } else if var endpoint = request["endpoint"].string {
             if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {

@@ -313,9 +313,13 @@ def create_context():
         context = failing_sdk.create_context(context_config)
     elif payload_throttle > 0 and endpoint:
         # Delay the SDK's own fetch; the context stays not-ready until it lands.
+        # Keep .client so the delayed context still evaluates audiences against
+        # the configured names: the SDK reads them from the config client, not
+        # from the custom (deferred) data provider (finding 2).
         deferred_provider = DeferredContextDataProvider(
             DefaultContextDataProvider(client), payload_throttle)
         deferred_sdk_config = ABSmartlyConfig()
+        deferred_sdk_config.client = client
         deferred_sdk_config.context_data_provider = deferred_provider
         deferred_sdk_config.context_event_logger = event_collector
         deferred_sdk_config.context_event_handler = publisher

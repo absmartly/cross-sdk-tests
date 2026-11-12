@@ -457,7 +457,18 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				done(data, nil)
 			}()
+			// Seed the configured system names on the delayed context too: the
+			// SDK reads them from Client_ independently of the data provider, so
+			// a custom (deferred) provider must not drop them (finding 2).
+			application, environment := clientNames(req.Client)
+			client := sdk.CreateDefaultClient(sdk.ClientConfig{
+				Endpoint_:    endpoint,
+				ApiKey_:      "test-api-key",
+				Application_: application,
+				Environment_: environment,
+			})
 			a := sdk.Create(sdk.ABSmartlyConfig{
+				Client_:              client,
 				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
 				ContextPublisher_:    customPublisher,
 				ContextEventLogger_:  eventCollector,
@@ -488,7 +499,20 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		absmartly = &a
 	default:
+		// Honour the requested client config for inline-data contexts too: the
+		// SDK seeds evaluation names from Client_, so without a client carrying
+		// the configured names an audience on application/environment would see
+		// nothing here (finding 1). The endpoint is a dummy; inline data never
+		// fetches.
+		application, environment := clientNames(req.Client)
+		client := sdk.CreateDefaultClient(sdk.ClientConfig{
+			Endpoint_:    "http://localhost",
+			ApiKey_:      "test-api-key",
+			Application_: application,
+			Environment_: environment,
+		})
 		a := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:             client,
 			ContextPublisher_:   customPublisher,
 			ContextEventLogger_: eventCollector,
 		})

@@ -524,6 +524,37 @@ int main() {
                          config.refresh_period = opts["refreshPeriod"].get<int>();
                      }
                  }
+
+                 // Optional client config (the 2026-11 system-attributes round): a
+                 // scenario can set the application/environment names so audiences
+                 // can target them. Seed them on the ContextConfig once, so every
+                 // creation path (inline-data, delayed and immediate endpoint)
+                 // evaluates audiences against the same requested names (findings 1
+                 // and 2). The wrapper builds Context directly in the inline-data and
+                 // delayed paths, so the SDK's own client->config propagation does not
+                 // apply there. When the `client` field is omitted, the fixed
+                 // test-app/test-env defaults keep every pre-2026-11 scenario
+                 // unchanged. cpp-sdk's Client throws on an empty environment, so the
+                 // no-environment case (clientNoEnvironment) is a reviewed exception
+                 // and SKIPs.
+                 std::string client_application = "test-app";
+                 std::string client_environment = "test-env";
+                 if (body.contains("client") && body["client"].is_object()) {
+                     const auto& client_cfg = body["client"];
+                     if (client_cfg.contains("application") &&
+                         client_cfg["application"].is_string() &&
+                         !client_cfg["application"].get<std::string>().empty()) {
+                         client_application = client_cfg["application"].get<std::string>();
+                     }
+                     if (client_cfg.contains("environment") &&
+                         client_cfg["environment"].is_string() &&
+                         !client_cfg["environment"].get<std::string>().empty()) {
+                         client_environment = client_cfg["environment"].get<std::string>();
+                     }
+                 }
+                 config.application = client_application;
+                 config.environment = client_environment;
+
                  int payload_throttle = 0;
                  if (body.contains("options") && body["options"].is_object()) {
                      auto& opts = body["options"];
@@ -547,29 +578,6 @@ int main() {
                          // unknown payload, so a missing payload fails the
                          // context instead of loading as ready-but-empty.
                          fetches_from_endpoint = true;
-                         // Optional client config (the 2026-11 system-attributes
-                         // round): a scenario can set the application/environment
-                         // names so audiences can target them. When the `client`
-                         // field is omitted, the fixed test-app/test-env defaults
-                         // keep every pre-2026-11 scenario unchanged. cpp-sdk's
-                         // Client throws on an empty environment, so the
-                         // no-environment case (clientNoEnvironment) is a reviewed
-                         // exception and SKIPs.
-                         std::string client_application = "test-app";
-                         std::string client_environment = "test-env";
-                         if (body.contains("client") && body["client"].is_object()) {
-                             const auto& client_cfg = body["client"];
-                             if (client_cfg.contains("application") &&
-                                 client_cfg["application"].is_string() &&
-                                 !client_cfg["application"].get<std::string>().empty()) {
-                                 client_application = client_cfg["application"].get<std::string>();
-                             }
-                             if (client_cfg.contains("environment") &&
-                                 client_cfg["environment"].is_string() &&
-                                 !client_cfg["environment"].get<std::string>().empty()) {
-                                 client_environment = client_cfg["environment"].get<std::string>();
-                             }
-                         }
                          absmartly::ClientConfig client_config;
                          client_config.endpoint = translate_endpoint(body["endpoint"].get<std::string>());
                          client_config.api_key = "test-api-key";
@@ -583,7 +591,10 @@ int main() {
                              // Return before the data arrives: the context stays
                              // not-ready until the delayed SDK fetch resolves
                              // (is_ready() picks it up). Refresh uses the
-                             // undelayed SDK provider.
+                             // undelayed SDK provider. `config` already carries the
+                             // requested system names, so the delayed context
+                             // evaluates audiences against them even though it is
+                             // built directly rather than through the SDK (finding 2).
                              DeferredContextDataProvider deferred(provider, payload_throttle);
                              ctx = std::make_unique<absmartly::Context>(
                                  config, deferred.get_context_data(), collector, publisher, provider);

@@ -304,10 +304,33 @@ public class WrapperController {
             Context context;
             ABSmartly sdk;
             DummyContextDataProvider contextDataProvider = null;
+
+            // Build a client carrying the requested system names once, so every
+            // creation path (inline-data, delayed and immediate endpoint) seeds
+            // the evaluating context with the same application/environment. The
+            // SDK reads these from the config Client independently of the data
+            // provider, so a custom/deferred provider must not drop them.
+            ClientConfig namedClientConfig = ClientConfig.create()
+                .setEndpoint(endpoint != null ? translateEndpoint(endpoint) : "http://localhost")
+                .setAPIKey("test-api-key")
+                .setApplication(clientApplication)
+                .setEnvironment(clientEnvironment != null ? clientEnvironment : "placeholder");
+            // When no environment is configured, use a client that reports it as
+            // absent so Context leaves `environment` out of the evaluation map
+            // (Client.create would reject a null/empty environment outright).
+            Client namedClient = clientEnvironment != null
+                ? Client.create(namedClientConfig)
+                : new com.absmartly.sdk.NoEnvironmentClient(
+                    namedClientConfig,
+                    com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+
             if (contextData != null) {
-                // Sync: createContextWith - use dummy data provider
+                // Sync: createContextWith - use dummy data provider, but keep the
+                // configured client so the inline-data context still evaluates
+                // audiences against the requested application/environment.
                 contextDataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setClient(namedClient)
                     .setContextDataProvider(contextDataProvider)
                     .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
@@ -316,28 +339,19 @@ public class WrapperController {
             } else if (endpoint != null) {
                 // createContext with endpoint: a real SDK Client fetches and
                 // deserializes the payload from <endpoint>/context.
-                String translatedEndpoint = translateEndpoint(endpoint);
                 Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
 
-                ClientConfig clientConfig = ClientConfig.create()
-                    .setEndpoint(translatedEndpoint)
-                    .setAPIKey("test-api-key")
-                    .setApplication(clientApplication)
-                    .setEnvironment(clientEnvironment != null ? clientEnvironment : "placeholder");
-                // When no environment is configured, use a client that reports it as
-                // absent so Context leaves `environment` out of the evaluation map
-                // (Client.create would reject a null/empty environment outright).
-                Client client = clientEnvironment != null
-                    ? Client.create(clientConfig)
-                    : new com.absmartly.sdk.NoEnvironmentClient(
-                        clientConfig,
-                        com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+                Client client = namedClient;
 
                 if (payloadThrottle > 0) {
                     // Delay the SDK's own fetch; the context stays not-ready until it lands.
+                    // Keep .setClient(client) so the delayed context still evaluates
+                    // against the configured names: the SDK reads them from the
+                    // config client, not from the custom data provider.
                     DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
                         new DefaultContextDataProvider(client), payloadThrottle);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
                         .setContextDataProvider(deferredProvider)
                         .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);

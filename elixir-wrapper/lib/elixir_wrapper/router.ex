@@ -76,7 +76,7 @@ defmodule ElixirWrapper.Router do
 
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_sync(conn, data, units, options)
+        create_context_sync(conn, data, units, options, params["client"])
 
       %{"failLoad" => true, "units" => units} = params ->
         options = params["options"] || %{}
@@ -397,7 +397,7 @@ defmodule ElixirWrapper.Router do
     DynamicSupervisor.start_child(ABSmartly.ContextSupervisor, child_spec)
   end
 
-  defp create_context_sync(conn, data, units, options) do
+  defp create_context_sync(conn, data, units, options, client \\ nil) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
@@ -406,11 +406,16 @@ defmodule ElixirWrapper.Router do
 
     context_data = ABSmartly.Types.ContextData.from_map(data)
 
+    # Honour the requested client config for inline-data contexts too, so an
+    # audience on application/environment matches here as it does in endpoint
+    # mode (finding 1). Defaults keep every pre-2026-11 scenario unchanged.
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: "http://localhost:3000",
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
+      application: client_application,
+      environment: client_environment,
       publisher: ElixirWrapper.ArmablePublisher
     }
 

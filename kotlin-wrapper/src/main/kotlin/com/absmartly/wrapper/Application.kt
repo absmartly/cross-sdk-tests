@@ -239,7 +239,18 @@ fun Application.configureRouting() {
                 if (request.containsKey("data")) {
                     val contextData = objectMapper.convertValue(request["data"], ContextData::class.java)
                     dataProvider = DummyContextDataProvider()
+                    // Honour the requested client config for inline-data contexts:
+                    // the SDK seeds evaluation names from the config Client, so
+                    // without a client carrying the configured names an audience on
+                    // application/environment would not match here (finding 1).
+                    val clientConfig = com.absmartly.sdk.ClientConfig.create()
+                        .setEndpoint("http://localhost")
+                        .setAPIKey("test-api-key")
+                        .setApplication(clientApplication)
+                        .setEnvironment(clientEnvironment)
+                    val client = com.absmartly.sdk.Client.create(clientConfig)
                     val sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
                         .setContextDataProvider(dataProvider)
                         .setContextPublisher(customPublisher)
                     sdk = ABsmartly.create(sdkConfig)

@@ -253,7 +253,11 @@ object Server extends IOApp {
               case Right(data) =>
                 IO {
                   val collector = new WrapperEventCollector()
-                  val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector, publisher))
+                  // Honour the requested client config for inline-data contexts too,
+                  // so an audience on application/environment matches here as it does
+                  // in endpoint mode (finding 1).
+                  val (clientApp, clientEnv) = clientNames(cursor)
+                  val sdk = new SDK(makeSdkConfig("http://localhost:3000", collector, publisher, clientApp, clientEnv))
                   val context = sdk.createContextWith(units, data, options)
                   (context, collector, None)
                 }
