@@ -252,6 +252,8 @@ pending), and swift (its lane already fails on main CI, so it cannot provide
 evidence). The capability is measured by the orchestrator, not reported by the
 wrappers. An exception that starts measuring true fails the run until the policy
 moves it to `required`; a required SDK that measures false fails with the
-observed header. A probe that cannot measure (context server unreachable, no
-GET /context recorded) fails the run and skips only the scenarios that require
-the capability.
+observed `Accept-Encoding` header(s) and the probe check that failed (no gzip
+advertised, refresh not fetched, not decoded, refresh data not used, or a
+served-encoding mismatch). A probe that cannot measure (context server
+unreachable, no GET /context recorded, a create or refresh that timed out)
+fails the run and skips only the scenarios that require the capability.

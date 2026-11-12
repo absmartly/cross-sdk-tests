@@ -210,7 +210,29 @@ def test_excepted_sdk_that_starts_sending_gzip_fails_until_policy_moves():
 def test_required_sdk_that_stops_sending_gzip_is_a_violation():
     orch = measure(True, probe_outcome(["gzip", None]))
     assert orch.capabilities["alpha"][CAP] is False
-    assert "is not advertised" in orch.capability_policy_violations["alpha"][0]
+    [violation] = orch.capability_policy_violations["alpha"]
+    assert "is not advertised" not in violation
+    assert "measured false" in violation and "['gzip', None]" in violation
+    assert "no gzip advertised" in violation
+
+
+@pytest.mark.parametrize("outcome, failed", [
+    (probe_outcome([None, None]), "no gzip advertised"),
+    (probe_outcome(["gzip"]), "refresh not fetched"),
+    (probe_outcome(["gzip", "gzip"], decoded=False), "not decoded"),
+    (probe_outcome(["gzip", "gzip"], refresh_decoded=False), "refresh data not used"),
+])
+def test_measured_false_violation_names_the_header_and_the_failed_check(outcome, failed):
+    [violation] = measure(True, outcome).capability_policy_violations["alpha"]
+    headers = [r["acceptEncoding"] for r in outcome["requests"]]
+    assert f"measured false (observed Accept-Encoding {headers!r}; failed: " in violation
+    assert failed in violation.split("failed: ", 1)[1]
+
+
+def test_served_encoding_mismatch_is_named():
+    outcome = probe_outcome(["gzip", "gzip"], decoded=False)  # the mock serves identity to a gzip request
+    [violation] = measure(True, outcome).capability_policy_violations["alpha"]
+    assert "served-encoding mismatch" in violation
 
 
 def test_wrapper_cannot_self_report_the_measured_capability():

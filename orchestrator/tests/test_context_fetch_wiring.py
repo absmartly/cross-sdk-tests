@@ -110,7 +110,8 @@ def test_probe_rejects_a_refresh_that_does_not_bring_the_new_data(server_url, wr
     with mock.patch("builtins.print"):
         orch.fetch_capabilities("fake", wrapper.url)
     assert orch.capabilities["fake"][CAP] is False
-    assert "is not advertised" in orch.capability_policy_violations["fake"][0]
+    assert "measured false" in orch.capability_policy_violations["fake"][0]
+    assert "refresh data not used" in orch.capability_policy_violations["fake"][0]
 
 
 def test_probe_against_an_unreachable_context_server_is_a_measurement_failure(wrapper_factory):

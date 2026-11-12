@@ -522,6 +522,9 @@ class TestOrchestrator:
         # sdk_name -> measured capability -> why it could not be measured. Fails
         # the run and skips only the scenarios requiring that capability.
         self.measurement_failed: Dict[str, Dict[str, str]] = {}
+        # sdk_name -> measured capability -> what the probe observed and which
+        # check failed; quoted in the policy violation of a measured false.
+        self.measured_evidence: Dict[str, Dict[str, str]] = {}
         # "" once the context server answered /health, else the error (None: not checked yet).
         self._context_server_ready: Optional[str] = None
         # scenario name -> sdk name -> context-server requests per fetching step.
@@ -786,6 +789,18 @@ class TestOrchestrator:
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
         decoded = negotiated.get("decoded") is True and negotiated.get("refreshDecoded") is True
         value = bool(all(negotiation.advertises(h, "gzip") for h in headers) and refreshed and decoded)
+        failed_checks = [name for name, failed in (
+            ("no gzip advertised", not all(negotiation.advertises(h, "gzip") for h in headers)),
+            ("refresh not fetched", not refreshed),
+            ("not decoded", negotiated.get("decoded") is not True),
+            ("refresh data not used", negotiated.get("refreshDecoded") is not True),
+            ("served-encoding mismatch", any(
+                r.get("served") != negotiation.choose_encoding(r.get("acceptEncoding"), negotiation.DEFAULT_PREFERENCE)
+                for r in fetches)),
+        ) if failed]
+        self.measured_evidence.setdefault(sdk_name, {})["contextFetchCompression"] = (
+            f"observed Accept-Encoding {headers!r}; failed: {', '.join(failed_checks) or 'none'}"
+        )
 
         # REPORT-ONLY: what the SDK does with a gzip body it did not ask for. It
         # gates nothing; it is the evidence behind the SDK fixes (several SDKs
@@ -906,6 +921,13 @@ class TestOrchestrator:
                 continue  # reported (and failing the run) as a measurement failure
             if caps.get(cap) is not True:
                 got = "missing" if cap not in caps else json.dumps(caps[cap])
+                if cap in (self.policy.get("measuredCapabilities") or []):
+                    evidence = self.measured_evidence.get(sdk_name, {}).get(cap, "no probe evidence recorded")
+                    violations.append(
+                        f"required capability {cap!r} measured {got} ({evidence}); its scenarios "
+                        f"run anyway and are expected to fail"
+                    )
+                    continue
                 violations.append(
                     f"required capability {cap!r} is not advertised (got {got}); its scenarios "
                     f"run anyway and are expected to fail"
