@@ -16,9 +16,18 @@ serves gzip when the request advertised it, identity otherwise (it never serves
 br or zstd; whether an SDK lists them is only reported). The orchestrator probes
 each SDK once at startup (create, then a refresh after the server's data
 changed, both negotiated) and scenarios 230 and 232 check every fetch. A second,
-REPORT-ONLY probe forces gzip on a request that did not ask for it (5 s timeout,
-gates nothing): it is the evidence below for which SDKs fail on such a body.
-The User-Agent tells a reviewer that the SDK's own client made the request.
+REPORT-ONLY "forced gzip" probe makes the server send gzip whatever the request
+said, without changing the SDK's `Accept-Encoding` (5 s timeout, gates nothing;
+`forcedGzip` in `report.json`, with `requested` saying whether the header
+advertised gzip). For an SDK whose recorded header did not advertise gzip (java,
+kotlin, php, go, rust, cpp, and from code dotnet and elixir) that body is
+**unrequested**, and the result is the evidence below for which SDKs fail on
+it. For a gzip-advertising SDK it is "forced gzip (requested)": an ordinary
+gzip response, so it shows nothing beyond the negotiated probe.
+The recorded User-Agent is a heuristic, not proof of who fetched: a wrapper that
+shares the SDK's HTTP stack (node's fetch, Python's `requests`) sends the same
+User-Agent and is indistinguishable by it. As in `WRAPPER_API_SPEC.md`, the only
+guarantee that the SDK's own client made the request is code review of the wrapper.
 "Observed" below means seen on the wire from that SDK's lane in this sandbox.
 "From code" means read from source with no lane run, because the image could not
 be built here (no network access to nuget.org, hex.pm, repo.scala-sbt.org,
@@ -41,7 +50,7 @@ stated.
 - Accept-Encoding: **observed none**, on create and on refresh.
   `Client.getContextData` passes `null` headers (`core-api/.../Client.java:99`).
 - Decodes: nothing. Async httpclient5 below 5.6 has no content decompression.
-  Unrequested gzip, **observed**: the context loads as failed (`ready=true, failed=true`).
+  Forced gzip (unrequested: no gzip advertised), **observed**: the context loads as failed (`ready=true, failed=true`).
 - User-configurable today: only by supplying a custom `HTTPClient` implementation.
   `DefaultHTTPClientConfig` has no compression switch.
 - Minimal fix: httpclient5 **5.6** adds transparent async decompression.
@@ -65,7 +74,7 @@ stated.
   The wrapper uses the SDK's `Client` (`kotlin-wrapper/.../Application.kt:234-239`).
 - Accept-Encoding: **observed none** (create and refresh). User-Agent `Java/17.0.21`.
 - Decodes: nothing. `readResponse` copies the raw stream (`DefaultHTTPClient.kt:95-105`).
-  Unrequested gzip, **observed**: failed context, `IllegalStateException: Failed to deserialize context data`.
+  Forced gzip (unrequested), **observed**: failed context, `IllegalStateException: Failed to deserialize context data`.
 - Configurable today: only through a custom `HTTPClient`.
 - Minimal fix: in `execute` set `Accept-Encoding: gzip` and wrap the stream in
   `GZIPInputStream` when `connection.contentEncoding == "gzip"` (JDK only).
@@ -113,7 +122,7 @@ stated.
   shows the ReactPHP client, not the curl default.
 - Accept-Encoding: **observed none** with ReactHttpClient (User-Agent `ReactPHP/1`).
   From code, the curl default sets no `CURLOPT_ENCODING`, so curl sends none either.
-- Decodes: ReactHttpClient, **observed**: nothing. Unrequested gzip gives a failed
+- Decodes: ReactHttpClient, **observed**: nothing. Forced gzip (unrequested) gives a failed
   context, `Control character error, possibly incorrectly encoded` (json_decode on
   gzip bytes). The curl default, from code: nothing, since curl decodes only when
   `CURLOPT_ENCODING` is set.
@@ -131,7 +140,7 @@ stated.
   the lane ran requests 2.34.2). The wrapper uses the SDK's `DefaultHTTPClient`
   (`python-wrapper/server.py:246-248`).
 - Accept-Encoding: **observed `gzip, deflate`** (create and refresh), served gzip.
-- Decodes: gzip, deflate (urllib3). Unrequested gzip, **observed**: decoded and loaded.
+- Decodes: gzip, deflate (urllib3). Forced gzip (requested), **observed**: decoded and loaded.
 - Fix: none for gzip. The lane image has urllib3 2.8.0, whose `ACCEPT_ENCODING` is
   `gzip,deflate`. urllib3 adds `br` when `brotli`/`brotlicffi` is importable and
   `zstd` when its zstd support is available (optional packages, not installed here).
@@ -144,7 +153,7 @@ stated.
 - Accept-Encoding: **observed none**. The SDK sets `DisableCompression: true`
   (`sdk/DefaultHttpClient.go:50`), which turns off the transport's automatic `gzip`.
 - Decodes: resty gunzips any `Content-Encoding: gzip` body (resty `client.go:1274-1276`).
-  Unrequested gzip, **observed**: decoded and loaded fine.
+  Forced gzip (unrequested), **observed**: decoded and loaded fine.
 - Configurable today: no; the transport is built inside `DefaultHttpClientConfig`.
 - Minimal fix: drop `DisableCompression: true`. The Go transport then sends
   `Accept-Encoding: gzip` and decodes transparently. Do not also set the header by
@@ -157,7 +166,7 @@ stated.
   Both wrappers use the SDK's `Client.create` (`ruby-wrapper/server.rb:164-170`,
   `liquid-wrapper/server.rb:294-300`).
 - Accept-Encoding: **observed `gzip;q=1.0,deflate;q=0.6,identity;q=0.3`** on both lanes (Net::HTTP default).
-- Decodes: gzip, deflate (Net::HTTP). Unrequested gzip, **observed**: decoded and loaded.
+- Decodes: gzip, deflate (Net::HTTP). Forced gzip (requested), **observed**: decoded and loaded.
 - Fix: none. br/zstd: not in Net::HTTP.
 
 ## rust (rust-sdk `fix/all-tests-passing` be740a2)
@@ -165,7 +174,7 @@ stated.
 - Client: reqwest 0.12 with only the `json` feature (`Cargo.toml:23`); fetch at
   `src/sdk.rs:309-317`. The wrapper uses the SDK's own fetch (`rust-wrapper/src/main.rs:57`).
 - Accept-Encoding: **observed none**.
-- Decodes: nothing. Unrequested gzip, **observed**: failed context, `HTTP request failed: error decoding response body`.
+- Decodes: nothing. Forced gzip (unrequested), **observed**: failed context, `HTTP request failed: error decoding response body`.
 - Configurable today: no (the client is built inside the SDK; cargo features are the SDK's).
 - Minimal fix: `reqwest = { version = "0.12", features = ["json", "gzip"] }`. reqwest
   then adds `Accept-Encoding: gzip` and decodes it. `brotli` and `zstd` features exist
@@ -178,7 +187,7 @@ stated.
 - Client: libcurl easy handle, `src/default_http_client.cpp:21-45`. The wrapper
   passes `std::make_shared<absmartly::DefaultHTTPClient>()` (`cpp-wrapper/server.cpp:458,554`).
 - Accept-Encoding: **observed none**.
-- Decodes: nothing. Unrequested gzip, **observed**: failed context, nlohmann JSON
+- Decodes: nothing. Forced gzip (unrequested), **observed**: failed context, nlohmann JSON
   `parse error ... last read: '<U+001F>'` (the gzip magic byte).
 - Configurable today: only through a custom `HTTPClient`.
 - Minimal fix: `curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "")` in `get`.
@@ -235,7 +244,7 @@ stated.
   so react is `required` too and its CI lane proves it.
 - Decodes: gzip, br and zstd. **Observed** in the lane image (Node v24.22.3,
   undici 7.30.2) with a local server forcing each coding: global `fetch`
-  advertises only `gzip, deflate` but decoded all three. Unrequested gzip,
+  advertises only `gzip, deflate` but decoded all three. Forced gzip (requested),
   **observed** in the probe: decoded and loaded. Advertising br/zstd needs an
   explicit `Accept-Encoding` header, since undici's default does not list them.
 - Browsers: the browser sets `Accept-Encoding` itself (zstd/br/gzip in current browsers).

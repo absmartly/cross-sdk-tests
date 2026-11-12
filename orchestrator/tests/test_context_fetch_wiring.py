@@ -87,13 +87,15 @@ def test_probe_measures_a_conforming_sdk(server_url, wrapper_factory):
     assert probe["userAgent"] == ["fake-sdk/1"]
     assert probe["refreshFetched"] is True and probe["decoded"] is True and probe["refreshDecoded"] is True
     assert probe["advertises"] == {"gzip": True, "br": False, "zstd": False}
-    unrequested = probe["unrequestedGzip"]
-    assert unrequested["reportOnly"] is True and unrequested["decoded"] is True
+    forced = probe["forcedGzip"]
+    assert forced["reportOnly"] is True and forced["decoded"] is True
+    assert forced["requested"] is True  # this SDK advertised gzip: forced, but requested
+    assert "unrequestedGzip" not in probe
     assert wrapper.refresh_bodies == [{}]  # the wrapper got no data to apply
     assert wrapper.contexts == {}  # probe contexts deleted
 
 
-def test_probe_records_an_sdk_that_cannot_decode_unrequested_gzip(server_url, wrapper_factory):
+def test_probe_records_an_sdk_that_cannot_decode_forced_gzip(server_url, wrapper_factory):
     wrapper = wrapper_factory("none")
     orch = orchestrator_for(wrapper, required=False)
     with mock.patch("builtins.print"):
@@ -102,8 +104,9 @@ def test_probe_records_an_sdk_that_cannot_decode_unrequested_gzip(server_url, wr
     assert "fake" not in orch.capability_policy_violations
     probe = orch.context_fetch_probe["fake"]
     assert probe["acceptEncoding"] == ["identity", "identity"] and probe["served"] == ["identity", "identity"]
-    unrequested = probe["unrequestedGzip"]
-    assert unrequested["failed"] is True and "cannot decode gzip" in unrequested["error"]
+    forced = probe["forcedGzip"]
+    assert forced["failed"] is True and "cannot decode gzip" in forced["error"]
+    assert forced["requested"] is False  # identity only: the forced gzip was unrequested
 
 
 @pytest.mark.parametrize("mode", ["stale", "skip-fetch"])

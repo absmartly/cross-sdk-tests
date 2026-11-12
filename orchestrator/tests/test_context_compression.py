@@ -179,7 +179,7 @@ def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200, serv
     }
 
 
-def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None, unrequested=None):
+def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None, forced=None):
     orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(required, other))
     orch._context_server_ready = ""  # the context server answered /health
     body = dict(wrapper_caps or {})
@@ -187,9 +187,9 @@ def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=N
         body[CAP] = wrapper_says
     response = mock.Mock(status_code=200)
     response.json.return_value = body
-    if unrequested is None:
-        unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
-    side_effect = negotiated if isinstance(negotiated, Exception) else [negotiated, unrequested]
+    if forced is None:
+        forced = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    side_effect = negotiated if isinstance(negotiated, Exception) else [negotiated, forced]
     with mock.patch.object(test_runner.requests, "get", return_value=response), \
             mock.patch.object(orch, "_probe_context_fetch", side_effect=side_effect), \
             mock.patch("builtins.print"):
@@ -257,9 +257,9 @@ def test_wrapper_value_for_a_measured_capability_is_dropped_before_validation(wr
     orch._context_server_ready = ""
     response = mock.Mock(status_code=200)
     response.json.return_value = {"holdouts": True, CAP: wrapper_says}
-    unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    forced = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
     with mock.patch.object(test_runner.requests, "get", return_value=response), \
-            mock.patch.object(orch, "_probe_context_fetch", side_effect=[probe_outcome(headers), unrequested]), \
+            mock.patch.object(orch, "_probe_context_fetch", side_effect=[probe_outcome(headers), forced]), \
             mock.patch("builtins.print"):
         orch.fetch_capabilities("alpha", "http://alpha")
     assert "alpha" not in orch.capabilities_fetch_failed
@@ -319,14 +319,28 @@ def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiate
     {"requests": None},  # a malformed outcome: building the report raises TypeError
 ])
 def test_report_only_probe_cannot_change_the_gate(required, headers, error):
-    orch = measure(required, probe_outcome(headers), unrequested=error)
+    orch = measure(required, probe_outcome(headers), forced=error)
     assert orch.capabilities["alpha"][CAP] is required
     assert "alpha" not in orch.measurement_failed and "alpha" not in orch.capability_policy_violations
-    report = orch.context_fetch_probe["alpha"]["unrequestedGzip"]
+    report = orch.context_fetch_probe["alpha"]["forcedGzip"]
     assert report["reportOnly"] is True and "report-only probe failed" in report["error"]
     orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
     with mock.patch("builtins.print"):
         assert orch.generate_report(os.devnull, []) == 0
+
+
+@pytest.mark.parametrize("headers, requested", [(["gzip", "gzip"], True), ([None, None], False)])
+def test_forced_gzip_probe_is_labelled_forced_and_says_whether_it_was_requested(headers, requested):
+    forced = {"ready": True, "failed": not requested, "requests": [{"acceptEncoding": headers[0]}]}
+    orch = measure(requested, probe_outcome(headers), forced=forced)
+    report = orch.context_fetch_probe["alpha"]
+    assert "unrequestedGzip" not in report and report["forcedGzip"]["requested"] is requested
+    orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
+    with mock.patch("builtins.print") as printed:
+        orch.generate_report(os.devnull, [])
+    out = "\n".join(str(c.args[0]) for c in printed.call_args_list if c.args)
+    assert f"forced gzip (report only, requested={requested})" in out
+    assert "unrequested" not in out
 
 
 # -- orchestrator: context-server control calls ------------------------------

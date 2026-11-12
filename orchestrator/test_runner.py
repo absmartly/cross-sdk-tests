@@ -35,8 +35,9 @@ REPORTED_ENCODINGS = ("gzip", "br", "zstd")
 # One timeout for creating a context, used by scenarios and by the probe, so a
 # fetch that passes the probe cannot time out in the scenarios (or vice versa).
 CONTEXT_CREATE_TIMEOUT = 5
-# Report-only unrequested-gzip probe: short, it gates nothing.
-UNREQUESTED_GZIP_TIMEOUT = 5
+# Report-only forced-gzip probe (the server sends gzip whatever the SDK's
+# Accept-Encoding said): short, it gates nothing.
+FORCED_GZIP_TIMEOUT = 5
 CONTEXT_SERVER_READY_TIMEOUT = 30
 
 # The Accept-Encoding rules live in one stdlib-only module shared with the
@@ -838,24 +839,30 @@ class TestOrchestrator:
             f"observed Accept-Encoding {headers!r}; failed: {', '.join(failed_checks) or 'none'}"
         )
 
-        # REPORT-ONLY: what the SDK does with a gzip body it did not ask for. It
-        # gates nothing; it is the evidence behind the SDK fixes (several SDKs
-        # fail to load such a body). Short timeout. Whatever goes wrong here
+        # REPORT-ONLY "forced gzip": the server sends gzip whatever the SDK's
+        # Accept-Encoding said (the SDK's header is not changed). For an SDK
+        # that did not advertise gzip this is an unrequested gzip body;
+        # `requested` records whether the header did advertise it. It gates
+        # nothing; it is the evidence behind the SDK fixes (several SDKs fail
+        # to load such a body). Short timeout. Whatever goes wrong here
         # (including building the report) is recorded and `value` stands.
         try:
-            unrequested = self._probe_context_fetch(
-                base_url, probe_data("exp_context_fetch_probe"), None, "gzip", UNREQUESTED_GZIP_TIMEOUT)
-            unrequested_report = {
+            forced = self._probe_context_fetch(
+                base_url, probe_data("exp_context_fetch_probe"), None, "gzip", FORCED_GZIP_TIMEOUT)
+            forced_headers = [r.get("acceptEncoding") for r in forced["requests"]]
+            forced_report = {
                 "reportOnly": True,
-                "acceptEncoding": [r.get("acceptEncoding") for r in unrequested["requests"]],
-                "ready": unrequested.get("ready"),
-                "failed": unrequested.get("failed"),
-                "decoded": unrequested.get("decoded"),
-                "error": unrequested.get("error"),
+                "acceptEncoding": forced_headers,
+                "requested": bool(forced_headers) and all(negotiation.advertises(h, "gzip") for h in forced_headers),
+                "ready": forced.get("ready"),
+                "failed": forced.get("failed"),
+                "decoded": forced.get("decoded"),
+                "error": forced.get("error"),
             }
         except Exception as exc:  # report-only: never changes the gate
-            unrequested_report = {
-                "reportOnly": True, "acceptEncoding": [], "ready": None, "failed": None, "decoded": None,
+            forced_report = {
+                "reportOnly": True, "acceptEncoding": [], "requested": None,
+                "ready": None, "failed": None, "decoded": None,
                 "error": f"report-only probe failed: {str(exc) or exc.__class__.__name__}",
             }
 
@@ -871,14 +878,14 @@ class TestOrchestrator:
             "error": negotiated.get("error"),
             "advertises": {c: any(negotiation.advertises(h, c) for h in headers) for c in REPORTED_ENCODINGS},
             "contextFetchCompression": value,
-            "unrequestedGzip": unrequested_report,
+            "forcedGzip": forced_report,
         }
         probe = self.context_fetch_probe[sdk_name]
         print(
             f"  context fetch {sdk_name}: Accept-Encoding {headers!r} -> served {probe['served']}; "
             f"User-Agent {probe['userAgent']}; contextFetchCompression={value}; "
-            f"unrequested gzip (report only) -> ready={unrequested_report['ready']} "
-            f"failed={unrequested_report['failed']} decoded={unrequested_report['decoded']}"
+            f"forced gzip (report only, requested={forced_report['requested']}) -> ready={forced_report['ready']} "
+            f"failed={forced_report['failed']} decoded={forced_report['decoded']}"
         )
         return value
 
@@ -1961,13 +1968,13 @@ class TestOrchestrator:
             for sdk_name in sorted(self.context_fetch_probe):
                 probe = self.context_fetch_probe[sdk_name]
                 advertised = ", ".join(c for c, yes in probe["advertises"].items() if yes) or "none"
-                unrequested = probe["unrequestedGzip"]
+                forced = probe["forcedGzip"]
                 print(f"  {sdk_name}: Accept-Encoding {probe['acceptEncoding']} (advertises: {advertised}); "
                       f"User-Agent {probe['userAgent']}; "
                       f"contextFetchCompression={probe['contextFetchCompression']}")
-                print(f"    unrequested gzip (report only): ready={unrequested['ready']} "
-                      f"failed={unrequested['failed']} decoded={unrequested['decoded']} "
-                      f"error={unrequested['error']}")
+                print(f"    forced gzip (report only, requested={forced.get('requested')}): ready={forced['ready']} "
+                      f"failed={forced['failed']} decoded={forced['decoded']} "
+                      f"error={forced['error']}")
             for sdk_name in sorted(self.measurement_failed):
                 for cap, reason in sorted(self.measurement_failed[sdk_name].items()):
                     print(f"  {sdk_name}: {Colors.RED}measurement of {cap} FAILED{Colors.RESET}: {reason}")
