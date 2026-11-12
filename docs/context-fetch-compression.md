@@ -266,4 +266,7 @@ advertised, refresh not fetched, not decoded, or refresh data not used). A
 probe that cannot measure (context server unreachable, no GET /context
 recorded, a create or refresh that timed out, or the context server serving an
 encoding the negotiation would not choose) fails the run and skips only the
-scenarios that require the capability.
+scenarios that require the capability. Inside scenarios 230-232, a failing context-server control call or a served
+encoding the negotiation would not choose is a harness error: the run fails,
+but the scenario is not counted as an SDK failure (an SDK failure already
+found earlier in that scenario is still counted, and shown next to it).

@@ -936,7 +936,11 @@ class TestOrchestrator:
                 fail("contextFetch.status", 200, record.get("status"))
             expected = negotiation.choose_encoding(header, preference, spec.get("force"))
             if record.get("served") != expected:
-                fail("contextFetch.served", f"{expected} for Accept-Encoding {header!r}", record.get("served"))
+                # The context server chose the encoding, not the SDK: a server fault.
+                raise HarnessError(
+                    f"context server served {record.get('served')!r} for Accept-Encoding {header!r}; "
+                    f"the negotiation chooses {expected!r}"
+                )
             for coding in spec.get("requireAdvertised", []):
                 if not negotiation.advertises(header, coding):
                     fail(f"contextFetch.acceptEncoding[{coding}]", f"advertises {coding}", header)

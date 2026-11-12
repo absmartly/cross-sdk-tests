@@ -383,8 +383,13 @@ def test_served_encoding_must_follow_the_request():
     assert check(spec, [fetch("gzip, deflate", "gzip")]) == []
     assert check(spec, [fetch(None, "identity")]) == []
     assert check(spec, [fetch("gzip;q=0", "identity")]) == []
-    assert check(spec, [fetch("gzip", "identity")]) == ["contextFetch.served"]
-    assert check(spec, [fetch(None, "gzip")]) == ["contextFetch.served"]
+
+
+@pytest.mark.parametrize("header, served", [("gzip", "identity"), (None, "gzip")])
+def test_served_encoding_mismatch_in_a_scenario_is_a_harness_error(header, served):
+    """The context server picked the encoding: a mismatch is the server's fault, not the SDK's."""
+    with pytest.raises(test_runner.HarnessError, match="negotiation chooses"):
+        check({"encodings": ["gzip", "identity"]}, [fetch(header, served)])
 
 
 def test_step_without_a_fetch_fails():
