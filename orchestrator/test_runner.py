@@ -590,9 +590,15 @@ class TestOrchestrator:
                     payload = None
                     reason = "invalid /capabilities response: body is not JSON"
                 else:
+                    if isinstance(payload, dict):
+                        # Measured capabilities are the orchestrator's to supply: a
+                        # wrapper's value for one (of any type, e.g. "unknown") is
+                        # dropped before validation, so it can neither fail the
+                        # /capabilities check nor survive into the result.
+                        measured = set(self.policy.get("measuredCapabilities") or [])
+                        payload = {k: v for k, v in payload.items() if k not in measured}
                     reason = validate_capabilities_response(payload, self.known_capabilities)
                     if reason is None:
-                        payload = dict(payload)
                         self.apply_measured_capabilities(sdk_name, base_url, payload)
                         self.set_capabilities(sdk_name, payload)
                         return
@@ -849,7 +855,8 @@ class TestOrchestrator:
     def apply_measured_capabilities(self, sdk_name: str, base_url: str, payload: Dict[str, Any]) -> None:
         """Measure the policy's measured capabilities and write them into `payload`.
 
-        A wrapper never self-reports these: any value it sent is dropped. A
+        A wrapper never self-reports these: fetch_capabilities drops any value it
+        sent before validation (and this pops it again for direct callers). A
         measurement that fails is recorded in `measurement_failed`: it fails the
         run and skips only the scenarios that require that capability, while the
         wrapper's other (validated) capabilities still apply.

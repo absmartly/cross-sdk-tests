@@ -241,6 +241,35 @@ def test_wrapper_cannot_self_report_the_measured_capability():
     assert orch.capability_policy_violations["alpha"]
 
 
+@pytest.mark.parametrize("wrapper_says", ["unknown", True, False, None, 1, {"x": 1}])
+@pytest.mark.parametrize("headers, measured", [(["gzip", "gzip"], True), ([None, None], False)])
+def test_wrapper_value_for_a_measured_capability_is_dropped_before_validation(wrapper_says, headers, measured):
+    """Any wrapper value (even a non-boolean) is discarded, never a capabilities-fetch failure."""
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True, other=True))
+    orch._context_server_ready = ""
+    response = mock.Mock(status_code=200)
+    response.json.return_value = {"holdouts": True, CAP: wrapper_says}
+    unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    with mock.patch.object(test_runner.requests, "get", return_value=response), \
+            mock.patch.object(orch, "_probe_context_fetch", side_effect=[probe_outcome(headers), unrequested]), \
+            mock.patch("builtins.print"):
+        orch.fetch_capabilities("alpha", "http://alpha")
+    assert "alpha" not in orch.capabilities_fetch_failed
+    assert orch.capabilities["alpha"]["holdouts"] is True
+    assert orch.capabilities["alpha"][CAP] is measured
+
+
+def test_other_capabilities_are_still_validated():
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True, other=True))
+    response = mock.Mock(status_code=200)
+    response.json.return_value = {"holdouts": "yes", CAP: "unknown"}
+    with mock.patch.object(test_runner.requests, "get", return_value=response), \
+            mock.patch.object(orch, "_probe_context_fetch") as probe, mock.patch("builtins.print"):
+        orch.fetch_capabilities("alpha", "http://alpha")
+    assert "'holdouts' must be a JSON boolean" in orch.capabilities_fetch_failed["alpha"]
+    probe.assert_not_called()
+
+
 @pytest.mark.parametrize("outcome", [
     probe_outcome(["gzip"]),                 # refresh did not fetch
     probe_outcome(["gzip", "gzip"], refresh=500),
