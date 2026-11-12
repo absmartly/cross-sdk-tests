@@ -456,6 +456,20 @@ class CapabilityPolicyTests(unittest.TestCase):
             for cap, reason in entry["unsupported"].items():
                 self.assertTrue(reason.strip(), f"{sdk}.{cap} needs a reason")
 
+    def test_removed_diagnostics_are_absent_from_policy(self):
+        policy = test_runner.load_capability_policy()
+        removed = {"diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"}
+        self.assertFalse(removed & set(policy["capabilities"]))
+        for sdk, entry in policy["sdks"].items():
+            with self.subTest(sdk=sdk):
+                self.assertFalse(removed & set(entry["required"]))
+                self.assertFalse(removed & set(entry["unsupported"]))
+
+    def test_java_requires_assignment_rules_semver_and_switchback(self):
+        policy = test_runner.load_capability_policy()
+        required = {"assignmentRules", "semverOperators", "switchback"}
+        self.assertEqual(required & set(policy["sdks"]["java"]["required"]), required)
+
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
         bad = make_policy({"alpha": {"required": ["diagnostics"], "unsupported": {}}})
