@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import generate_absent_keys_scenarios as generator
+from orchestrator.test_runner import TestOrchestrator as Orchestrator
 
 
 def canonical():
@@ -26,9 +27,9 @@ def test_retained_prefix_is_the_exact_starting_baseline():
 def test_group_is_an_ungated_contiguous_tail_after_max_retained_id():
     scenarios = canonical()
     group = [s for s in scenarios if generator.GROUP_MARKER in s["name"]]
-    assert len(scenarios) == 271
-    assert scenarios[-7:] == group == generator.build_group(272)
-    assert [int(s["name"].split(" - ", 1)[0]) for s in group] == list(range(272, 279))
+    assert len(scenarios) == 272
+    assert scenarios[-8:] == group == generator.build_group(272)
+    assert [int(s["name"].split(" - ", 1)[0]) for s in group] == list(range(272, 280))
     assert all("requires" not in s and s["steps"] for s in group)
 
 
@@ -86,15 +87,61 @@ def test_holdouts_are_absent_on_the_refreshed_wire_payload():
     assert refreshed["experiments"][1]["holdoutIds"] == []
 
 
+def test_audience_is_strict_and_assignment_rules_are_a_separate_case():
+    audience, rules = generator.build_group()[-2:]
+    assert audience["name"].startswith("278 - ")
+    assert rules["name"].startswith("279 - ")
+    for scenario, omitted in ((audience, "audience"), (rules, "assignmentRules")):
+        absent, empty = scenario["contextData"]["experiments"]
+        assert set(empty) - set(absent) == {omitted}
+        assert empty[omitted] == ""
+    assert all(e["audienceStrict"] is True for e in audience["contextData"]["experiments"])
+    for exposure in audience["steps"][-1]["expect"]["events"][0]["data"]["exposures"]:
+        assert exposure["assigned"] is True
+        assert exposure["eligible"] is True
+        assert exposure["audienceMismatch"] is False
+
+
+@pytest.mark.parametrize("event_type", ["exposure", "publish"])
+def test_absent_only_extra_exposure_key_fails_validate_events(event_type):
+    runner = Orchestrator({}, verbose=False)
+    scenario = generator.build_group()[0]
+    prior = []
+    checked = False
+    for index, step in enumerate(scenario["steps"]):
+        response = copy.deepcopy(step["expect"])
+        for event in response["events"]:
+            if event["type"] != event_type:
+                continue
+            exposures = [event["data"]] if event_type == "exposure" else event["data"]["exposures"]
+            for exposure in exposures:
+                # Dynamic clock fields must not make otherwise valid events fail.
+                exposure["exposedAt"] = 123
+            assert runner.validate_events(index, step["action"], response["events"], step["expect"], prior_responses=prior) == []
+            absent = next((e for e in exposures if e["name"] == "exp_optional_absent"), None)
+            if absent is not None:
+                absent["absentOnlyRegression"] = True
+                failures = runner.validate_events(index, step["action"], response["events"], step["expect"], prior_responses=prior)
+                assert failures
+                assert any("keys" in failure["field"] for failure in failures)
+                checked = True
+        # Baselines include the same dynamic clock field as real SDK events.
+        for event in response["events"]:
+            if event["type"] == "exposure":
+                event["data"]["exposedAt"] = 123
+        prior.append(response)
+    assert checked
+
+
 @pytest.mark.parametrize("mutation", [None, "expectation", "missing", "null", "prefix"])
 def test_check_detects_drift(tmp_path, monkeypatch, mutation):
     scenarios = copy.deepcopy(canonical())
     if mutation == "expectation":
-        scenarios[-7]["steps"][1]["expect"]["result"] = None
+        scenarios[-8]["steps"][1]["expect"]["result"] = None
     elif mutation == "missing":
         scenarios.pop()
     elif mutation == "null":
-        scenarios[-7]["contextData"]["experiments"][0]["customFieldValues"] = None
+        scenarios[-8]["contextData"]["experiments"][0]["customFieldValues"] = None
     elif mutation == "prefix":
         scenarios[0]["description"] += " drift"
     path = tmp_path / "scenarios.json"

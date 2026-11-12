@@ -6,11 +6,11 @@ Reconstructed from test_scenarios_complete.json
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 NOT CANONICAL. The checked-in test_scenarios_complete.json is the CANONICAL
-source of truth for the cross-SDK suite (271 scenarios); the harness never
+source of truth for the cross-SDK suite (272 scenarios, highest id 279); the harness never
 runs this script, and nothing (CI included) may be wired to it. This
 generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 271.
+  * It emits only 192 scenarios, not the canonical 272.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
@@ -19,7 +19,7 @@ generator is OUT OF DATE:
   * It does not emit the Switchback group (248-271); that group is owned by
     generate_switchback_scenarios.py, which rewrites it in place in the
     canonical file and verifies it with --check.
-  * It does not emit Absent Optional Keys (272-278); that group is owned by
+  * It does not emit Absent Optional Keys (272-279); that group is owned by
     generate_absent_keys_scenarios.py, including its --check and baseline guard.
 
 To avoid clobbering the fixed oracle, this script writes to

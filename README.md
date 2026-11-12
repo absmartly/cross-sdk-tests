@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **271 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **272 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -130,14 +130,18 @@ across languages.
   over HTTP and validates responses against the expected results baked into the
   scenarios (the JavaScript SDK is the canonical reference).
 
-  Scenarios 272-278 (Absent Optional Keys) are ungated on all 20 lanes. They
+  Scenarios 272-279 (Absent Optional Keys) are ungated on all 20 lanes. They
   compare omitted keys (not JSON null) with empty-value twins sharing seeds and
   splits: `customFieldValues` on ordinary, full-on and feature-flag experiments
   (272-274), a mixed absent/populated context (275), refresh from `[]` to absent
   to populated to absent without duplicate exposures (276), absent `holdoutIds`
-  and top-level `holdouts` (277), and absent `audience`/`assignmentRules` (278).
+  and top-level `holdouts` (277), absent `audience` under strict targeting (278),
+  and absent `assignmentRules` alone (279).
   Every case pins treatment, peeks, variables, custom-field values/types/global
-  keys, and published exposure bodies. All switchback keys stay absent on these
+  keys, and published exposure bodies. Exposure events match the empty twin's
+  key set; published exposures have exactly that baseline's key set too, while
+  clock values and SDK-specific publish envelope fields remain dynamic.
+  All switchback keys stay absent on these
   unit experiments. Required assignment fields are never omitted. Expectations
   are computed from the independent Python reference, not an SDK. Regenerate
   with `python3 generate_absent_keys_scenarios.py`; `--check` also verifies the
@@ -284,7 +288,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 271-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 272-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -308,8 +312,8 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 271 scenarios (highest id 278)
-├── generate_absent_keys_scenarios.py  # regenerates 272-278; --check verifies
+├── test_scenarios_complete.json  # 272 scenarios (highest id 279)
+├── generate_absent_keys_scenarios.py  # regenerates 272-279; --check verifies
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (248-271) in place; --check verifies
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)

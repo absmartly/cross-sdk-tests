@@ -1190,6 +1190,18 @@ class TestOrchestrator:
                             if not units_match_unordered(actual_value, expected_value):
                                 fail(f"events[{i}].data.units (unordered)", expected_value, actual_value)
                             continue
+                        if key == "exposures" and "sameExposureShapeAs" in expected_event:
+                            # Pin nested exposures to a real twin, not the dynamic publish envelope.
+                            reference, error = self.resolve_reference(
+                                prior_responses, expected_event["sameExposureShapeAs"], step_index, i
+                            )
+                            if error is not None:
+                                fail(f"events[{i}].sameExposureShapeAs", "a usable baseline exposure", error)
+                            elif isinstance(actual_value, list):
+                                for j, actual_exposure in enumerate(actual_value):
+                                    mismatch = self.shape_mismatch(actual_exposure, reference, f"data.exposures[{j}]")
+                                    if mismatch is not None:
+                                        fail(f"events[{i}].{mismatch[0]} (sameExposureShapeAs)", mismatch[1], mismatch[2])
                         if not values_match(actual_value, expected_value):
                             fail(f"events[{i}].data.{key}", expected_value, actual_value)
                 elif not values_match(actual_data, expected_data):

@@ -640,7 +640,7 @@ class ScenarioLoaderTests(unittest.TestCase):
         valid, empty, invalid = test_runner.load_scenarios(SCENARIOS_PATH, set(policy["capabilities"]))
         self.assertEqual(invalid, [])
         self.assertEqual(empty, [])
-        self.assertEqual(len(valid), 271)
+        self.assertEqual(len(valid), 272)
         self.assertTrue(any(s["name"] == test_runner.CREATE_WITH_SCENARIO for s in valid))
 
     def test_unknown_requires_is_invalid(self):

@@ -71,7 +71,8 @@ def observations(experiments, exposed):
     keys = list(dict.fromkeys(f["name"] for e in experiments for f in e.get("customFieldValues", [])))
     # Match existing scenario 63's nonempty request body; results are context-wide.
     steps.append(step("customFieldKeys", {"experimentName": experiments[0]["name"]}, keys))
-    for exp in experiments:
+    # Observe the empty twin first so the absent twin can reference its wire shape.
+    for exp in [experiments[1], experiments[0], *experiments[2:]]:
         name = exp["name"]
         variant = exp["fullOnVariant"] or unit_variant(
             UNITS[exp["unitType"]], exp["split"], exp["seedHi"], exp["seedLo"])
@@ -130,7 +131,16 @@ def build_group(first_number=272):
                 {"type": "refresh", "data": {"experiments": [
                     {"id": e["id"], "name": e["name"]} for e in experiments]}}]))
             steps += observations(experiments, exposed)
+        baseline = None
+        for index, observation in enumerate(steps):
+            for event in observation["expect"]["events"]:
+                if event["type"] == "exposure":
+                    if event["data"]["name"] == experiments[1]["name"]:
+                        baseline = index
+                    elif event["data"]["name"] == experiments[0]["name"]:
+                        event["sameShapeAs"] = baseline
         steps.append(publish_step(list(exposed.values()), UNITS))
+        steps[-1]["expect"]["events"][0]["sameExposureShapeAs"] = baseline
         scenarios.append({"name": f"{first_number + len(scenarios)}{GROUP_MARKER}{title}",
                           "description": description, "contextData": data, "steps": steps})
 
@@ -154,9 +164,13 @@ def build_group(first_number=272):
     add("Holdouts", "Absent holdoutIds versus [] twins are unchanged with top-level holdouts: [] and then "
         "with holdouts removed on refresh. Neither form requires holdout support.",
         pair(omitted=("holdoutIds",)), holdouts=True)
-    add("Audience And Assignment Rules", "Absent audience and assignmentRules versus empty-string twins "
-        "have no targeting/rules, with identical treatment, variables, fields and exposures.",
-        pair(omitted=("audience", "assignmentRules")))
+    audience = pair(omitted=("audience",))
+    for exp in audience:
+        exp["audienceStrict"] = True
+    add("Strict Audience", "Absent audience versus an empty-string twin with audienceStrict true "
+        "remains eligible, with identical treatment, variables, fields and audienceMismatch false.", audience)
+    add("Assignment Rules", "Absent assignmentRules alone versus an empty-string twin has no rules, "
+        "with identical treatment, variables, fields and exposures.", pair(omitted=("assignmentRules",)))
     return scenarios
 
 
