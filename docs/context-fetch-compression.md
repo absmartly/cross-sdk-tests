@@ -253,7 +253,8 @@ evidence). The capability is measured by the orchestrator, not reported by the
 wrappers. An exception that starts measuring true fails the run until the policy
 moves it to `required`; a required SDK that measures false fails with the
 observed `Accept-Encoding` header(s) and the probe check that failed (no gzip
-advertised, refresh not fetched, not decoded, refresh data not used, or a
-served-encoding mismatch). A probe that cannot measure (context server
-unreachable, no GET /context recorded, a create or refresh that timed out)
-fails the run and skips only the scenarios that require the capability.
+advertised, refresh not fetched, not decoded, or refresh data not used). A
+probe that cannot measure (context server unreachable, no GET /context
+recorded, a create or refresh that timed out, or the context server serving an
+encoding the negotiation would not choose) fails the run and skips only the
+scenarios that require the capability.

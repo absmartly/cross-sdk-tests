@@ -788,7 +788,8 @@ class TestOrchestrator:
         """contextFetchCompression: gzip advertised on create and refresh, and both bodies used.
 
         Raises MeasurementError when the probe could not measure anything (the
-        context server unusable, or no GET /context reached it).
+        context server unusable, no GET /context reached it, or it served an
+        encoding the negotiation would not choose).
         """
         def probe_data(name: str) -> Dict[str, Any]:
             return {"experiments": [{
@@ -813,6 +814,17 @@ class TestOrchestrator:
         if not fetches:
             raise MeasurementError(f"the SDK made no GET /context to the context server ({negotiated.get('error')})")
         headers = [r.get("acceptEncoding") for r in fetches]
+        # The context server serving an encoding the shared negotiation would not
+        # choose is the harness's fault: nothing about the SDK was measured.
+        mismatched = [
+            (r.get("acceptEncoding"), r.get("served")) for r in fetches
+            if r.get("served") != negotiation.choose_encoding(r.get("acceptEncoding"), negotiation.DEFAULT_PREFERENCE)
+        ]
+        if mismatched:
+            raise MeasurementError(
+                f"the context server served an encoding the negotiation would not choose "
+                f"(Accept-Encoding, served): {mismatched!r}"
+            )
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
         decoded = negotiated.get("decoded") is True and negotiated.get("refreshDecoded") is True
         value = bool(all(negotiation.advertises(h, "gzip") for h in headers) and refreshed and decoded)
@@ -821,9 +833,6 @@ class TestOrchestrator:
             ("refresh not fetched", not refreshed),
             ("not decoded", negotiated.get("decoded") is not True),
             ("refresh data not used", negotiated.get("refreshDecoded") is not True),
-            ("served-encoding mismatch", any(
-                r.get("served") != negotiation.choose_encoding(r.get("acceptEncoding"), negotiation.DEFAULT_PREFERENCE)
-                for r in fetches)),
         ) if failed]
         self.measured_evidence.setdefault(sdk_name, {})["contextFetchCompression"] = (
             f"observed Accept-Encoding {headers!r}; failed: {', '.join(failed_checks) or 'none'}"

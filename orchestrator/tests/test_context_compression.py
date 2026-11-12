@@ -167,11 +167,15 @@ def small_policy(required, other=False):
     return {"capabilities": caps, "measuredCapabilities": [CAP], "sdks": {"alpha": entry}}
 
 
-def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200):
+def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200, served=None):
+    """A probe outcome; each fetch is served what the negotiation picks unless `served` overrides it."""
+    def serve(h):
+        return served if served is not None else test_runner.negotiation.choose_encoding(
+            h, test_runner.negotiation.DEFAULT_PREFERENCE)
     return {
         "ready": True, "failed": False, "decoded": decoded, "refreshDecoded": refresh_decoded,
         "refreshStatus": refresh,
-        "requests": [{"status": 200, "acceptEncoding": h, "userAgent": "ua", "served": "identity"} for h in headers],
+        "requests": [{"status": 200, "acceptEncoding": h, "userAgent": "ua", "served": serve(h)} for h in headers],
     }
 
 
@@ -229,10 +233,14 @@ def test_measured_false_violation_names_the_header_and_the_failed_check(outcome,
     assert failed in violation.split("failed: ", 1)[1]
 
 
-def test_served_encoding_mismatch_is_named():
-    outcome = probe_outcome(["gzip", "gzip"], decoded=False)  # the mock serves identity to a gzip request
-    [violation] = measure(True, outcome).capability_policy_violations["alpha"]
-    assert "served-encoding mismatch" in violation
+@pytest.mark.parametrize("decoded", [True, False])
+def test_served_encoding_mismatch_is_a_measurement_failure(decoded):
+    """The context server serving what the negotiation would not choose is the harness's fault."""
+    outcome = probe_outcome(["gzip", "gzip"], decoded=decoded, refresh_decoded=decoded, served="identity")
+    orch = measure(True, outcome)
+    assert "served an encoding the negotiation would not choose" in orch.measurement_failed["alpha"][CAP]
+    assert CAP not in orch.capabilities["alpha"]
+    assert "alpha" not in orch.capability_policy_violations
 
 
 def test_wrapper_cannot_self_report_the_measured_capability():
