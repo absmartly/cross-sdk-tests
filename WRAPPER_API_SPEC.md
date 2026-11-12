@@ -190,10 +190,12 @@ Wrappers need nothing new for this, but they must:
 - let the SDK's own HTTP client fetch it with its defaults: no wrapper-added
   `Accept-Encoding`, no wrapper-side decompression;
 - never fetch `{endpoint}/context` themselves and hand the result to the SDK:
-  the request the context server records must be the SDK's own. Reviewers
-  check this per lane from the probe's recorded `User-Agent` (printed in the
-  run summary and stored in `report.json` under `context_fetch_probe`); it
-  should name the SDK's HTTP client, not the wrapper's;
+  the request the context server records must be the SDK's own. The probe
+  records the request's `User-Agent` (printed in the run summary and stored in
+  `report.json` under `context_fetch_probe`) and reviewers read it per lane,
+  but that is only a heuristic: a wrapper that shares the SDK's HTTP stack
+  (node's fetch, Python's `requests`) sends the same User-Agent and is
+  indistinguishable by it. The only guarantee is code review of the wrapper;
 - on `/refresh` with an empty body, refresh through the SDK's own fetch. The
   orchestrator changes the data on the context server before such a refresh
   and asserts the new value afterwards.

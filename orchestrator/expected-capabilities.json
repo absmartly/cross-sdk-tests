@@ -6,9 +6,9 @@
     "false/missing value fails the run and the gated scenarios still execute) or a reviewed",
     "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
     "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
-    "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
-    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports. A measured",
-    "capability may be required from a code reading when no lane here could observe it: CI then proves it.",
+    "/capabilities that are not listed in `capabilities` are ignored. A `required` entry needs evidence,",
+    "never auto-enrolled from what a wrapper currently reports: a passing CI lane, or, only for a measured",
+    "capability no lane here could observe, a code reading, in which case CI is what proves it.",
     "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`.",
     "`measuredCapabilities` are not read from the wrapper: the orchestrator measures them (here, the Accept-Encoding the SDK sends to the context server) and checks the result against this policy exactly like an advertised capability, so a reviewed exception that starts measuring true fails the run until it is moved to `required`."
   ],
