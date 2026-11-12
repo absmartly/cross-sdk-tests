@@ -7,7 +7,7 @@ def place_group(existing, markers, build):
                  if any(marker in scenario["name"] for marker in markers)]
     if positions:
         start, stop = positions[0], positions[-1] + 1
-        if positions != list(range(start, stop)):
+        if len(positions) != stop - start:
             raise ValueError(f"scenario group {markers!r} has non-contiguous markers")
         first_number = int(existing[start]["name"].split(" - ", 1)[0])
     else:
