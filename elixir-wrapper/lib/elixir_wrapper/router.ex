@@ -397,7 +397,7 @@ defmodule ElixirWrapper.Router do
     DynamicSupervisor.start_child(ABSmartly.ContextSupervisor, child_spec)
   end
 
-  defp create_context_sync(conn, data, units, options, client \\ nil) do
+  defp create_context_sync(conn, data, units, options, client) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
