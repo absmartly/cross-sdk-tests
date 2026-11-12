@@ -26086,5 +26086,6067 @@
         }
       }
     ]
+  },
+  {
+    "name": "230 - Context Fetch Compression - Gzip When Advertised Matches Direct Data",
+    "description": "UNGATED (every SDK): the SDK's own GET {endpoint}/context is served by the negotiating context server, gzip only when the request advertised gzip and identity otherwise, with Content-Encoding and Vary: Accept-Encoding. The SDK must load the context, refresh it through the same fetch, and produce exactly the treatment, variable value, exposure and publish of the Direct Data Twin. Each fetch's served encoding is checked against the recorded Accept-Encoding.",
+    "contextServer": {
+      "encodings": [
+        "gzip",
+        "identity"
+      ]
+    },
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 100,
+          "name": "exp_compression_filler_00",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1000,
+          "seedLo": 2000,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3000,
+          "trafficSeedLo": 4000,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.00.color\": \"red\", \"filler.00.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.00.color\": \"green\", \"filler.00.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.00.color\": \"blue\", \"filler.00.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 18}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 101,
+          "name": "exp_compression_filler_01",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1001,
+          "seedLo": 2001,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3001,
+          "trafficSeedLo": 4001,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.01.color\": \"red\", \"filler.01.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.01.color\": \"green\", \"filler.01.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.01.color\": \"blue\", \"filler.01.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 19}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 102,
+          "name": "exp_compression_filler_02",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1002,
+          "seedLo": 2002,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3002,
+          "trafficSeedLo": 4002,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.02.color\": \"red\", \"filler.02.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.02.color\": \"green\", \"filler.02.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.02.color\": \"blue\", \"filler.02.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 20}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 103,
+          "name": "exp_compression_filler_03",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1003,
+          "seedLo": 2003,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3003,
+          "trafficSeedLo": 4003,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.03.color\": \"red\", \"filler.03.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.03.color\": \"green\", \"filler.03.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.03.color\": \"blue\", \"filler.03.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 21}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 104,
+          "name": "exp_compression_filler_04",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1004,
+          "seedLo": 2004,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3004,
+          "trafficSeedLo": 4004,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.04.color\": \"red\", \"filler.04.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.04.color\": \"green\", \"filler.04.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.04.color\": \"blue\", \"filler.04.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 22}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 105,
+          "name": "exp_compression_filler_05",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1005,
+          "seedLo": 2005,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3005,
+          "trafficSeedLo": 4005,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.05.color\": \"red\", \"filler.05.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.05.color\": \"green\", \"filler.05.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.05.color\": \"blue\", \"filler.05.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 23}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 106,
+          "name": "exp_compression_filler_06",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1006,
+          "seedLo": 2006,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3006,
+          "trafficSeedLo": 4006,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.06.color\": \"red\", \"filler.06.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.06.color\": \"green\", \"filler.06.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.06.color\": \"blue\", \"filler.06.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 24}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 107,
+          "name": "exp_compression_filler_07",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1007,
+          "seedLo": 2007,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3007,
+          "trafficSeedLo": 4007,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.07.color\": \"red\", \"filler.07.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.07.color\": \"green\", \"filler.07.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.07.color\": \"blue\", \"filler.07.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 25}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 108,
+          "name": "exp_compression_filler_08",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1008,
+          "seedLo": 2008,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3008,
+          "trafficSeedLo": 4008,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.08.color\": \"red\", \"filler.08.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.08.color\": \"green\", \"filler.08.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.08.color\": \"blue\", \"filler.08.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 26}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 109,
+          "name": "exp_compression_filler_09",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1009,
+          "seedLo": 2009,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3009,
+          "trafficSeedLo": 4009,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.09.color\": \"red\", \"filler.09.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.09.color\": \"green\", \"filler.09.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.09.color\": \"blue\", \"filler.09.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 27}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 110,
+          "name": "exp_compression_filler_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1010,
+          "seedLo": 2010,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3010,
+          "trafficSeedLo": 4010,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.10.color\": \"red\", \"filler.10.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.10.color\": \"green\", \"filler.10.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.10.color\": \"blue\", \"filler.10.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 28}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 111,
+          "name": "exp_compression_filler_11",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1011,
+          "seedLo": 2011,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3011,
+          "trafficSeedLo": 4011,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.11.color\": \"red\", \"filler.11.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.11.color\": \"green\", \"filler.11.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.11.color\": \"blue\", \"filler.11.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 29}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 112,
+          "name": "exp_compression_filler_12",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1012,
+          "seedLo": 2012,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3012,
+          "trafficSeedLo": 4012,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.12.color\": \"red\", \"filler.12.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.12.color\": \"green\", \"filler.12.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.12.color\": \"blue\", \"filler.12.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 30}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 113,
+          "name": "exp_compression_filler_13",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1013,
+          "seedLo": 2013,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3013,
+          "trafficSeedLo": 4013,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.13.color\": \"red\", \"filler.13.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.13.color\": \"green\", \"filler.13.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.13.color\": \"blue\", \"filler.13.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 31}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 114,
+          "name": "exp_compression_filler_14",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1014,
+          "seedLo": 2014,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3014,
+          "trafficSeedLo": 4014,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.14.color\": \"red\", \"filler.14.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.14.color\": \"green\", \"filler.14.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.14.color\": \"blue\", \"filler.14.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 32}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 115,
+          "name": "exp_compression_filler_15",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1015,
+          "seedLo": 2015,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3015,
+          "trafficSeedLo": 4015,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.15.color\": \"red\", \"filler.15.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.15.color\": \"green\", \"filler.15.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.15.color\": \"blue\", \"filler.15.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 33}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 116,
+          "name": "exp_compression_filler_16",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1016,
+          "seedLo": 2016,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3016,
+          "trafficSeedLo": 4016,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.16.color\": \"red\", \"filler.16.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.16.color\": \"green\", \"filler.16.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.16.color\": \"blue\", \"filler.16.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 34}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 117,
+          "name": "exp_compression_filler_17",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1017,
+          "seedLo": 2017,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3017,
+          "trafficSeedLo": 4017,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.17.color\": \"red\", \"filler.17.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.17.color\": \"green\", \"filler.17.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.17.color\": \"blue\", \"filler.17.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 35}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 118,
+          "name": "exp_compression_filler_18",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1018,
+          "seedLo": 2018,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3018,
+          "trafficSeedLo": 4018,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.18.color\": \"red\", \"filler.18.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.18.color\": \"green\", \"filler.18.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.18.color\": \"blue\", \"filler.18.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 36}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 119,
+          "name": "exp_compression_filler_19",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1019,
+          "seedLo": 2019,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3019,
+          "trafficSeedLo": 4019,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.19.color\": \"red\", \"filler.19.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.19.color\": \"green\", \"filler.19.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.19.color\": \"blue\", \"filler.19.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 37}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 120,
+          "name": "exp_compression_filler_20",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1020,
+          "seedLo": 2020,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3020,
+          "trafficSeedLo": 4020,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.20.color\": \"red\", \"filler.20.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.20.color\": \"green\", \"filler.20.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.20.color\": \"blue\", \"filler.20.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 38}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 121,
+          "name": "exp_compression_filler_21",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1021,
+          "seedLo": 2021,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3021,
+          "trafficSeedLo": 4021,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.21.color\": \"red\", \"filler.21.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.21.color\": \"green\", \"filler.21.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.21.color\": \"blue\", \"filler.21.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 39}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 122,
+          "name": "exp_compression_filler_22",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1022,
+          "seedLo": 2022,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3022,
+          "trafficSeedLo": 4022,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.22.color\": \"red\", \"filler.22.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.22.color\": \"green\", \"filler.22.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.22.color\": \"blue\", \"filler.22.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 40}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 123,
+          "name": "exp_compression_filler_23",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1023,
+          "seedLo": 2023,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3023,
+          "trafficSeedLo": 4023,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.23.color\": \"red\", \"filler.23.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.23.color\": \"green\", \"filler.23.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.23.color\": \"blue\", \"filler.23.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 41}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab"
+                  },
+                  {
+                    "id": 100,
+                    "name": "exp_compression_filler_00"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_compression_filler_01"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_compression_filler_02"
+                  },
+                  {
+                    "id": 103,
+                    "name": "exp_compression_filler_03"
+                  },
+                  {
+                    "id": 104,
+                    "name": "exp_compression_filler_04"
+                  },
+                  {
+                    "id": 105,
+                    "name": "exp_compression_filler_05"
+                  },
+                  {
+                    "id": 106,
+                    "name": "exp_compression_filler_06"
+                  },
+                  {
+                    "id": 107,
+                    "name": "exp_compression_filler_07"
+                  },
+                  {
+                    "id": 108,
+                    "name": "exp_compression_filler_08"
+                  },
+                  {
+                    "id": 109,
+                    "name": "exp_compression_filler_09"
+                  },
+                  {
+                    "id": 110,
+                    "name": "exp_compression_filler_10"
+                  },
+                  {
+                    "id": 111,
+                    "name": "exp_compression_filler_11"
+                  },
+                  {
+                    "id": 112,
+                    "name": "exp_compression_filler_12"
+                  },
+                  {
+                    "id": 113,
+                    "name": "exp_compression_filler_13"
+                  },
+                  {
+                    "id": 114,
+                    "name": "exp_compression_filler_14"
+                  },
+                  {
+                    "id": 115,
+                    "name": "exp_compression_filler_15"
+                  },
+                  {
+                    "id": 116,
+                    "name": "exp_compression_filler_16"
+                  },
+                  {
+                    "id": 117,
+                    "name": "exp_compression_filler_17"
+                  },
+                  {
+                    "id": 118,
+                    "name": "exp_compression_filler_18"
+                  },
+                  {
+                    "id": 119,
+                    "name": "exp_compression_filler_19"
+                  },
+                  {
+                    "id": 120,
+                    "name": "exp_compression_filler_20"
+                  },
+                  {
+                    "id": 121,
+                    "name": "exp_compression_filler_21"
+                  },
+                  {
+                    "id": 122,
+                    "name": "exp_compression_filler_22"
+                  },
+                  {
+                    "id": 123,
+                    "name": "exp_compression_filler_23"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_test_ab",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "banner.size",
+          "defaultValue": "small"
+        },
+        "expect": {
+          "result": "large",
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 1,
+                "name": "exp_test_ab",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3603515,
+                "seedLo": 233373850,
+                "split": [
+                  0.5,
+                  0.5
+                ],
+                "trafficSeedHi": 449867249,
+                "trafficSeedLo": 455443629,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 100,
+                "name": "exp_compression_filler_00",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1000,
+                "seedLo": 2000,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3000,
+                "trafficSeedLo": 4000,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.00.color\": \"red\", \"filler.00.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.00.color\": \"green\", \"filler.00.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.00.color\": \"blue\", \"filler.00.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 18}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 101,
+                "name": "exp_compression_filler_01",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1001,
+                "seedLo": 2001,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3001,
+                "trafficSeedLo": 4001,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.01.color\": \"red\", \"filler.01.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.01.color\": \"green\", \"filler.01.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.01.color\": \"blue\", \"filler.01.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 19}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 102,
+                "name": "exp_compression_filler_02",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1002,
+                "seedLo": 2002,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3002,
+                "trafficSeedLo": 4002,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.02.color\": \"red\", \"filler.02.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.02.color\": \"green\", \"filler.02.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.02.color\": \"blue\", \"filler.02.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 20}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 103,
+                "name": "exp_compression_filler_03",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1003,
+                "seedLo": 2003,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3003,
+                "trafficSeedLo": 4003,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.03.color\": \"red\", \"filler.03.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.03.color\": \"green\", \"filler.03.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.03.color\": \"blue\", \"filler.03.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 21}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 104,
+                "name": "exp_compression_filler_04",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1004,
+                "seedLo": 2004,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3004,
+                "trafficSeedLo": 4004,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.04.color\": \"red\", \"filler.04.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.04.color\": \"green\", \"filler.04.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.04.color\": \"blue\", \"filler.04.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 22}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 105,
+                "name": "exp_compression_filler_05",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1005,
+                "seedLo": 2005,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3005,
+                "trafficSeedLo": 4005,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.05.color\": \"red\", \"filler.05.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.05.color\": \"green\", \"filler.05.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.05.color\": \"blue\", \"filler.05.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 23}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 106,
+                "name": "exp_compression_filler_06",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1006,
+                "seedLo": 2006,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3006,
+                "trafficSeedLo": 4006,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.06.color\": \"red\", \"filler.06.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.06.color\": \"green\", \"filler.06.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.06.color\": \"blue\", \"filler.06.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 24}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 107,
+                "name": "exp_compression_filler_07",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1007,
+                "seedLo": 2007,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3007,
+                "trafficSeedLo": 4007,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.07.color\": \"red\", \"filler.07.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.07.color\": \"green\", \"filler.07.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.07.color\": \"blue\", \"filler.07.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 25}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 108,
+                "name": "exp_compression_filler_08",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1008,
+                "seedLo": 2008,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3008,
+                "trafficSeedLo": 4008,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.08.color\": \"red\", \"filler.08.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.08.color\": \"green\", \"filler.08.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.08.color\": \"blue\", \"filler.08.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 26}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 109,
+                "name": "exp_compression_filler_09",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1009,
+                "seedLo": 2009,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3009,
+                "trafficSeedLo": 4009,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.09.color\": \"red\", \"filler.09.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.09.color\": \"green\", \"filler.09.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.09.color\": \"blue\", \"filler.09.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 27}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 110,
+                "name": "exp_compression_filler_10",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1010,
+                "seedLo": 2010,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3010,
+                "trafficSeedLo": 4010,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.10.color\": \"red\", \"filler.10.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.10.color\": \"green\", \"filler.10.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.10.color\": \"blue\", \"filler.10.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 28}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 111,
+                "name": "exp_compression_filler_11",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1011,
+                "seedLo": 2011,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3011,
+                "trafficSeedLo": 4011,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.11.color\": \"red\", \"filler.11.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.11.color\": \"green\", \"filler.11.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.11.color\": \"blue\", \"filler.11.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 29}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 112,
+                "name": "exp_compression_filler_12",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1012,
+                "seedLo": 2012,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3012,
+                "trafficSeedLo": 4012,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.12.color\": \"red\", \"filler.12.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.12.color\": \"green\", \"filler.12.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.12.color\": \"blue\", \"filler.12.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 30}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 113,
+                "name": "exp_compression_filler_13",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1013,
+                "seedLo": 2013,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3013,
+                "trafficSeedLo": 4013,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.13.color\": \"red\", \"filler.13.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.13.color\": \"green\", \"filler.13.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.13.color\": \"blue\", \"filler.13.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 31}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 114,
+                "name": "exp_compression_filler_14",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1014,
+                "seedLo": 2014,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3014,
+                "trafficSeedLo": 4014,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.14.color\": \"red\", \"filler.14.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.14.color\": \"green\", \"filler.14.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.14.color\": \"blue\", \"filler.14.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 32}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 115,
+                "name": "exp_compression_filler_15",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1015,
+                "seedLo": 2015,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3015,
+                "trafficSeedLo": 4015,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.15.color\": \"red\", \"filler.15.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.15.color\": \"green\", \"filler.15.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.15.color\": \"blue\", \"filler.15.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 33}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 116,
+                "name": "exp_compression_filler_16",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1016,
+                "seedLo": 2016,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3016,
+                "trafficSeedLo": 4016,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.16.color\": \"red\", \"filler.16.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.16.color\": \"green\", \"filler.16.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.16.color\": \"blue\", \"filler.16.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 34}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 117,
+                "name": "exp_compression_filler_17",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1017,
+                "seedLo": 2017,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3017,
+                "trafficSeedLo": 4017,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.17.color\": \"red\", \"filler.17.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.17.color\": \"green\", \"filler.17.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.17.color\": \"blue\", \"filler.17.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 35}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 118,
+                "name": "exp_compression_filler_18",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1018,
+                "seedLo": 2018,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3018,
+                "trafficSeedLo": 4018,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.18.color\": \"red\", \"filler.18.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.18.color\": \"green\", \"filler.18.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.18.color\": \"blue\", \"filler.18.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 36}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 119,
+                "name": "exp_compression_filler_19",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1019,
+                "seedLo": 2019,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3019,
+                "trafficSeedLo": 4019,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.19.color\": \"red\", \"filler.19.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.19.color\": \"green\", \"filler.19.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.19.color\": \"blue\", \"filler.19.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 37}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 120,
+                "name": "exp_compression_filler_20",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1020,
+                "seedLo": 2020,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3020,
+                "trafficSeedLo": 4020,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.20.color\": \"red\", \"filler.20.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.20.color\": \"green\", \"filler.20.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.20.color\": \"blue\", \"filler.20.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 38}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 121,
+                "name": "exp_compression_filler_21",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1021,
+                "seedLo": 2021,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3021,
+                "trafficSeedLo": 4021,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.21.color\": \"red\", \"filler.21.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.21.color\": \"green\", \"filler.21.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.21.color\": \"blue\", \"filler.21.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 39}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 122,
+                "name": "exp_compression_filler_22",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1022,
+                "seedLo": 2022,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3022,
+                "trafficSeedLo": 4022,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.22.color\": \"red\", \"filler.22.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.22.color\": \"green\", \"filler.22.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.22.color\": \"blue\", \"filler.22.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 40}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 123,
+                "name": "exp_compression_filler_23",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1023,
+                "seedLo": 2023,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3023,
+                "trafficSeedLo": 4023,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.23.color\": \"red\", \"filler.23.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.23.color\": \"green\", \"filler.23.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.23.color\": \"blue\", \"filler.23.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 41}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab"
+                  },
+                  {
+                    "id": 100,
+                    "name": "exp_compression_filler_00"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_compression_filler_01"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_compression_filler_02"
+                  },
+                  {
+                    "id": 103,
+                    "name": "exp_compression_filler_03"
+                  },
+                  {
+                    "id": 104,
+                    "name": "exp_compression_filler_04"
+                  },
+                  {
+                    "id": 105,
+                    "name": "exp_compression_filler_05"
+                  },
+                  {
+                    "id": 106,
+                    "name": "exp_compression_filler_06"
+                  },
+                  {
+                    "id": 107,
+                    "name": "exp_compression_filler_07"
+                  },
+                  {
+                    "id": 108,
+                    "name": "exp_compression_filler_08"
+                  },
+                  {
+                    "id": 109,
+                    "name": "exp_compression_filler_09"
+                  },
+                  {
+                    "id": 110,
+                    "name": "exp_compression_filler_10"
+                  },
+                  {
+                    "id": 111,
+                    "name": "exp_compression_filler_11"
+                  },
+                  {
+                    "id": 112,
+                    "name": "exp_compression_filler_12"
+                  },
+                  {
+                    "id": 113,
+                    "name": "exp_compression_filler_13"
+                  },
+                  {
+                    "id": 114,
+                    "name": "exp_compression_filler_14"
+                  },
+                  {
+                    "id": 115,
+                    "name": "exp_compression_filler_15"
+                  },
+                  {
+                    "id": 116,
+                    "name": "exp_compression_filler_16"
+                  },
+                  {
+                    "id": 117,
+                    "name": "exp_compression_filler_17"
+                  },
+                  {
+                    "id": 118,
+                    "name": "exp_compression_filler_18"
+                  },
+                  {
+                    "id": 119,
+                    "name": "exp_compression_filler_19"
+                  },
+                  {
+                    "id": 120,
+                    "name": "exp_compression_filler_20"
+                  },
+                  {
+                    "id": 121,
+                    "name": "exp_compression_filler_21"
+                  },
+                  {
+                    "id": 122,
+                    "name": "exp_compression_filler_22"
+                  },
+                  {
+                    "id": 123,
+                    "name": "exp_compression_filler_23"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "231 - Context Fetch Compression - Direct Data Twin",
+    "description": "UNGATED twin of Gzip When Advertised: the same context handed to the SDK as data (createContextWith, no HTTP). Its steps are the twin's create, treatment, variable value and publish, with identical expectations.",
+    "directData": true,
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 100,
+          "name": "exp_compression_filler_00",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1000,
+          "seedLo": 2000,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3000,
+          "trafficSeedLo": 4000,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.00.color\": \"red\", \"filler.00.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.00.color\": \"green\", \"filler.00.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.00.color\": \"blue\", \"filler.00.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 18}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 101,
+          "name": "exp_compression_filler_01",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1001,
+          "seedLo": 2001,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3001,
+          "trafficSeedLo": 4001,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.01.color\": \"red\", \"filler.01.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.01.color\": \"green\", \"filler.01.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.01.color\": \"blue\", \"filler.01.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 19}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 102,
+          "name": "exp_compression_filler_02",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1002,
+          "seedLo": 2002,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3002,
+          "trafficSeedLo": 4002,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.02.color\": \"red\", \"filler.02.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.02.color\": \"green\", \"filler.02.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.02.color\": \"blue\", \"filler.02.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 20}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 103,
+          "name": "exp_compression_filler_03",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1003,
+          "seedLo": 2003,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3003,
+          "trafficSeedLo": 4003,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.03.color\": \"red\", \"filler.03.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.03.color\": \"green\", \"filler.03.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.03.color\": \"blue\", \"filler.03.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 21}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 104,
+          "name": "exp_compression_filler_04",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1004,
+          "seedLo": 2004,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3004,
+          "trafficSeedLo": 4004,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.04.color\": \"red\", \"filler.04.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.04.color\": \"green\", \"filler.04.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.04.color\": \"blue\", \"filler.04.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 22}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 105,
+          "name": "exp_compression_filler_05",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1005,
+          "seedLo": 2005,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3005,
+          "trafficSeedLo": 4005,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.05.color\": \"red\", \"filler.05.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.05.color\": \"green\", \"filler.05.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.05.color\": \"blue\", \"filler.05.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 23}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 106,
+          "name": "exp_compression_filler_06",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1006,
+          "seedLo": 2006,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3006,
+          "trafficSeedLo": 4006,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.06.color\": \"red\", \"filler.06.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.06.color\": \"green\", \"filler.06.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.06.color\": \"blue\", \"filler.06.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 24}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 107,
+          "name": "exp_compression_filler_07",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1007,
+          "seedLo": 2007,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3007,
+          "trafficSeedLo": 4007,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.07.color\": \"red\", \"filler.07.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.07.color\": \"green\", \"filler.07.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.07.color\": \"blue\", \"filler.07.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 25}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 108,
+          "name": "exp_compression_filler_08",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1008,
+          "seedLo": 2008,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3008,
+          "trafficSeedLo": 4008,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.08.color\": \"red\", \"filler.08.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.08.color\": \"green\", \"filler.08.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.08.color\": \"blue\", \"filler.08.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 26}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 109,
+          "name": "exp_compression_filler_09",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1009,
+          "seedLo": 2009,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3009,
+          "trafficSeedLo": 4009,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.09.color\": \"red\", \"filler.09.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.09.color\": \"green\", \"filler.09.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.09.color\": \"blue\", \"filler.09.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 27}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 110,
+          "name": "exp_compression_filler_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1010,
+          "seedLo": 2010,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3010,
+          "trafficSeedLo": 4010,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.10.color\": \"red\", \"filler.10.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.10.color\": \"green\", \"filler.10.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.10.color\": \"blue\", \"filler.10.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 28}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 111,
+          "name": "exp_compression_filler_11",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1011,
+          "seedLo": 2011,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3011,
+          "trafficSeedLo": 4011,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.11.color\": \"red\", \"filler.11.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.11.color\": \"green\", \"filler.11.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.11.color\": \"blue\", \"filler.11.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 29}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 112,
+          "name": "exp_compression_filler_12",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1012,
+          "seedLo": 2012,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3012,
+          "trafficSeedLo": 4012,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.12.color\": \"red\", \"filler.12.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.12.color\": \"green\", \"filler.12.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.12.color\": \"blue\", \"filler.12.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 30}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 113,
+          "name": "exp_compression_filler_13",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1013,
+          "seedLo": 2013,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3013,
+          "trafficSeedLo": 4013,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.13.color\": \"red\", \"filler.13.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.13.color\": \"green\", \"filler.13.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.13.color\": \"blue\", \"filler.13.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 31}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 114,
+          "name": "exp_compression_filler_14",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1014,
+          "seedLo": 2014,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3014,
+          "trafficSeedLo": 4014,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.14.color\": \"red\", \"filler.14.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.14.color\": \"green\", \"filler.14.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.14.color\": \"blue\", \"filler.14.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 32}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 115,
+          "name": "exp_compression_filler_15",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1015,
+          "seedLo": 2015,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3015,
+          "trafficSeedLo": 4015,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.15.color\": \"red\", \"filler.15.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.15.color\": \"green\", \"filler.15.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.15.color\": \"blue\", \"filler.15.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 33}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 116,
+          "name": "exp_compression_filler_16",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1016,
+          "seedLo": 2016,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3016,
+          "trafficSeedLo": 4016,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.16.color\": \"red\", \"filler.16.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.16.color\": \"green\", \"filler.16.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.16.color\": \"blue\", \"filler.16.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 34}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 117,
+          "name": "exp_compression_filler_17",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1017,
+          "seedLo": 2017,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3017,
+          "trafficSeedLo": 4017,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.17.color\": \"red\", \"filler.17.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.17.color\": \"green\", \"filler.17.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.17.color\": \"blue\", \"filler.17.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 35}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 118,
+          "name": "exp_compression_filler_18",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1018,
+          "seedLo": 2018,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3018,
+          "trafficSeedLo": 4018,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.18.color\": \"red\", \"filler.18.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.18.color\": \"green\", \"filler.18.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.18.color\": \"blue\", \"filler.18.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 36}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 119,
+          "name": "exp_compression_filler_19",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1019,
+          "seedLo": 2019,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3019,
+          "trafficSeedLo": 4019,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.19.color\": \"red\", \"filler.19.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.19.color\": \"green\", \"filler.19.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.19.color\": \"blue\", \"filler.19.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 37}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 120,
+          "name": "exp_compression_filler_20",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1020,
+          "seedLo": 2020,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3020,
+          "trafficSeedLo": 4020,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.20.color\": \"red\", \"filler.20.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.20.color\": \"green\", \"filler.20.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.20.color\": \"blue\", \"filler.20.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 38}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 121,
+          "name": "exp_compression_filler_21",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1021,
+          "seedLo": 2021,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3021,
+          "trafficSeedLo": 4021,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.21.color\": \"red\", \"filler.21.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.21.color\": \"green\", \"filler.21.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.21.color\": \"blue\", \"filler.21.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 39}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 122,
+          "name": "exp_compression_filler_22",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1022,
+          "seedLo": 2022,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3022,
+          "trafficSeedLo": 4022,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.22.color\": \"red\", \"filler.22.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.22.color\": \"green\", \"filler.22.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.22.color\": \"blue\", \"filler.22.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 40}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 123,
+          "name": "exp_compression_filler_23",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1023,
+          "seedLo": 2023,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3023,
+          "trafficSeedLo": 4023,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.23.color\": \"red\", \"filler.23.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.23.color\": \"green\", \"filler.23.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.23.color\": \"blue\", \"filler.23.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 41}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab"
+                  },
+                  {
+                    "id": 100,
+                    "name": "exp_compression_filler_00"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_compression_filler_01"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_compression_filler_02"
+                  },
+                  {
+                    "id": 103,
+                    "name": "exp_compression_filler_03"
+                  },
+                  {
+                    "id": 104,
+                    "name": "exp_compression_filler_04"
+                  },
+                  {
+                    "id": 105,
+                    "name": "exp_compression_filler_05"
+                  },
+                  {
+                    "id": 106,
+                    "name": "exp_compression_filler_06"
+                  },
+                  {
+                    "id": 107,
+                    "name": "exp_compression_filler_07"
+                  },
+                  {
+                    "id": 108,
+                    "name": "exp_compression_filler_08"
+                  },
+                  {
+                    "id": 109,
+                    "name": "exp_compression_filler_09"
+                  },
+                  {
+                    "id": 110,
+                    "name": "exp_compression_filler_10"
+                  },
+                  {
+                    "id": 111,
+                    "name": "exp_compression_filler_11"
+                  },
+                  {
+                    "id": 112,
+                    "name": "exp_compression_filler_12"
+                  },
+                  {
+                    "id": 113,
+                    "name": "exp_compression_filler_13"
+                  },
+                  {
+                    "id": 114,
+                    "name": "exp_compression_filler_14"
+                  },
+                  {
+                    "id": 115,
+                    "name": "exp_compression_filler_15"
+                  },
+                  {
+                    "id": 116,
+                    "name": "exp_compression_filler_16"
+                  },
+                  {
+                    "id": 117,
+                    "name": "exp_compression_filler_17"
+                  },
+                  {
+                    "id": 118,
+                    "name": "exp_compression_filler_18"
+                  },
+                  {
+                    "id": 119,
+                    "name": "exp_compression_filler_19"
+                  },
+                  {
+                    "id": 120,
+                    "name": "exp_compression_filler_20"
+                  },
+                  {
+                    "id": 121,
+                    "name": "exp_compression_filler_21"
+                  },
+                  {
+                    "id": 122,
+                    "name": "exp_compression_filler_22"
+                  },
+                  {
+                    "id": 123,
+                    "name": "exp_compression_filler_23"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_test_ab",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "banner.size",
+          "defaultValue": "small"
+        },
+        "expect": {
+          "result": "large",
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "exposures": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab",
+                    "variant": 1
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "232 - Context Fetch Compression - Request Advertises Gzip On Create And Refresh",
+    "description": "GATED on contextFetchCompression (measured by the orchestrator, not reported by the wrapper): the recorded Accept-Encoding of the SDK's own GET {endpoint}/context on create AND on refresh advertises gzip, the server answers gzip, and the decoded context serves the same treatment.",
+    "requires": [
+      "contextFetchCompression"
+    ],
+    "contextServer": {
+      "encodings": [
+        "gzip",
+        "identity"
+      ],
+      "requireAdvertised": [
+        "gzip"
+      ]
+    },
+    "contextData": {
+      "experiments": [
+        {
+          "id": 1,
+          "name": "exp_test_ab",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 3603515,
+          "seedLo": 233373850,
+          "split": [
+            0.5,
+            0.5
+          ],
+          "trafficSeedHi": 449867249,
+          "trafficSeedLo": 455443629,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 100,
+          "name": "exp_compression_filler_00",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1000,
+          "seedLo": 2000,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3000,
+          "trafficSeedLo": 4000,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.00.color\": \"red\", \"filler.00.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.00.color\": \"green\", \"filler.00.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.00.color\": \"blue\", \"filler.00.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 18}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 101,
+          "name": "exp_compression_filler_01",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1001,
+          "seedLo": 2001,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3001,
+          "trafficSeedLo": 4001,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.01.color\": \"red\", \"filler.01.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.01.color\": \"green\", \"filler.01.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.01.color\": \"blue\", \"filler.01.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 19}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 102,
+          "name": "exp_compression_filler_02",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1002,
+          "seedLo": 2002,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3002,
+          "trafficSeedLo": 4002,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.02.color\": \"red\", \"filler.02.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.02.color\": \"green\", \"filler.02.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.02.color\": \"blue\", \"filler.02.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 20}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 103,
+          "name": "exp_compression_filler_03",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1003,
+          "seedLo": 2003,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3003,
+          "trafficSeedLo": 4003,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.03.color\": \"red\", \"filler.03.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.03.color\": \"green\", \"filler.03.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.03.color\": \"blue\", \"filler.03.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 21}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 104,
+          "name": "exp_compression_filler_04",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1004,
+          "seedLo": 2004,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3004,
+          "trafficSeedLo": 4004,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.04.color\": \"red\", \"filler.04.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.04.color\": \"green\", \"filler.04.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.04.color\": \"blue\", \"filler.04.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 22}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 105,
+          "name": "exp_compression_filler_05",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1005,
+          "seedLo": 2005,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3005,
+          "trafficSeedLo": 4005,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.05.color\": \"red\", \"filler.05.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.05.color\": \"green\", \"filler.05.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.05.color\": \"blue\", \"filler.05.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 23}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 106,
+          "name": "exp_compression_filler_06",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1006,
+          "seedLo": 2006,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3006,
+          "trafficSeedLo": 4006,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.06.color\": \"red\", \"filler.06.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.06.color\": \"green\", \"filler.06.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.06.color\": \"blue\", \"filler.06.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 24}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 107,
+          "name": "exp_compression_filler_07",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1007,
+          "seedLo": 2007,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3007,
+          "trafficSeedLo": 4007,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.07.color\": \"red\", \"filler.07.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.07.color\": \"green\", \"filler.07.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.07.color\": \"blue\", \"filler.07.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 25}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 108,
+          "name": "exp_compression_filler_08",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1008,
+          "seedLo": 2008,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3008,
+          "trafficSeedLo": 4008,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.08.color\": \"red\", \"filler.08.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.08.color\": \"green\", \"filler.08.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.08.color\": \"blue\", \"filler.08.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 26}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 109,
+          "name": "exp_compression_filler_09",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1009,
+          "seedLo": 2009,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3009,
+          "trafficSeedLo": 4009,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.09.color\": \"red\", \"filler.09.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.09.color\": \"green\", \"filler.09.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.09.color\": \"blue\", \"filler.09.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 27}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 110,
+          "name": "exp_compression_filler_10",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1010,
+          "seedLo": 2010,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3010,
+          "trafficSeedLo": 4010,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.10.color\": \"red\", \"filler.10.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.10.color\": \"green\", \"filler.10.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.10.color\": \"blue\", \"filler.10.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 28}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 111,
+          "name": "exp_compression_filler_11",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1011,
+          "seedLo": 2011,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3011,
+          "trafficSeedLo": 4011,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.11.color\": \"red\", \"filler.11.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.11.color\": \"green\", \"filler.11.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.11.color\": \"blue\", \"filler.11.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 29}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 112,
+          "name": "exp_compression_filler_12",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1012,
+          "seedLo": 2012,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3012,
+          "trafficSeedLo": 4012,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.12.color\": \"red\", \"filler.12.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.12.color\": \"green\", \"filler.12.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.12.color\": \"blue\", \"filler.12.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 30}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 113,
+          "name": "exp_compression_filler_13",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1013,
+          "seedLo": 2013,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3013,
+          "trafficSeedLo": 4013,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.13.color\": \"red\", \"filler.13.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.13.color\": \"green\", \"filler.13.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.13.color\": \"blue\", \"filler.13.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 31}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 114,
+          "name": "exp_compression_filler_14",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1014,
+          "seedLo": 2014,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3014,
+          "trafficSeedLo": 4014,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.14.color\": \"red\", \"filler.14.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.14.color\": \"green\", \"filler.14.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.14.color\": \"blue\", \"filler.14.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 32}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 115,
+          "name": "exp_compression_filler_15",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1015,
+          "seedLo": 2015,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3015,
+          "trafficSeedLo": 4015,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.15.color\": \"red\", \"filler.15.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.15.color\": \"green\", \"filler.15.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.15.color\": \"blue\", \"filler.15.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 33}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 116,
+          "name": "exp_compression_filler_16",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1016,
+          "seedLo": 2016,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3016,
+          "trafficSeedLo": 4016,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.16.color\": \"red\", \"filler.16.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.16.color\": \"green\", \"filler.16.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.16.color\": \"blue\", \"filler.16.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 34}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 117,
+          "name": "exp_compression_filler_17",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1017,
+          "seedLo": 2017,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3017,
+          "trafficSeedLo": 4017,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.17.color\": \"red\", \"filler.17.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.17.color\": \"green\", \"filler.17.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.17.color\": \"blue\", \"filler.17.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 35}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 118,
+          "name": "exp_compression_filler_18",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1018,
+          "seedLo": 2018,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3018,
+          "trafficSeedLo": 4018,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.18.color\": \"red\", \"filler.18.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.18.color\": \"green\", \"filler.18.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.18.color\": \"blue\", \"filler.18.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 36}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 119,
+          "name": "exp_compression_filler_19",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1019,
+          "seedLo": 2019,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3019,
+          "trafficSeedLo": 4019,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.19.color\": \"red\", \"filler.19.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.19.color\": \"green\", \"filler.19.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.19.color\": \"blue\", \"filler.19.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 37}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 120,
+          "name": "exp_compression_filler_20",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1020,
+          "seedLo": 2020,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3020,
+          "trafficSeedLo": 4020,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.20.color\": \"red\", \"filler.20.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.20.color\": \"green\", \"filler.20.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.20.color\": \"blue\", \"filler.20.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 38}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 121,
+          "name": "exp_compression_filler_21",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1021,
+          "seedLo": 2021,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3021,
+          "trafficSeedLo": 4021,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.21.color\": \"red\", \"filler.21.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.21.color\": \"green\", \"filler.21.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.21.color\": \"blue\", \"filler.21.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 39}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 122,
+          "name": "exp_compression_filler_22",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1022,
+          "seedLo": 2022,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3022,
+          "trafficSeedLo": 4022,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.22.color\": \"red\", \"filler.22.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.22.color\": \"green\", \"filler.22.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.22.color\": \"blue\", \"filler.22.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 40}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 123,
+          "name": "exp_compression_filler_23",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 1023,
+          "seedLo": 2023,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 3023,
+          "trafficSeedLo": 4023,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"filler.23.color\": \"red\", \"filler.23.size\": 1}"
+            },
+            {
+              "name": "B",
+              "config": "{\"filler.23.color\": \"green\", \"filler.23.size\": 2}"
+            },
+            {
+              "name": "C",
+              "config": "{\"filler.23.color\": \"blue\", \"filler.23.size\": 3}"
+            }
+          ],
+          "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 41}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContext",
+        "params": {
+          "units": {
+            "session_id": "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab"
+                  },
+                  {
+                    "id": 100,
+                    "name": "exp_compression_filler_00"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_compression_filler_01"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_compression_filler_02"
+                  },
+                  {
+                    "id": 103,
+                    "name": "exp_compression_filler_03"
+                  },
+                  {
+                    "id": 104,
+                    "name": "exp_compression_filler_04"
+                  },
+                  {
+                    "id": 105,
+                    "name": "exp_compression_filler_05"
+                  },
+                  {
+                    "id": 106,
+                    "name": "exp_compression_filler_06"
+                  },
+                  {
+                    "id": 107,
+                    "name": "exp_compression_filler_07"
+                  },
+                  {
+                    "id": 108,
+                    "name": "exp_compression_filler_08"
+                  },
+                  {
+                    "id": 109,
+                    "name": "exp_compression_filler_09"
+                  },
+                  {
+                    "id": 110,
+                    "name": "exp_compression_filler_10"
+                  },
+                  {
+                    "id": 111,
+                    "name": "exp_compression_filler_11"
+                  },
+                  {
+                    "id": 112,
+                    "name": "exp_compression_filler_12"
+                  },
+                  {
+                    "id": 113,
+                    "name": "exp_compression_filler_13"
+                  },
+                  {
+                    "id": 114,
+                    "name": "exp_compression_filler_14"
+                  },
+                  {
+                    "id": 115,
+                    "name": "exp_compression_filler_15"
+                  },
+                  {
+                    "id": 116,
+                    "name": "exp_compression_filler_16"
+                  },
+                  {
+                    "id": 117,
+                    "name": "exp_compression_filler_17"
+                  },
+                  {
+                    "id": 118,
+                    "name": "exp_compression_filler_18"
+                  },
+                  {
+                    "id": 119,
+                    "name": "exp_compression_filler_19"
+                  },
+                  {
+                    "id": 120,
+                    "name": "exp_compression_filler_20"
+                  },
+                  {
+                    "id": 121,
+                    "name": "exp_compression_filler_21"
+                  },
+                  {
+                    "id": 122,
+                    "name": "exp_compression_filler_22"
+                  },
+                  {
+                    "id": 123,
+                    "name": "exp_compression_filler_23"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 1,
+                "name": "exp_test_ab",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 1,
+                "name": "exp_test_ab",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 3603515,
+                "seedLo": 233373850,
+                "split": [
+                  0.5,
+                  0.5
+                ],
+                "trafficSeedHi": 449867249,
+                "trafficSeedLo": 455443629,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"banner.border\":1,\"banner.size\":\"large\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 100,
+                "name": "exp_compression_filler_00",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1000,
+                "seedLo": 2000,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3000,
+                "trafficSeedLo": 4000,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.00.color\": \"red\", \"filler.00.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.00.color\": \"green\", \"filler.00.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.00.color\": \"blue\", \"filler.00.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 18}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 101,
+                "name": "exp_compression_filler_01",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1001,
+                "seedLo": 2001,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3001,
+                "trafficSeedLo": 4001,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.01.color\": \"red\", \"filler.01.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.01.color\": \"green\", \"filler.01.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.01.color\": \"blue\", \"filler.01.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 19}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 102,
+                "name": "exp_compression_filler_02",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1002,
+                "seedLo": 2002,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3002,
+                "trafficSeedLo": 4002,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.02.color\": \"red\", \"filler.02.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.02.color\": \"green\", \"filler.02.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.02.color\": \"blue\", \"filler.02.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 20}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 103,
+                "name": "exp_compression_filler_03",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1003,
+                "seedLo": 2003,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3003,
+                "trafficSeedLo": 4003,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.03.color\": \"red\", \"filler.03.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.03.color\": \"green\", \"filler.03.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.03.color\": \"blue\", \"filler.03.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 21}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 104,
+                "name": "exp_compression_filler_04",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1004,
+                "seedLo": 2004,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3004,
+                "trafficSeedLo": 4004,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.04.color\": \"red\", \"filler.04.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.04.color\": \"green\", \"filler.04.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.04.color\": \"blue\", \"filler.04.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 22}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 105,
+                "name": "exp_compression_filler_05",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1005,
+                "seedLo": 2005,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3005,
+                "trafficSeedLo": 4005,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.05.color\": \"red\", \"filler.05.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.05.color\": \"green\", \"filler.05.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.05.color\": \"blue\", \"filler.05.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 23}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 106,
+                "name": "exp_compression_filler_06",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1006,
+                "seedLo": 2006,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3006,
+                "trafficSeedLo": 4006,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.06.color\": \"red\", \"filler.06.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.06.color\": \"green\", \"filler.06.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.06.color\": \"blue\", \"filler.06.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 24}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 107,
+                "name": "exp_compression_filler_07",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1007,
+                "seedLo": 2007,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3007,
+                "trafficSeedLo": 4007,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.07.color\": \"red\", \"filler.07.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.07.color\": \"green\", \"filler.07.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.07.color\": \"blue\", \"filler.07.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 25}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 108,
+                "name": "exp_compression_filler_08",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1008,
+                "seedLo": 2008,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3008,
+                "trafficSeedLo": 4008,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.08.color\": \"red\", \"filler.08.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.08.color\": \"green\", \"filler.08.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.08.color\": \"blue\", \"filler.08.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 26}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 109,
+                "name": "exp_compression_filler_09",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1009,
+                "seedLo": 2009,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3009,
+                "trafficSeedLo": 4009,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.09.color\": \"red\", \"filler.09.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.09.color\": \"green\", \"filler.09.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.09.color\": \"blue\", \"filler.09.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 27}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 110,
+                "name": "exp_compression_filler_10",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1010,
+                "seedLo": 2010,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3010,
+                "trafficSeedLo": 4010,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.10.color\": \"red\", \"filler.10.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.10.color\": \"green\", \"filler.10.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.10.color\": \"blue\", \"filler.10.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 28}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 111,
+                "name": "exp_compression_filler_11",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1011,
+                "seedLo": 2011,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3011,
+                "trafficSeedLo": 4011,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.11.color\": \"red\", \"filler.11.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.11.color\": \"green\", \"filler.11.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.11.color\": \"blue\", \"filler.11.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 29}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 112,
+                "name": "exp_compression_filler_12",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1012,
+                "seedLo": 2012,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3012,
+                "trafficSeedLo": 4012,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.12.color\": \"red\", \"filler.12.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.12.color\": \"green\", \"filler.12.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.12.color\": \"blue\", \"filler.12.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 30}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 113,
+                "name": "exp_compression_filler_13",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1013,
+                "seedLo": 2013,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3013,
+                "trafficSeedLo": 4013,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.13.color\": \"red\", \"filler.13.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.13.color\": \"green\", \"filler.13.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.13.color\": \"blue\", \"filler.13.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 31}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 114,
+                "name": "exp_compression_filler_14",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1014,
+                "seedLo": 2014,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3014,
+                "trafficSeedLo": 4014,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.14.color\": \"red\", \"filler.14.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.14.color\": \"green\", \"filler.14.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.14.color\": \"blue\", \"filler.14.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 32}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 115,
+                "name": "exp_compression_filler_15",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1015,
+                "seedLo": 2015,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3015,
+                "trafficSeedLo": 4015,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.15.color\": \"red\", \"filler.15.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.15.color\": \"green\", \"filler.15.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.15.color\": \"blue\", \"filler.15.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 33}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 116,
+                "name": "exp_compression_filler_16",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1016,
+                "seedLo": 2016,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3016,
+                "trafficSeedLo": 4016,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.16.color\": \"red\", \"filler.16.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.16.color\": \"green\", \"filler.16.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.16.color\": \"blue\", \"filler.16.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 34}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 117,
+                "name": "exp_compression_filler_17",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1017,
+                "seedLo": 2017,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3017,
+                "trafficSeedLo": 4017,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.17.color\": \"red\", \"filler.17.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.17.color\": \"green\", \"filler.17.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.17.color\": \"blue\", \"filler.17.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 35}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 118,
+                "name": "exp_compression_filler_18",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1018,
+                "seedLo": 2018,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3018,
+                "trafficSeedLo": 4018,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.18.color\": \"red\", \"filler.18.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.18.color\": \"green\", \"filler.18.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.18.color\": \"blue\", \"filler.18.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 36}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 119,
+                "name": "exp_compression_filler_19",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1019,
+                "seedLo": 2019,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3019,
+                "trafficSeedLo": 4019,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.19.color\": \"red\", \"filler.19.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.19.color\": \"green\", \"filler.19.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.19.color\": \"blue\", \"filler.19.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 37}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 120,
+                "name": "exp_compression_filler_20",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1020,
+                "seedLo": 2020,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3020,
+                "trafficSeedLo": 4020,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.20.color\": \"red\", \"filler.20.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.20.color\": \"green\", \"filler.20.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.20.color\": \"blue\", \"filler.20.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 38}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 121,
+                "name": "exp_compression_filler_21",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1021,
+                "seedLo": 2021,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3021,
+                "trafficSeedLo": 4021,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.21.color\": \"red\", \"filler.21.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.21.color\": \"green\", \"filler.21.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.21.color\": \"blue\", \"filler.21.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 39}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 122,
+                "name": "exp_compression_filler_22",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1022,
+                "seedLo": 2022,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3022,
+                "trafficSeedLo": 4022,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.22.color\": \"red\", \"filler.22.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.22.color\": \"green\", \"filler.22.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.22.color\": \"blue\", \"filler.22.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 40}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              },
+              {
+                "id": 123,
+                "name": "exp_compression_filler_23",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 1023,
+                "seedLo": 2023,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 3023,
+                "trafficSeedLo": 4023,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"filler.23.color\": \"red\", \"filler.23.size\": 1}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"filler.23.color\": \"green\", \"filler.23.size\": 2}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"filler.23.color\": \"blue\", \"filler.23.size\": 3}"
+                  }
+                ],
+                "audience": "{\"filter\": [{\"gte\": [{\"var\": \"age\"}, {\"value\": 41}]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 1,
+                    "name": "exp_test_ab"
+                  },
+                  {
+                    "id": 100,
+                    "name": "exp_compression_filler_00"
+                  },
+                  {
+                    "id": 101,
+                    "name": "exp_compression_filler_01"
+                  },
+                  {
+                    "id": 102,
+                    "name": "exp_compression_filler_02"
+                  },
+                  {
+                    "id": 103,
+                    "name": "exp_compression_filler_03"
+                  },
+                  {
+                    "id": 104,
+                    "name": "exp_compression_filler_04"
+                  },
+                  {
+                    "id": 105,
+                    "name": "exp_compression_filler_05"
+                  },
+                  {
+                    "id": 106,
+                    "name": "exp_compression_filler_06"
+                  },
+                  {
+                    "id": 107,
+                    "name": "exp_compression_filler_07"
+                  },
+                  {
+                    "id": 108,
+                    "name": "exp_compression_filler_08"
+                  },
+                  {
+                    "id": 109,
+                    "name": "exp_compression_filler_09"
+                  },
+                  {
+                    "id": 110,
+                    "name": "exp_compression_filler_10"
+                  },
+                  {
+                    "id": 111,
+                    "name": "exp_compression_filler_11"
+                  },
+                  {
+                    "id": 112,
+                    "name": "exp_compression_filler_12"
+                  },
+                  {
+                    "id": 113,
+                    "name": "exp_compression_filler_13"
+                  },
+                  {
+                    "id": 114,
+                    "name": "exp_compression_filler_14"
+                  },
+                  {
+                    "id": 115,
+                    "name": "exp_compression_filler_15"
+                  },
+                  {
+                    "id": 116,
+                    "name": "exp_compression_filler_16"
+                  },
+                  {
+                    "id": 117,
+                    "name": "exp_compression_filler_17"
+                  },
+                  {
+                    "id": 118,
+                    "name": "exp_compression_filler_18"
+                  },
+                  {
+                    "id": 119,
+                    "name": "exp_compression_filler_19"
+                  },
+                  {
+                    "id": 120,
+                    "name": "exp_compression_filler_20"
+                  },
+                  {
+                    "id": 121,
+                    "name": "exp_compression_filler_21"
+                  },
+                  {
+                    "id": 122,
+                    "name": "exp_compression_filler_22"
+                  },
+                  {
+                    "id": 123,
+                    "name": "exp_compression_filler_23"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_test_ab"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
   }
 ]
