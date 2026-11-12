@@ -683,7 +683,8 @@ class TestOrchestrator:
         """Create an endpoint-backed context on the context server; optionally refresh it with new data.
 
         Wrapper-side problems are recorded in the outcome (`error`). A context
-        server that cannot be used raises: that is a failed measurement.
+        server that cannot be used raises (MeasurementError, or the requests /
+        ValueError the caller turns into one): that is a failed measurement.
         """
         payload_id = f"probe-{uuid.uuid4()}"
         self.context_server_put(payload_id, {
@@ -717,8 +718,14 @@ class TestOrchestrator:
                     outcome["decoded"] = serves(data)
                     if refresh_data is not None:
                         # New data on the server, an empty refresh to the wrapper:
-                        # only the SDK's own fetch can bring the change in.
-                        self.context_server_put(payload_id, {"data": refresh_data})
+                        # only the SDK's own fetch can bring the change in. A failed
+                        # PUT is the context server's, not the SDK's: it must not
+                        # reach the wrapper-error handler below.
+                        try:
+                            self.context_server_put(payload_id, {"data": refresh_data})
+                        except Exception as exc:
+                            raise MeasurementError(
+                                f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
                         refreshed = requests.post(f"{base_url}/context/{context_id}/refresh", json={},
                                                   timeout=timeout)
                         outcome["refreshStatus"] = refreshed.status_code

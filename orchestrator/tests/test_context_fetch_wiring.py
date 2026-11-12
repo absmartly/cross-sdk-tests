@@ -124,6 +124,26 @@ def test_probe_against_an_unreachable_context_server_is_a_measurement_failure(wr
     assert "fake" not in orch.capabilities_fetch_failed
 
 
+def test_failed_refresh_put_is_a_measurement_failure_not_a_policy_violation(server_url, wrapper_factory):
+    wrapper = wrapper_factory("gzip")
+    orch = orchestrator_for(wrapper)
+    real_put = orch.context_server_put
+    calls = []
+
+    def put(payload_id, body):
+        calls.append(payload_id)
+        if len(calls) == 2:  # the refresh-data PUT, after the SDK's create fetch
+            raise test_runner.requests.HTTPError("500 Server Error")
+        return real_put(payload_id, body)
+
+    with mock.patch.object(orch, "context_server_put", side_effect=put), mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert "500 Server Error" in orch.measurement_failed["fake"][CAP]
+    assert "fake" not in orch.capability_policy_violations
+    assert CAP not in orch.capabilities["fake"]
+    assert wrapper.contexts == {}  # the probe context is still deleted
+
+
 def test_probe_handles_a_non_object_wrapper_body(server_url, wrapper_factory):
     wrapper = wrapper_factory("gzip")
     orch = orchestrator_for(wrapper)
