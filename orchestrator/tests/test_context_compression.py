@@ -253,13 +253,15 @@ def test_gzip_must_be_advertised_on_create_and_refresh_and_decode(outcome):
     assert measure(True, outcome).capabilities["alpha"][CAP] is False
 
 
-@pytest.mark.parametrize("negotiated, reason", [
-    ({"error": "boom", "requests": []}, "made no GET /context"),
-    (test_runner.requests.ConnectionError("down"), "could not use the context server"),
-    (KeyError("anything"), "anything"),
+@pytest.mark.parametrize("negotiated, reason, wrapper_says", [
+    ({"error": "boom", "requests": []}, "made no GET /context", None),
+    (test_runner.requests.ConnectionError("down"), "could not use the context server", None),
+    (KeyError("anything"), "anything", None),
+    # A wrapper self-claim must not survive a failed measurement.
+    ({"error": "boom", "requests": []}, "made no GET /context", True),
 ])
-def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiated, reason):
-    orch = measure(True, negotiated, other=True, wrapper_caps={"holdouts": True})
+def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiated, reason, wrapper_says):
+    orch = measure(True, negotiated, wrapper_says=wrapper_says, other=True, wrapper_caps={"holdouts": True})
     assert reason in orch.measurement_failed["alpha"][CAP]
     # Not a capabilities-fetch failure: the wrapper's validated capabilities still apply.
     assert "alpha" not in orch.capabilities_fetch_failed
@@ -288,6 +290,29 @@ def test_report_only_probe_cannot_change_the_gate(required, headers, error):
     orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
     with mock.patch("builtins.print"):
         assert orch.generate_report(os.devnull, []) == 0
+
+
+# -- orchestrator: context-server control calls ------------------------------
+
+
+def test_control_call_retries_once_after_a_connection_error():
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    ok = mock.Mock(status_code=200)
+    with mock.patch.object(test_runner.requests, "request",
+                           side_effect=[test_runner.requests.ConnectionError("reset"), ok]) as request, \
+            mock.patch.object(test_runner.time, "sleep"):
+        assert orch._context_server_call("GET", "/health") is ok
+    assert request.call_count == 2
+
+
+def test_control_call_gives_up_after_the_retry():
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    with mock.patch.object(test_runner.requests, "request",
+                           side_effect=test_runner.requests.ConnectionError("down")) as request, \
+            mock.patch.object(test_runner.time, "sleep"), \
+            pytest.raises(test_runner.requests.ConnectionError):
+        orch._context_server_call("GET", "/health")
+    assert request.call_count == 2
 
 
 # -- orchestrator: per-step wire checks -------------------------------------
