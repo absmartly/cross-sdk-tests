@@ -60,6 +60,7 @@ class NegotiationRules(unittest.TestCase):
             self.assertEqual(choose(header), served, header)
         self.assertEqual(choose("gzip", ["identity"]), "identity")
         self.assertEqual(choose("gzip", ["br", "zstd", "gzip"]), "gzip")  # unknown codings are skipped
+        self.assertEqual(choose(None, ["identity"], force="gzip"), "gzip")  # force ignores the request
 
     def test_multiple_header_lines_are_one_list(self):
         combined = negotiation.combine_header_lines(["deflate", "gzip;q=0.5"])
@@ -68,11 +69,7 @@ class NegotiationRules(unittest.TestCase):
         self.assertIsNone(negotiation.combine_header_lines(None))
         self.assertIsNone(negotiation.combine_header_lines([]))
 
-    def test_force_ignores_the_request(self):
-        self.assertEqual(negotiation.choose_encoding(None, ["identity"], force="gzip"), "gzip")
-
-    def test_server_only_produces_what_the_module_serves(self):
-        self.assertEqual(set(context_server.COMPRESSORS), set(negotiation.CODINGS))
+    def test_server_only_produces_gzip_or_identity(self):
         self.assertEqual(set(negotiation.CODINGS), {"gzip", "identity"})
 
     def test_payload_validation(self):

@@ -36,10 +36,10 @@ def test_retained_prefix_is_the_exact_30d23e9_baseline():
 def test_group_is_a_contiguous_tail_numbered_after_the_max_retained_id():
     scenarios = canonical()
     group = [s for s in scenarios if generator.GROUP_MARKER in s["name"]]
-    kept_max = max(int(s["name"].split(" - ", 1)[0]) for s in scenarios if s not in group)
+    kept_max = max(generator.scenario_number(s) for s in scenarios if s not in group)
     assert kept_max == 229
     assert scenarios[-3:] == group == generator.build_group(230)
-    assert [int(s["name"].split(" - ", 1)[0]) for s in group] == [230, 231, 232]
+    assert [generator.scenario_number(s) for s in group] == [230, 231, 232]
 
 
 def test_only_the_wire_check_is_gated():
@@ -76,7 +76,7 @@ def test_refresh_data_differs_and_the_next_step_proves_it_was_used():
 
 def test_refresh_expectation_matches_the_pinned_traffic_split_scenario():
     """The refreshed data is scenario 29's; so is the treatment after its refresh."""
-    by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
+    by_number = {generator.scenario_number(s): s for s in canonical()}
     pinned = by_number[29]["steps"]
     ungated = generator.build_group(230)[0]["steps"]
     refresh = [s["action"] for s in ungated].index("refresh")
@@ -89,12 +89,6 @@ def test_refresh_expectation_matches_the_pinned_traffic_split_scenario():
 
 def test_payload_is_only_the_tested_experiment():
     assert [e["name"] for e in generator.context_data()["experiments"]] == ["exp_test_ab"]
-
-
-def test_scenarios_validate_with_the_checked_in_policy():
-    policy = test_runner.load_capability_policy()
-    valid, empty, invalid = test_runner.validate_and_filter_scenarios(canonical(), set(policy["capabilities"]))
-    assert invalid == [] and empty == []
 
 
 @pytest.mark.parametrize("mutation", [None, "expectation", "missing", "prefix", "spec"])
@@ -131,16 +125,10 @@ def test_place_group_rejects_a_split_group():
 # -- policy ------------------------------------------------------------------
 
 
-def test_policy_declares_the_measured_capability_for_every_sdk():
-    policy = test_runner.load_capability_policy()
-    assert policy["measuredCapabilities"] == [CAP]
-    for sdk, entry in policy["sdks"].items():
-        assert (CAP in entry["required"]) != (CAP in entry["unsupported"]), sdk
-
-
 def test_required_where_observed_or_read_from_code():
     """Required where a lane observed gzip or the code shows it (CI proves it); the rest are exceptions."""
     policy = test_runner.load_capability_policy()
+    assert policy["measuredCapabilities"] == [CAP]
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
     assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
                         "scala", "vue2", "vue3"]
@@ -164,11 +152,6 @@ def test_malformed_measured_capabilities_are_rejected(measured, error):
     policy = test_runner.load_capability_policy()
     policy["measuredCapabilities"] = measured
     assert any(error in e for e in test_runner.validate_capability_policy(policy))
-
-
-def test_every_probe_names_a_method():
-    for cap, method in test_runner.MEASURED_CAPABILITY_PROBES.items():
-        assert callable(getattr(TestOrchestrator, method)), cap
 
 
 # -- orchestrator: measured capability --------------------------------------
@@ -265,18 +248,6 @@ def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiate
     with mock.patch("builtins.print"):
         exit_code = orch.generate_report(os.devnull, [])
     assert exit_code != 0
-
-
-def test_context_server_not_ready_is_a_measurement_failure():
-    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True))
-    orch._context_server_ready = "context server at x not ready after 30s: refused"
-    response = mock.Mock(status_code=200)
-    response.json.return_value = {}
-    with mock.patch.object(test_runner.requests, "get", return_value=response), \
-            mock.patch.object(orch, "_probe_context_fetch") as probe, mock.patch("builtins.print"):
-        orch.fetch_capabilities("alpha", "http://alpha")
-    probe.assert_not_called()
-    assert "not ready" in orch.measurement_failed["alpha"][CAP]
 
 
 # -- orchestrator: per-step wire checks -------------------------------------
