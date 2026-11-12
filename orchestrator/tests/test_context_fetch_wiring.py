@@ -144,6 +144,25 @@ def test_failed_refresh_put_is_a_measurement_failure_not_a_policy_violation(serv
     assert wrapper.contexts == {}  # the probe context is still deleted
 
 
+@pytest.mark.parametrize("suffix", ["/context", "/refresh"])
+def test_probe_timeout_is_a_measurement_failure_not_no_support(server_url, wrapper_factory, suffix):
+    wrapper = wrapper_factory("gzip")
+    orch = orchestrator_for(wrapper)
+    real_post = test_runner.requests.post
+
+    def post(url, *args, **kwargs):
+        response = real_post(url, *args, **kwargs)  # the SDK's fetch reaches the server
+        if url.endswith(suffix):
+            raise test_runner.requests.ReadTimeout("Read timed out. (read timeout=5)")
+        return response
+
+    with mock.patch.object(test_runner.requests, "post", side_effect=post), mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert "timed out" in orch.measurement_failed["fake"][CAP]
+    assert CAP not in orch.capabilities["fake"]
+    assert "fake" not in orch.capability_policy_violations
+
+
 def test_probe_handles_a_non_object_wrapper_body(server_url, wrapper_factory):
     wrapper = wrapper_factory("gzip")
     orch = orchestrator_for(wrapper)

@@ -697,16 +697,23 @@ class TestOrchestrator:
             names = self._wrapper_result(requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
             return names == [e["name"] for e in expected["experiments"]]
 
+        def post_fetching(url: str, body: Dict[str, Any]) -> requests.Response:
+            # A create/refresh that times out measured nothing (the SDK may
+            # still be fetching or decoding): never read it as "no support".
+            try:
+                return requests.post(url, json=body, timeout=timeout)
+            except requests.Timeout as exc:
+                raise MeasurementError(f"wrapper call POST {url} timed out after {timeout}s: {exc}") from exc
+
         try:
             try:
-                response = requests.post(
+                response = post_fetching(
                     f"{base_url}/context",
-                    json={
+                    {
                         "endpoint": f"{CONTEXT_SERVER_SDK_URL}/negotiate/{payload_id}",
                         "units": {"session_id": "context-fetch-probe"},
                         "options": {"publishDelay": -1, "refreshPeriod": 0},
                     },
-                    timeout=timeout,
                 )
                 result = self._wrapper_result(response)
                 if not isinstance(result, dict):
@@ -726,8 +733,7 @@ class TestOrchestrator:
                         except Exception as exc:
                             raise MeasurementError(
                                 f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
-                        refreshed = requests.post(f"{base_url}/context/{context_id}/refresh", json={},
-                                                  timeout=timeout)
+                        refreshed = post_fetching(f"{base_url}/context/{context_id}/refresh", {})
                         outcome["refreshStatus"] = refreshed.status_code
                         outcome["refreshDecoded"] = serves(refresh_data)
                 elif context_id and outcome["failed"] is True:
@@ -783,12 +789,24 @@ class TestOrchestrator:
 
         # REPORT-ONLY: what the SDK does with a gzip body it did not ask for. It
         # gates nothing; it is the evidence behind the SDK fixes (several SDKs
-        # fail to load such a body). Short timeout, and its failure is recorded.
+        # fail to load such a body). Short timeout. Whatever goes wrong here
+        # (including building the report) is recorded and `value` stands.
         try:
             unrequested = self._probe_context_fetch(
                 base_url, probe_data("exp_context_fetch_probe"), None, "gzip", UNREQUESTED_GZIP_TIMEOUT)
-        except (requests.RequestException, ValueError) as exc:
-            unrequested = {"error": f"context server: {exc}", "requests": []}
+            unrequested_report = {
+                "reportOnly": True,
+                "acceptEncoding": [r.get("acceptEncoding") for r in unrequested["requests"]],
+                "ready": unrequested.get("ready"),
+                "failed": unrequested.get("failed"),
+                "decoded": unrequested.get("decoded"),
+                "error": unrequested.get("error"),
+            }
+        except Exception as exc:  # report-only: never changes the gate
+            unrequested_report = {
+                "reportOnly": True, "acceptEncoding": [], "ready": None, "failed": None, "decoded": None,
+                "error": f"report-only probe failed: {str(exc) or exc.__class__.__name__}",
+            }
 
         self.context_fetch_probe[sdk_name] = {
             "acceptEncoding": headers,
@@ -802,21 +820,14 @@ class TestOrchestrator:
             "error": negotiated.get("error"),
             "advertises": {c: any(negotiation.advertises(h, c) for h in headers) for c in REPORTED_ENCODINGS},
             "contextFetchCompression": value,
-            "unrequestedGzip": {
-                "reportOnly": True,
-                "acceptEncoding": [r.get("acceptEncoding") for r in unrequested["requests"]],
-                "ready": unrequested.get("ready"),
-                "failed": unrequested.get("failed"),
-                "decoded": unrequested.get("decoded"),
-                "error": unrequested.get("error"),
-            },
+            "unrequestedGzip": unrequested_report,
         }
         probe = self.context_fetch_probe[sdk_name]
         print(
             f"  context fetch {sdk_name}: Accept-Encoding {headers!r} -> served {probe['served']}; "
             f"User-Agent {probe['userAgent']}; contextFetchCompression={value}; "
-            f"unrequested gzip (report only) -> ready={unrequested.get('ready')} "
-            f"failed={unrequested.get('failed')} decoded={unrequested.get('decoded')}"
+            f"unrequested gzip (report only) -> ready={unrequested_report['ready']} "
+            f"failed={unrequested_report['failed']} decoded={unrequested_report['decoded']}"
         )
         return value
 

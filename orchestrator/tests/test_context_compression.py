@@ -175,7 +175,7 @@ def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200):
     }
 
 
-def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None):
+def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None, unrequested=None):
     orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(required, other))
     orch._context_server_ready = ""  # the context server answered /health
     body = dict(wrapper_caps or {})
@@ -183,7 +183,8 @@ def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=N
         body[CAP] = wrapper_says
     response = mock.Mock(status_code=200)
     response.json.return_value = body
-    unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    if unrequested is None:
+        unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
     side_effect = negotiated if isinstance(negotiated, Exception) else [negotiated, unrequested]
     with mock.patch.object(test_runner.requests, "get", return_value=response), \
             mock.patch.object(orch, "_probe_context_fetch", side_effect=side_effect), \
@@ -248,6 +249,23 @@ def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiate
     with mock.patch("builtins.print"):
         exit_code = orch.generate_report(os.devnull, [])
     assert exit_code != 0
+
+
+@pytest.mark.parametrize("required, headers", [(True, ["gzip", "gzip"]), (False, [None, None])])
+@pytest.mark.parametrize("error", [
+    test_runner.requests.ConnectionError("report-only down"),
+    KeyError("report-only key"),
+    {"requests": None},  # a malformed outcome: building the report raises TypeError
+])
+def test_report_only_probe_cannot_change_the_gate(required, headers, error):
+    orch = measure(required, probe_outcome(headers), unrequested=error)
+    assert orch.capabilities["alpha"][CAP] is required
+    assert "alpha" not in orch.measurement_failed and "alpha" not in orch.capability_policy_violations
+    report = orch.context_fetch_probe["alpha"]["unrequestedGzip"]
+    assert report["reportOnly"] is True and "report-only probe failed" in report["error"]
+    orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
+    with mock.patch("builtins.print"):
+        assert orch.generate_report(os.devnull, []) == 0
 
 
 # -- orchestrator: per-step wire checks -------------------------------------
