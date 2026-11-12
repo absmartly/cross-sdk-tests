@@ -81,16 +81,27 @@ async function runCase(c) {
 	const log = [];
 	const provider = new SwappableProvider(c.contextData);
 	const eventLogger = (ctx, eventName, data) => log.push({ type: eventName, data: strip(eventName, data) });
-	// Per-case client config (the system-attributes group). Default to the fixed
-	// application "website" / environment "test" every other case has always used,
-	// so the rules/semver/re-eval groups are byte-for-byte unchanged. When a case
-	// sets client.application / client.environment, configure the SDK client with
-	// them; an explicitly absent environment means "no environment configured", so
-	// the SDK is built with a client that reports no environment.
-	const client = c.client || {};
-	const application = "application" in client ? client.application : "website";
-	const hasEnvironment = "environment" in client ? client.environment != null && client.environment !== "" : true;
-	const environment = "environment" in client ? client.environment : "test";
+	// Per-case client config (the system-attributes group). When a case omits the
+	// `client` field entirely, use the fixed application "website" / environment
+	// "test" every other case has always used, so the rules/semver/re-eval groups
+	// are byte-for-byte unchanged. When a case SETS `client`, configure the SDK
+	// from it: the application name, and the environment ONLY when it is a non-empty
+	// string — an absent/empty environment means "no environment configured", so the
+	// SDK is built with a client that reports no environment (mirrors a wrapper
+	// honouring an omitted client.environment on POST /context).
+	let application, hasEnvironment, environment;
+	if (c.client == null) {
+		application = "website";
+		hasEnvironment = true;
+		environment = "test";
+	} else {
+		application =
+			typeof c.client.application === "string" && c.client.application.length > 0
+				? c.client.application
+				: "website";
+		hasEnvironment = typeof c.client.environment === "string" && c.client.environment.length > 0;
+		environment = hasEnvironment ? c.client.environment : undefined;
+	}
 	let sdkOptions;
 	if (hasEnvironment) {
 		sdkOptions = {

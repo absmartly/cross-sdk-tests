@@ -162,6 +162,11 @@ type Response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
+type ClientConfigRequest struct {
+	Application *string `json:"application"`
+	Environment *string `json:"environment"`
+}
+
 type CreateContextRequest struct {
 	Data       jsonmodels.ContextData `json:"data"`
 	Endpoint   string                 `json:"endpoint"`
@@ -170,6 +175,7 @@ type CreateContextRequest struct {
 	FailLoad   bool                   `json:"failLoad"`
 	Mode       string                 `json:"mode"`
 	Attributes map[string]interface{} `json:"attributes"`
+	Client     *ClientConfigRequest   `json:"client"`
 }
 
 type StorePayloadRequest struct {
@@ -242,9 +248,9 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"getAttributes":         true,
 		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
 		// so the wrapper cannot report it without fabricating it.
-		"readyError": false,
-		"numericUnitIds":         true,
-		"publishThrowsOnFailure": true,
+		"readyError":                      false,
+		"numericUnitIds":                  true,
+		"publishThrowsOnFailure":          true,
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
 	})
@@ -355,13 +361,35 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// clientNames returns the application and environment names for a context's
+// client. The optional `client` field on POST /context (the 2026-11
+// system-attributes round) overrides the defaults so a scenario can target the
+// always-on application/environment audience attributes. When the whole field is
+// omitted, the fixed test-app/test-env defaults keep every pre-2026-11 scenario
+// unchanged. When it is present, a blank/absent environment means "no environment
+// configured": the empty string leaves environment out of the SDK's evaluation
+// map (Context only adds it when len(Environment_) > 0).
+func clientNames(cfg *ClientConfigRequest) (string, string) {
+	if cfg == nil {
+		return "test-app", "test-env"
+	}
+	application := "test-app"
+	if cfg.Application != nil && *cfg.Application != "" {
+		application = *cfg.Application
+	}
+	environment := ""
+	if cfg.Environment != nil && *cfg.Environment != "" {
+		environment = *cfg.Environment
+	}
+	return application, environment
+}
+
 func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 
@@ -435,11 +463,12 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			})
 			absmartly = &a
 		} else {
+			application, environment := clientNames(req.Client)
 			client := sdk.CreateDefaultClient(sdk.ClientConfig{
 				Endpoint_:    endpoint,
 				ApiKey_:      "test-api-key",
-				Application_: "test-app",
-				Environment_: "test-env",
+				Application_: application,
+				Environment_: environment,
 			})
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:             client,

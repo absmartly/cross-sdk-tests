@@ -23,23 +23,27 @@ class NoEnvironmentClient extends Client {
 }
 
 // Build an SDK with the requested client application/environment. When `client`
-// is omitted the wrapper uses its own defaults, so every pre-2026-11 scenario is
-// unaffected. A present-but-empty/absent environment means "no environment
-// configured".
+// is omitted entirely the wrapper uses its own defaults, so every pre-2026-11
+// scenario is unaffected. When `client` is present, its application name is used
+// (falling back to the default only when blank), and the environment is used only
+// when it is a non-empty string — an absent/blank environment means "no
+// environment configured".
 function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
-  const cfg = clientConfig || {};
-  const application =
-    typeof cfg.application === 'string' && cfg.application.length > 0
-      ? cfg.application
-      : DEFAULT_APPLICATION;
-  const hasEnvironment = 'environment' in cfg
-    ? typeof cfg.environment === 'string' && cfg.environment.length > 0
-    : true;
   const eventLogger = (ctx, eventName, eventData) => {
     eventCollector.handleEvent(ctx, eventName, eventData);
   };
+  let application = DEFAULT_APPLICATION;
+  let hasEnvironment = true;
+  let environment = DEFAULT_ENVIRONMENT;
+  if (clientConfig != null) {
+    if (typeof clientConfig.application === 'string' && clientConfig.application.length > 0) {
+      application = clientConfig.application;
+    }
+    hasEnvironment =
+      typeof clientConfig.environment === 'string' && clientConfig.environment.length > 0;
+    environment = hasEnvironment ? clientConfig.environment : undefined;
+  }
   if (hasEnvironment) {
-    const environment = 'environment' in cfg ? cfg.environment : DEFAULT_ENVIRONMENT;
     return new absmartly.SDK({
       endpoint: endpoint || 'http://dummy',
       apiKey: 'dummy',

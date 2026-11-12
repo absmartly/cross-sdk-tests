@@ -261,8 +261,22 @@ def create_context():
     translated_endpoint = translate_endpoint(endpoint) if endpoint else 'http://dummy'
     client_config.endpoint = translated_endpoint
     client_config.api_key = 'dummy'
-    client_config.application = 'test'
-    client_config.environment = 'test'
+    # Optional client config (2026-11 system-attributes round): a scenario can set
+    # the application/environment names so audiences can target them. When the
+    # `client` field is omitted, keep the fixed test/test defaults so every
+    # pre-2026-11 scenario is unchanged. When it is present, the environment is used
+    # only when it is a non-empty string — an absent/blank environment means "no
+    # environment configured", so leave it unset and the SDK leaves environment out
+    # of the evaluation map.
+    client_cfg = req_data.get('client')
+    if client_cfg is None:
+        client_config.application = 'test'
+        client_config.environment = 'test'
+    else:
+        application = client_cfg.get('application')
+        client_config.application = application if isinstance(application, str) and application else 'test'
+        environment = client_cfg.get('environment')
+        client_config.environment = environment if isinstance(environment, str) and environment else None
 
     http_client_config = DefaultHTTPClientConfig()
     http_client = DefaultHTTPClient(http_client_config)
