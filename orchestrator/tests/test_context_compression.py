@@ -257,10 +257,11 @@ def test_bad_context_server_specs_are_rejected(spec):
 
 def test_header_parsing_matches_the_server():
     sys.path.insert(0, os.path.join(ROOT, "context-server"))
+    import negotiation
     import server as context_server
     for header in [None, "", "gzip", "gzip;q=0", "*", "x-gzip", "br, zstd", "gzip;q=1.0,deflate;q=0.6,identity;q=0.3",
                    "identity;q=0", "*;q=0"]:
         for pref in (["gzip", "identity"], ["zstd", "br", "gzip", "identity"], ["identity"]):
             pref = [c for c in pref if c in context_server.COMPRESSORS]  # br/zstd depend on the interpreter
             assert test_runner.expected_served_encoding(header, pref) == context_server.choose_encoding(header, pref)
-        assert test_runner.advertises_encoding(header, "gzip") == context_server.advertises(header, "gzip")
+        assert test_runner.advertises_encoding(header, "gzip") == negotiation.advertises(header, "gzip")

@@ -10,44 +10,80 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "context-server"))
 
+import negotiation  # noqa: E402
 import server as context_server  # noqa: E402
 
 DATA = {"experiments": [{"id": 1, "name": "exp"}]}
 
 
 class NegotiationRules(unittest.TestCase):
+    """Absolute expectations for the one negotiation module (server and orchestrator import it)."""
+
     def test_parse_accept_encoding(self):
-        self.assertEqual(context_server.parse_accept_encoding(None), {})
-        self.assertEqual(
-            context_server.parse_accept_encoding("gzip, deflate;q=0.5, br;q=0"),
-            {"gzip": 1.0, "deflate": 0.5, "br": 0.0},
-        )
+        parse = negotiation.parse_accept_encoding
+        self.assertEqual(parse(None), {})
+        self.assertEqual(parse(""), {})
+        self.assertEqual(parse("gzip, deflate;q=0.5, br;q=0"), {"gzip": 1.0, "deflate": 0.5, "br": 0.0})
+        self.assertEqual(parse("  GZIP ;  Q=0.5 ,, Deflate"), {"gzip": 0.5, "deflate": 1.0})
+        self.assertEqual(parse("x-gzip"), {"gzip": 1.0})
+        self.assertEqual(parse("gzip;q=oops"), {"gzip": 0.0})
+        self.assertEqual(parse("gzip, gzip;q=0"), {"gzip": 0.0})  # last one wins
 
-    def test_advertises_requires_explicit_positive_q(self):
-        self.assertTrue(context_server.advertises("gzip, deflate", "gzip"))
-        self.assertTrue(context_server.advertises("x-gzip", "gzip"))
-        self.assertFalse(context_server.advertises("*", "gzip"))
-        self.assertFalse(context_server.advertises("gzip;q=0", "gzip"))
-        self.assertFalse(context_server.advertises(None, "gzip"))
+    def test_advertises_requires_an_explicit_positive_q(self):
+        advertises = negotiation.advertises
+        for header in ("gzip", "gzip, deflate", "x-gzip", "X-GZIP", " Gzip ; q=0.1", "deflate, gzip;q=1.0"):
+            self.assertTrue(advertises(header, "gzip"), header)
+        for header in (None, "", "*", "deflate", "gzip;q=0", "x-gzip;q=0", "identity", "*;q=1"):
+            self.assertFalse(advertises(header, "gzip"), header)
 
-    def test_first_preferred_acceptable_coding_wins(self):
-        choose = context_server.choose_encoding
-        self.assertEqual(choose("gzip, deflate", ["gzip", "identity"]), "gzip")
-        self.assertEqual(choose(None, ["gzip", "identity"]), "identity")
-        self.assertEqual(choose("deflate", ["gzip", "identity"]), "identity")
-        self.assertEqual(choose("gzip, br, zstd", ["zstd", "br", "gzip", "identity"]),
-                         next(c for c in ("zstd", "br", "gzip") if c in context_server.COMPRESSORS))
+    def test_choose_encoding(self):
+        choose = negotiation.choose_encoding
+        cases = {
+            None: "identity",
+            "": "identity",
+            "gzip": "gzip",
+            "gzip, deflate": "gzip",
+            "GZIP": "gzip",
+            " gzip ;q=0.5 ": "gzip",
+            "x-gzip": "gzip",
+            "deflate": "identity",
+            "gzip;q=0": "identity",
+            "gzip;q=0, identity": "identity",
+            "identity;q=0, gzip": "gzip",
+            "*": "gzip",
+            "*;q=0": "identity",  # nothing acceptable: deliberate identity fallback, not 406
+            "identity;q=0": "identity",  # same fallback
+            "*;q=0, gzip": "gzip",
+            "br, zstd": "identity",  # never served, only reported
+        }
+        for header, served in cases.items():
+            self.assertEqual(choose(header), served, header)
         self.assertEqual(choose("gzip", ["identity"]), "identity")
+        self.assertEqual(choose("gzip", ["br", "zstd", "gzip"]), "gzip")  # unknown codings are skipped
+
+    def test_multiple_header_lines_are_one_list(self):
+        combined = negotiation.combine_header_lines(["deflate", "gzip;q=0.5"])
+        self.assertEqual(combined, "deflate, gzip;q=0.5")
+        self.assertTrue(negotiation.advertises(combined, "gzip"))
+        self.assertIsNone(negotiation.combine_header_lines(None))
+        self.assertIsNone(negotiation.combine_header_lines([]))
 
     def test_force_ignores_the_request(self):
-        self.assertEqual(context_server.choose_encoding(None, ["identity"], force="gzip"), "gzip")
+        self.assertEqual(negotiation.choose_encoding(None, ["identity"], force="gzip"), "gzip")
+
+    def test_server_only_produces_what_the_module_serves(self):
+        self.assertEqual(set(context_server.COMPRESSORS), set(negotiation.CODINGS))
+        self.assertEqual(set(negotiation.CODINGS), {"gzip", "identity"})
 
     def test_payload_validation(self):
         self.assertIsNone(context_server.validate_payload({"data": DATA}))
+        self.assertIsNone(context_server.validate_payload({"data": DATA, "encodings": ["gzip", "identity"]}))
         self.assertIsNotNone(context_server.validate_payload({"data": []}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": ["deflate"]}))
+        self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": ["br"]}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": []}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "force": "deflate"}))
+        self.assertIsNotNone(context_server.validate_payload({"data": DATA, "force": "zstd"}))
 
 
 class LiveServer(unittest.TestCase):
@@ -113,6 +149,35 @@ class LiveServer(unittest.TestCase):
         response, body = self.request("GET", "/negotiate/d/context", headers={"Accept-Encoding": "gzip"})
         self.assertIsNone(response.getheader("Content-Encoding"))
         self.assertEqual(json.loads(body), {"experiments": []})
+
+    def test_repeated_accept_encoding_lines_are_combined(self):
+        self.put("g")
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("GET", "/negotiate/g/context", skip_accept_encoding=True)
+        conn.putheader("Accept-Encoding", "deflate")
+        conn.putheader("Accept-Encoding", "gzip")
+        conn.endheaders()
+        response = conn.getresponse()
+        body = response.read()
+        conn.close()
+        self.assertEqual(response.getheader("Content-Encoding"), "gzip")
+        self.assertEqual(json.loads(gzip.decompress(body)), DATA)
+        self.assertEqual(self.recorded("g")[0]["acceptEncoding"], "deflate, gzip")
+
+    def test_absent_accept_encoding_is_recorded_as_none(self):
+        self.put("h")
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("GET", "/negotiate/h/context", skip_accept_encoding=True)
+        conn.endheaders()
+        response = conn.getresponse()
+        response.read()
+        conn.close()
+        self.assertIsNone(response.getheader("Content-Encoding"))
+        self.assertIsNone(self.recorded("h")[0]["acceptEncoding"])
+
+    def test_head_is_not_routed(self):
+        response, _ = self.request("HEAD", "/health")
+        self.assertEqual(response.status, 501)
 
     def test_unknown_payload_is_recorded_and_404(self):
         response, _ = self.request("GET", "/negotiate/nope/context")

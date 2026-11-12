@@ -7,10 +7,10 @@ it copes with what it gets back is decided and recorded in one process, not in
 twenty wrappers.
 
 Control API (used by the orchestrator):
-  PUT    /payload/{id}   {"data": {...}, "encodings": [...], "force": null|"gzip"|...}
+  PUT    /payload/{id}   {"data": {...}, "encodings": [...], "force": null|"gzip"|"identity"}
                          Stores the context data the SDK will fetch. `encodings` is the
-                         server preference list (subset of zstd, br, gzip, identity, in
-                         order); the first one the client advertised is served.
+                         server preference list (subset of gzip, identity, in order); the
+                         first one the client accepts is served (see negotiation.py).
                          `force` serves that encoding even when it was not advertised.
                          Omitted `encodings`/`force` keep the stored values (refresh).
   GET    /requests/{id}  Every request the SDK made for that payload, in order.
@@ -22,6 +22,9 @@ SDK-facing API:
 
 The path deliberately does not start with /context_payload/: some wrappers
 rewrite such endpoints to their own host.
+
+Only gzip and identity are served. Whether an SDK also lists br or zstd is
+reported by the orchestrator from the recorded Accept-Encoding, never served.
 """
 
 import gzip
@@ -33,81 +36,10 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-try:  # Python 3.14+ has zstd in the standard library.
-    from compression import zstd as _zstd
-except ImportError:  # pragma: no cover - depends on the interpreter
-    _zstd = None
+from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines
 
-try:  # Optional: installed in the context-server image.
-    import brotli as _brotli
-except ImportError:  # pragma: no cover - depends on the environment
-    _brotli = None
-
-
-def _compressors():
-    table = {"gzip": lambda body: gzip.compress(body, mtime=0), "identity": lambda body: body}
-    if _brotli is not None:
-        table["br"] = _brotli.compress
-    if _zstd is not None:
-        table["zstd"] = _zstd.compress
-    return table
-
-
-COMPRESSORS = _compressors()
-KNOWN_ENCODINGS = ("zstd", "br", "gzip", "identity")
-DEFAULT_PREFERENCE = ["gzip", "identity"]
-
-
-def parse_accept_encoding(header):
-    """Return {coding: q} for an Accept-Encoding header (None -> {})."""
-    accepted = {}
-    if not header:
-        return accepted
-    for part in header.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        coding, *params = [p.strip() for p in part.split(";")]
-        q = 1.0
-        for param in params:
-            if param.lower().startswith("q="):
-                try:
-                    q = float(param[2:])
-                except ValueError:
-                    q = 0.0
-        accepted[coding.lower()] = q
-    return accepted
-
-
-def advertises(header, coding):
-    """True when the header explicitly lists `coding` with q > 0 (x-gzip counts as gzip)."""
-    accepted = parse_accept_encoding(header)
-    q = accepted.get(coding)
-    if q is None and coding == "gzip":
-        q = accepted.get("x-gzip")
-    return q is not None and q > 0
-
-
-def acceptable(header, coding):
-    """RFC 9110 acceptability, including `*` and the implicit identity."""
-    accepted = parse_accept_encoding(header)
-    if coding in accepted:
-        return accepted[coding] > 0
-    if coding == "gzip" and "x-gzip" in accepted:
-        return accepted["x-gzip"] > 0
-    if "*" in accepted:
-        return accepted["*"] > 0
-    return coding == "identity"
-
-
-def choose_encoding(header, preference, force=None):
-    """The served encoding: `force` if set, else the first preferred acceptable one."""
-    if force:
-        return force
-    for coding in preference:
-        if coding in COMPRESSORS and acceptable(header, coding):
-            return coding
-    return "identity"
+COMPRESSORS = {"gzip": lambda body: gzip.compress(body, mtime=0), "identity": lambda body: body}
+assert set(COMPRESSORS) == set(CODINGS)
 
 
 class Store:
@@ -151,14 +83,11 @@ def validate_payload(body):
         return "body must be an object with a 'data' object"
     if "encodings" in body:
         encodings = body["encodings"]
-        if not isinstance(encodings, list) or not encodings or any(e not in KNOWN_ENCODINGS for e in encodings):
-            return f"'encodings' must be a non-empty list drawn from {list(KNOWN_ENCODINGS)}"
-        missing = [e for e in encodings if e not in COMPRESSORS]
-        if missing:
-            return f"this server cannot produce {missing}"
+        if not isinstance(encodings, list) or not encodings or any(e not in CODINGS for e in encodings):
+            return f"'encodings' must be a non-empty list drawn from {list(CODINGS)}"
     force = body.get("force")
-    if force is not None and force not in COMPRESSORS:
-        return f"'force' must be null or one of {sorted(COMPRESSORS)}"
+    if force is not None and force not in CODINGS:
+        return f"'force' must be null or one of {list(CODINGS)}"
     return None
 
 
@@ -181,8 +110,7 @@ def make_handler(store):
                 self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            if self.command != "HEAD":
-                self.wfile.write(body)
+            self.wfile.write(body)
 
         def _json(self, status, obj):
             self._send(status, json.dumps(obj).encode(), {"Content-Type": "application/json"})
@@ -194,7 +122,7 @@ def make_handler(store):
         def do_GET(self):
             path = urlsplit(self.path).path
             if path == "/health":
-                return self._json(200, {"status": "ok", "encodings": sorted(COMPRESSORS)})
+                return self._json(200, {"status": "ok", "encodings": list(CODINGS)})
             match = REQUESTS.match(path)
             if match:
                 return self._json(200, {"requests": store.recorded(match.group(1))})
@@ -205,7 +133,8 @@ def make_handler(store):
 
         def _serve_context(self, payload_id):
             entry = store.get(payload_id)
-            accept = self.headers.get("Accept-Encoding")
+            # RFC 9110 5.3: repeated header lines form one comma-separated list.
+            accept = combine_header_lines(self.headers.get_all("Accept-Encoding"))
             record = {
                 "method": "GET",
                 "path": urlsplit(self.path).path,
@@ -263,7 +192,7 @@ def make_server(host="0.0.0.0", port=8080):
 def main():
     port = int(os.environ.get("PORT", "8080"))
     server = make_server(port=port)
-    print(f"context-server listening on :{port}, encodings {sorted(COMPRESSORS)}", flush=True)
+    print(f"context-server listening on :{port}, encodings {list(CODINGS)}", flush=True)
     server.serve_forever()
 
 
