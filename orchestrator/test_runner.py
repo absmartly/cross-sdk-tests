@@ -1143,7 +1143,7 @@ class TestOrchestrator:
                             "units": params["units"],
                             "options": params.get("options", {}),
                         },
-                        timeout=5,
+                        timeout=CONTEXT_CREATE_TIMEOUT,
                     )
                     response.raise_for_status()
                     data = response.json()

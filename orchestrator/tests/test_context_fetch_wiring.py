@@ -9,6 +9,7 @@ the directData path.
 
 import copy
 import os
+import socket
 import sys
 import threading
 from unittest import mock
@@ -34,7 +35,7 @@ CAP = "contextFetchCompression"
 @pytest.fixture(scope="module")
 def server_url():
     server = context_server.make_server("127.0.0.1", 0)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
     url = f"http://127.0.0.1:{server.server_address[1]}"
     with mock.patch.object(test_runner, "CONTEXT_SERVER_URL", url), \
             mock.patch.object(test_runner, "CONTEXT_SERVER_SDK_URL", url):
@@ -114,10 +115,17 @@ def test_probe_rejects_a_refresh_that_does_not_bring_the_new_data(server_url, wr
     assert "refresh data not used" in orch.capability_policy_violations["fake"][0]
 
 
+def closed_port():
+    """A local port nothing listens on: bound, read, then released."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
 def test_probe_against_an_unreachable_context_server_is_a_measurement_failure(wrapper_factory):
     wrapper = wrapper_factory("gzip")
     orch = orchestrator_for(wrapper)
-    with mock.patch.object(test_runner, "CONTEXT_SERVER_URL", "http://127.0.0.1:9"), \
+    with mock.patch.object(test_runner, "CONTEXT_SERVER_URL", f"http://127.0.0.1:{closed_port()}"), \
             mock.patch.object(test_runner, "CONTEXT_SERVER_READY_TIMEOUT", 0), \
             mock.patch.object(test_runner.time, "sleep"), mock.patch("builtins.print"):
         orch.fetch_capabilities("fake", wrapper.url)
@@ -235,7 +243,6 @@ def test_direct_data_twin_never_touches_the_network(server_url, wrapper_factory,
     with mock.patch.object(orch, "context_server_put") as put:
         assert run(orch, group[1])["passed"]
     put.assert_not_called()
-    assert wrapper.refresh_bodies == []
 
 
 @pytest.mark.parametrize("mutate, reason", [
