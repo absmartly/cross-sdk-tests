@@ -299,3 +299,18 @@ def test_invalid_direct_data_and_context_server_are_rejected(group, mutate, reas
     mutate(scenario)
     _, _, invalid = test_runner.validate_and_filter_scenarios([scenario], {CAP})
     assert len(invalid) == 1 and reason in invalid[0]["reason"]
+
+
+def test_create_with_scenario_cannot_use_the_context_server(group):
+    """CREATE_WITH_SCENARIO bypasses the fetch path, so a contextServer on it is rejected by name."""
+    scenario = copy.deepcopy(group[0])
+    scenario["name"] = test_runner.CREATE_WITH_SCENARIO
+    valid, _, invalid = test_runner.validate_and_filter_scenarios([scenario], {CAP})
+    assert valid == [] and len(invalid) == 1
+    assert invalid[0]["name"] == test_runner.CREATE_WITH_SCENARIO
+    assert "contextServer cannot be used on" in invalid[0]["reason"]
+    assert test_runner.CREATE_WITH_SCENARIO in invalid[0]["reason"]
+    # The same scenario without contextServer stays valid.
+    del scenario["contextServer"]
+    valid, _, invalid = test_runner.validate_and_filter_scenarios([scenario], {CAP})
+    assert len(valid) == 1 and invalid == []

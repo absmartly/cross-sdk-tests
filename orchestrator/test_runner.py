@@ -2125,6 +2125,15 @@ def validate_and_filter_scenarios(
             if reason:
                 invalid.append({"index": idx + 1, "name": name, "reason": f"contextServer: {reason}"})
                 continue
+            if name == CREATE_WITH_SCENARIO:
+                # run_and_validate_sdk routes this scenario's createContextWith
+                # through the literal pre-fetched-data API, so the SDK never
+                # fetches and the contextServer checks would be bypassed.
+                invalid.append({"index": idx + 1, "name": name,
+                                "reason": f"contextServer cannot be used on {CREATE_WITH_SCENARIO!r}: that "
+                                          f"scenario passes its data directly (createContextWith), so the SDK "
+                                          f"never fetches from the context server"})
+                continue
         if "directData" in scenario and (
             scenario["directData"] is not True or "contextServer" in scenario
         ):
