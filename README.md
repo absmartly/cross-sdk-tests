@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **272 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **279 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -146,6 +146,18 @@ across languages.
   are computed from the independent Python reference, not an SDK. Regenerate
   with `python3 generate_absent_keys_scenarios.py`; `--check` also verifies the
   digest of the entire 264-scenario retained prefix at `7e39b734`.
+
+  Scenarios 280-286 (Omitted Empty Targeting) use a Python reference model.
+  Fresh-context audience twins (absent, `""`, `{"filter":[{"and":[]}]}`) and
+  assignment-rule twins (absent, `""`, `{"rules":[]}`, `{}`) are ungated, in both
+  strict modes. Refresh cases require `omittedTargetingRefresh`: removing an
+  audience, or editing it without an attribute/rules change, must clear a stale
+  mismatch on next access and expose exactly once. All SDKs currently have the
+  reviewed exception "pending SDK cache fix"; none is required yet. JavaScript
+  and Java advertise support only after a behavioural refresh self-test.
+  Regenerate with `python3 generate_omitted_targeting_scenarios.py`; use `--check`
+  to verify. The Collector must not enable omission based on fresh-context tests
+  alone. Other empty/invalid audience encodings are deliberately out of scope.
 
   Switchback harness tests (`sameShapeAs`, capability gating, the switchback
   generator's `--check`, a replay of every switchback context scenario against
@@ -288,7 +300,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 272-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 279-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -312,7 +324,7 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 272 scenarios (highest id 279)
+├── test_scenarios_complete.json  # 279 scenarios (highest id 286)
 ├── generate_absent_keys_scenarios.py  # regenerates 272-279; --check verifies
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (248-271) in place; --check verifies

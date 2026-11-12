@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
 import generate_absent_keys_scenarios as absent_keys
+import generate_omitted_targeting_scenarios as omitted_targeting
 from scenario_groups import place_group
 
 
@@ -36,7 +37,8 @@ def recorded_oracle(monkeypatch):
     ])
 
 
-GENERATORS = {"sdk": sdk_round, "switchback": switchback, "absent": absent_keys}
+GENERATORS = {"sdk": sdk_round, "switchback": switchback, "absent": absent_keys,
+              "targeting": omitted_targeting}
 
 
 @pytest.mark.parametrize("names", list(itertools.permutations(GENERATORS)), ids="-then-".join)
@@ -47,6 +49,7 @@ def test_generators_compose_byte_identically(names, recorded_oracle, tmp_path, m
     path.write_bytes(raw)
     monkeypatch.setattr(switchback, "CANONICAL", str(path))
     monkeypatch.setattr(absent_keys, "CANONICAL", str(path))
+    monkeypatch.setattr(omitted_targeting, "CANONICAL", str(path))
 
     def run(module, check=False):
         argv = [module.__file__]

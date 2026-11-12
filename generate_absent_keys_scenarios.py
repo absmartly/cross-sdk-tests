@@ -181,7 +181,8 @@ def main():
     with open(CANONICAL, encoding="utf-8") as src:
         text = src.read()
     existing = json.loads(text)
-    kept = [s for s in existing if GROUP_MARKER not in s["name"]]
+    kept = [s for s in existing if GROUP_MARKER not in s["name"]
+            and " - Omitted Empty Targeting - " not in s["name"]]
     if len(kept) != BASELINE_COUNT or baseline_digest(kept) != BASELINE_SHA256:
         print("retained prefix differs from the 7e39b734 baseline", file=sys.stderr)
         return 1

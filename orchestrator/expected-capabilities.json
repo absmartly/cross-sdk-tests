@@ -11,6 +11,7 @@
     "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`."
   ],
   "capabilities": {
+    "omittedTargetingRefresh": "audience removal and audience-string edits on refresh re-evaluate cached assignments on next access independently of empty assignmentRules encoding, advertised from a behavioral self-test",
     "switchback": "R33 cluster-defined switchback serving (ordered switchbackClusters, switchbackClusterValues) through a context, plus POST /switchback/assign and /switchback/permutation, advertised from a behavioral self-test",
     "diagnostics": "POST /diagnostic hashUnit, computed by the SDK's own hashing",
     "diagnosticsUtf8": "POST /diagnostic utf8Bytes, computed by the SDK's own UTF-8 encoder",
@@ -50,6 +51,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)"
       }
     },
@@ -67,6 +69,7 @@
         "publishThrowsOnFailure"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in python3-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
@@ -92,6 +95,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
@@ -115,6 +119,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
         "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
@@ -135,6 +140,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in php-sdk; java-sdk only (R33)",
@@ -160,6 +166,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
@@ -184,6 +191,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
@@ -212,6 +220,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix"
       }
     },
     "kotlin": {
@@ -230,6 +239,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
@@ -253,6 +263,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
@@ -276,6 +287,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
@@ -299,6 +311,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
@@ -322,6 +335,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in flutter-sdk (flutter); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
@@ -344,6 +358,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in dotnet-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
@@ -367,6 +382,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (R33)",
@@ -391,6 +407,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
@@ -418,6 +435,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)"
       }
     },
@@ -441,6 +459,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)"
       }
     },
@@ -464,6 +483,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)"
       }
     },
@@ -487,6 +507,7 @@
         "refreshNoOpOnFailedContext"
       ],
       "unsupported": {
+        "omittedTargetingRefresh": "pending SDK cache fix",
         "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)"
       }
     }

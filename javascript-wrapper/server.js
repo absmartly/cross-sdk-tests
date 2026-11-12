@@ -3,6 +3,7 @@ const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+const omittedTargetingSelfTest = require('./omittedTargetingSelfTest');
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -94,11 +95,12 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators, omittedTargetingRefresh] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
+    omittedTargetingSelfTest.run(),
   ]);
 
   res.json({diagnosticsUtf8: true,
@@ -118,7 +120,8 @@ app.get('/capabilities', async (req, res) => {
     holdouts,
     holdout_arms: holdoutArms,
     assignmentRules,
-    semverOperators
+    semverOperators,
+    omittedTargetingRefresh
   });
 });
 

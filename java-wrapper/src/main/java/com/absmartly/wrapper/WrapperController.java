@@ -102,6 +102,7 @@ public class WrapperController {
         response.put("switchback", SwitchbackSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
+        response.put("omittedTargetingRefresh", OmittedTargetingSelfTest.run());
         return response;
     }
 

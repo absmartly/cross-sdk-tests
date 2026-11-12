@@ -19,7 +19,8 @@ def canonical():
 
 
 def test_retained_prefix_is_the_exact_starting_baseline():
-    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]
+            and " - Omitted Empty Targeting - " not in s["name"]]
     assert len(kept) == generator.BASELINE_COUNT == 264
     assert generator.baseline_digest(kept) == generator.BASELINE_SHA256
 
@@ -27,8 +28,8 @@ def test_retained_prefix_is_the_exact_starting_baseline():
 def test_group_is_an_ungated_contiguous_tail_after_max_retained_id():
     scenarios = canonical()
     group = [s for s in scenarios if generator.GROUP_MARKER in s["name"]]
-    assert len(scenarios) == 272
-    assert scenarios[-8:] == group == generator.build_group(272)
+    assert len(scenarios) == 279
+    assert scenarios[264:272] == group == generator.build_group(272)
     assert [int(s["name"].split(" - ", 1)[0]) for s in group] == list(range(272, 280))
     assert all("requires" not in s and s["steps"] for s in group)
 
@@ -136,12 +137,13 @@ def test_absent_only_extra_exposure_key_fails_validate_events(event_type):
 @pytest.mark.parametrize("mutation", [None, "expectation", "missing", "null", "prefix"])
 def test_check_detects_drift(tmp_path, monkeypatch, mutation):
     scenarios = copy.deepcopy(canonical())
+    target = next(s for s in scenarios if generator.GROUP_MARKER in s["name"])
     if mutation == "expectation":
-        scenarios[-8]["steps"][1]["expect"]["result"] = None
+        target["steps"][1]["expect"]["result"] = None
     elif mutation == "missing":
-        scenarios.pop()
+        scenarios.remove(next(s for s in scenarios if s["name"].startswith("279 - ")))
     elif mutation == "null":
-        scenarios[-8]["contextData"]["experiments"][0]["customFieldValues"] = None
+        target["contextData"]["experiments"][0]["customFieldValues"] = None
     elif mutation == "prefix":
         scenarios[0]["description"] += " drift"
     path = tmp_path / "scenarios.json"

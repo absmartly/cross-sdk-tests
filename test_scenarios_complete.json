@@ -65202,5 +65202,4768 @@
         }
       }
     ]
+  },
+  {
+    "name": "280 - Omitted Empty Targeting - Fresh Audience Non-Strict",
+    "description": "Python-reference twin equivalence: Fresh Audience Non-Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"and\":[]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 4
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "281 - Omitted Empty Targeting - Fresh Rules Non-Strict",
+    "description": "Python-reference twin equivalence: Fresh Rules Non-Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[]}"
+        },
+        {
+          "id": 903,
+          "name": "exp_targeting_3",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_3.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_3.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_3.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  },
+                  {
+                    "id": 903,
+                    "name": "exp_targeting_3"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_3.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 903,
+                "name": "exp_targeting_3",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_3.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 4,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 903,
+                    "name": "exp_targeting_3",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 4
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "282 - Omitted Empty Targeting - Audience Removed On Refresh Non-Strict",
+    "description": "Python-reference twin equivalence: Audience Removed On Refresh Non-Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "",
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}"
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+                  }
+                ],
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              },
+              {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              },
+              {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "{\"filter\":[{\"and\":[]}]}",
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "unrelated",
+          "value": "changed"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 22
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 22
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 6,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 22
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "omittedTargetingRefresh"
+    ]
+  },
+  {
+    "name": "283 - Omitted Empty Targeting - Fresh Audience Strict",
+    "description": "Python-reference twin equivalence: Fresh Audience Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"and\":[]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 4
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "284 - Omitted Empty Targeting - Fresh Rules Strict",
+    "description": "Python-reference twin equivalence: Fresh Rules Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[]}"
+        },
+        {
+          "id": 903,
+          "name": "exp_targeting_3",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_3.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_3.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_3.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "{}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  },
+                  {
+                    "id": 903,
+                    "name": "exp_targeting_3"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_3.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 903,
+                "name": "exp_targeting_3",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_3.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_3"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 4,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 903,
+                    "name": "exp_targeting_3",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 4
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "285 - Omitted Empty Targeting - Audience Removed On Refresh Strict",
+    "description": "Python-reference twin equivalence: Audience Removed On Refresh Strict. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "",
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}"
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+                  }
+                ],
+                "audienceStrict": true,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              },
+              {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": true,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              },
+              {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "{\"filter\":[{\"and\":[]}]}",
+                "audienceStrict": true,
+                "customFieldValues": null,
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "unrelated",
+          "value": "changed"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 22
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 22
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 6,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 22
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "omittedTargetingRefresh"
+    ]
+  },
+  {
+    "name": "286 - Omitted Empty Targeting - Audience Edited With Or Without Rules Signal",
+    "description": "Python-reference twin equivalence: Audience Edited With Or Without Rules Signal. Identical seeds, split and unit; treatment, peek, variables and exposure flags/shapes agree.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 900,
+          "name": "exp_targeting_0",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 901,
+          "name": "exp_targeting_1",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "{}"
+        },
+        {
+          "id": 902,
+          "name": "exp_targeting_2",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "targeting-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "country",
+          "value": "CA"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              },
+              "sameShapeAs": 4
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "missing",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_0.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_0.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_0.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"CA\"}]}]}",
+                "audienceStrict": true,
+                "customFieldValues": null
+              },
+              {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_1.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_1.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_1.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"CA\"}]}]}",
+                "audienceStrict": true,
+                "customFieldValues": null,
+                "assignmentRules": "{\"rules\":[]}"
+              },
+              {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_targeting_2.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_targeting_2.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_targeting_2.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "{\"filter\":[{\"eq\":[{\"var\":\"country\"},{\"value\":\"CA\"}]}]}",
+                "audienceStrict": true,
+                "customFieldValues": null,
+                "assignmentRules": "{\"rules\":[]}"
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0"
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1"
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 902,
+                "name": "exp_targeting_2",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_2.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_2"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 901,
+                "name": "exp_targeting_1",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 21
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_1.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_1"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 900,
+                "name": "exp_targeting_0",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              },
+              "sameShapeAs": 21
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_targeting_0.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_targeting_0"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 6,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "tOPD2huMLmRaF4MrNfeCjg"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": true
+                  },
+                  {
+                    "id": 902,
+                    "name": "exp_targeting_2",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 901,
+                    "name": "exp_targeting_1",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 900,
+                    "name": "exp_targeting_0",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              },
+              "sameExposureShapeAs": 21
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "omittedTargetingRefresh"
+    ]
   }
 ]

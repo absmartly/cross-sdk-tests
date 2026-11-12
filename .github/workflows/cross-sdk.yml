@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 272-scenario cross-SDK suite (highest id 279) for every SDK wrapper, one independent
+# Runs the 279-scenario cross-SDK suite (highest id 286) for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -86,6 +86,9 @@ jobs:
 
       - name: Absent optional keys match their generator and retained baseline
         run: python generate_absent_keys_scenarios.py --check
+
+      - name: Omitted empty targeting matches its reference generator
+        run: python generate_omitted_targeting_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}

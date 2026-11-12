@@ -15,7 +15,7 @@ Each SDK wrapper service must implement this exact API. All responses follow the
 
 ### Optional Context Keys
 
-The 272-scenario suite (highest id 279) includes ungated scenarios 272-279 for absent optional
+The 279-scenario suite (highest id 286) includes ungated scenarios 272-279 for absent optional
 keys. Wrappers must pass context JSON through without filling in missing keys:
 `customFieldValues` absent is equivalent to `[]`; `holdoutIds` and top-level
 `holdouts` absent are equivalent to `[]`; `audience` and `assignmentRules`
@@ -34,6 +34,15 @@ pin peeks, variable reads and canonical published exposure bodies. Exposure even
 must have the empty twin's key set; `sameExposureShapeAs` pins each published
 exposure to exactly that baseline's key set too, without pinning clock values
 or SDK-specific publish envelope fields.
+
+Scenarios 280-286 add "Omitted Empty Targeting". Fresh audience forms absent,
+`""`, and `{"filter":[{"and":[]}]}` and rules forms absent, `""`, `{"rules":[]}`,
+and `{}` must agree in both strict modes. Refresh semantics are gated on
+`omittedTargetingRefresh`, advertised only by a behavioural self-test: removal
+or editing of the audience re-evaluates the cached assignment on its next access,
+independent of attribute or empty-rules changes. A changed mismatch emits exactly
+one new exposure. Every SDK is currently excepted as "pending SDK cache fix".
+Wrappers must not normalize the payload or synthesize the expected assignments.
 
 ### 1. Health Check
 
