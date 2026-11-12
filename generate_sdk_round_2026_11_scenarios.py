@@ -35,8 +35,8 @@ Usage:
     python3 generate_sdk_round_2026_11_scenarios.py --check   # exit 1 if the canonical file is stale
 
 Scenarios whose name carries one of the GROUP_MARKERs are replaced; every other scenario is left
-untouched, the groups are appended after the last existing scenario, and the file is serialized
-exactly as before (indent=2, ensure_ascii=False, trailing newline).
+untouched, existing groups keep their position and first ID (absent groups append), and the file is
+serialized exactly as before (indent=2, ensure_ascii=False, trailing newline).
 """
 
 import argparse
@@ -44,6 +44,8 @@ import json
 import os
 import subprocess
 import sys
+
+from scenario_groups import place_group
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
@@ -477,11 +479,7 @@ def main():
     with open(args.file, encoding="utf-8") as src:
         raw = src.read()
     existing = json.loads(raw)
-    kept = [s for s in existing if not any(m in s["name"] for m in GROUP_MARKERS)]
-    # Number after the highest retained ID, not the count: earlier scenarios may
-    # have been deleted without renumbering (e.g. #18), leaving gaps.
-    groups = build_all_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    updated = kept + groups
+    updated, groups = place_group(existing, GROUP_MARKERS, build_all_groups)
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:

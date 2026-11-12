@@ -53,6 +53,8 @@ import unicodedata
 from collections import OrderedDict
 from typing import NamedTuple, Optional
 
+from scenario_groups import place_group
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 GOLDEN = os.path.join(HERE, "fixtures", "switchback", "golden-vectors.json")
@@ -1824,10 +1826,14 @@ def main() -> int:
 
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
-    kept = [s for s in existing if GROUP_MARKER not in s["name"]]
-    first_number = max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1
-    group, caught = build_group(fixtures, first_number, with_report=True)
-    updated = kept + group
+    caught = None
+
+    def build(first_number):
+        nonlocal caught
+        group, caught = build_group(fixtures, first_number, with_report=True)
+        return group
+
+    updated, group = place_group(existing, (GROUP_MARKER,), build)
 
     if args.rules:
         for rule, numbers in rule_map(group):
