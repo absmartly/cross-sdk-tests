@@ -897,6 +897,11 @@ class AggregatorTests(unittest.TestCase):
     def test_capability_policy_violation_flag(self):
         self.assert_forced("capability_policy_violations", ["v"], "CAPS POLICY")
 
+    def test_measurement_failed_flag(self):
+        stats = {"measurement_failed": {"contextFetchCompression": "context server down"}, "passed": 10, "failed": 0}
+        self.assertEqual(results_aggregator.run_level_status(stats), "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchCompression": "x"}, "MEASURE FAIL")
+
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
 

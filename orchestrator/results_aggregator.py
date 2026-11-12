@@ -341,6 +341,8 @@ def run_level_status(stats):
         return "DOWN"
     if stats.get("capabilities_failed"):
         return "CAPS FAIL"
+    if stats.get("measurement_failed"):
+        return "MEASURE FAIL"
     if stats.get("capability_policy_violations"):
         return "CAPS POLICY"
     if stats.get("no_tests_run"):
@@ -517,8 +519,8 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             c_skipped = cross.get("skipped") or 0
             forced_status = cross.get("forced_status")
             if forced_status:
-                # A run-level failure flag (DOWN / CAPS FAIL / CAPS POLICY /
-                # NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
+                # A run-level failure flag (DOWN / CAPS FAIL / MEASURE FAIL /
+                # CAPS POLICY / NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
                 # passed/failed tally: the run failed even if zero individual
                 # scenarios reported a failure.
                 cells.append(f"{RED}{forced_status}{RESET}")
