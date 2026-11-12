@@ -61,15 +61,9 @@ across languages.
   answers gzip only when the request advertised gzip, identity otherwise, and
   every SDK must load the context and match the direct-data twin 231 exactly,
   then refresh through its own fetch and serve the changed data. 232 requires
-  `contextFetchCompression`, a **measured** capability: the orchestrator probes
-  each SDK against the context server (create, then refresh with changed data)
-  and sets the flag from the recorded `Accept-Encoding`, whatever the wrapper
-  reports. It goes through the same fail-closed policy check, so an SDK listed
-  as an exception that starts sending gzip fails until the policy moves it to
-  `required`. A probe that cannot measure fails the run and skips only the
-  scenarios requiring the capability. The server serves gzip or identity only;
-  the probe also reports (never gates) whether each SDK lists br/zstd and what
-  it does with a gzip body it did not ask for. See
+  `contextFetchCompression`, a capability the orchestrator **measures** on the
+  context server instead of reading it from the wrapper. How it is measured and
+  gated, and what each SDK sends and decodes:
   [docs/context-fetch-compression.md](docs/context-fetch-compression.md).
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
