@@ -88,6 +88,7 @@ public class WrapperController {
         response.put("publishThrowsOnFailure", true);
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
+        response.put("clientNoEnvironment", true);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());

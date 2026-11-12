@@ -253,6 +253,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"publishThrowsOnFailure":          true,
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
+		"clientNoEnvironment":             true,
 	})
 }
 

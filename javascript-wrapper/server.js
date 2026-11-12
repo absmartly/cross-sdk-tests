@@ -173,6 +173,7 @@ app.get('/capabilities', async (req, res) => {
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
+    clientNoEnvironment: true,
     holdouts,
     holdout_arms: holdoutArms,
     assignmentRules,

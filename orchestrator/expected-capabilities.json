@@ -26,7 +26,8 @@
     "numericUnitIds": "a numeric unit uid keeps its numeric JSON type end to end: getUnit/getUnits return the number the unit was set with (12345), not a stringified copy (\"12345\")",
     "publishThrowsOnFailure": "a direct publish() call whose collector/transport fails surfaces the failure to the caller by throwing; the pending events are preserved and an error event is logged",
     "trackRejectsNonObjectProperties": "track() rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing \"Goal '<name>' properties must be of type object.\", matching the JS reference",
-    "refreshNoOpOnFailedContext": "refresh() on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference)"
+    "refreshNoOpOnFailedContext": "refresh() on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference)",
+    "clientNoEnvironment": "the wrapper can build a context whose client reports no environment (the optional client field on POST /context with environment omitted), so the SDK leaves environment out of the audience/rule evaluation map (the 2026-11 system-attributes 'no environment configured' case, scenario 253). SDKs whose public client API mandates a non-empty environment cannot express this black-box; their own unit tests cover it, so they list a reviewed exception"
   },
   "sdks": {
     "javascript": {
@@ -46,7 +47,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {}
     },
@@ -61,7 +63,8 @@
         "readyError",
         "diagnosticsUtf8",
         "numericUnitIds",
-        "publishThrowsOnFailure"
+        "publishThrowsOnFailure",
+        "clientNoEnvironment"
       ],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -85,7 +88,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -107,7 +111,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
@@ -126,7 +131,8 @@
         "readyError",
         "diagnosticsUtf8",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
@@ -150,7 +156,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
@@ -179,7 +186,8 @@
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
         "assignmentRules": "rust-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "rust-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "rust-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally"
       }
     },
     "java": {
@@ -199,10 +207,10 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
-      "unsupported": {
-      }
+      "unsupported": {}
     },
     "kotlin": {
       "required": [
@@ -223,7 +231,8 @@
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
         "assignmentRules": "kotlin-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "kotlin-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "kotlin-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "kotlin-sdk's Client has a private constructor and a non-null environment, and Context.create is internal, so the wrapper cannot build a no-environment client black-box; kotlin-sdk's own ContextSystemAttributesTest covers the no-environment case via an internal Context.create(environment=null)"
       }
     },
     "scala": {
@@ -245,7 +254,8 @@
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "assignmentRules": "scala-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "scala-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "scala-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes"
       }
     },
     "swift": {
@@ -267,7 +277,8 @@
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "assignmentRules": "swift-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "swift-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "swift-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally"
       }
     },
     "dart": {
@@ -289,7 +300,8 @@
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
         "assignmentRules": "dart-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "dart-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "dart-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)"
       }
     },
     "flutter": {
@@ -311,7 +323,8 @@
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
         "assignmentRules": "flutter-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "flutter-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "flutter-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)"
       }
     },
     "dotnet": {
@@ -333,7 +346,8 @@
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
         "assignmentRules": "dotnet-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "semverOperators": "dotnet-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php"
+        "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
+        "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally"
       }
     },
     "cpp": {
@@ -355,7 +369,8 @@
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
         "assignmentRules": "cpp-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "cpp-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "cpp-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally"
       }
     },
     "elixir": {
@@ -377,7 +392,8 @@
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
         "assignmentRules": "elixir-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "elixir-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "semverOperators": "elixir-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
+        "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally"
       }
     },
     "react": {
@@ -397,7 +413,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {}
     },
@@ -418,7 +435,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {}
     },
@@ -439,7 +457,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {}
     },
@@ -460,7 +479,8 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment"
       ],
       "unsupported": {}
     }

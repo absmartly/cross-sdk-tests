@@ -23,8 +23,12 @@ wrapper API can observe black-box:
     values, a name that is not configured is left out of the map, and `app_version` is gone. The
     group mirrors §4 tests 1 (strict audience on environment matches), 3 (no match), 4 (user value
     overrides + cache invalidation) and 6 (no environment configured), plus a variable read through
-    the matched variant. It is UNGATED: every SDK in §3 must pass it, and an SDK that does not inject
-    application/environment (or injects but lets them beat a user value) must fail.
+    the matched variant. Tests 1/3/4 and the variable read are UNGATED: every SDK in §3 must pass
+    them, and an SDK that does not inject application/environment (or injects but lets them beat a
+    user value) must fail. Test 6 (no environment configured) is gated on the `clientNoEnvironment`
+    capability: an SDK whose public client API mandates a non-empty environment cannot construct the
+    case black-box (its own unit tests cover it), so it lists a reviewed exception and the one
+    scenario SKIPs there.
 
 The reference is @absmartly/javascript-sdk built from the sibling ../javascript-sdk checkout on the
 branch sdk-branches.sh pins for javascript-sdk: feat/sdk-system-attributes (javascript-sdk PR #68).
@@ -77,6 +81,12 @@ GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
+# Gates ONLY the system-attributes no-environment scenario. An SDK whose public
+# client API mandates a non-empty environment cannot construct the "no environment
+# configured" case black-box through the wrapper (its own unit tests cover it with
+# an internal override), so it lists this as a reviewed exception and the scenario
+# SKIPs; wrappers that can build a no-environment-reporting client advertise it true.
+NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 UNIT = {"session_id": "svk-unit-1"}
 
@@ -433,6 +443,7 @@ def sysattr_specs():
         [treatment("exp_sysattr_noenv"), PENDING,
          treatment("exp_sysattr_noenv_app"), PENDING],
         {"application": SYSATTR_APP},
+        [NO_ENVIRONMENT_CAPABILITY],
     ))
 
     return specs
@@ -492,6 +503,15 @@ def spec_client(spec):
     default client (application "website", environment "test"). Only the
     system-attributes group sets it."""
     return spec[4] if len(spec) > 4 else None
+
+
+def spec_requires(spec):
+    """The optional per-scenario `requires` list (6th spec element), overriding the
+    group default. Used only by the system-attributes group's no-environment
+    scenario, which needs the `clientNoEnvironment` capability (an SDK whose public
+    client API mandates an environment cannot construct the no-environment case
+    black-box; its own unit tests cover it)."""
+    return spec[5] if len(spec) > 5 else None
 
 
 def run_reference(specs):
@@ -590,8 +610,11 @@ def build_group(specs, marker, requires, first_number):
         scenario = build_scenario(spec, ran, strip_rule_override=strip_rule_override)
         scenario["name"] = f"{first_number + len(group)}{marker}{scenario['name']}"
         scenario["description"] += f" Expected results recorded from @absmartly/javascript-sdk {JS_SDK_VERSION} (javascript-sdk#68)."
-        if requires:
-            scenario["requires"] = requires
+        # A per-scenario `requires` (6th spec element) overrides the group default,
+        # so the system-attributes group can gate only its no-environment scenario.
+        scenario_requires = spec_requires(spec) if spec_requires(spec) is not None else requires
+        if scenario_requires:
+            scenario["requires"] = scenario_requires
         group.append(scenario)
     return group
 

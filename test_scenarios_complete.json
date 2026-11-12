@@ -29375,6 +29375,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "clientNoEnvironment"
     ]
   }
 ]

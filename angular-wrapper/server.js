@@ -189,7 +189,8 @@ app.get('/capabilities', async (req, res) => {
     numericUnitIds: true,
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
-    refreshNoOpOnFailedContext: true
+    refreshNoOpOnFailedContext: true,
+    clientNoEnvironment: true
   });
 });
 

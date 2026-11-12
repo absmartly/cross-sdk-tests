@@ -249,7 +249,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             //    of throwing; only close() surfaces the error (scenario 193).
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
-            'refreshNoOpOnFailedContext' => true
+            'refreshNoOpOnFailedContext' => true,
+            'clientNoEnvironment' => true
         ]);
     }
 
