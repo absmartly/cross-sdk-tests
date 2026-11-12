@@ -1,8 +1,62 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
+const Client = require('@absmartly/javascript-sdk/lib/client').default;
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+
+// Default client config for a test context. A scenario can override the
+// application/environment names through the optional `client` field on
+// POST /context (the 2026-11 system-attributes round), including the
+// "no environment configured" case (client.environment omitted).
+const DEFAULT_APPLICATION = 'test';
+const DEFAULT_ENVIRONMENT = 'test';
+
+// The real Client rejects an empty environment at construction, so for the
+// "no environment configured" case we subclass it to report the environment as
+// absent while still constructing with a placeholder. Audiences then see no
+// `environment` key, exactly as the SDK intends.
+class NoEnvironmentClient extends Client {
+  getEnvironment() {
+    return undefined;
+  }
+}
+
+// Build an SDK with the requested client application/environment. When `client`
+// is omitted the wrapper uses its own defaults, so every pre-2026-11 scenario is
+// unaffected. A present-but-empty/absent environment means "no environment
+// configured".
+function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
+  const cfg = clientConfig || {};
+  const application =
+    typeof cfg.application === 'string' && cfg.application.length > 0
+      ? cfg.application
+      : DEFAULT_APPLICATION;
+  const hasEnvironment = 'environment' in cfg
+    ? typeof cfg.environment === 'string' && cfg.environment.length > 0
+    : true;
+  const eventLogger = (ctx, eventName, eventData) => {
+    eventCollector.handleEvent(ctx, eventName, eventData);
+  };
+  if (hasEnvironment) {
+    const environment = 'environment' in cfg ? cfg.environment : DEFAULT_ENVIRONMENT;
+    return new absmartly.SDK({
+      endpoint: endpoint || 'http://dummy',
+      apiKey: 'dummy',
+      application,
+      environment,
+      eventLogger,
+      publisher,
+    });
+  }
+  const client = new NoEnvironmentClient({
+    endpoint: endpoint || 'http://dummy',
+    apiKey: 'dummy',
+    application,
+    environment: 'placeholder',
+  });
+  return new absmartly.SDK({ client, eventLogger, publisher });
+}
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -202,16 +256,7 @@ app.post('/context', async (req, res) => {
     const eventCollector = new EventCollector();
     const customPublisher = new CustomPublisher(eventCollector);
 
-    const sdk = new absmartly.SDK({
-      endpoint: endpoint || 'http://dummy',
-      apiKey: 'dummy',
-      application: 'test',
-      environment: 'test',
-      eventLogger: (ctx, eventName, eventData) => {
-        eventCollector.handleEvent(ctx, eventName, eventData);
-      },
-      publisher: customPublisher
-    });
+    const sdk = buildSdk(req.body.client, eventCollector, customPublisher, endpoint);
 
     let context;
     const payloadThrottle = options?.payloadThrottle || 0;

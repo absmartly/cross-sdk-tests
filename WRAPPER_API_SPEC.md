@@ -74,6 +74,50 @@ Content-Type: application/json
 }
 ```
 
+#### Client config (`application` / `environment`)
+
+Both create modes accept an optional `client` object that sets the SDK client's
+**application name** and **environment name** for this context. It lets a
+scenario target the always-on `application` / `environment` audience attributes
+(the 2026-11 system-attributes round: every SDK evaluates audiences and
+assignment-rule conditions with the configured application and environment, and
+no longer with `app_version`).
+
+```http
+POST /context
+Content-Type: application/json
+
+{
+  "data": { "experiments": [...] },
+  "units": { "session_id": "abc123" },
+  "options": { "publishDelay": -1, "refreshPeriod": 0 },
+  "client": { "application": "sysattr-app", "environment": "sysattr-env" }
+}
+```
+
+Rules:
+
+- `client.application`, when a non-empty string, is the application name the SDK
+  is configured with (so an audience `{"var": "application"}` sees it).
+- `client.environment`, when a non-empty string, is the environment name the SDK
+  is configured with (so an audience `{"var": "environment"}` sees it).
+- **Omitting `client.environment`** (absent, `null`, or empty) configures the SDK
+  with **no environment**, so `environment` is left out of the evaluation map
+  entirely — the "no environment configured" case. A wrapper whose SDK client
+  requires a non-empty environment at construction must still honour this (for
+  example by reporting the configured environment as absent), never by
+  substituting a placeholder the audience could match.
+- When the whole `client` object is omitted, the wrapper uses its own default
+  application/environment, exactly as before — every pre-2026-11 scenario is
+  unaffected.
+- The names are the client configuration only. They are **not** user attributes:
+  the SDK must overlay user attributes on top (a `context.attribute("environment",
+  …)` set by a later step always wins), and `getAttributes()` must not report
+  them. The SDK does not publish them (the collector adds them server-side).
+- A wrapper must still reject input its own SDK rejects (e.g. a blank application
+  name the SDK forbids) with its documented 400; it must not silently coerce bad
+  input into a value the SDK would accept.
+
 #### E2E Mode
 When `mode: "e2e"` is set, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate the 2026-11 SDK-round conformance scenario groups of test_scenarios_complete.json.
 
-This round of SDK PRs aligns every SDK to the JavaScript reference on three behaviours that the
+This round of SDK PRs aligns every SDK to the JavaScript reference on four behaviours that the
 wrapper API can observe black-box:
 
   * Custom assignment rules (an experiment's `assignmentRules` string), ported from the JS SDK to
@@ -17,18 +17,28 @@ wrapper API can observe black-box:
   * Audience re-evaluation after setAttribute: setting an attribute that flips a strict audience
     reassigns the unit and queues a fresh exposure (go-sdk#10, php-sdk#8, ruby-sdk#39,
     python3-sdk#11 all adopt the JS attribute-sequence behaviour).
+  * System attributes (§5 of Márcio's 2026-11 brief, every SDK's feat/sdk-system-attributes branch):
+    audiences and assignment-rule conditions always evaluate with the client's configured
+    `application` and `environment` names (no opt-in), user attributes always overlay the system
+    values, a name that is not configured is left out of the map, and `app_version` is gone. The
+    group mirrors §4 tests 1 (strict audience on environment matches), 3 (no match), 4 (user value
+    overrides + cache invalidation) and 6 (no environment configured), plus a variable read through
+    the matched variant. It is UNGATED: every SDK in §3 must pass it, and an SDK that does not inject
+    application/environment (or injects but lets them beat a user value) must fail.
 
 The reference is @absmartly/javascript-sdk built from the sibling ../javascript-sdk checkout on the
-branch sdk-branches.sh pins for javascript-sdk: fix/assignment-rules-edge-cases (javascript-sdk
-PR #67). That is main (already the TypeScript rewrite, custom assignment rules from #66, and the
-semver operators) plus #67's four assignment-rule edge-case fixes. The expected results are NOT
-written by hand: every scenario's steps run through that build via tools/sdk-round-2026-11/
-compute.js and each step's `result` and `events` are recorded verbatim (exposedAt/achievedAt/
-publishedAt dropped, the ready event projected to experiment id/name as in the rest of the suite).
+branch sdk-branches.sh pins for javascript-sdk: feat/sdk-system-attributes (javascript-sdk PR #68).
+That is main (already the TypeScript rewrite, custom assignment rules from #66, the semver operators,
+and #67's four edge-case fixes) plus §5's always-on application/environment attributes and
+app_version removal. The expected results are NOT written by hand: every scenario's steps run through
+that build via tools/sdk-round-2026-11/compute.js and each step's `result` and `events` are recorded
+verbatim (exposedAt/achievedAt/publishedAt dropped, the ready event projected to experiment id/name
+as in the rest of the suite).
 
 The two rule/semver groups carry `requires` so SDKs whose round-2026-11 PR has not landed are
-skipped rather than failed; the audience-re-evaluation group is ungated (attribute + treatment are
-core actions). See orchestrator/expected-capabilities.json and docs/sdk-round-2026-11-conformance.md.
+skipped rather than failed; the audience-re-evaluation and system-attributes groups are ungated
+(attribute + treatment are core actions and every §3 SDK implements the system attributes). See
+orchestrator/expected-capabilities.json and docs/sdk-round-2026-11-conformance.md.
 
 Usage:
     python3 generate_sdk_round_2026_11_scenarios.py          # rewrite the groups in place
@@ -51,20 +61,32 @@ TOOL_DIR = os.path.join(HERE, "tools", "sdk-round-2026-11")
 COMPUTE = os.path.join(TOOL_DIR, "compute.js")
 SDK_PATH = os.environ.get("SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "javascript-sdk")))
 
-# javascript-sdk PR #67 (fix/assignment-rules-edge-cases) head. The reference build must be this
+# javascript-sdk PR #68 (feat/sdk-system-attributes) head. The reference build must be this
 # exact commit so the recorded expectations are reproducible; the build carries version 1.14.0.
-PINNED_COMMIT = "e344c5cb6bb3213843692d57c501046d7a1d0be1"
+# This branch is main (the TypeScript rewrite, custom assignment rules from #66, the semver_*
+# operators, and the four #67 edge-case fixes, all already merged to main) plus §5 of Márcio's
+# 2026-11 brief: always-on application/environment audience attributes and app_version removal.
+PINNED_COMMIT = "437a425c570ee34af098cf7e77d6cfb37ab4b475"
 JS_SDK_VERSION = "1.14.0"
 
 RULES_MARKER = " - Custom Assignment Rules - "
 SEMVER_MARKER = " - Semver Operators - "
 REEVAL_MARKER = " - Audience Re-Evaluation - "
-GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER)
+SYSATTR_MARKER = " - System Attributes - "
+GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
 
 UNIT = {"session_id": "svk-unit-1"}
+
+# The system-attributes group's fixture client. Names chosen so no SDK wrapper's
+# own default application/environment matches them by accident (the wrappers use
+# test-app/test-env, website, test, etc.), so a scenario that targets
+# "sysattr-app"/"sysattr-env" only matches when the SDK actually injects the
+# configured client names into the evaluation map.
+SYSATTR_APP = "sysattr-app"
+SYSATTR_ENV = "sysattr-env"
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +337,107 @@ def reeval_specs():
     return specs
 
 
+def sysattr_specs():
+    """System-attributes group (§5 of Márcio's 2026-11 brief), ungated.
+
+    Every SDK must inject the client's configured `application` and `environment`
+    names into the audience/rule evaluation map (always on, no opt-in), overlay
+    user attributes on top, leave an unconfigured name out of the map, and never
+    see `app_version`. These mirror §4 tests 1, 3, 4 and 6 plus a variable read
+    through the matched variant. Each scenario sets the client config explicitly
+    (the 5th spec element) so it does not depend on any wrapper's default names;
+    the names "sysattr-app"/"sysattr-env" match no wrapper default, so a scenario
+    only passes when the SDK actually injects the configured names.
+    """
+    env_filter = audience_filter({"eq": [{"var": "environment"}, {"value": SYSATTR_ENV}]})
+    app_filter = audience_filter({"eq": [{"var": "application"}, {"value": SYSATTR_APP}]})
+    other_env_filter = audience_filter({"eq": [{"var": "environment"}, {"value": "other-env"}]})
+    blue = [json.dumps({"color": "red"}, separators=(",", ":")),
+            json.dumps({"color": "blue"}, separators=(",", ":"))]
+    full_client = {"application": SYSATTR_APP, "environment": SYSATTR_ENV}
+    specs = []
+
+    # §4 test 1: strict audience on the configured environment matches (variant 1,
+    # audienceMismatch:false), plus a variable read through the matched variant.
+    specs.append((
+        "Strict Audience On The Configured Environment Matches And Serves The Variant",
+        "§4.1 + variable read: a strict audience (environment == the configured environment name) "
+        "matches because the SDK always injects the client's environment into the evaluation map, so "
+        "the unit is assigned variant 1 with audienceMismatch:false, and variableValue('color') reads "
+        "the matched variant 1's 'blue' through the same assignment.",
+        [experiment(300, "exp_sysattr_env", audience=env_filter, audience_strict=True, configs=blue)],
+        [treatment("exp_sysattr_env"), PENDING, variable_value("color", "default"), PENDING],
+        full_client,
+    ))
+
+    # §4 test 1 variant: strict audience on the configured application matches.
+    specs.append((
+        "Strict Audience On The Configured Application Matches",
+        "§4.1 (application): a strict audience (application == the configured application name) "
+        "matches because the SDK always injects the client's application into the evaluation map, so "
+        "the unit is assigned variant 1 with audienceMismatch:false.",
+        [experiment(301, "exp_sysattr_app", audience=app_filter, audience_strict=True)],
+        [treatment("exp_sysattr_app"), PENDING],
+        full_client,
+    ))
+
+    # §4 test 3: a strict audience naming a different environment does not match.
+    specs.append((
+        "Strict Audience On A Different Environment Does Not Match",
+        "§4.3: a strict audience (environment == 'other-env') does not match the configured "
+        "environment, so the unit gets variant 0 with audienceMismatch:true.",
+        [experiment(302, "exp_sysattr_nomatch", audience=other_env_filter, audience_strict=True)],
+        [treatment("exp_sysattr_nomatch"), PENDING],
+        full_client,
+    ))
+
+    # §4 test 4: a user-set environment overlays the configured one and wins, and it
+    # invalidates an assignment cached before the attribute was set.
+    specs.append((
+        "A User-Set Environment Overrides The Configured One And Invalidates The Cache",
+        "§4.4: the configured environment matches at first (peek -> variant 1). Setting "
+        "environment='other-env' as a user attribute overlays the system value and wins: the cached "
+        "assignment is invalidated and the next treatment reassigns the unit to variant 0 with "
+        "audienceMismatch:true and a fresh exposure. The strict audience names the configured "
+        "environment, so only a user value that overrides it can flip the result.",
+        [experiment(303, "exp_sysattr_override", audience=env_filter, audience_strict=True)],
+        [peek("exp_sysattr_override"),
+         attribute("environment", "other-env"), treatment("exp_sysattr_override"), PENDING],
+        full_client,
+    ))
+
+    # §4 test 4 (mirror): a user-set environment satisfies an audience the configured
+    # environment did not, reassigning the unit into the experiment.
+    specs.append((
+        "A User-Set Environment Satisfies An Audience The Configured One Did Not",
+        "§4.4 (mirror): the configured environment does not match the strict audience "
+        "(environment == 'other-env'), so the unit starts at variant 0 with audienceMismatch:true. "
+        "Setting environment='other-env' as a user attribute overlays the system value, matches the "
+        "audience, and reassigns the unit to variant 1 with a fresh exposure.",
+        [experiment(304, "exp_sysattr_user_in", audience=other_env_filter, audience_strict=True)],
+        [treatment("exp_sysattr_user_in"), PENDING,
+         attribute("environment", "other-env"), treatment("exp_sysattr_user_in"), PENDING],
+        full_client,
+    ))
+
+    # §4 test 6: no environment configured means no environment key in the map, so a
+    # filter on environment does not match (and does not crash).
+    specs.append((
+        "No Environment Configured Means A Strict Environment Audience Does Not Match",
+        "§4.6: with the application configured but NO environment, the SDK leaves environment out of "
+        "the evaluation map entirely, so a strict audience on environment does not match and the unit "
+        "gets variant 0 with audienceMismatch:true (no crash). An application audience still matches, "
+        "confirming the application was injected while the environment was left absent.",
+        [experiment(305, "exp_sysattr_noenv", audience=env_filter, audience_strict=True),
+         experiment(306, "exp_sysattr_noenv_app", audience=app_filter, audience_strict=True)],
+        [treatment("exp_sysattr_noenv"), PENDING,
+         treatment("exp_sysattr_noenv_app"), PENDING],
+        {"application": SYSATTR_APP},
+    ))
+
+    return specs
+
+
 # ---------------------------------------------------------------------------
 # JS reference run
 # ---------------------------------------------------------------------------
@@ -337,7 +460,7 @@ def ensure_reference_build():
     if head != PINNED_COMMIT:
         raise SystemExit(
             f"javascript-sdk checkout is at {head}, not the pinned reference {PINNED_COMMIT} "
-            f"(javascript-sdk#67 head). Check it out (sdk-branches.sh pins this branch for CI)."
+            f"(javascript-sdk#68 head). Check it out (sdk-branches.sh pins this branch for CI)."
         )
     # A modified working tree (including a hand-edited or stale lib/) means the
     # build no longer corresponds to the pin, so refuse rather than record
@@ -363,10 +486,24 @@ def ensure_reference_build():
         raise SystemExit("javascript-sdk build did not produce lib/index.js")
 
 
+def spec_client(spec):
+    """The optional per-scenario client config (5th spec element): a dict with
+    `application` and/or `environment`, or None when the scenario uses the fixed
+    default client (application "website", environment "test"). Only the
+    system-attributes group sets it."""
+    return spec[4] if len(spec) > 4 else None
+
+
 def run_reference(specs):
-    cases = [{"units": UNIT, "contextData": {"experiments": exps},
-              "steps": [{"action": a, "params": p} for a, p in steps]}
-             for _, _, exps, steps in specs]
+    cases = []
+    for spec in specs:
+        _, _, exps, steps = spec[0], spec[1], spec[2], spec[3]
+        case = {"units": UNIT, "contextData": {"experiments": exps},
+                "steps": [{"action": a, "params": p} for a, p in steps]}
+        client = spec_client(spec)
+        if client is not None:
+            case["client"] = client
+        cases.append(case)
     env = dict(os.environ, SDK_PATH=SDK_PATH)
     proc = subprocess.run(["node", COMPUTE], input=json.dumps({"cases": cases}),
                           capture_output=True, text=True, check=False, env=env)
@@ -401,14 +538,20 @@ def refresh_events(events):
 
 
 def build_scenario(spec, ran, strip_rule_override=False):
-    title, description, exps, steps = spec
+    title, description, exps, steps = spec[0], spec[1], spec[2], spec[3]
     if ran["ready"] != {"ready": True, "failed": False, "finalized": False}:
         raise SystemExit(f"{title}: JS context not ready: {ran['ready']}")
     if len(ran["steps"]) != len(steps):
         raise SystemExit(f"{title}: JS reference returned an incomplete step list")
+    create_params = {"units": UNIT, "options": {"publishDelay": -1, "refreshPeriod": 0}}
+    client = spec_client(spec)
+    if client is not None:
+        # The orchestrator forwards this to POST /context as the `client` field so
+        # the wrapper configures the SDK's application/environment for this context.
+        create_params["client"] = client
     out_steps = [{
         "action": "createContextWith",
-        "params": {"units": UNIT, "options": {"publishDelay": -1, "refreshPeriod": 0}},
+        "params": create_params,
         "expect": {"result": ran["ready"], "events": ready_events(ran["readyEvents"])},
     }]
     for (action, params), got in zip(steps, ran["steps"]):
@@ -446,7 +589,7 @@ def build_group(specs, marker, requires, first_number):
     for spec, ran in zip(specs, run_reference(specs)):
         scenario = build_scenario(spec, ran, strip_rule_override=strip_rule_override)
         scenario["name"] = f"{first_number + len(group)}{marker}{scenario['name']}"
-        scenario["description"] += f" Expected results recorded from @absmartly/javascript-sdk {JS_SDK_VERSION} (javascript-sdk#67)."
+        scenario["description"] += f" Expected results recorded from @absmartly/javascript-sdk {JS_SDK_VERSION} (javascript-sdk#68)."
         if requires:
             scenario["requires"] = requires
         group.append(scenario)
@@ -461,6 +604,7 @@ def build_all_groups(first_number):
         (rules_specs(), RULES_MARKER, [RULES_CAPABILITY]),
         (semver_specs(), SEMVER_MARKER, [SEMVER_CAPABILITY]),
         (reeval_specs(), REEVAL_MARKER, None),
+        (sysattr_specs(), SYSATTR_MARKER, None),
     ):
         group = build_group(specs, marker, requires, n)
         groups.extend(group)

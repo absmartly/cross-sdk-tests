@@ -1,17 +1,16 @@
 #!/usr/bin/env node
 // Runs the 2026-11 SDK-round scenario cases through the real @absmartly/javascript-sdk, pinned by
-// PINNED_COMMIT in generate_sdk_round_2026_11_scenarios.py to javascript-sdk#67
-// (fix/assignment-rules-edge-cases), and prints what the SDK did at every step.
+// PINNED_COMMIT in generate_sdk_round_2026_11_scenarios.py to javascript-sdk#68
+// (feat/sdk-system-attributes), and prints what the SDK did at every step.
 //
 // That branch is the reference the other SDKs are being aligned to this round: it is main (already
-// the TypeScript rewrite, custom assignment rules from #66, and the semver_* operators) plus the
-// four assignment-rule edge-case fixes of PR #67:
-//   - a rule variant for an experiment removed from the context data is rebuilt, not served stale;
-//   - an audience filter that THROWS while evaluating is a mismatch (strict audience -> variant 0);
-//   - assignment rules are parsed once per context-data install;
-//   - system attributes are stamped with the earliest event and dropped when the user set the name.
+// the TypeScript rewrite, custom assignment rules from #66, the semver_* operators, and the four
+// #67 assignment-rule edge-case fixes) plus the §5 system-attributes change:
+//   - audiences and assignment-rule conditions always see the configured application and environment
+//     names (system values first, user attributes overlaid on top), and app_version is dropped from
+//     both the evaluation map and the publish payload.
 //
-// stdin:  {"cases": [{"contextData": {...}, "units": {...}, "steps": [{"action", "params"}]}]}
+// stdin:  {"cases": [{"contextData": {...}, "units": {...}, "client": {application, environment}?, "steps": [{"action", "params"}]}]}
 // stdout: {"sdkVersion": "...", "cases": [{"ready": {...}, "readyEvents": [...], "steps": [{"result", "events"}]}]}
 //
 // Each step's `events` is the exact list of events the SDK's eventLogger received while that step
@@ -27,6 +26,19 @@ const path = require("path");
 // builds it (npm install + compile + build-cjs) and sets this before invoking compute.js.
 const SDK_PATH = process.env.SDK_PATH || path.resolve(__dirname, "..", "..", "..", "javascript-sdk");
 const absmartly = require(path.join(SDK_PATH, "lib", "index.js"));
+// The reference Client, so a case can configure the client application/environment
+// (the 2026-11 system-attributes round). A case may also ask for NO environment
+// (the "no environment configured" case), which the real Client's constructor
+// forbids; NoEnvironmentClient constructs with a placeholder and reports the
+// environment as absent, exactly as the SDK's own unit tests mock getEnvironment()
+// to undefined. This mirrors what a wrapper does when POST /context omits
+// client.environment.
+const Client = require(path.join(SDK_PATH, "lib", "client.js")).default;
+class NoEnvironmentClient extends Client {
+	getEnvironment() {
+		return undefined;
+	}
+}
 
 const INSTALLED = JSON.parse(fs.readFileSync(path.join(SDK_PATH, "package.json"), "utf8")).version;
 
@@ -68,15 +80,41 @@ function strip(eventName, data) {
 async function runCase(c) {
 	const log = [];
 	const provider = new SwappableProvider(c.contextData);
-	const sdk = new absmartly.SDK({
-		endpoint: "http://unused.invalid",
-		apiKey: "unused",
-		application: "website",
-		environment: "test",
-		publisher: new NullPublisher(),
-		provider,
-		eventLogger: (ctx, eventName, data) => log.push({ type: eventName, data: strip(eventName, data) }),
-	});
+	const eventLogger = (ctx, eventName, data) => log.push({ type: eventName, data: strip(eventName, data) });
+	// Per-case client config (the system-attributes group). Default to the fixed
+	// application "website" / environment "test" every other case has always used,
+	// so the rules/semver/re-eval groups are byte-for-byte unchanged. When a case
+	// sets client.application / client.environment, configure the SDK client with
+	// them; an explicitly absent environment means "no environment configured", so
+	// the SDK is built with a client that reports no environment.
+	const client = c.client || {};
+	const application = "application" in client ? client.application : "website";
+	const hasEnvironment = "environment" in client ? client.environment != null && client.environment !== "" : true;
+	const environment = "environment" in client ? client.environment : "test";
+	let sdkOptions;
+	if (hasEnvironment) {
+		sdkOptions = {
+			endpoint: "http://unused.invalid",
+			apiKey: "unused",
+			application,
+			environment,
+			publisher: new NullPublisher(),
+			provider,
+			eventLogger,
+		};
+	} else {
+		// The real Client forbids an empty environment at construction, so build one
+		// with a placeholder and report the environment as absent (how a wrapper
+		// honours an omitted client.environment, and how the SDK's own tests mock it).
+		const noEnvClient = new NoEnvironmentClient({
+			endpoint: "http://unused.invalid",
+			apiKey: "unused",
+			application,
+			environment: "placeholder",
+		});
+		sdkOptions = { client: noEnvClient, publisher: new NullPublisher(), provider, eventLogger };
+	}
+	const sdk = new absmartly.SDK(sdkOptions);
 	// createContextWith with pre-fetched data so creation is deterministic; refresh() still goes
 	// through the provider above.
 	const context = sdk.createContextWith({ units: c.units }, c.contextData, {

@@ -765,13 +765,16 @@ class TestOrchestrator:
                 )
 
                 if use_create_with:
+                    create_body = {
+                        "data": scenario["contextData"],
+                        "units": params["units"],
+                        "options": params.get("options", {}),
+                    }
+                    if "client" in params:
+                        create_body["client"] = params["client"]
                     response = requests.post(
                         f"{base_url}/context",
-                        json={
-                            "data": scenario["contextData"],
-                            "units": params["units"],
-                            "options": params.get("options", {}),
-                        },
+                        json=create_body,
                         timeout=5,
                     )
                     response.raise_for_status()
@@ -788,13 +791,16 @@ class TestOrchestrator:
                     payload_response.raise_for_status()
 
                     endpoint = f"{base_url}/context_payload/{payload_id}"
+                    create_body = {
+                        "endpoint": endpoint,
+                        "units": params["units"],
+                        "options": params.get("options", {}),
+                    }
+                    if "client" in params:
+                        create_body["client"] = params["client"]
                     response = requests.post(
                         f"{base_url}/context",
-                        json={
-                            "endpoint": endpoint,
-                            "units": params["units"],
-                            "options": params.get("options", {}),
-                        },
+                        json=create_body,
                         timeout=5,
                     )
                     response.raise_for_status()
