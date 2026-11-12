@@ -15,6 +15,17 @@ if [ "${NO_BUILD:-0}" != "1" ]; then
   done
 fi
 
+docker compose build context-server >/dev/null 2>&1 || { echo "build failed for context-server"; exit 1; }
+docker compose up -d --force-recreate context-server >/dev/null 2>&1
+CS_PORT=""
+for i in $(seq 1 30); do
+  CS_PORT=$(docker compose port context-server 8080 2>/dev/null | awk -F: '{print $NF}')
+  [ -n "$CS_PORT" ] && break
+  sleep 1
+done
+if [ -z "$CS_PORT" ]; then echo "ERROR: no port for context-server"; exit 1; fi
+export CONTEXT_SERVER_URL="http://localhost:${CS_PORT}" CONTEXT_SERVER_SDK_URL="http://context-server:8080"
+
 for sdk in "$@"; do
   echo "=== bringing up ${sdk}-sdk ==="
   docker compose up -d --force-recreate "${sdk}-sdk" >/dev/null 2>&1

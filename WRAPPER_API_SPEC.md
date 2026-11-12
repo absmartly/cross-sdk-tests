@@ -179,6 +179,23 @@ GET /context_payload/{payloadId}/context?application=...&environment=...
 3. SDK calls `GET {endpoint}/context?application=...&environment=...`
 4. Wrapper returns stored payload
 
+**Endpoints on the context server.** Scenarios that carry a `contextServer`
+object (230-232) store their payload on the negotiating context server
+(`context-server/`, compose service `context-server:8080`) instead, and the
+`endpoint` in `POST /context` is `http://context-server:8080/negotiate/{payloadId}`.
+Wrappers need nothing new for this, but they must:
+
+- hand any `endpoint` whose host is not `localhost`/`127.0.0.1` to the SDK
+  unchanged (the existing `localhost:<port>` rewrites are fine);
+- let the SDK's own HTTP client fetch it with its defaults: no wrapper-added
+  `Accept-Encoding`, no wrapper-side decompression;
+- on `/refresh` with an empty body, refresh through the SDK's own fetch.
+
+The orchestrator also probes every wrapper once at startup through the same
+path to measure the `contextFetchCompression` capability (see
+[docs/context-fetch-compression.md](docs/context-fetch-compression.md)).
+Wrappers do not report it: any value in `/capabilities` is overwritten.
+
 ### 2c. Diagnostics Endpoint (utility/class verification)
 
 Run direct utility diagnostics in wrappers.

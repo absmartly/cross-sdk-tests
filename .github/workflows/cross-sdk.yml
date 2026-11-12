@@ -64,16 +64,22 @@ jobs:
           python-version: "3.11"
 
       - name: Install orchestrator requirements
-        run: pip install -r orchestrator/requirements.txt
+        run: pip install -r orchestrator/requirements.txt pytest
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
         run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
+
+      - name: Orchestrator tests (no Docker)
+        run: python -m pytest orchestrator/tests -q
+
+      - name: Generated scenario groups are up to date
+        run: python generate_context_compression_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}
@@ -111,7 +117,7 @@ jobs:
         working-directory: cross-sdk-tests
         env:
           COMPOSE_PROJECT_NAME: csdk
-        run: docker compose build ${{ matrix.sdk }}-sdk orchestrator
+        run: docker compose build ${{ matrix.sdk }}-sdk context-server orchestrator
 
       - name: Run cross-SDK suite
         working-directory: cross-sdk-tests
@@ -121,7 +127,9 @@ jobs:
           set -euo pipefail
           mkdir -p test-results
           rm -f test-results/report.json
-          docker compose up -d --force-recreate ${{ matrix.sdk }}-sdk
+          # context-server: the negotiating GET /context server the SDK fetches
+          # from in the Context Fetch Compression scenarios (230-232).
+          docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
