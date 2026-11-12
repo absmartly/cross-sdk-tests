@@ -7,6 +7,54 @@ if (typeof self === 'undefined') {
 
 const Vue = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
+const Client = require('@absmartly/javascript-sdk/lib/client').default;
+
+// Optional client config (the 2026-11 system-attributes round): a scenario can set
+// the application/environment names on POST /context so audiences can target them.
+// When the `client` field is omitted the wrapper keeps the fixed test/test
+// defaults, so every pre-2026-11 scenario is unchanged. When it is present, a
+// blank/absent environment means "no environment configured": the SDK leaves
+// environment out of the evaluation map. The real Client rejects an empty
+// environment at construction, so NoEnvironmentClient reports it as absent instead.
+class NoEnvironmentClient extends Client {
+  getEnvironment() {
+    return undefined;
+  }
+}
+
+function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
+  const eventLogger = (ctx, eventName, eventData) => {
+    eventCollector.handleEvent(ctx, eventName, eventData);
+  };
+  let application = 'test';
+  let hasEnvironment = true;
+  let environment = 'test';
+  if (clientConfig != null) {
+    if (typeof clientConfig.application === 'string' && clientConfig.application.length > 0) {
+      application = clientConfig.application;
+    }
+    hasEnvironment =
+      typeof clientConfig.environment === 'string' && clientConfig.environment.length > 0;
+    environment = hasEnvironment ? clientConfig.environment : undefined;
+  }
+  if (hasEnvironment) {
+    return new absmartly.SDK({
+      endpoint: endpoint || 'http://dummy',
+      apiKey: 'dummy',
+      application,
+      environment,
+      eventLogger,
+      publisher,
+    });
+  }
+  const client = new NoEnvironmentClient({
+    endpoint: endpoint || 'http://dummy',
+    apiKey: 'dummy',
+    application,
+    environment: 'placeholder',
+  });
+  return new absmartly.SDK({ client, eventLogger, publisher });
+}
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
@@ -250,16 +298,7 @@ app.post('/context', async (req, res) => {
     const eventCollector = new EventCollector();
     const customPublisher = new CustomPublisher(eventCollector);
 
-    const sdk = new absmartly.SDK({
-      endpoint: endpoint || 'http://dummy',
-      apiKey: 'dummy',
-      application: 'test',
-      environment: 'test',
-      eventLogger: (ctx, eventName, eventData) => {
-        eventCollector.handleEvent(ctx, eventName, eventData);
-      },
-      publisher: customPublisher
-    });
+    const sdk = buildSdk(req.body.client, eventCollector, customPublisher, endpoint);
 
     let context;
     const payloadThrottle = options?.payloadThrottle || 0;

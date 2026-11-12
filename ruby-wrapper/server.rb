@@ -172,9 +172,17 @@ def sdk_client(endpoint, api_key: 'dummy', application: 'test', environment: 'te
   client_config.endpoint = endpoint
   client_config.api_key = api_key
   client_config.application = application
-  client_config.environment = environment
+  # Client.create rejects a nil/empty environment, so for the "no environment
+  # configured" case build the client with a placeholder environment and report it
+  # as absent, so the SDK leaves `environment` out of the audience/rule evaluation
+  # map (matching the SDK's own no-environment behaviour).
+  client_config.environment = environment.nil? || environment.empty? ? 'placeholder' : environment
   client_config.max_retries = max_retries unless max_retries.nil?
-  Client.create(client_config)
+  client = Client.create(client_config)
+  if environment.nil? || environment.empty?
+    client.define_singleton_method(:environment) { nil }
+  end
+  client
 end
 
 # Resolve the client application/environment for a context. The optional `client`

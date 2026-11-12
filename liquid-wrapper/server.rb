@@ -364,10 +364,29 @@ post '/context' do
   translated_endpoint = endpoint ? translate_endpoint(endpoint) : 'http://dummy'
   client_config.endpoint = translated_endpoint
   client_config.api_key = 'dummy'
-  client_config.application = 'test'
-  client_config.environment = 'test'
+  # Optional client config (the 2026-11 system-attributes round): a scenario can set
+  # the application/environment names so audiences can target them. When the `client`
+  # field is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
+  # unchanged. When it is present, a blank/absent environment means "no environment
+  # configured".
+  client_cfg = req_data[:client]
+  if client_cfg.nil?
+    lc_application = 'test'
+    lc_environment = 'test'
+  else
+    lc_application = client_cfg[:application]
+    lc_application = 'test' unless lc_application.is_a?(String) && !lc_application.empty?
+    lc_environment = client_cfg[:environment]
+    lc_environment = nil unless lc_environment.is_a?(String) && !lc_environment.empty?
+  end
+  client_config.application = lc_application
+  # Client.create rejects a nil/empty environment, so for the no-environment case
+  # build with a placeholder and report the environment as absent, so the SDK leaves
+  # `environment` out of the audience/rule evaluation map.
+  client_config.environment = lc_environment.nil? ? 'placeholder' : lc_environment
 
   client = Client.create(client_config)
+  client.define_singleton_method(:environment) { nil } if lc_environment.nil?
 
   sdk_config = ABSmartlyConfig.new
   sdk_config.client = client
