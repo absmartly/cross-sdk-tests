@@ -1720,7 +1720,7 @@ def builders(fixtures: Fixtures) -> list:
         value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
         schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
         refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
-        # Added after the inertness scenario so the ids of 230-251 do not move.
+        # Added after the inertness scenario so the ids of 248-269 do not move.
         read_once_scenarios, variable_scenarios,
     ]
 
@@ -1825,7 +1825,8 @@ def main() -> int:
     with open(CANONICAL, encoding="utf-8") as src:
         existing = json.load(src)
     kept = [s for s in existing if GROUP_MARKER not in s["name"]]
-    group, caught = build_group(fixtures, len(kept) + 1, with_report=True)
+    first_number = max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1
+    group, caught = build_group(fixtures, first_number, with_report=True)
     updated = kept + group
 
     if args.rules:

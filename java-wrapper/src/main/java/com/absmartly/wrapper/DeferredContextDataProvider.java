@@ -2,7 +2,7 @@ package com.absmartly.wrapper;
 
 import com.absmartly.sdk.ContextDataProvider;
 import com.absmartly.sdk.json.ContextData;
-import java8.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletableFuture;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;

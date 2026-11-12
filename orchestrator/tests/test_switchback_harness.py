@@ -48,7 +48,7 @@ def canonical():
 @pytest.fixture(scope="module")
 def built_group():
     """One full generation (golden verification, builders, mutant replay) for the module."""
-    return generator.build_group(generator.load_fixtures(), 230)
+    return generator.build_group(generator.load_fixtures(), 248)
 
 
 def exposure(**extra):
@@ -258,15 +258,17 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
     assert runner.should_skip_wrapper_test("sdk", inert[0])[0] is False
 
 
-def test_canonical_numbering_is_contiguous_and_the_switchback_group_is_the_tail():
+def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
     scenarios = canonical()
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
-    assert numbers == list(range(1, len(scenarios) + 1))
+    # Main removed seven JS-only scenarios without renumbering the remaining IDs.
+    assert numbers == sorted(set(numbers))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(229, len(scenarios)))
+    assert group == list(range(240, len(scenarios)))
     assert len(group) == 24
-    assert numbers[group[0]] == 230 and numbers[group[-1]] == 253
+    assert numbers[group[0]] == 248 and numbers[group[-1]] == 271
+    assert numbers[group[0]:] == list(range(248, 272))
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +444,7 @@ def context_scenarios(scenarios):
 
 def test_the_model_reproduces_every_checked_in_context_scenario():
     scenarios = context_scenarios(canonical())
-    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(236, 254))
+    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(254, 272))
     assert [s["name"] for s in scenarios if generator.failing_steps(s, None)] == []
 
 
@@ -474,7 +476,7 @@ def test_every_eligible_draw_differs_under_every_wrong_key_model(built_group):
 
 def test_eligible_control_is_served_exposed_and_published():
     """An eligible draw of 0 is variant 0 with assigned=true, eligible=true, exposed and published;
-    zero_maps_to_one fails 236 only through this experiment's treatment and publish."""
+    zero_maps_to_one fails 254 only through this experiment's treatment and publish."""
     scenario = next(s for s in group() if "Single Source" in s["name"])
     (control,) = [e for e in scenario["contextData"]["experiments"] if e["name"] == "exp_sb_eligible_control"]
     assert len(control["split"]) >= 3 and control["switchbackStartAt"] == generator.ANCHOR_PERIOD_0
@@ -503,13 +505,13 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
     assert generator.main() == 1
 
 
-# The 229 scenarios inherited from main (4734dcc), serialized with sort_keys=True.
-MAIN_SHA256 = "8ddb8e702cf86ddf9346560071e8ba75ca6b58901ad90ebe8f2acb9ac4b25e86"
+# The 240 scenarios inherited from PR #17 (53bc49c9), serialized with sort_keys=True.
+MAIN_SHA256 = "9199f0575ee247c11c1630701e14692a7a67cf74c899eddbfcaf3099262d9495"
 
 
 def test_main_scenarios_are_untouched():
     kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
-    assert len(kept) == 229
+    assert len(kept) == 240
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 
 

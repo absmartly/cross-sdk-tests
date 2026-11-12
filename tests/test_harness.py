@@ -441,26 +441,13 @@ class CapabilityPolicyTests(unittest.TestCase):
                     by_op.setdefault(st["params"]["operation"], set()).update(s.get("requires", []))
         self.assertEqual(by_op["hashUnit"], {"diagnostics"})
         self.assertEqual(by_op["utf8Bytes"], {"diagnosticsUtf8"})
-        self.assertEqual(by_op["base64UrlNoPadding"], {"diagnosticsBase64"})
-        self.assertEqual(by_op["isObject"], {"diagnosticsTypeChecks"})
-        self.assertEqual(by_op["isNumeric"], {"diagnosticsTypeChecks"})
-        self.assertEqual(by_op["isPromise"], {"diagnosticsIsPromise"})
+        self.assertEqual(set(by_op), {"hashUnit", "utf8Bytes"})
 
         policy = test_runner.load_capability_policy()
         expected_exceptions = {
-            "cpp": {"diagnosticsUtf8", "diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "dart": {"diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "flutter": {"diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "java": {"diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "dotnet": {"diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "go": {"diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "kotlin": {"diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "swift": {"diagnosticsTypeChecks", "diagnosticsIsPromise"},
-            "rust": {"diagnosticsIsPromise"},
-            "ruby": {"diagnosticsIsPromise"},
-            "liquid": {"diagnosticsIsPromise"},
+            "cpp": {"diagnosticsUtf8"},
         }
-        helpers = {"diagnostics", "diagnosticsUtf8", "diagnosticsBase64", "diagnosticsTypeChecks", "diagnosticsIsPromise"}
+        helpers = {"diagnostics", "diagnosticsUtf8"}
         for sdk, entry in policy["sdks"].items():
             excepted = helpers & set(entry["unsupported"])
             self.assertEqual(excepted, expected_exceptions.get(sdk, set()), sdk)

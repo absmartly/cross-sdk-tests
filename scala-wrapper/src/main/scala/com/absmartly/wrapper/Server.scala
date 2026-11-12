@@ -93,15 +93,16 @@ object Server extends IOApp {
     case GET -> Root / "capabilities" =>
       Ok(Json.obj("diagnostics" -> Json.fromBoolean(true),
         "diagnosticsUtf8" -> Json.fromBoolean(true),
-        "diagnosticsBase64" -> Json.fromBoolean(true),
-        "diagnosticsTypeChecks" -> Json.fromBoolean(true),
-        "diagnosticsIsPromise" -> Json.fromBoolean(true),
         "publishFail" -> Json.fromBoolean(true),
         "variableKeysMap" -> Json.fromBoolean(true),
         "globalCustomFieldKeys" -> Json.fromBoolean(true),
         "getUnits" -> Json.fromBoolean(true),
         "getAttributes" -> Json.fromBoolean(true),
-        "readyError" -> Json.fromBoolean(true)
+        "readyError" -> Json.fromBoolean(true),
+        "numericUnitIds" -> Json.fromBoolean(true),
+        "publishThrowsOnFailure" -> Json.fromBoolean(true),
+        "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
+        "refreshNoOpOnFailedContext" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -114,16 +115,8 @@ object Server extends IOApp {
         val result: Either[String, Json] = op match {
           case "hashUnit" =>
             Right(Json.fromString(value.asNumber.fold(Utils.hashUnit(text))(n => Utils.hashUnit(n.toDouble))))
-          case "base64UrlNoPadding" =>
-            Right(Json.fromString(Utils.base64UrlNoPadding(Utils.utf8Bytes(text))))
           case "utf8Bytes" =>
             Right(Json.arr(Utils.utf8Bytes(text).map(b => Json.fromInt(b & 0xff)).toIndexedSeq: _*))
-          case "isObject" =>
-            Right(Json.fromBoolean(Utils.isObject(value)))
-          case "isNumeric" =>
-            Right(Json.fromBoolean(Utils.isNumeric(value)))
-          case "isPromise" =>
-            Right(Json.fromBoolean(Utils.isPromise(value)))
           case _ =>
             Left(s"Unsupported diagnostic operation: $op")
         }

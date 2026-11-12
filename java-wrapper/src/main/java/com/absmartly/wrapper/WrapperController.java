@@ -45,14 +45,13 @@ public class WrapperController {
     }
 
     /**
-     * Unwraps async wrapper exceptions (CompletionException from either the
-     * java8 backport or the JDK, ExecutionException) so the reported message is
+     * Unwraps async wrapper exceptions (CompletionException or ExecutionException)
+     * so the reported message is
      * the SDK/publisher's own error, not "java.lang.RuntimeException: ...".
      */
     private static Throwable rootCause(Throwable error) {
         Throwable current = error;
-        while ((current instanceof java8.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.CompletionException
+        while ((current instanceof java.util.concurrent.CompletionException
                 || current instanceof java.util.concurrent.ExecutionException)
             && current.getCause() != null) {
             current = current.getCause();
@@ -87,9 +86,6 @@ public class WrapperController {
         Map<String, Object> response = new HashMap<>();
         response.put("diagnostics", true);
         response.put("diagnosticsUtf8", true);
-        response.put("diagnosticsBase64", false);
-        response.put("diagnosticsTypeChecks", false);
-        response.put("diagnosticsIsPromise", false);
         response.put("attrsSeq", false);
         response.put("publishFail", true);
         response.put("variableKeysMap", true);
@@ -97,9 +93,15 @@ public class WrapperController {
         response.put("getUnits", true);
         response.put("getAttributes", true);
         response.put("readyError", true);
+        response.put("numericUnitIds", true);
+        response.put("publishThrowsOnFailure", true);
+        response.put("trackRejectsNonObjectProperties", true);
+        response.put("refreshNoOpOnFailedContext", true);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("switchback", SwitchbackSelfTest.run());
+        response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
+        response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
         return response;
     }
 
@@ -125,8 +127,6 @@ public class WrapperController {
                     break;
                 }
                 default:
-                    // base64UrlNoPadding, isObject, isNumeric and isPromise have no
-                    // public implementation in the Java SDK.
                     return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                         .body(errorBody("Unsupported diagnostic operation: " + operation, Collections.emptyList()));
             }
@@ -408,8 +408,8 @@ public class WrapperController {
             } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
                 ContextDataProvider failingProvider = new ContextDataProvider() {
                     @Override
-                    public java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
-                        java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java8.util.concurrent.CompletableFuture<>();
+                    public java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
+                        java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java.util.concurrent.CompletableFuture<>();
                         f.completeExceptionally(new RuntimeException("Context load failed"));
                         return f;
                     }

@@ -9,6 +9,7 @@ const Vue = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
+const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
 const vue2sdk = require('@absmartly/vue2-sdk');
 
 process.on('uncaughtException', (err) => {
@@ -137,13 +138,17 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+    holdoutSelfTest.runHoldouts(),
+    holdoutSelfTest.runHoldoutArms(),
+    assignmentRulesSelfTest.runAssignmentRules(),
+    assignmentRulesSelfTest.runSemverOperators(),
+  ]);
   res.json({diagnosticsUtf8: true,
-    diagnosticsBase64: true,
-    diagnosticsTypeChecks: true,
-    diagnosticsIsPromise: true,
     holdouts,
     holdout_arms: holdoutArms,
+    assignmentRules,
+    semverOperators,
     diagnostics: true,
     attrsSeq: true,
     isWrapper: true,
@@ -154,6 +159,10 @@ app.get('/capabilities', async (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
@@ -797,25 +806,11 @@ app.post('/diagnostic', (req, res) => {
       case 'hashUnit':
         result = sdkUtils.hashUnit(body.value);
         break;
-      case 'base64UrlNoPadding': {
-        const input = body.value == null ? '' : String(body.value);
-        result = sdkUtils.base64UrlNoPadding(sdkUtils.stringToUint8Array(input));
-        break;
-      }
       case 'utf8Bytes': {
         const input = body.value == null ? '' : String(body.value);
         result = Array.from(sdkUtils.stringToUint8Array(input));
         break;
       }
-      case 'isObject':
-        result = sdkUtils.isObject(body.value);
-        break;
-      case 'isNumeric':
-        result = sdkUtils.isNumeric(body.value);
-        break;
-      case 'isPromise':
-        result = sdkUtils.isPromise(body.value);
-        break;
       default:
         return res.status(400).json({ error: `Unsupported diagnostic operation: ${op}` });
     }

@@ -71,15 +71,16 @@ fun Application.configureRouting() {
         get("/capabilities") {
             call.respond(mapOf("diagnostics" to true,
                 "diagnosticsUtf8" to true,
-                "diagnosticsBase64" to true,
-                "diagnosticsTypeChecks" to false,
-                "diagnosticsIsPromise" to false,
                 "publishFail" to true,
                 "variableKeysMap" to true,
                 "globalCustomFieldKeys" to true,
                 "getUnits" to true,
                 "getAttributes" to true,
-                "readyError" to true
+                "readyError" to true,
+                "numericUnitIds" to true,
+                "publishThrowsOnFailure" to true,
+                "trackRejectsNonObjectProperties" to true,
+                "refreshNoOpOnFailedContext" to true
             ))
         }
 
@@ -92,10 +93,7 @@ fun Application.configureRouting() {
 
                 val result: Any = when (op) {
                     "hashUnit" -> String(com.absmartly.sdk.Hashing.hashUnit(value ?: ""), StandardCharsets.US_ASCII)
-                    "base64UrlNoPadding" ->
-                        com.absmartly.sdk.Hashing.base64UrlNoPadding(com.absmartly.sdk.Hashing.utf8Bytes(text))
                     "utf8Bytes" -> com.absmartly.sdk.Hashing.utf8Bytes(text).map { it.toInt() and 0xff }
-                    // isObject, isNumeric and isPromise have no kotlin-sdk implementation.
                     else -> return@post call.respond(
                         HttpStatusCode.BadRequest,
                         mapOf("error" to "Unsupported diagnostic operation: $op", "events" to emptyList<Any>()),

@@ -247,9 +247,6 @@ Future<void> startServer() async {
       jsonEncode({
         'diagnostics': true,
         'diagnosticsUtf8': true,
-        'diagnosticsBase64': false,
-        'diagnosticsTypeChecks': false,
-        'diagnosticsIsPromise': false,
         'attrsSeq': false,
         'isWrapper': true,
         'wrapsSDK': 'dart',
@@ -259,6 +256,10 @@ Future<void> startServer() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'numericUnitIds': true,
+        'publishThrowsOnFailure': true,
+        'trackRejectsNonObjectProperties': true,
+        'refreshNoOpOnFailedContext': true,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',

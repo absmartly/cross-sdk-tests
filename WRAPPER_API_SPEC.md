@@ -200,9 +200,6 @@ the helpers its SDK implements:
 |---|---|
 | `hashUnit` | `diagnostics` |
 | `utf8Bytes` | `diagnosticsUtf8` |
-| `base64UrlNoPadding` (of the value's UTF-8 bytes) | `diagnosticsBase64` |
-| `isObject`, `isNumeric` | `diagnosticsTypeChecks` |
-| `isPromise` | `diagnosticsIsPromise` |
 
 The wrapper must call the SDK's own helper for every operation it advertises.
 If the SDK has no such helper, the wrapper reports the capability as `false`
@@ -763,7 +760,7 @@ idiomatic error (exception, Go `error`, Rust `Err`, Elixir `{:error, _}`) to a
 transport where a scenario asks for one (`publishFail`, `failLoad`,
 `payloadThrottle`). A `failLoad` transport must fail the fetch the way a real
 network failure does (reject or raise); it must not return malformed data.
-Diagnostic helpers (`hashUnit`, `utf8Bytes`, `base64UrlNoPadding`, …) call the
+Diagnostic helpers (`hashUnit`, `utf8Bytes`) call the
 SDK's own implementation when the SDK has one.
 
 ### Context Lifecycle
@@ -818,7 +815,7 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | /health | Health check |
-| GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, `diagnosticsBase64`, `diagnosticsTypeChecks`, `diagnosticsIsPromise`, etc.) |
+| GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
 | POST | /switchback/assign | Switchback variant for a period (capability `switchback`) |
 | POST | /switchback/permutation | Switchback cycle permutation (capability `switchback`) |
@@ -1205,12 +1202,12 @@ field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
 
 The capability also needs the SDK's assignment-rule evaluation for
-switchbacks: scenario 246 serves an `assign` rule (also before the anchor) and
+switchbacks: scenario 264 serves an `assign` rule (also before the anchor) and
 expects the exposure to carry `ruleOverride: true` and `assigned: false`. A
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-Known limit for other languages: scenario 241 sends the attribute value `3.0`
+Known limit for other languages: scenario 259 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
@@ -1273,3 +1270,51 @@ The vector scenarios are generated from `fixtures/switchback/golden-vectors.json
 `b314abeb9e97`) and the path scenario from
 `fixtures/switchback/attribute-path-cases.json` (the Collector's copy, blob
 `7b1d3fed5985`) by `generate_switchback_scenarios.py`; do not edit them by hand.
+
+### Capability: `assignmentRules`
+
+No new endpoint — this capability gates correct handling of the per-experiment
+`assignmentRules` wire field (a JSON **string** of `{"rules": [ ... ]}`) on the
+existing `treatment`/`peek`/`variableValue`/`publish` endpoints. An experiment's
+rules are evaluated in order; the first matching rule sets the variant and the
+resulting exposure is flagged `ruleOverride: true` with `assigned: false`, so the
+backend can exclude it from analysis (like an override). A matching rule takes
+precedence over audience targeting and custom assignments, is beaten only by an
+explicit override, and serves variable values. An `assign` rule gives a fixed
+variant; a `split` rule randomizes the unit over its own `percentages`. If the
+first matching rule's variant is out of range (or a split lacks one percentage
+per variant), normal assignment applies and later rules are not tried. Rules may
+carry an `environments` array (empty = all environments). A rule variant for an
+experiment removed from the context data on refresh is rebuilt, not served stale.
+
+Wrappers must advertise `assignmentRules` truthfully and dynamically from a
+BEHAVIORAL self-test (the same discipline as `holdouts`): build a real context
+with an `assignmentRules` experiment, drive `treatment()`/`variableValue()`, and
+assert both the returned variant and the exposure's `ruleOverride`/`assigned`
+flags. A wire-model marker (an `Experiment.assignmentRules` field existing) is
+necessary but not sufficient — an SDK can carry and deserialize the field yet not
+implement rule resolution. The probe must fail closed (report `false`) on any
+exception. Scenarios 230-239 (`requires: ["assignmentRules"]`) are skipped by
+SDKs that report `false`.
+
+Exposure events gain one field for this capability: `ruleOverride` (boolean),
+`true` only on an exposure whose variant came from a matching assignment rule.
+It is reported alongside the existing `assigned`/`overridden`/`custom` flags and
+is compared only where a scenario asserts it.
+
+### Capability: `semverOperators`
+
+No new endpoint — this capability gates the semantic-version comparison
+operators `semver_eq`, `semver_gt`, `semver_gte`, `semver_lt` and `semver_lte`
+in audience filters (and rule conditions). They compare version strings
+semantically and locale-independently: a leading `v`/`V` is ignored, `+build`
+metadata is ignored, a missing version part is `0`, numeric identifiers are
+compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
+pre-release ranks below its release.
+
+Wrappers advertise `semverOperators` from a BEHAVIORAL self-test: a strict
+audience using `semver_gt` must assign the experiment's variant when the
+attribute version is greater (numeric comparison) and variant 0 with
+`audienceMismatch: true` when it is not. The probe fails closed on any
+exception. Scenarios 240-245 (`requires: ["semverOperators"]`) are skipped by
+SDKs that report `false`.

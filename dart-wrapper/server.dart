@@ -274,9 +274,6 @@ void main() async {
       jsonEncode({
         'diagnostics': true,
         'diagnosticsUtf8': true,
-        'diagnosticsBase64': false,
-        'diagnosticsTypeChecks': false,
-        'diagnosticsIsPromise': false,
         'attrsSeq': false,
         'publishFail': true,
         'variableKeysMap': true,
@@ -284,6 +281,10 @@ void main() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'numericUnitIds': true,
+        'publishThrowsOnFailure': true,
+        'trackRejectsNonObjectProperties': true,
+        'refreshNoOpOnFailedContext': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );

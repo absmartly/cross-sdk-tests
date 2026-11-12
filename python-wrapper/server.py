@@ -72,6 +72,18 @@ class EventCollector(ContextEventLogger):
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
+        # The python3-sdk emits the legacy "close" event *and* its cross-SDK
+        # alias "finalize" for the same lifecycle transition. The contract (and
+        # the JS reference) name this event "finalize" and expect it once, so
+        # translate "close" -> "finalize" and drop the raw "finalize" the SDK
+        # pairs it with, the way the other wrappers normalise event names.
+        # Dropping the raw "finalize" (rather than de-duplicating on the last
+        # stored event) keeps one "finalize" per transition without masking a
+        # future "finalize" that the SDK might emit on a repeated close().
+        if event_type_str == 'close':
+            event_type_str = 'finalize'
+        elif event_type_str == 'finalize':
+            return
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
             self.events.append({
@@ -124,7 +136,12 @@ def ok(collector, since, result, status=200):
     return jsonify({'result': result, 'events': collector.since(since)}), status
 
 def fail(collector, since, err, status=400):
-    return jsonify({'error': str(err), 'events': collector.since(since)}), status
+    # The python3-sdk deliberately keeps its v1 error texts (e.g. "Unit already
+    # set.") but carries the cross-SDK wording on ``canonical_message``
+    # ("Unit 'session_id' UID already set."). Surface the canonical text so the
+    # cross-SDK contract matches; this maps the wording rather than masking it.
+    message = getattr(err, 'canonical_message', None) or str(err)
+    return jsonify({'error': message, 'events': collector.since(since)}), status
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -138,16 +155,17 @@ def health():
 def capabilities():
     return jsonify({'diagnostics': True,
         'diagnosticsUtf8': True,
-        'diagnosticsBase64': True,
-        'diagnosticsTypeChecks': True,
-        'diagnosticsIsPromise': True,
         'attrsSeq': False,
         'publishFail': True,
         'variableKeysMap': True,
         'globalCustomFieldKeys': True,
         'getUnits': True,
         'getAttributes': True,
-        'readyError': True
+        'readyError': True,
+        'numericUnitIds': True,
+        'publishThrowsOnFailure': True,
+        'trackRejectsNonObjectProperties': False,
+        'refreshNoOpOnFailedContext': False
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -731,7 +749,7 @@ def variable_keys_map(context_id):
     events_before = collector.count()
 
     try:
-        keys = context.get_variable_keys()
+        keys = context.get_variable_keys_all()
         new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:
@@ -831,16 +849,8 @@ def diagnostic():
 
         if op == 'hashUnit':
             result = sdk_utils.hash_unit(value)
-        elif op == 'base64UrlNoPadding':
-            result = sdk_utils.base64_url_no_padding(sdk_utils.utf8_bytes(value))
         elif op == 'utf8Bytes':
             result = list(sdk_utils.utf8_bytes(value))
-        elif op == 'isObject':
-            result = sdk_utils.is_object(value)
-        elif op == 'isNumeric':
-            result = sdk_utils.is_numeric(value)
-        elif op == 'isPromise':
-            result = sdk_utils.is_promise(value)
         else:
             return jsonify({'error': f'Unsupported diagnostic operation: {op}'}), 400
 

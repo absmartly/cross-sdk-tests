@@ -294,16 +294,17 @@ async fn health_handler() -> impl IntoResponse {
 async fn capabilities_handler() -> impl IntoResponse {
     Json(json!({"diagnostics": true,
         "diagnosticsUtf8": true,
-        "diagnosticsBase64": true,
-        "diagnosticsTypeChecks": true,
-        "diagnosticsIsPromise": false,
         "attrsSeq": false,
         "publishFail": true,
         "variableKeysMap": true,
         "globalCustomFieldKeys": true,
         "getUnits": true,
         "getAttributes": true,
-        "readyError": true
+        "readyError": true,
+        "numericUnitIds": true,
+        "publishThrowsOnFailure": true,
+        "trackRejectsNonObjectProperties": true,
+        "refreshNoOpOnFailedContext": true
     }))
 }
 
@@ -321,16 +322,10 @@ async fn diagnostic_handler(
                 ))
             }
         },
-        "base64UrlNoPadding" => {
-            let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
-            Value::String(utils::base64_url_no_padding(&utils::utf8_bytes(&input)))
-        }
         "utf8Bytes" => {
             let input = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| value.to_string());
             json!(utils::utf8_bytes(&input))
         }
-        "isObject" => Value::Bool(utils::is_object(&value)),
-        "isNumeric" => Value::Bool(utils::is_numeric(&value)),
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,

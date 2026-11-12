@@ -79,6 +79,11 @@ func (ec *EventCollector) HandleEvent(context sdk.Context, eventType sdk.EventTy
 		eventTypeLower = "exposure"
 	case sdk.Goal:
 		eventTypeLower = "goal"
+	case sdk.Close:
+		// The go-sdk emits "Close"; the cross-SDK contract (and the JS
+		// reference) names this lifecycle event "finalize". Normalise it
+		// the same way the java/kotlin wrappers do.
+		eventTypeLower = "finalize"
 	case sdk.Error:
 		eventTypeLower = "error"
 	}
@@ -189,7 +194,23 @@ func writeSDKError(w http.ResponseWriter, status int, err error, events []Event)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(Response{Result: nil, Events: events, Error: err.Error()})
+	json.NewEncoder(w).Encode(Response{Result: nil, Events: events, Error: errorText(err)})
+}
+
+// errorText maps an SDK error to the cross-SDK canonical wording when the
+// error exposes one. The go-sdk deliberately keeps its v1 error texts (e.g.
+// "unit already set") but implements a Canonical() method that returns the
+// shared phrasing ("Unit 'session_id' UID already set."); the wrapper surfaces
+// the canonical text so the cross-SDK contract matches.
+func errorText(err error) string {
+	type canonicaler interface{ Canonical() string }
+	var c canonicaler
+	if errors.As(err, &c) {
+		if msg := c.Canonical(); msg != "" {
+			return msg
+		}
+	}
+	return err.Error()
 }
 
 func writeResult(w http.ResponseWriter, result interface{}, events []Event) {
@@ -213,9 +234,6 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"diagnostics": true,
 		"diagnosticsUtf8":       true,
-		"diagnosticsBase64":     true,
-		"diagnosticsTypeChecks": false,
-		"diagnosticsIsPromise":  false,
 		"attrsSeq":              false,
 		"publishFail":           true,
 		"variableKeysMap":       true,
@@ -225,6 +243,10 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
 		// so the wrapper cannot report it without fabricating it.
 		"readyError": false,
+		"numericUnitIds":         true,
+		"publishThrowsOnFailure": true,
+		"trackRejectsNonObjectProperties": true,
+		"refreshNoOpOnFailedContext":      true,
 	})
 }
 
@@ -251,25 +273,19 @@ func diagnosticHandler(w http.ResponseWriter, r *http.Request) {
 			hashedBytes[i] = byte(b)
 		}
 		result = string(hashedBytes)
-	case "base64UrlNoPadding", "utf8Bytes":
+	case "utf8Bytes":
 		value, ok := req.Value.(string)
 		if !ok {
 			writeSDKError(w, http.StatusBadRequest, fmt.Errorf("%s expects a string value", req.Operation), nil)
 			return
 		}
 		encoded := sdk.UTF8Bytes(value)
-		if req.Operation == "base64UrlNoPadding" {
-			result = sdk.Base64UrlNoPadding(encoded)
-		} else {
-			out := make([]int, len(encoded))
-			for i, b := range encoded {
-				out[i] = int(b)
-			}
-			result = out
+		out := make([]int, len(encoded))
+		for i, b := range encoded {
+			out[i] = int(b)
 		}
+		result = out
 	default:
-		// isObject, isNumeric and isPromise are JavaScript type checks the Go
-		// SDK has no counterpart for.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotImplemented)
 		json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Unsupported diagnostic operation: %s", req.Operation)})
@@ -692,7 +708,11 @@ func variableKeys(cd *ContextData, _ func(interface{}) error) (interface{}, erro
 }
 
 func variableKeysMap(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
-	keys, err := cd.context.GetVariableKeys()
+	// variableKeysMap must return the full list of experiments defining each
+	// key (two experiments sharing a key both appear), so call the list-shaped
+	// API rather than GetVariableKeys (which keeps the v1 first-experiment-only
+	// signature).
+	keys, err := cd.context.GetVariableKeysAll()
 	if err != nil {
 		return nil, err
 	}
