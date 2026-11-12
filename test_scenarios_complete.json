@@ -29186,7 +29186,7 @@
   },
   {
     "name": "253 - System Attributes - No Environment Configured Means A Strict Environment Audience Does Not Match",
-    "description": "§4.6: with the application configured but NO environment, the SDK leaves environment out of the evaluation map entirely, so a strict audience on environment does not match and the unit gets variant 0 with audienceMismatch:true (no crash). An application audience still matches, confirming the application was injected while the environment was left absent. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "description": "§4.6: with the application configured but NO environment, the SDK leaves environment out of the evaluation map entirely, so a strict audience on environment does not match and the unit gets variant 0 with audienceMismatch:true (no crash). An application audience still matches, confirming the application was injected while the environment was left absent. A third, absence-sensitive audience (environment IS present, via not/null) must ALSO miss: a wrapper that substitutes a placeholder environment instead of leaving it absent would wrongly match this one even though it also fails the equality check against the real name. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
     "contextData": {
       "experiments": [
         {
@@ -29264,6 +29264,44 @@
           "audienceStrict": true,
           "customFieldValues": null,
           "assignmentRules": null
+        },
+        {
+          "id": 307,
+          "name": "exp_sysattr_noenv_present",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"not\":{\"null\":{\"var\":\"environment\"}}}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
         }
       ]
     },
@@ -29300,6 +29338,10 @@
                   {
                     "id": 306,
                     "name": "exp_sysattr_noenv_app"
+                  },
+                  {
+                    "id": 307,
+                    "name": "exp_sysattr_noenv_present"
                   }
                 ]
               }
@@ -29372,6 +29414,40 @@
         "params": {},
         "expect": {
           "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sysattr_noenv_present"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 307,
+                "name": "exp_sysattr_noenv_present",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
           "events": []
         }
       }

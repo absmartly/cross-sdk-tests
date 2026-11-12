@@ -432,16 +432,22 @@ def sysattr_specs():
 
     # §4 test 6: no environment configured means no environment key in the map, so a
     # filter on environment does not match (and does not crash).
+    present_env_filter = audience_filter({"not": {"null": {"var": "environment"}}})
     specs.append((
         "No Environment Configured Means A Strict Environment Audience Does Not Match",
         "§4.6: with the application configured but NO environment, the SDK leaves environment out of "
         "the evaluation map entirely, so a strict audience on environment does not match and the unit "
         "gets variant 0 with audienceMismatch:true (no crash). An application audience still matches, "
-        "confirming the application was injected while the environment was left absent.",
+        "confirming the application was injected while the environment was left absent. A third, "
+        "absence-sensitive audience (environment IS present, via not/null) must ALSO miss: a wrapper "
+        "that substitutes a placeholder environment instead of leaving it absent would wrongly match "
+        "this one even though it also fails the equality check against the real name.",
         [experiment(305, "exp_sysattr_noenv", audience=env_filter, audience_strict=True),
-         experiment(306, "exp_sysattr_noenv_app", audience=app_filter, audience_strict=True)],
+         experiment(306, "exp_sysattr_noenv_app", audience=app_filter, audience_strict=True),
+         experiment(307, "exp_sysattr_noenv_present", audience=present_env_filter, audience_strict=True)],
         [treatment("exp_sysattr_noenv"), PENDING,
-         treatment("exp_sysattr_noenv_app"), PENDING],
+         treatment("exp_sysattr_noenv_app"), PENDING,
+         treatment("exp_sysattr_noenv_present"), PENDING],
         {"application": SYSATTR_APP},
         [NO_ENVIRONMENT_CAPABILITY],
     ))

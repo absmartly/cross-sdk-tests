@@ -1,9 +1,11 @@
 """System Attributes group of test_scenarios_complete.json (the 2026-11 §5 round).
 
-The group pins that every SDK evaluates audiences (and assignment-rule conditions) with the client's
-configured ``application`` and ``environment`` names, always on, with user attributes overlaid on top
-(a user-set value wins), an unconfigured name left out of the map, and ``app_version`` gone. It
-mirrors §4 tests 1, 3, 4 and 6 plus a variable read through the matched variant.
+The group pins that every SDK evaluates audiences with the client's configured ``application`` and
+``environment`` names, always on, with user attributes overlaid on top (a user-set value wins), and
+an unconfigured name left out of the map. It mirrors §4 tests 1, 3, 4 and 6 plus a variable read
+through the matched variant. (The SDK applies the same names to assignment-rule conditions and drops
+``app_version`` too; those two are covered by the SDKs' own unit tests and the rule/semver groups,
+not re-exercised black-box here.)
 
 Like the other SDK-round groups, this module is a black-box check of the *scenarios themselves*,
 independent of the generator and of any wrapper. It reads only the JSON and:
@@ -26,8 +28,9 @@ independent of the generator and of any wrapper. It reads only the JSON and:
   ``requires: ["clientNoEnvironment"]``.
 
 The replay model covers exactly the payload shapes the generator emits for this group (a one-hot
-split ``[0.0, 1.0]``, ``trafficSplit [0, 1]``, ``fullOnVariant 0``, a strict ``eq`` audience on
-``application`` or ``environment``) and refuses anything else, so it cannot silently drift.
+split ``[0.0, 1.0]``, ``trafficSplit [0, 1]``, ``fullOnVariant 0``, and either a strict ``eq``
+audience on ``application``/``environment`` or the absence-sensitive ``not``/``null`` audience that
+matches only when a name is present) and refuses anything else, so it cannot silently drift.
 """
 
 import hashlib
@@ -123,11 +126,23 @@ class Ctx:
         if audience:
             expr = json.loads(audience)
             flt = expr["filter"]
-            assert len(flt) == 1 and "eq" in flt[0], audience
-            var = flt[0]["eq"][0]["var"]
-            value = flt[0]["eq"][1]["value"]
-            assert var in ("application", "environment"), var
-            a["audienceMismatch"] = self.attributes_map().get(var) != value
+            assert len(flt) == 1, audience
+            term = flt[0]
+            attrs = self.attributes_map()
+            if "eq" in term:
+                var = term["eq"][0]["var"]
+                value = term["eq"][1]["value"]
+                assert var in ("application", "environment"), var
+                a["audienceMismatch"] = attrs.get(var) != value
+            elif "not" in term and "null" in term["not"]:
+                # Absence-sensitive check: matches only when the variable is
+                # present in the evaluation map. Catches a wrapper that leaks a
+                # placeholder instead of leaving an unconfigured name absent.
+                var = term["not"]["null"]["var"]
+                assert var in ("application", "environment"), var
+                a["audienceMismatch"] = var not in attrs
+            else:
+                raise AssertionError(f"replay model: unsupported audience {audience}")
         if exp["audienceStrict"] and a["audienceMismatch"]:
             pass
         elif exp["unitType"] in self.units:

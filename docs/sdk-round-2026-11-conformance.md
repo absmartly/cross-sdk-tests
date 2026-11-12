@@ -168,7 +168,7 @@ only passes when the SDK actually injects the configured names.
 | §4.3 Strict audience naming a different environment gives variant 0, `audienceMismatch:true` | §5 | none | **250** (new, ungated) |
 | §4.4 A user-set environment overrides the configured one and invalidates a cached assignment | §5 | 246/247 cover re-eval, not the system overlay | **251** (new, ungated) |
 | §4.4 (mirror) A user-set environment satisfies an audience the configured one did not | §5 | none | **252** (new, ungated) |
-| §4.6 No environment configured → `environment` left out of the map; the filter does not match (application still does) | §5 | none | **253** (new, `requires: clientNoEnvironment`) |
+| §4.6 No environment configured → `environment` left out of the map; the filter does not match (application still does), and an absence-sensitive audience (`environment` IS present) also misses — a wrapper that substitutes a placeholder instead of leaving it absent would wrongly match it | §5 | none | **253** (new, `requires: clientNoEnvironment`) |
 
 The first five are **ungated** — every SDK must inject the configured
 application/environment and let a user value win, so a non-conforming SDK fails.
@@ -195,7 +195,8 @@ wrapper API. They are listed so the matrix is complete.
 | `in` operator haystack-first, `eq(null,null)` → null, numeric audience comparison | kotlin#1, php#8, go#10, ruby#39, python#11, dotnet#8 | Operator semantics are exercised by the audience scenarios already in the suite and by each SDK's own unit tests; not re-pinned here. |
 | Regex `/pattern/flags` slashes literal (not flags) | php#8, dotnet#8, ruby#39, python#11 | PHP-specific removal aligning to JS; not separately observable beyond existing match-operator behaviour. |
 | HTTP: only GET retried, publish never replayed; PHP connect-timeout | php#8, go#10, ruby#39, python#11 | Transport policy, not observable through the mock-endpoint wrapper API. |
-| System attributes: always-on application/environment in audience evaluation, user-override, no-environment, `app_version` dropped | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
+| System attributes: always-on application/environment in audience evaluation, user-override, no-environment | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
+| System attributes: `app_version` dropped from the evaluation map, and system names applied to assignment-rule conditions | §5, js#68, java#22 | Not re-exercised by this group black-box: the group pins application/environment injection through audiences only. `app_version` removal and rule-condition injection are covered by each SDK's own system-attributes unit tests (and, for rules, the Custom Assignment Rules group). Documented, not added here. |
 | System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
 | `hash_unit` exposed as a public/diagnostic function | python#12, go#10, dotnet#8 | Covered by the existing `diagnostics` capability (`POST /diagnostic hashUnit`). |
