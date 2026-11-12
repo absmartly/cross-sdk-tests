@@ -6,19 +6,28 @@ Every scenario in the group serves the same context through a different path:
   * Gzip When Advertised (ungated, every SDK): the SDK's own GET {endpoint}/context
     goes to the negotiating context server (context-server/server.py), which
     answers gzip only when the request advertised gzip and identity otherwise.
-    The SDK must load it, refresh through the same path, and produce exactly the
-    treatment, variable, exposure and publish of the direct-data twin.
+    The SDK must load it and produce exactly the treatment, variable, exposure
+    and publish of the direct-data twin, then refresh through the same fetch
+    and serve the refreshed data.
   * Direct Data Twin (ungated): the same context built from data handed to the
     SDK (createContextWith with `directData`), no HTTP at all. Its shared steps
     are emitted by the same builder, so the expectations are identical by
     construction.
   * Request Advertises Gzip (gated on contextFetchCompression): the recorded
     Accept-Encoding of the create AND the refresh fetch must advertise gzip and
-    the gzip body must decode to the same context.
+    each gzip body must decode (the refreshed one is checked by its new value).
 
-The treatment and variable expectations are the ones the suite already pins for
-exp_test_ab and this uid (scenarios 32 and 138); the filler experiments are
-never queried and only give the payload a realistic, compressible size.
+The refreshed data differs from the created data: exp_test_ab's traffic split
+changes to [0.5, 0.5], so this uid falls out of traffic and the next treatment
+is 0 with a fresh, ineligible exposure. An SDK that refetches but keeps the old
+data returns 1 with no event. The orchestrator stores the refreshed data on the
+context server and sends the wrapper an empty refresh, so the change can only
+arrive through the SDK's own fetch.
+
+The treatment, variable and refresh expectations are the ones the suite already
+pins for exp_test_ab and this uid (scenarios 29, 32 and 138). The payload holds
+only the tested experiment: the server compresses any size, so a larger body
+proves nothing more.
 
 Usage:
     python3 generate_context_compression_scenarios.py          # rewrite the group in place
@@ -42,7 +51,6 @@ BASELINE_COUNT = 222
 BASELINE_SHA256 = "2d43943c77694d696c36e4f32defec4cbb3be20ec6f71196102672fb686a6a59"
 
 UID = "e791e240fcd3df7d238cfc285f475e8152fcc0ec"
-FILLER_EXPERIMENTS = 24
 
 
 def baseline_digest(scenarios):
@@ -63,34 +71,25 @@ def tested_experiment():
     }
 
 
-def filler_experiment(n):
-    return {
-        "id": 100 + n, "name": f"exp_compression_filler_{n:02d}", "iteration": 1, "unitType": "user_id",
-        "seedHi": 1000 + n, "seedLo": 2000 + n, "split": [0.34, 0.33, 0.33],
-        "trafficSeedHi": 3000 + n, "trafficSeedLo": 4000 + n, "trafficSplit": [0, 1],
-        "fullOnVariant": 0, "applications": [{"name": "website"}],
-        "variants": [
-            {"name": "A", "config": json.dumps({f"filler.{n:02d}.color": "red", f"filler.{n:02d}.size": 1})},
-            {"name": "B", "config": json.dumps({f"filler.{n:02d}.color": "green", f"filler.{n:02d}.size": 2})},
-            {"name": "C", "config": json.dumps({f"filler.{n:02d}.color": "blue", f"filler.{n:02d}.size": 3})},
-        ],
-        "audience": json.dumps({"filter": [{"gte": [{"var": "age"}, {"value": 18 + n}]}]}),
-        "audienceStrict": False, "customFieldValues": None,
-    }
-
-
 def context_data():
-    return {"experiments": [tested_experiment()] + [filler_experiment(n) for n in range(FILLER_EXPERIMENTS)]}
+    return {"experiments": [tested_experiment()]}
+
+
+def refreshed_data():
+    """The refresh payload: traffic split [0.5, 0.5] takes this uid out of traffic (as scenario 29)."""
+    data = context_data()
+    data["experiments"][0]["trafficSplit"] = [0.5, 0.5]
+    return data
 
 
 def experiment_refs(data):
     return [{"id": e["id"], "name": e["name"]} for e in data["experiments"]]
 
 
-EXPOSURE = {
-    "id": 1, "name": "exp_test_ab", "unit": "session_id", "variant": 1, "assigned": True,
-    "eligible": True, "overridden": False, "fullOn": False, "custom": False, "audienceMismatch": False,
-}
+def exposure(variant, eligible):
+    return {"id": 1, "name": "exp_test_ab", "unit": "session_id", "variant": variant, "assigned": True,
+            "eligible": eligible, "overridden": False, "fullOn": False, "custom": False,
+            "audienceMismatch": False}
 
 
 def create_step(action, data):
@@ -102,9 +101,15 @@ def create_step(action, data):
     }
 
 
-def treatment_step(exposed):
+def treatment_step():
     return {"action": "treatment", "params": {"experimentName": "exp_test_ab"},
-            "expect": {"result": 1, "events": [{"type": "exposure", "data": dict(EXPOSURE)}] if exposed else []}}
+            "expect": {"result": 1, "events": [{"type": "exposure", "data": exposure(1, True)}]}}
+
+
+def refreshed_treatment_step():
+    """After the refresh: out of traffic, so variant 0 and a new, ineligible exposure."""
+    return {"action": "treatment", "params": {"experimentName": "exp_test_ab"},
+            "expect": {"result": 0, "events": [{"type": "exposure", "data": exposure(0, False)}]}}
 
 
 def variable_step():
@@ -113,6 +118,8 @@ def variable_step():
 
 
 def refresh_step(data):
+    # On a contextServer scenario the orchestrator stores newData on the context
+    # server and sends the wrapper an empty refresh (the SDK must fetch it).
     return {"action": "refresh", "params": {"newData": copy.deepcopy(data)},
             "expect": {"result": None, "events": [{"type": "refresh", "data": {"experiments": experiment_refs(data)}}]}}
 
@@ -125,6 +132,7 @@ def publish_step():
 
 def build_group(first_number):
     data = context_data()
+    refreshed = refreshed_data()
     gzip_server = {"encodings": ["gzip", "identity"]}
     scenarios = [
         {
@@ -132,15 +140,16 @@ def build_group(first_number):
             "description": (
                 "UNGATED (every SDK): the SDK's own GET {endpoint}/context is served by the negotiating "
                 "context server, gzip only when the request advertised gzip and identity otherwise, with "
-                "Content-Encoding and Vary: Accept-Encoding. The SDK must load the context, refresh it "
-                "through the same fetch, and produce exactly the treatment, variable value, exposure and "
-                "publish of the Direct Data Twin. Each fetch's served encoding is checked against the "
-                "recorded Accept-Encoding."
+                "Content-Encoding and Vary: Accept-Encoding. The SDK must load the context and produce "
+                "exactly the treatment, variable value, exposure and publish of the Direct Data Twin. Then "
+                "the server's data changes (traffic split [0.5, 0.5], as scenario 29) and the SDK must "
+                "refresh through its own fetch and serve the new data: treatment 0 with an ineligible "
+                "exposure. Each fetch's served encoding is checked against the recorded Accept-Encoding."
             ),
             "contextServer": gzip_server,
             "contextData": data,
-            "steps": [create_step("createContext", data), treatment_step(True), variable_step(),
-                      refresh_step(data), treatment_step(False), publish_step()],
+            "steps": [create_step("createContext", data), treatment_step(), variable_step(), publish_step(),
+                      refresh_step(refreshed), refreshed_treatment_step()],
         },
         {
             "name": "Direct Data Twin",
@@ -151,22 +160,21 @@ def build_group(first_number):
             ),
             "directData": True,
             "contextData": data,
-            "steps": [create_step("createContextWith", data), treatment_step(True), variable_step(),
-                      publish_step()],
+            "steps": [create_step("createContextWith", data), treatment_step(), variable_step(), publish_step()],
         },
         {
             "name": "Request Advertises Gzip On Create And Refresh",
             "description": (
                 "GATED on contextFetchCompression (measured by the orchestrator, not reported by the "
                 "wrapper): the recorded Accept-Encoding of the SDK's own GET {endpoint}/context on "
-                "create AND on refresh advertises gzip, the server answers gzip, and the decoded "
-                "context serves the same treatment."
+                "create AND on refresh advertises gzip, the server answers gzip, and both bodies decode: "
+                "treatment 1 from the created data, then treatment 0 from the refreshed data."
             ),
             "requires": [CAPABILITY],
             "contextServer": dict(gzip_server, requireAdvertised=["gzip"]),
             "contextData": data,
-            "steps": [create_step("createContext", data), treatment_step(True), refresh_step(data),
-                      treatment_step(False)],
+            "steps": [create_step("createContext", data), treatment_step(), refresh_step(refreshed),
+                      refreshed_treatment_step()],
         },
     ]
     for offset, scenario in enumerate(scenarios):

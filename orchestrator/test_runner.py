@@ -29,57 +29,24 @@ CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
 CONTEXT_SERVER_URL = os.getenv("CONTEXT_SERVER_URL", "http://context-server:8080").rstrip("/")
 CONTEXT_SERVER_SDK_URL = os.getenv("CONTEXT_SERVER_SDK_URL", CONTEXT_SERVER_URL).rstrip("/")
 CONTEXT_FETCH_ACTIONS = ("createContext", "createContextWith", "refresh")
+# Codings whose presence in an SDK's Accept-Encoding is reported. Only gzip is
+# ever served or gated on; br and zstd are report-only.
 REPORTED_ENCODINGS = ("gzip", "br", "zstd")
+# One timeout for creating a context, used by scenarios and by the probe, so a
+# fetch that passes the probe cannot time out in the scenarios (or vice versa).
+CONTEXT_CREATE_TIMEOUT = 5
+# Report-only unrequested-gzip probe: short, it gates nothing.
+UNREQUESTED_GZIP_TIMEOUT = 5
+CONTEXT_SERVER_READY_TIMEOUT = 30
 
-# Capabilities the orchestrator measures itself instead of reading the wrapper's
-# /capabilities (see TestOrchestrator.measure_capabilities). The measured value
-# goes through the same policy check as an advertised one, so an SDK listed as a
-# reviewed exception that starts measuring true fails until the policy moves it.
-MEASURED_CAPABILITY_PROBES = ("contextFetchCompression",)
+# The Accept-Encoding rules live in one stdlib-only module shared with the
+# context server. The orchestrator image copies it next to this file; from a
+# checkout it is read from context-server/.
+_CONTEXT_SERVER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "context-server")
+if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "negotiation.py")):
+    sys.path.insert(0, _CONTEXT_SERVER_DIR)
+import negotiation  # noqa: E402
 
-
-def parse_accept_encoding(header: Optional[str]) -> Dict[str, float]:
-    """{coding: q} for an Accept-Encoding header (mirrors context-server/server.py)."""
-    accepted: Dict[str, float] = {}
-    for part in (header or "").split(","):
-        coding, *params = [p.strip() for p in part.split(";")]
-        if not coding:
-            continue
-        q = 1.0
-        for param in params:
-            if param.lower().startswith("q="):
-                try:
-                    q = float(param[2:])
-                except ValueError:
-                    q = 0.0
-        accepted[coding.lower()] = q
-    return accepted
-
-
-def advertises_encoding(header: Optional[str], coding: str) -> bool:
-    """True when the header explicitly lists `coding` with q > 0 (`*` does not count)."""
-    accepted = parse_accept_encoding(header)
-    q = accepted.get(coding)
-    if q is None and coding == "gzip":
-        q = accepted.get("x-gzip")
-    return q is not None and q > 0
-
-
-def expected_served_encoding(header: Optional[str], preference: List[str]) -> str:
-    """What a correct negotiating server serves (mirrors server.choose_encoding)."""
-    accepted = parse_accept_encoding(header)
-    for coding in preference:
-        if coding in accepted:
-            ok = accepted[coding] > 0
-        elif coding == "gzip" and "x-gzip" in accepted:
-            ok = accepted["x-gzip"] > 0
-        elif "*" in accepted:
-            ok = accepted["*"] > 0
-        else:
-            ok = coding == "identity"
-        if ok:
-            return coding
-    return "identity"
 
 # Checked-in capability policy: which `requires:` capabilities each SDK must
 # advertise, and which are reviewed exceptions (see the file's _comment).
@@ -154,6 +121,19 @@ def describe(value: Any) -> Any:
 
 class ConfigError(Exception):
     """A scenario file or capability policy that cannot be used as-is."""
+
+
+class MeasurementError(Exception):
+    """A measured capability could not be measured (fails the run, fails closed)."""
+
+
+# Capabilities the orchestrator measures itself instead of reading the wrapper's
+# /capabilities: name -> the TestOrchestrator method that measures it (called
+# with sdk_name, base_url; returns the bool or raises MeasurementError). The
+# measured value goes through the same policy check as an advertised one, so an
+# SDK listed as a reviewed exception that starts measuring true fails until the
+# policy moves it.
+MEASURED_CAPABILITY_PROBES = {"contextFetchCompression": "measure_context_fetch_compression"}
 
 
 class Colors:
@@ -539,6 +519,11 @@ class TestOrchestrator:
         self.known_capabilities = set(self.policy["capabilities"])
         # sdk_name -> what the context-fetch probe observed on the wire.
         self.context_fetch_probe: Dict[str, Dict[str, Any]] = {}
+        # sdk_name -> measured capability -> why it could not be measured. Fails
+        # the run and skips only the scenarios requiring that capability.
+        self.measurement_failed: Dict[str, Dict[str, str]] = {}
+        # "" once the context server answered /health, else the error (None: not checked yet).
+        self._context_server_ready: Optional[str] = None
         # scenario name -> sdk name -> context-server requests per fetching step.
         self.context_fetches: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
 
@@ -605,12 +590,10 @@ class TestOrchestrator:
                     reason = validate_capabilities_response(payload, self.known_capabilities)
                     if reason is None:
                         payload = dict(payload)
-                        reason = self.apply_measured_capabilities(sdk_name, base_url, payload)
-                        if reason is None:
-                            self.set_capabilities(sdk_name, payload)
-                            return
-                    else:
-                        reason = f"invalid /capabilities response: {reason}"
+                        self.apply_measured_capabilities(sdk_name, base_url, payload)
+                        self.set_capabilities(sdk_name, payload)
+                        return
+                    reason = f"invalid /capabilities response: {reason}"
             else:
                 reason = f"HTTP {caps_response.status_code}"
         except Exception as exc:
@@ -629,113 +612,190 @@ class TestOrchestrator:
 
     # -- Context-fetch compression (measured by the orchestrator) ----------------
 
+    def _context_server_call(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+        """One control-API request, retried once on a connection error."""
+        url = f"{CONTEXT_SERVER_URL}{path}"
+        try:
+            return requests.request(method, url, timeout=5, **kwargs)
+        except requests.ConnectionError:
+            time.sleep(0.5)
+            return requests.request(method, url, timeout=5, **kwargs)
+
+    def context_server_ready(self) -> Optional[str]:
+        """Wait (once per run) for the context server's /health; return an error or None."""
+        if self._context_server_ready is None:
+            error = "no answer"
+            deadline = time.monotonic() + CONTEXT_SERVER_READY_TIMEOUT
+            while True:
+                try:
+                    response = self._context_server_call("GET", "/health")
+                    if response.status_code == 200:
+                        error = ""
+                        break
+                    error = f"/health returned HTTP {response.status_code}"
+                except requests.RequestException as exc:
+                    error = str(exc) or exc.__class__.__name__
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
+            self._context_server_ready = (
+                "" if not error
+                else f"context server at {CONTEXT_SERVER_URL} not ready after {CONTEXT_SERVER_READY_TIMEOUT}s: {error}"
+            )
+        return self._context_server_ready or None
+
     def context_server_put(self, payload_id: str, body: Dict[str, Any]) -> None:
-        requests.put(f"{CONTEXT_SERVER_URL}/payload/{payload_id}", json=body, timeout=5).raise_for_status()
+        self._context_server_call("PUT", f"/payload/{payload_id}", json=body).raise_for_status()
 
     def context_server_requests(self, payload_id: str) -> List[Dict[str, Any]]:
-        response = requests.get(f"{CONTEXT_SERVER_URL}/requests/{payload_id}", timeout=5)
+        response = self._context_server_call("GET", f"/requests/{payload_id}")
         response.raise_for_status()
-        recorded = response.json().get("requests")
+        body = response.json()
+        recorded = body.get("requests") if isinstance(body, dict) else None
         if not isinstance(recorded, list):
             raise ValueError("context server returned no request list")
         return recorded
 
     def context_server_delete(self, payload_id: str) -> None:
         try:
-            requests.delete(f"{CONTEXT_SERVER_URL}/payload/{payload_id}", timeout=5)
+            self._context_server_call("DELETE", f"/payload/{payload_id}")
         except requests.RequestException:
             pass
 
+    @staticmethod
+    def _wrapper_result(response: requests.Response) -> Any:
+        """The `result` of a wrapper response; ValueError when the body is not a JSON object."""
+        body = response.json() if response.content else {}
+        if not isinstance(body, dict):
+            raise ValueError(f"wrapper returned a non-object body (HTTP {response.status_code})")
+        if response.status_code != 200:
+            raise ValueError(str(body.get("error") or f"HTTP {response.status_code}"))
+        return body.get("result")
+
     def _probe_context_fetch(
-        self, base_url: str, data: Dict[str, Any], encodings: List[str], force: Optional[str], refresh: bool
+        self,
+        base_url: str,
+        data: Dict[str, Any],
+        refresh_data: Optional[Dict[str, Any]],
+        force: Optional[str],
+        timeout: float,
     ) -> Dict[str, Any]:
-        """Create (and optionally refresh) an endpoint-backed context on the context server."""
+        """Create an endpoint-backed context on the context server; optionally refresh it with new data.
+
+        Wrapper-side problems are recorded in the outcome (`error`). A context
+        server that cannot be used raises: that is a failed measurement.
+        """
         payload_id = f"probe-{uuid.uuid4()}"
-        self.context_server_put(payload_id, {"data": data, "encodings": encodings, "force": force})
+        self.context_server_put(payload_id, {
+            "data": data, "encodings": list(negotiation.DEFAULT_PREFERENCE), "force": force,
+        })
         outcome: Dict[str, Any] = {}
         context_id = None
         try:
-            response = requests.post(
-                f"{base_url}/context",
-                json={
-                    "endpoint": f"{CONTEXT_SERVER_SDK_URL}/negotiate/{payload_id}",
-                    "units": {"session_id": "context-fetch-probe"},
-                    "options": {"publishDelay": -1, "refreshPeriod": 0},
-                },
-                timeout=15,
-            )
-            body = response.json() if response.content else {}
-            result = body.get("result") if isinstance(body, dict) else None
-            if response.status_code == 200 and isinstance(result, dict):
+            try:
+                response = requests.post(
+                    f"{base_url}/context",
+                    json={
+                        "endpoint": f"{CONTEXT_SERVER_SDK_URL}/negotiate/{payload_id}",
+                        "units": {"session_id": "context-fetch-probe"},
+                        "options": {"publishDelay": -1, "refreshPeriod": 0},
+                    },
+                    timeout=timeout,
+                )
+                result = self._wrapper_result(response)
+                if not isinstance(result, dict):
+                    raise ValueError("POST /context returned no result object")
                 context_id = result.get("contextId")
                 outcome["ready"] = result.get("ready")
                 outcome["failed"] = result.get("failed")
-            else:
-                outcome["error"] = (body.get("error") if isinstance(body, dict) else None) or f"HTTP {response.status_code}"
-            if context_id and outcome.get("ready") is True and outcome.get("failed") is False:
-                names = requests.get(f"{base_url}/context/{context_id}/experiments", timeout=10).json().get("result")
-                outcome["decoded"] = names == [e["name"] for e in data["experiments"]]
-                if refresh:
-                    refreshed = requests.post(f"{base_url}/context/{context_id}/refresh", json={}, timeout=15)
-                    outcome["refreshStatus"] = refreshed.status_code
-            elif context_id and outcome.get("failed") is True:
-                # Best effort: the SDK's own load error (wrappers without readyError 404 here).
-                ready_error = requests.post(f"{base_url}/context/{context_id}/readyError", timeout=10)
-                if ready_error.status_code == 200:
-                    outcome["error"] = json.dumps(ready_error.json().get("result"))[:300]
-        except (requests.RequestException, ValueError) as exc:
-            outcome.setdefault("error", str(exc) or exc.__class__.__name__)
+                if context_id and outcome["ready"] is True and outcome["failed"] is False:
+                    names = self._wrapper_result(
+                        requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
+                    outcome["decoded"] = names == [e["name"] for e in data["experiments"]]
+                    if refresh_data is not None:
+                        # New data on the server, an empty refresh to the wrapper:
+                        # only the SDK's own fetch can bring the change in.
+                        self.context_server_put(payload_id, {"data": refresh_data})
+                        refreshed = requests.post(f"{base_url}/context/{context_id}/refresh", json={},
+                                                  timeout=timeout)
+                        outcome["refreshStatus"] = refreshed.status_code
+                        names = self._wrapper_result(
+                            requests.get(f"{base_url}/context/{context_id}/experiments", timeout=timeout))
+                        outcome["refreshDecoded"] = names == [e["name"] for e in refresh_data["experiments"]]
+                elif context_id and outcome["failed"] is True:
+                    # Best effort: the SDK's own load error (wrappers without readyError 404 here).
+                    ready_error = requests.post(f"{base_url}/context/{context_id}/readyError", timeout=timeout)
+                    if ready_error.status_code == 200:
+                        outcome["error"] = json.dumps(self._wrapper_result(ready_error))[:300]
+            except (requests.RequestException, ValueError) as exc:
+                outcome.setdefault("error", str(exc) or exc.__class__.__name__)
+            finally:
+                if context_id:
+                    try:
+                        requests.delete(f"{base_url}/context/{context_id}", timeout=5)
+                    except requests.RequestException:
+                        pass
+            outcome["requests"] = self.context_server_requests(payload_id)
         finally:
-            if context_id:
-                try:
-                    requests.delete(f"{base_url}/context/{context_id}", timeout=5)
-                except requests.RequestException:
-                    pass
-        outcome["requests"] = self.context_server_requests(payload_id)
-        self.context_server_delete(payload_id)
+            self.context_server_delete(payload_id)
         return outcome
 
-    def apply_measured_capabilities(self, sdk_name: str, base_url: str, payload: Dict[str, Any]) -> Optional[str]:
-        """Measure the policy's measured capabilities and write them into `payload`.
+    def measure_context_fetch_compression(self, sdk_name: str, base_url: str) -> bool:
+        """contextFetchCompression: gzip advertised on create and refresh, and both bodies used.
 
-        A wrapper never self-reports these: any value it sent is overwritten. The
-        probe failing to run (context server unreachable, no request recorded)
-        is returned as an error, which marks the capabilities fetch failed and
-        the run failed (fail closed), rather than reading as "unsupported".
+        Raises MeasurementError when the probe could not measure anything (the
+        context server unusable, or no GET /context reached it).
         """
-        measured = self.policy.get("measuredCapabilities") or []
-        if "contextFetchCompression" not in measured:
-            return None
-        data = {"experiments": [{
-            "id": 1, "name": "exp_context_fetch_probe", "iteration": 1, "unitType": "session_id",
-            "seedHi": 0, "seedLo": 0, "split": [0.5, 0.5], "trafficSeedHi": 0, "trafficSeedLo": 0,
-            "trafficSplit": [0, 1], "fullOnVariant": 0, "applications": [{"name": "website"}],
-            "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
-            "audience": "", "audienceStrict": False,
-        }]}
+        def probe_data(name: str) -> Dict[str, Any]:
+            return {"experiments": [{
+                "id": 1, "name": name, "iteration": 1, "unitType": "session_id",
+                "seedHi": 0, "seedLo": 0, "split": [0.5, 0.5], "trafficSeedHi": 0, "trafficSeedLo": 0,
+                "trafficSplit": [0, 1], "fullOnVariant": 0, "applications": [{"name": "website"}],
+                "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
+                "audience": "", "audienceStrict": False,
+            }]}
+
+        not_ready = self.context_server_ready()
+        if not_ready:
+            raise MeasurementError(not_ready)
         try:
-            negotiated = self._probe_context_fetch(base_url, data, ["zstd", "br", "gzip", "identity"], None, True)
-            unrequested = self._probe_context_fetch(base_url, data, ["identity"], "gzip", False)
+            negotiated = self._probe_context_fetch(
+                base_url, probe_data("exp_context_fetch_probe"), probe_data("exp_context_fetch_probe_refreshed"),
+                None, CONTEXT_CREATE_TIMEOUT,
+            )
         except (requests.RequestException, ValueError) as exc:
-            return f"context-fetch probe could not use the context server at {CONTEXT_SERVER_URL}: {exc}"
+            raise MeasurementError(f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
         fetches = [r for r in negotiated["requests"] if r.get("status") == 200]
         if not fetches:
-            return f"context-fetch probe: the SDK made no GET /context to the context server ({negotiated.get('error')})"
+            raise MeasurementError(f"the SDK made no GET /context to the context server ({negotiated.get('error')})")
         headers = [r.get("acceptEncoding") for r in fetches]
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
-        gzip_everywhere = all(advertises_encoding(h, "gzip") for h in headers)
-        payload["contextFetchCompression"] = bool(
-            gzip_everywhere and refreshed and negotiated.get("decoded") is True
-        )
+        decoded = negotiated.get("decoded") is True and negotiated.get("refreshDecoded") is True
+        value = bool(all(negotiation.advertises(h, "gzip") for h in headers) and refreshed and decoded)
+
+        # REPORT-ONLY: what the SDK does with a gzip body it did not ask for. It
+        # gates nothing; it is the evidence behind the SDK fixes (several SDKs
+        # fail to load such a body). Short timeout, and its failure is recorded.
+        try:
+            unrequested = self._probe_context_fetch(
+                base_url, probe_data("exp_context_fetch_probe"), None, "gzip", UNREQUESTED_GZIP_TIMEOUT)
+        except (requests.RequestException, ValueError) as exc:
+            unrequested = {"error": f"context server: {exc}", "requests": []}
+
         self.context_fetch_probe[sdk_name] = {
             "acceptEncoding": headers,
+            # Reviewers read the User-Agent per lane: it should be the SDK's own
+            # HTTP client (WRAPPER_API_SPEC: no wrapper-side fetch).
             "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
             "served": [r.get("served") for r in fetches],
             "refreshFetched": refreshed,
             "decoded": negotiated.get("decoded"),
-            "advertises": {c: any(advertises_encoding(h, c) for h in headers) for c in REPORTED_ENCODINGS},
-            "contextFetchCompression": payload["contextFetchCompression"],
+            "refreshDecoded": negotiated.get("refreshDecoded"),
+            "error": negotiated.get("error"),
+            "advertises": {c: any(negotiation.advertises(h, c) for h in headers) for c in REPORTED_ENCODINGS},
+            "contextFetchCompression": value,
             "unrequestedGzip": {
+                "reportOnly": True,
                 "acceptEncoding": [r.get("acceptEncoding") for r in unrequested["requests"]],
                 "ready": unrequested.get("ready"),
                 "failed": unrequested.get("failed"),
@@ -746,16 +806,41 @@ class TestOrchestrator:
         probe = self.context_fetch_probe[sdk_name]
         print(
             f"  context fetch {sdk_name}: Accept-Encoding {headers!r} -> served {probe['served']}; "
-            f"contextFetchCompression={payload['contextFetchCompression']}; "
-            f"unrequested gzip -> ready={unrequested.get('ready')} failed={unrequested.get('failed')} "
-            f"decoded={unrequested.get('decoded')}"
+            f"User-Agent {probe['userAgent']}; contextFetchCompression={value}; "
+            f"unrequested gzip (report only) -> ready={unrequested.get('ready')} "
+            f"failed={unrequested.get('failed')} decoded={unrequested.get('decoded')}"
         )
-        return None
+        return value
+
+    def apply_measured_capabilities(self, sdk_name: str, base_url: str, payload: Dict[str, Any]) -> None:
+        """Measure the policy's measured capabilities and write them into `payload`.
+
+        A wrapper never self-reports these: any value it sent is dropped. A
+        measurement that fails is recorded in `measurement_failed`: it fails the
+        run and skips only the scenarios that require that capability, while the
+        wrapper's other (validated) capabilities still apply.
+        """
+        for cap in self.policy.get("measuredCapabilities") or []:
+            payload.pop(cap, None)
+            try:
+                payload[cap] = getattr(self, MEASURED_CAPABILITY_PROBES[cap])(sdk_name, base_url)
+            except Exception as exc:  # fail closed, whatever went wrong
+                reason = str(exc) or exc.__class__.__name__
+                self.measurement_failed.setdefault(sdk_name, {})[cap] = reason
+                print(
+                    f"  {Colors.RED}⚠ MEASUREMENT FAILED{Colors.RESET} {sdk_name} {cap}: {reason} - "
+                    f"scenarios requiring {cap} will be skipped and this SDK's run marked FAILED"
+                )
 
     def check_context_fetches(
         self, step_index: int, action: str, spec: Dict[str, Any], recorded: List[Dict[str, Any]], seen: int
     ) -> List[Dict[str, Any]]:
-        """Validate the context-server requests a fetching step made (records[seen:])."""
+        """Validate the context-server requests a fetching step made (records[seen:]).
+
+        `status`, `requireAdvertised` and the presence of a fetch test the SDK.
+        `served` re-checks the server's own choice with the shared rules: it
+        catches a broken server, not an SDK bug.
+        """
         new = recorded[seen:]
         failures: List[Dict[str, Any]] = []
 
@@ -766,16 +851,16 @@ class TestOrchestrator:
         if not new:
             fail("contextFetch", "the SDK's own GET {endpoint}/context on the context server", "no request")
             return failures
-        preference = spec.get("encodings") or ["gzip", "identity"]
+        preference = spec.get("encodings") or negotiation.DEFAULT_PREFERENCE
         for record in new:
             header = record.get("acceptEncoding")
             if record.get("status") != 200:
                 fail("contextFetch.status", 200, record.get("status"))
-            expected = spec.get("force") or expected_served_encoding(header, preference)
+            expected = negotiation.choose_encoding(header, preference, spec.get("force"))
             if record.get("served") != expected:
                 fail("contextFetch.served", f"{expected} for Accept-Encoding {header!r}", record.get("served"))
             for coding in spec.get("requireAdvertised", []):
-                if not advertises_encoding(header, coding):
+                if not negotiation.advertises(header, coding):
                     fail(f"contextFetch.acceptEncoding[{coding}]", f"advertises {coding}", header)
         return failures
 
@@ -796,7 +881,10 @@ class TestOrchestrator:
                 f"required capabilities and reviewed exceptions"
             ]
         violations: List[str] = []
+        unmeasured = self.measurement_failed.get(sdk_name, {})
         for cap in entry.get("required", []):
+            if cap in unmeasured:
+                continue  # reported (and failing the run) as a measurement failure
             if caps.get(cap) is not True:
                 got = "missing" if cap not in caps else json.dumps(caps[cap])
                 violations.append(
@@ -820,6 +908,11 @@ class TestOrchestrator:
             return (
                 f"capabilities fetch failed ({self.capabilities_fetch_failed[sdk_name]}); "
                 f"cannot confirm support for: {', '.join(required)}"
+            )
+        unmeasured = [cap for cap in required if cap in self.measurement_failed.get(sdk_name, {})]
+        if unmeasured:
+            return "; ".join(
+                f"measurement of {cap} failed ({self.measurement_failed[sdk_name][cap]})" for cap in unmeasured
             )
         entry = self.policy["sdks"].get(sdk_name)
         if entry is None:
@@ -1016,16 +1109,15 @@ class TestOrchestrator:
                     context_id = data["result"]["contextId"]
 
                 elif action in ("createContext", "createContextWith"):
+                    payload_id = f"payload-{uuid.uuid4()}"
                     if server_spec is not None:
-                        payload_id = f"payload-{uuid.uuid4()}"
                         self.context_server_put(payload_id, {
                             "data": scenario["contextData"],
-                            "encodings": server_spec.get("encodings") or ["gzip", "identity"],
+                            "encodings": server_spec.get("encodings") or negotiation.DEFAULT_PREFERENCE,
                             "force": server_spec.get("force"),
                         })
                         endpoint = f"{CONTEXT_SERVER_SDK_URL}/negotiate/{payload_id}"
                     else:
-                        payload_id = f"payload-{uuid.uuid4()}"
                         payload_response = requests.put(
                             f"{base_url}/context_payload/{payload_id}",
                             json={"data": scenario["contextData"]},
@@ -1040,7 +1132,7 @@ class TestOrchestrator:
                             "units": params["units"],
                             "options": params.get("options", {}),
                         },
-                        timeout=5,
+                        timeout=CONTEXT_CREATE_TIMEOUT,
                     )
                     response.raise_for_status()
                     data = response.json()
@@ -1588,6 +1680,7 @@ class TestOrchestrator:
                 "capabilities_failed": capabilities_failed,
                 "capabilities_error": self.capabilities_fetch_failed.get(sdk_name),
                 "capability_policy_violations": list(self.capability_policy_violations.get(sdk_name, [])),
+                "measurement_failed": dict(self.measurement_failed.get(sdk_name, {})),
                 "no_tests_run": no_tests_run,
             }
 
@@ -1609,6 +1702,7 @@ class TestOrchestrator:
                 "capabilities_failed": False,
                 "capabilities_error": None,
                 "capability_policy_violations": [],
+                "measurement_failed": {},
                 "no_tests_run": False,
                 "service_failed": True,
             }
@@ -1618,6 +1712,7 @@ class TestOrchestrator:
                 stats.get("service_failed")
                 or stats.get("capabilities_failed")
                 or stats.get("capability_policy_violations")
+                or stats.get("measurement_failed")
                 or stats.get("no_tests_run")
                 or stats.get("consistency_failed")
                 or stats.get("consistency_unchecked")
@@ -1641,6 +1736,8 @@ class TestOrchestrator:
             report["cross_sdk_consistency"] = self.consistency_report
         if self.context_fetch_probe:
             report["context_fetch_probe"] = self.context_fetch_probe
+        if self.measurement_failed:
+            report["measurement_failed"] = self.measurement_failed
         if self.context_fetches:
             report["context_fetches"] = self.context_fetches
         output_dir = os.path.dirname(output_file)
@@ -1693,10 +1790,15 @@ class TestOrchestrator:
                 if stats["capability_policy_violations"]
                 else ""
             )
+            measurement_info = (
+                f", measurement failed: {', '.join(sorted(stats['measurement_failed']))}"
+                if stats.get("measurement_failed")
+                else ""
+            )
             print(
                 f"  {sdk_name:20} {status:8} "
                 f"({stats['passed']}/{stats['tested']} tested{skipped_info}, "
-                f"{stats['pass_rate']:.1f}%{consistency_info}{policy_info})"
+                f"{stats['pass_rate']:.1f}%{consistency_info}{policy_info}{measurement_info})"
             )
 
         print(f"{'=' * 60}")
@@ -1734,7 +1836,7 @@ class TestOrchestrator:
                 for reason, count in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])):
                     print(f"    - {count}x {reason}")
 
-        if self.context_fetch_probe:
+        if self.context_fetch_probe or self.measurement_failed:
             print("\nContext fetch (SDK's own GET {endpoint}/context, measured on the context server):")
             print(f"{'-' * 60}")
             for sdk_name in sorted(self.context_fetch_probe):
@@ -1742,9 +1844,14 @@ class TestOrchestrator:
                 advertised = ", ".join(c for c, yes in probe["advertises"].items() if yes) or "none"
                 unrequested = probe["unrequestedGzip"]
                 print(f"  {sdk_name}: Accept-Encoding {probe['acceptEncoding']} (advertises: {advertised}); "
+                      f"User-Agent {probe['userAgent']}; "
                       f"contextFetchCompression={probe['contextFetchCompression']}")
-                print(f"    unrequested gzip: ready={unrequested['ready']} failed={unrequested['failed']} "
-                      f"decoded={unrequested['decoded']} error={unrequested['error']}")
+                print(f"    unrequested gzip (report only): ready={unrequested['ready']} "
+                      f"failed={unrequested['failed']} decoded={unrequested['decoded']} "
+                      f"error={unrequested['error']}")
+            for sdk_name in sorted(self.measurement_failed):
+                for cap, reason in sorted(self.measurement_failed[sdk_name].items()):
+                    print(f"  {sdk_name}: {Colors.RED}measurement of {cap} FAILED{Colors.RESET}: {reason}")
 
         if self.allow_wrapper_skip:
             print(
@@ -1834,8 +1941,8 @@ def validate_context_server_spec(spec: Any) -> Optional[str]:
     unknown = set(spec) - {"encodings", "force", "requireAdvertised"}
     if unknown:
         return f"unknown keys {sorted(unknown)}"
-    codings = ("zstd", "br", "gzip", "identity")
-    encodings = spec.get("encodings", ["gzip", "identity"])
+    codings = negotiation.CODINGS
+    encodings = spec.get("encodings", negotiation.DEFAULT_PREFERENCE)
     if not isinstance(encodings, list) or not encodings or any(e not in codings for e in encodings):
         return f"'encodings' must be a non-empty list drawn from {list(codings)}"
     force = spec.get("force")

@@ -7,7 +7,8 @@
     "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
     "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
     "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
-    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports.",
+    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports. A measured",
+    "capability may be required from a code reading when no lane here could observe it: CI then proves it.",
     "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`.",
     "`measuredCapabilities` are not read from the wrapper: the orchestrator measures them (here, the Accept-Encoding the SDK sends to the context server) and checks the result against this policy exactly like an advertised capability, so a reviewed exception that starts measuring true fails the run until it is moved to `required`."
   ],
@@ -92,11 +93,10 @@
       }
     },
     "scala": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
-        "contextFetchCompression": "not observed (lane does not build offline); from code sttp basicRequest sends gzip, deflate and decodes gzip; move to required once a lane shows it"
+        "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
       }
     },
     "swift": {
@@ -104,23 +104,21 @@
       "unsupported": {
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
-        "contextFetchCompression": "not observed (lane does not build here); from code Linux URLSession (libcurl) advertises every built-in coding; move to required once a lane shows it"
+        "contextFetchCompression": "not observed: the swift lane fails on main CI already (cross-sdk run 43008024985 on chore/drop-js-helper-scenarios), so it cannot provide evidence; from code Linux URLSession (libcurl) advertises every built-in coding; move to required once the lane passes and shows gzip"
       }
     },
     "dart": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
-        "contextFetchCompression": "not observed (lane does not build offline); from code dart:io HttpClient sends gzip and auto-uncompresses; move to required once a lane shows it"
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks"
       }
     },
     "flutter": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
-        "contextFetchCompression": "not observed (lane does not build offline); from code dart:io HttpClient sends gzip and auto-uncompresses; move to required once a lane shows it"
+        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks"
       }
     },
     "dotnet": {
@@ -149,10 +147,8 @@
       }
     },
     "react": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
-      "unsupported": {
-        "contextFetchCompression": "not observed (lane does not build offline); wraps javascript-sdk, whose lane sends gzip, deflate; move to required once the react lane shows it"
-      }
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
+      "unsupported": {}
     },
     "vue2": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],

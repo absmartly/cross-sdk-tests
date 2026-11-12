@@ -51,25 +51,44 @@ def test_only_the_wire_check_is_gated():
     assert twin["directData"] is True and "contextServer" not in twin
 
 
-def test_twin_shares_every_non_refresh_expectation():
+def test_twin_shares_every_pre_refresh_expectation():
     ungated, twin, _ = generator.build_group(230)
     assert ungated["contextData"] == twin["contextData"]
-    fetched = [s for s in ungated["steps"] if s["action"] not in ("refresh",)]
-    fetched = [fetched[0], fetched[1], fetched[2], fetched[-1]]
-    assert [s["expect"] for s in fetched] == [s["expect"] for s in twin["steps"]]
+    actions = [s["action"] for s in ungated["steps"]]
+    before_refresh = ungated["steps"][:actions.index("refresh")]
+    assert [s["expect"] for s in before_refresh] == [s["expect"] for s in twin["steps"]]
     assert [s["action"] for s in twin["steps"]] == ["createContextWith", "treatment", "variableValue", "publish"]
 
 
-def test_refresh_goes_through_the_sdk_fetch_of_the_same_payload():
+def test_refresh_data_differs_and_the_next_step_proves_it_was_used():
     for scenario in (generator.build_group(230)[0], generator.build_group(230)[2]):
-        refresh = [s for s in scenario["steps"] if s["action"] == "refresh"]
-        assert len(refresh) == 1
-        assert refresh[0]["params"]["newData"] == scenario["contextData"]
+        steps = scenario["steps"]
+        i = [s["action"] for s in steps].index("refresh")
+        new_data = steps[i]["params"]["newData"]
+        assert new_data != scenario["contextData"]
+        before = next(s for s in steps[:i] if s["action"] == "treatment")
+        after = steps[i + 1]
+        assert after["action"] == "treatment"
+        # Keeping the old data would repeat the cached result with no event.
+        assert after["expect"]["result"] != before["expect"]["result"]
+        assert after["expect"]["events"], "a changed assignment must queue a fresh exposure"
 
 
-def test_payload_is_large_enough_to_compress():
-    raw = json.dumps(generator.context_data()).encode()
-    assert len(raw) > 10_000
+def test_refresh_expectation_matches_the_pinned_traffic_split_scenario():
+    """The refreshed data is scenario 29's; so is the treatment after its refresh."""
+    by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
+    pinned = by_number[29]["steps"]
+    ungated = generator.build_group(230)[0]["steps"]
+    refresh = [s["action"] for s in ungated].index("refresh")
+    [ours] = ungated[refresh]["params"]["newData"]["experiments"]
+    [theirs] = pinned[2]["params"]["newData"]["experiments"]
+    # Same assignment inputs; only the variant configs (not read after refresh) differ.
+    assert {k: v for k, v in ours.items() if k != "variants"} == {k: v for k, v in theirs.items() if k != "variants"}
+    assert ungated[refresh + 1]["expect"] == pinned[3]["expect"]
+
+
+def test_payload_is_only_the_tested_experiment():
+    assert [e["name"] for e in generator.context_data()["experiments"]] == ["exp_test_ab"]
 
 
 def test_scenarios_validate_with_the_checked_in_policy():
@@ -119,10 +138,15 @@ def test_policy_declares_the_measured_capability_for_every_sdk():
         assert (CAP in entry["required"]) != (CAP in entry["unsupported"]), sdk
 
 
-def test_required_only_where_a_lane_observed_gzip():
+def test_required_where_observed_or_read_from_code():
+    """Required where a lane observed gzip or the code shows it (CI proves it); the rest are exceptions."""
     policy = test_runner.load_capability_policy()
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
-    assert required == ["angular", "javascript", "liquid", "python", "ruby", "vue2", "vue3"]
+    assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
+                        "scala", "vue2", "vue3"]
+    excepted = {sdk: e["unsupported"][CAP] for sdk, e in policy["sdks"].items() if CAP in e["unsupported"]}
+    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "kotlin", "php", "rust", "swift"]
+    assert "fails on main CI" in excepted["swift"]
 
 
 def test_measured_capability_needs_a_probe():
@@ -131,33 +155,55 @@ def test_measured_capability_needs_a_probe():
     assert any("no orchestrator probe" in e for e in test_runner.validate_capability_policy(policy))
 
 
+@pytest.mark.parametrize("measured, error", [
+    ("contextFetchCompression", "must be a list"),
+    ([1], "must be a list"),
+    (["notDeclared"], "is not declared"),
+])
+def test_malformed_measured_capabilities_are_rejected(measured, error):
+    policy = test_runner.load_capability_policy()
+    policy["measuredCapabilities"] = measured
+    assert any(error in e for e in test_runner.validate_capability_policy(policy))
+
+
+def test_every_probe_names_a_method():
+    for cap, method in test_runner.MEASURED_CAPABILITY_PROBES.items():
+        assert callable(getattr(TestOrchestrator, method)), cap
+
+
 # -- orchestrator: measured capability --------------------------------------
 
 
-def small_policy(required):
-    return {
-        "capabilities": {CAP: "measured"},
-        "measuredCapabilities": [CAP],
-        "sdks": {"alpha": {"required": [CAP], "unsupported": {}} if required
-                 else {"required": [], "unsupported": {CAP: "sends no Accept-Encoding; fix pending"}}},
-    }
+def small_policy(required, other=False):
+    caps = {CAP: "measured"}
+    if other:
+        caps["holdouts"] = "advertised"
+    entry = {"required": [CAP] if required else [], "unsupported": {} if required else {CAP: "fix pending"}}
+    if other:
+        entry["required"].append("holdouts")
+    return {"capabilities": caps, "measuredCapabilities": [CAP], "sdks": {"alpha": entry}}
 
 
-def probe_outcome(headers, decoded=True, refresh=200):
+def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200):
     return {
-        "ready": True, "failed": False, "decoded": decoded, "refreshStatus": refresh,
+        "ready": True, "failed": False, "decoded": decoded, "refreshDecoded": refresh_decoded,
+        "refreshStatus": refresh,
         "requests": [{"status": 200, "acceptEncoding": h, "userAgent": "ua", "served": "identity"} for h in headers],
     }
 
 
-def measure(required, negotiated, wrapper_says=None):
-    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(required))
-    body = {} if wrapper_says is None else {CAP: wrapper_says}
+def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None):
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(required, other))
+    orch._context_server_ready = ""  # the context server answered /health
+    body = dict(wrapper_caps or {})
+    if wrapper_says is not None:
+        body[CAP] = wrapper_says
     response = mock.Mock(status_code=200)
     response.json.return_value = body
     unrequested = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    side_effect = negotiated if isinstance(negotiated, Exception) else [negotiated, unrequested]
     with mock.patch.object(test_runner.requests, "get", return_value=response), \
-            mock.patch.object(orch, "_probe_context_fetch", side_effect=[negotiated, unrequested]), \
+            mock.patch.object(orch, "_probe_context_fetch", side_effect=side_effect), \
             mock.patch("builtins.print"):
         orch.fetch_capabilities("alpha", "http://alpha")
     return orch
@@ -193,26 +239,44 @@ def test_wrapper_cannot_self_report_the_measured_capability():
     probe_outcome(["gzip"]),                 # refresh did not fetch
     probe_outcome(["gzip", "gzip"], refresh=500),
     probe_outcome(["gzip", "gzip"], decoded=False),
+    probe_outcome(["gzip", "gzip"], refresh_decoded=False),  # refetched but kept the old data
     probe_outcome(["*", "*"]),               # a wildcard is not an explicit gzip
+    probe_outcome(["gzip;q=0", "gzip;q=0"]),  # refused, not advertised
 ])
 def test_gzip_must_be_advertised_on_create_and_refresh_and_decode(outcome):
     assert measure(True, outcome).capabilities["alpha"][CAP] is False
 
 
-def test_probe_without_any_fetch_fails_closed():
-    orch = measure(False, {"error": "boom", "requests": []})
-    assert "made no GET /context" in orch.capabilities_fetch_failed["alpha"]
+@pytest.mark.parametrize("negotiated, reason", [
+    ({"error": "boom", "requests": []}, "made no GET /context"),
+    (test_runner.requests.ConnectionError("down"), "could not use the context server"),
+    (KeyError("anything"), "anything"),
+])
+def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiated, reason):
+    orch = measure(True, negotiated, other=True, wrapper_caps={"holdouts": True})
+    assert reason in orch.measurement_failed["alpha"][CAP]
+    # Not a capabilities-fetch failure: the wrapper's validated capabilities still apply.
+    assert "alpha" not in orch.capabilities_fetch_failed
+    assert orch.capabilities["alpha"]["holdouts"] is True and CAP not in orch.capabilities["alpha"]
+    assert "measurement of contextFetchCompression failed" in orch.capability_gate("alpha", {"requires": [CAP]})
+    assert orch.capability_gate("alpha", {"requires": ["holdouts"]}) is None
+    # Reported once, as a measurement failure, not again as a policy violation.
+    assert "alpha" not in orch.capability_policy_violations
+    with mock.patch("builtins.print"):
+        exit_code = orch.generate_report(os.devnull, [])
+    assert exit_code != 0
 
 
-def test_unreachable_context_server_fails_closed():
-    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(False))
+def test_context_server_not_ready_is_a_measurement_failure():
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True))
+    orch._context_server_ready = "context server at x not ready after 30s: refused"
     response = mock.Mock(status_code=200)
     response.json.return_value = {}
     with mock.patch.object(test_runner.requests, "get", return_value=response), \
-            mock.patch.object(orch, "_probe_context_fetch", side_effect=test_runner.requests.ConnectionError("down")), \
-            mock.patch("builtins.print"):
+            mock.patch.object(orch, "_probe_context_fetch") as probe, mock.patch("builtins.print"):
         orch.fetch_capabilities("alpha", "http://alpha")
-    assert "could not use the context server" in orch.capabilities_fetch_failed["alpha"]
+    probe.assert_not_called()
+    assert "not ready" in orch.measurement_failed["alpha"][CAP]
 
 
 # -- orchestrator: per-step wire checks -------------------------------------
@@ -231,6 +295,7 @@ def test_served_encoding_must_follow_the_request():
     spec = {"encodings": ["gzip", "identity"]}
     assert check(spec, [fetch("gzip, deflate", "gzip")]) == []
     assert check(spec, [fetch(None, "identity")]) == []
+    assert check(spec, [fetch("gzip;q=0", "identity")]) == []
     assert check(spec, [fetch("gzip", "identity")]) == ["contextFetch.served"]
     assert check(spec, [fetch(None, "gzip")]) == ["contextFetch.served"]
 
@@ -243,25 +308,22 @@ def test_require_advertised_gzip():
     spec = {"encodings": ["gzip", "identity"], "requireAdvertised": ["gzip"]}
     assert check(spec, [fetch("gzip", "gzip")]) == []
     assert check(spec, [fetch(None, "identity")]) == ["contextFetch.acceptEncoding[gzip]"]
+    assert check(spec, [fetch("gzip;q=0", "identity")]) == ["contextFetch.acceptEncoding[gzip]"]
+    assert check(spec, [fetch("*", "gzip")]) == ["contextFetch.acceptEncoding[gzip]"]
 
 
 def test_forced_encoding_is_expected_regardless_of_request():
     assert check({"force": "gzip"}, [fetch(None, "gzip")]) == []
 
 
-@pytest.mark.parametrize("spec", [[], {"encodings": ["deflate"]}, {"encodings": []}, {"force": "lz4"},
+@pytest.mark.parametrize("spec", [[], {"encodings": ["deflate"]}, {"encodings": ["br"]}, {"encodings": []},
+                                  {"force": "lz4"}, {"force": "zstd"},
                                   {"requireAdvertised": ["identity"]}, {"extra": 1}])
 def test_bad_context_server_specs_are_rejected(spec):
     assert test_runner.validate_context_server_spec(spec)
 
 
-def test_header_parsing_matches_the_server():
+def test_orchestrator_and_server_share_one_negotiation_module():
     sys.path.insert(0, os.path.join(ROOT, "context-server"))
-    import negotiation
     import server as context_server
-    for header in [None, "", "gzip", "gzip;q=0", "*", "x-gzip", "br, zstd", "gzip;q=1.0,deflate;q=0.6,identity;q=0.3",
-                   "identity;q=0", "*;q=0"]:
-        for pref in (["gzip", "identity"], ["zstd", "br", "gzip", "identity"], ["identity"]):
-            pref = [c for c in pref if c in context_server.COMPRESSORS]  # br/zstd depend on the interpreter
-            assert test_runner.expected_served_encoding(header, pref) == context_server.choose_encoding(header, pref)
-        assert test_runner.advertises_encoding(header, "gzip") == negotiation.advertises(header, "gzip")
+    assert context_server.choose_encoding is test_runner.negotiation.choose_encoding
