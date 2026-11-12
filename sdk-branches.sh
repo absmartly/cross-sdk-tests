@@ -5,16 +5,41 @@
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="feat/angular-sdk-complete"
   ["cpp-sdk"]="feat/initial-sdk"
+  # dotnet-sdk#8 (fix/audit-operator-fixes, 01fac0a) carries the JSON custom-field
+  # fix (scenarios 16, 54-57: JSON custom fields go through the configured
+  # IVariableParser again; the default parser returns the full JSON value like the
+  # JS SDK). PR #10 (feat/sdk-entry-point-rename) is stacked on #8 but has diverged
+  # and does NOT contain this fix, so the dotnet lane is pinned to #8 until #10
+  # picks the fix up.
+  # The wrapper constructs the #8 entry point (class ABsmartly, ABsmartlyConfig);
+  # ABSdk/ABSdkConfig remain as [Obsolete] aliases on this branch.
   ["dotnet-sdk"]="fix/audit-operator-fixes"
   ["elixir-sdk"]="feat/initial-implementation"
   ["flutter-sdk"]="fix/audit-operator-fixes"
   ["go-sdk"]="fix/all-tests-passing"
-  ["java-sdk"]="feat/d1-reads-throw-before-ready"
-  ["javascript-sdk"]="main"
+  # TEMPORARY (R33, revert once java-sdk#15 merges): feat/switchback-phase1b is the R33
+  # cluster-defined switchback branch (head at time of writing: d5b1a6e5; requires >= d5b1a6e5
+  # (strict-mismatch assigned=false)), so the java lane runs scenarios 248-268 and 270-271
+  # instead of failing its required `switchback` capability. The java wrapper builds against
+  # core-api 1.8.0 (java-sdk main), including java-sdk#17's custom assignment rules and semver.
+  ["java-sdk"]="feat/switchback-phase1b"
+  # java-sdk#17 (feat/custom-assignment-rules-v2) is the reference-aligned head for this round:
+  # now merged into main (and included in the switchback branch), it is the only non-JS SDK
+  # that implements custom assignment rules and the semver_* operators,
+  # so the java lane runs the "Custom Assignment Rules" and "Semver Operators" scenario groups for
+  # real (expected-capabilities.json marks java required for assignmentRules/semverOperators).
+  # javascript-sdk#67 (fix/assignment-rules-edge-cases) is the JavaScript reference for this round:
+  # main (the TypeScript rewrite, custom assignment rules from #66, and the semver_* operators) plus
+  # the four assignment-rule edge-case fixes of #67. tools/sdk-round-2026-11/compute.js records the
+  # expected results from exactly this branch. The JS-family wrappers (react/vue2/vue3/angular) build
+  # javascript-sdk from this pin too, so they inherit the same behaviour.
+  ["javascript-sdk"]="fix/assignment-rules-edge-cases"
   ["kotlin-sdk"]="feat/public-hashing-object-take2"
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
   ["php-sdk"]="fix/audit-operator-fixes"
-  ["python3-sdk"]="fix/python-sdk-all-tests-passing"
+  # python3-sdk#11 (fix/python-sdk-all-tests-passing) is merged and its branch deleted;
+  # main contains it (plus #12), so the python lane builds from main.
+  ["python3-sdk"]="main"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   ["ruby-sdk"]="feat/ruby-3.3-compatibility"
   ["rust-sdk"]="fix/all-tests-passing"

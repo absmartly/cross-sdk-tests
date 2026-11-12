@@ -176,7 +176,7 @@ final class HoldoutSelfTest {
 
         ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
             .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) -> java8.util.concurrent.CompletableFuture.completedFuture(null))
+            .setContextEventHandler((context, event) -> java.util.concurrent.CompletableFuture.completedFuture(null))
             .setContextEventLogger(logger);
 
         ABSmartly sdk = ABSmartly.create(sdkConfig);

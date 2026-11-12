@@ -9,6 +9,7 @@ const Vue = require('vue');
 const absmartly = require('@absmartly/javascript-sdk');
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
+const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
 const vue2sdk = require('@absmartly/vue2-sdk');
 
 process.on('uncaughtException', (err) => {
@@ -137,10 +138,17 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+    holdoutSelfTest.runHoldouts(),
+    holdoutSelfTest.runHoldoutArms(),
+    assignmentRulesSelfTest.runAssignmentRules(),
+    assignmentRulesSelfTest.runSemverOperators(),
+  ]);
   res.json({diagnosticsUtf8: true,
     holdouts,
     holdout_arms: holdoutArms,
+    assignmentRules,
+    semverOperators,
     diagnostics: true,
     attrsSeq: true,
     isWrapper: true,
@@ -151,6 +159,10 @@ app.get('/capabilities', async (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',

@@ -133,8 +133,15 @@ def events_since(collector, from)
   collector.events[from..-1] || []
 end
 
+def canonical_error(message)
+  # The ruby-sdk deliberately keeps its v1 error text ("Unit 'x' already
+  # set."); the cross-SDK contract (and the JS reference) word this
+  # "Unit 'x' UID already set.". Map the wording rather than masking it.
+  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
+end
+
 def sdk_error(status, e, collector, from)
-  halt status, { error: e.message, events: collector ? events_since(collector, from) : [] }.to_json
+  halt status, { error: canonical_error(e.message), events: collector ? events_since(collector, from) : [] }.to_json
 end
 
 $contexts = {}
@@ -199,7 +206,11 @@ get '/capabilities' do
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true }.to_json
+    readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true }.to_json
 end
 
 put '/context_payload/:payload_id' do
@@ -295,7 +306,7 @@ post('/context/:context_id/readyError') do
     error ? { isError: true, message: error.to_s } : nil
   end
 end
-post('/context/:context_id/variableKeysMap') { with_context { |c| c.variable_keys.transform_keys(&:to_s) } }
+post('/context/:context_id/variableKeysMap') { with_context { |c| c.variable_keys_list.transform_keys(&:to_s) } }
 post('/context/:context_id/variableKeys') { with_context { |c| c.variable_keys.keys.map(&:to_s) } }
 post('/context/:context_id/globalCustomFieldKeys') { with_context { |c| c.custom_field_keys } }
 post('/context/:context_id/customFieldKeys') { with_context { |c| c.custom_field_keys } }

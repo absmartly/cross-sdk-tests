@@ -20,6 +20,12 @@ import requests
 # so main() prints a loud warning at startup when the name is absent.
 CREATE_WITH_SCENARIO = "01 - Context Creation - Ready with Data"
 
+# Context-free pure-function actions (capability `switchback`), routed to fixed wrapper paths.
+SWITCHBACK_ACTIONS = {
+    "switchbackAssign": "/switchback/assign",
+    "switchbackPermutation": "/switchback/permutation",
+}
+
 # Checked-in capability policy: which `requires:` capabilities each SDK must
 # advertise, and which are reviewed exceptions (see the file's _comment).
 DEFAULT_POLICY_PATH = os.path.join(
@@ -263,6 +269,24 @@ def values_match(actual: Any, expected: Any, unordered: bool = False, exact_obje
     if not _is_scalar(actual):
         return False
     return _scalar_key(actual) == _scalar_key(expected)
+
+
+def units_match_unordered(actual: Any, expected: Any) -> bool:
+    """A list of expected objects matched against a list of actual ones in any order: same
+    length, and a one-to-one assignment in which each expected object matches (values_match)
+    its actual partner. Used for publish `units` under `unorderedUnits: true`."""
+    if not isinstance(expected, list) or not isinstance(actual, list) or len(actual) != len(expected):
+        return False
+
+    def assign(i: int, used: frozenset) -> bool:
+        if i == len(expected):
+            return True
+        return any(
+            j not in used and values_match(candidate, expected[i]) and assign(i + 1, used | {j})
+            for j, candidate in enumerate(actual)
+        )
+
+    return assign(0, frozenset())
 
 
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
@@ -724,6 +748,9 @@ class TestOrchestrator:
         context_id = None
         payload_id = None
         failures: List[Dict[str, Any]] = []
+        # Successful step responses by index, for `sameShapeAs` references.
+        responses: List[Any] = [None] * len(steps)
+        pure_session: Optional[requests.Session] = None
         observations = self.step_observations.setdefault(scenario.get("name", ""), {}).setdefault(sdk_name, {})
         observations.clear()
 
@@ -858,6 +885,14 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
+                elif action in SWITCHBACK_ACTIONS:
+                    # One keep-alive session for a scenario's pure-function steps (up to 294 calls).
+                    if pure_session is None:
+                        pure_session = requests.Session()
+                    response = pure_session.post(f"{base_url}{SWITCHBACK_ACTIONS[action]}", json=params, timeout=5)
+                    response.raise_for_status()
+                    data = response.json()
+
                 else:
                     if params:
                         response = requests.post(
@@ -868,9 +903,10 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
-                step_failures = self.validate_step(step_index, action, data, expected)
+                step_failures = self.validate_step(step_index, action, data, expected, responses)
                 if step_failures:
                     failures.extend(step_failures)
+                responses[step_index] = data
                 observations[step_index] = (
                     action,
                     observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),
@@ -974,6 +1010,9 @@ class TestOrchestrator:
             except Exception as exc:
                 failures.append({"step": step_index, "action": action, "error": str(exc)})
 
+        if pure_session is not None:
+            pure_session.close()
+
         if context_id:
             try:
                 requests.delete(f"{base_url}/context/{context_id}", timeout=5)
@@ -988,6 +1027,7 @@ class TestOrchestrator:
         action: str,
         actual: Any,
         expected: Dict[str, Any],
+        prior_responses: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
 
@@ -1042,7 +1082,9 @@ class TestOrchestrator:
                 fail("result", expected_result, actual_result)
 
         actual_events = actual.get("events", MISSING)
-        failures.extend(self.validate_events(step_index, action, actual_events, expected))
+        failures.extend(
+            self.validate_events(step_index, action, actual_events, expected, prior_responses=prior_responses)
+        )
         return failures
 
     def validate_events(
@@ -1052,9 +1094,11 @@ class TestOrchestrator:
         actual_events: Any,
         expected: Dict[str, Any],
         context: str = "",
+        prior_responses: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Check a response's events window against the step's `events`."""
         failures: List[Dict[str, Any]] = []
+        prior_responses = prior_responses or []
 
         def fail(field: str, expected_value: Any, actual_value: Any) -> None:
             failures.append(
@@ -1109,6 +1153,19 @@ class TestOrchestrator:
             if not values_match(actual_type, expected_event.get("type")):
                 fail(f"events[{i}].type", expected_event.get("type"), actual_type)
 
+            if "sameShapeAs" in expected_event:
+                reference, error = self.resolve_reference(
+                    prior_responses, expected_event["sameShapeAs"], step_index, i
+                )
+                if error is not None:
+                    fail(f"events[{i}].sameShapeAs", "a usable baseline event", error)
+                elif (mismatch := self.shape_mismatch(actual_event.get("data", MISSING), reference, "data")) is not None:
+                    fail(
+                        f"events[{i}].{mismatch[0]} (sameShapeAs step {expected_event['sameShapeAs']})",
+                        mismatch[1],
+                        mismatch[2],
+                    )
+
             if "data" in expected_event:
                 actual_data = actual_event.get("data", MISSING)
                 expected_data = expected_event["data"]
@@ -1126,12 +1183,73 @@ class TestOrchestrator:
                             and key == "properties"
                         ):
                             continue
+                        if key == "units" and expected_event.get("unorderedUnits") is True:
+                            # `unorderedUnits: true`: the published units are a set (an SDK
+                            # publishes them in its own map order); each expected unit must
+                            # match a distinct actual unit, and the counts must be equal.
+                            if not units_match_unordered(actual_value, expected_value):
+                                fail(f"events[{i}].data.units (unordered)", expected_value, actual_value)
+                            continue
                         if not values_match(actual_value, expected_value):
                             fail(f"events[{i}].data.{key}", expected_value, actual_value)
                 elif not values_match(actual_data, expected_data):
                     fail(f"events[{i}].data", expected_data, actual_data)
 
         return failures
+
+    @staticmethod
+    def resolve_reference(
+        prior_responses: List[Any], reference: Any, step_index: int, event_index: int
+    ) -> Tuple[Any, Optional[str]]:
+        """Resolve `sameShapeAs: <step>` to the data of the same-index event of an earlier step.
+        Returns (data, None), or (None, reason) when there is no usable baseline: the reference
+        is not an integer in [0, step_index), that step has no response, or its event or data is
+        missing or null. Empty objects and arrays are valid baselines."""
+        if isinstance(reference, bool) or not isinstance(reference, int):
+            return None, f"reference must be an integer step index, got {reference!r}"
+        if not 0 <= reference < step_index:
+            return None, f"reference step {reference} is not an earlier step of step {step_index}"
+        response = prior_responses[reference] if reference < len(prior_responses) else None
+        if not isinstance(response, dict):
+            return None, f"reference step {reference} has no response"
+        events = response.get("events")
+        if not isinstance(events, list) or event_index >= len(events) or not isinstance(events[event_index], dict):
+            return None, f"reference step {reference} has no event {event_index}"
+        data = events[event_index].get("data")
+        if data is None:
+            return None, f"reference step {reference} event {event_index} has no data"
+        return data, None
+
+    def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Optional[Tuple[str, Any, Any]]:
+        """`sameShapeAs: <step>` compares an event's data with the same-index event the SDK
+        emitted at an earlier step: object key sets must be equal at every depth and arrays must
+        have equal length, element by element. Values are not compared (`data` does that), so a
+        payload is pinned to the SDK's own baseline shape and any added or dropped field fails
+        without hardcoding SDK-specific envelope fields. Returns (path, expected, actual) of the
+        first difference, or None."""
+        if isinstance(reference, dict):
+            if not isinstance(actual, dict):
+                return path, "object", type(actual).__name__
+            if set(actual) != set(reference):
+                return f"{path} keys", sorted(reference), sorted(actual)
+            for key in reference:
+                mismatch = self.shape_mismatch(actual[key], reference[key], f"{path}.{key}")
+                if mismatch is not None:
+                    return mismatch
+            return None
+
+        if isinstance(reference, list):
+            if not isinstance(actual, list) or len(actual) != len(reference):
+                return f"{path} length", len(reference), len(actual) if isinstance(actual, list) else actual
+            for index, (a, r) in enumerate(zip(actual, reference)):
+                mismatch = self.shape_mismatch(a, r, f"{path}[{index}]")
+                if mismatch is not None:
+                    return mismatch
+            return None
+
+        if isinstance(actual, (dict, list)):
+            return path, type(reference).__name__, type(actual).__name__
+        return None
 
     def values_match(self, actual: Any, expected: Any, ordered: bool = False) -> bool:
         """Backwards-compatible method form of the module-level values_match.

@@ -71,7 +71,15 @@ app.MapGet("/capabilities", () => Results.Ok(new
     globalCustomFieldKeys = true,
     getUnits = true,
     getAttributes = true,
-    readyError = true
+    readyError = true,
+    // The SDK stores unit uids as strings (SetUnit(string, string); Units is
+    // Dictionary<string,string>), so a numeric uid does not round-trip as a
+    // number. Advertised false and reviewed as an exception, like php — the
+    // wrapper does not re-type the SDK's string back to a number.
+    numericUnitIds = false,
+    publishThrowsOnFailure = true,
+    trackRejectsNonObjectProperties = true,
+    refreshNoOpOnFailedContext = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -195,10 +203,10 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                     new ABSmartly.Services.DefaultContextDataDeserializer(),
                     new ABSmartly.Services.DefaultContextEventSerializer())));
 
-            var e2eSdk = new ABSdk(
+            var e2eSdk = new ABsmartly(
                 e2eHttpClientFactory,
                 e2eServiceConfig,
-                new ABSdkConfig
+                new ABsmartlyConfig
                 {
                     ContextEventLogger = e2eEventCollector,
                     ContextPublisher = e2ePublisher
@@ -211,14 +219,13 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                 RefreshInterval = TimeSpan.FromMilliseconds(0)
             };
 
-            var e2ePassedUnits = new Dictionary<string, UnitValue>();
             if (requestJson.ContainsKey("units"))
             {
                 foreach (var prop in requestJson["units"].EnumerateObject())
                 {
-                    var unit = CaptureUnitValue(prop.Value);
-                    e2ePassedUnits[prop.Name] = unit;
-                    e2eContextConfig.Units[prop.Name] = unit.Sent;
+                    // The SDK's unit map is string-typed; coerce a numeric uid to its
+                    // invariant string form so it does not crash the API (numericUnitIds:false).
+                    e2eContextConfig.Units[prop.Name] = UnitUidString(prop.Value);
                 }
             }
 
@@ -260,7 +267,6 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             {
                 Context = e2eContext,
                 EventCollector = e2eEventCollector,
-                Units = e2ePassedUnits,
                 Attributes = new Dictionary<string, object>(),
                 PublishFailFlag = e2ePublishFailFlag
             };
@@ -316,7 +322,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var publishFailFlag = new PublishFailFlag();
 
-        var sdk = new ABSdk(
+        var sdk = new ABsmartly(
             // payloadThrottle only delays the HTTP GET of context data (simulated
             // network latency); everything else is the SDK's own fetch path.
             new DummyHttpClientFactory(payloadThrottle),
@@ -327,7 +333,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                 Application = "test",
                 Environment = "test"
             },
-            new ABSdkConfig
+            new ABsmartlyConfig
             {
                 ContextEventLogger = eventCollector,
                 ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag)
@@ -353,21 +359,20 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             }
         }
 
-        var passedUnits = new Dictionary<string, UnitValue>();
         if (requestJson.ContainsKey("units"))
         {
             foreach (var prop in requestJson["units"].EnumerateObject())
             {
-                var unit = CaptureUnitValue(prop.Value);
-                passedUnits[prop.Name] = unit;
-                contextConfig.Units[prop.Name] = unit.Sent;
+                // The SDK's unit map is string-typed; coerce a numeric uid to its
+                // invariant string form so it does not crash the API (numericUnitIds:false).
+                contextConfig.Units[prop.Name] = UnitUidString(prop.Value);
             }
         }
 
-        IContext context;
+        IContextV2 context;
         if (contextData != null)
         {
-            context = sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
+            context = (IContextV2)sdk.CreateContextWith(contextConfig, contextData);  // Sync: createContextWith
         }
         else if (payloadThrottle > 0)
         {
@@ -378,14 +383,13 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         else
         {
             // Returns once the SDK has loaded (ready event) or failed (error event).
-            context = sdk.CreateContext(contextConfig);
+            context = (IContextV2)sdk.CreateContext(contextConfig);
         }
 
         var storedData = new ContextData
         {
             Context = context,
             EventCollector = eventCollector,
-            Units = passedUnits,
             Attributes = new Dictionary<string, object>(),
             PublishFailFlag = publishFailFlag
         };
@@ -428,9 +432,9 @@ app.MapPost("/context/{contextId}/setUnit", (string contextId, [FromBody] SetUni
         if (request.Uid is not JsonElement uidElement)
             return Results.BadRequest(new { error = "uid is required" });
 
-        var unit = CaptureUnitValue(uidElement);
-        data.Context.SetUnit(request.UnitType, unit.Sent);
-        lock (data.Units) data.Units[request.UnitType] = unit;
+        // Coerce a numeric uid to its invariant string form for the string-typed
+        // SDK API; the SDK stores it as a string (numericUnitIds:false).
+        data.Context.SetUnit(request.UnitType, UnitUidString(uidElement));
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
         return Results.Ok(new ApiResponse
@@ -453,11 +457,13 @@ app.MapPost("/context/{contextId}/getUnit", (string contextId, [FromBody] GetUni
 
     try
     {
-        // Read from the SDK (matching getUnits), not the wrapper-local shadow dict.
+        // Read from the SDK (matching getUnits), not a wrapper-local shadow dict.
+        // The SDK stores uids as strings, so this returns the SDK's own string
+        // without re-typing it (numericUnitIds:false).
         object result = null;
         if (data.Context.Units.TryGetValue(request.UnitType, out var uid))
         {
-            lock (data.Units) result = ResolveUnitValue(data.Units, request.UnitType, uid);
+            result = uid;
         }
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
 
@@ -968,12 +974,12 @@ app.MapPost("/context/{contextId}/getUnits", (string contextId) =>
     var eventsBefore = data.EventCollector.GetEventsCount();
     try
     {
+        // Return the SDK's own unit map directly. The SDK stores uids as strings,
+        // so numeric uids come back as strings (numericUnitIds:false); the wrapper
+        // does not re-type them.
         var units = new Dictionary<string, object>();
-        lock (data.Units)
-        {
-            foreach (var kvp in data.Context.Units)
-                units[kvp.Key] = ResolveUnitValue(data.Units, kvp.Key, kvp.Value);
-        }
+        foreach (var kvp in data.Context.Units)
+            units[kvp.Key] = kvp.Value;
         var newEvents = data.EventCollector.GetEventsSince(eventsBefore);
         return Results.Ok(new ApiResponse { Result = units, Events = newEvents });
     }
@@ -1143,7 +1149,9 @@ app.MapDelete("/context/{contextId}", (string contextId) =>
 
 app.Run();
 
-// The SDK stores unit UIDs as strings; numbers become their invariant string form.
+// The SDK's unit map is string-typed; a numeric uid is coerced to its invariant
+// string form before being handed to the SDK, and getUnit/getUnits return the
+// SDK's own string (numericUnitIds:false — no re-typing back to a number).
 static string UnitUidString(JsonElement element)
 {
     return element.ValueKind switch
@@ -1154,29 +1162,6 @@ static string UnitUidString(JsonElement element)
         JsonValueKind.Number when element.TryGetDouble(out var d) => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
         _ => element.GetRawText()
     };
-}
-
-// The value the caller originally passed for a unit, kept so getUnit/getUnits can
-// return it with its original JSON type (e.g. a number) instead of the SDK's string.
-static UnitValue CaptureUnitValue(JsonElement element)
-{
-    object original = element.ValueKind switch
-    {
-        JsonValueKind.String => element.GetString(),
-        JsonValueKind.Number when element.TryGetInt64(out var l) => l,
-        JsonValueKind.Number => element.GetDouble(),
-        _ => element.Clone()
-    };
-    return new UnitValue(original, UnitUidString(element));
-}
-
-// Returns the caller's original value only while the SDK still holds exactly the
-// string the wrapper passed for it; otherwise the SDK's own string.
-static object ResolveUnitValue(Dictionary<string, UnitValue> passed, string unitType, string sdkUid)
-{
-    if (passed.TryGetValue(unitType, out var unit) && unit.Sent == sdkUid)
-        return unit.Original;
-    return sdkUid;
 }
 
 static object ConvertJsonElement(JsonElement element)
@@ -1353,14 +1338,11 @@ public class EventData
 
 public class ContextData
 {
-    public IContext Context { get; set; }
+    public IContextV2 Context { get; set; }
     public EventCollector EventCollector { get; set; }
-    public Dictionary<string, UnitValue> Units { get; set; }
     public Dictionary<string, object> Attributes { get; set; }
     public PublishFailFlag PublishFailFlag { get; set; }
 }
-
-public record UnitValue(object Original, string Sent);
 
 public class ApiResponse
 {

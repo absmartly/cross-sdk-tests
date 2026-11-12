@@ -40,6 +40,7 @@ RUN rm -rf /vue2-sdk/node_modules/vue /vue2-sdk/node_modules/@absmartly 2>/dev/n
 
 COPY cross-sdk-tests/vue2-wrapper/server.js ./
 COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
+COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 
 EXPOSE 3000
 

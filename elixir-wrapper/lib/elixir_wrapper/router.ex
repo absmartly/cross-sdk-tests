@@ -32,7 +32,11 @@ defmodule ElixirWrapper.Router do
       globalCustomFieldKeys: true,
       getUnits: true,
       getAttributes: true,
-      readyError: true
+      readyError: true,
+      numericUnitIds: true,
+      publishThrowsOnFailure: true,
+      trackRejectsNonObjectProperties: true,
+      refreshNoOpOnFailedContext: true
     })
   end
 

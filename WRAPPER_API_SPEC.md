@@ -817,6 +817,8 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | GET | /health | Health check |
 | GET | /capabilities | Feature flags (`diagnostics`, `diagnosticsUtf8`, etc.) |
 | POST | /diagnostic | Utility/class diagnostics |
+| POST | /switchback/assign | Switchback variant for a period (capability `switchback`) |
+| POST | /switchback/permutation | Switchback cycle permutation (capability `switchback`) |
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
@@ -1135,3 +1137,184 @@ exposure sequence published (which experiments/holdouts fire, in what order,
 at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
+
+### Capability: `switchback`
+
+Gates the Switchback scenario group: R33 (cluster-defined) switchback serving on
+existing endpoints (`treatment`, `publish`, ...) for experiments with
+`randomizationType: "switchback"`, plus the two pure-function endpoints below.
+The contract is the one the Collector serves (absmartly/abs#5801) and the SDK
+documents (for java-sdk, `SWITCHBACK.md`); the assignment algorithm is pinned
+by the platform's golden vectors.
+
+#### R33 wire fields the wrapper must pass through verbatim
+
+The wrapper deserializes each scenario payload into the SDK's own context data
+type and serves it back to the SDK's fetch (`/context_payload/{id}/context`).
+These `ContextExperiment` fields must survive that round trip unchanged:
+
+| Field | Shape |
+| --- | --- |
+| `randomizationType` | `"unit"` or `"switchback"`; absent means unit |
+| `switchbackClusters` | JSON object unit type name -> attribute path. **Key order is semantic** (declared order, unit type id ascending): the first unit, in that order, whose path yields a value serves. Use an insertion-ordered map; never sort or rehash it |
+| `switchbackClusterValues` | string array allow-list; `null` or `[]` admits every value |
+| `switchbackStartAt` | hour-aligned epoch ms (anything else is unservable) |
+| `switchbackPeriodMs`, `switchbackCarryoverDurationMs`, `switchbackBurnInDurationMs`, `switchbackBurnOutDurationMs` | ms |
+| `switchbackDesignType`, `switchbackEstimand` | strings |
+
+The abandoned Phase 1E fields `switchbackClusterUnitType`,
+`switchbackClusterCount` and `switchbackClusterAttribute` no longer exist. Some
+scenarios still carry them to check that a capable SDK ignores them.
+
+Advertise `switchback` truthfully and dynamically, on the same terms as
+`holdouts`: never as a static flag, and never because the SDK merely
+deserializes the switchback wire fields or links an assignment class. An SDK
+that parses the fields but serves sticky unit assignment, hashes or buckets the
+cluster key, or whose assigner drifts from the golden vectors, must report
+`false`. An SDK whose experiment model still has `switchbackClusterCount` (the
+Phase 1E bucket design) must report `false`.
+
+The capability means a behavioral self-test passed. For java it covers:
+
+- the SDK's experiment model has `switchbackClusters` and
+  `switchbackClusterValues` and does not have `switchbackClusterCount`;
+- a sample of the golden vectors through the SDK's own assigner and
+  permutation function, including `Long.MIN_VALUE`/`Long.MAX_VALUE` periods,
+  cycles and seeds and integer cluster units;
+- context serving of an R33 JSON payload, parsed the way scenario payloads are
+  parsed, with the cluster map's key order intact: two units that agree on
+  `city` serve `assignSwitchback(city, 0, seed, arms)` (a golden vector) under
+  the first declared unit, even when the context sets the other unit first;
+  disagreeing units, a value outside `switchbackClusterValues`, and an
+  experiment with only the Phase 1E fields are variant 0 with no exposure;
+  `switchbackClusterValues: []` admits every value; a whole-number attribute
+  is keyed by its decimal text; two treatments in one period expose once. Each
+  served variant differs from what a hashed key, the uid as key, the hashed uid
+  as key, a Phase 1E bucket, the sticky unit assignment or a double rendering
+  of the number would draw;
+- through the SDK's real publish path: a unit baseline and then a switchback on
+  the same unit, each published on its own, with the same fields at every
+  depth; and a unit experiment carrying every R33 field publishes the same
+  bytes as the plain unit baseline.
+
+Every check compares the treatment and the complete exposure record (every
+field except `exposedAt`). Run the self-test lazily on first use, cache the
+result, and catch `Throwable` around it, exactly as for `holdouts`.
+
+The capability also needs the SDK's assignment-rule evaluation for
+switchbacks: scenario 264 serves an `assign` rule (also before the anchor) and
+expects the exposure to carry `ruleOverride: true` and `assigned: false`. A
+strict audience mismatch is recorded with `assigned: false` and
+`audienceMismatch: true`, as for unit experiments.
+
+Known limit for other languages: scenario 259 sends the attribute value `3.0`
+and expects no cluster value (a float never keys a cluster). An SDK whose JSON
+layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
+which the Collector keys as `"3"`; such an SDK cannot pass that case as
+written. Revisit the case before a second SDK gains the capability.
+
+Wrappers have no clock control and none is added. The Context scenarios are
+deterministic because their grids keep "now" inside one known period for
+decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the
+anchor `switchbackStartAt` is hour-aligned at 2024-01-01T00:00Z (period 0),
+one period earlier at 1978-05-15T08:00Z (period 1), or 2100-01-01T00:00Z
+(before the anchor, so a silent ineligible control: SDK choice; the Collector
+records it). All three hold until
+2069-08-18T16:00Z. Clock rollover between periods stays in the SDKs' own test
+suites.
+
+#### Switchback assign
+
+```http
+POST /switchback/assign
+Content-Type: application/json
+
+{"clusterUnit": "market_1", "periodIndex": "-9223372036854775808", "seed": "42", "armCount": 3}
+```
+
+**Response:** `{"result": 0, "events": []}` — the variant
+`assignSwitchback(clusterUnit, periodIndex, seed, armCount)`. In a context the
+cluster unit is the raw R33 cluster key (the normalised attribute value), never
+hashed or bucketed.
+
+#### Switchback permutation
+
+```http
+POST /switchback/permutation
+Content-Type: application/json
+
+{"clusterUnit": "market_1", "cycleIndex": "0", "seed": "0", "armCount": 10}
+```
+
+**Response:** `{"result": [0, 3, 7, 5, 8, 2, 6, 4, 1, 9], "events": []}` —
+the Fisher-Yates permutation of `[0, armCount)` for that (cluster, cycle,
+seed), i.e. `fisherYatesPermutation(armCount, baseHash(clusterUnit,
+cycleIndex, seed))`.
+
+Both endpoints are pure functions with no context. Request rules:
+
+- `periodIndex`, `cycleIndex` and `seed` are signed 64-bit values sent as
+  **decimal strings** and must be parsed exactly (never through a double);
+  JSON numbers lose precision above 2^53 in most languages. `seed` is the
+  experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
+- `armCount` is a JSON integer, at least 2.
+- `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
+  not hash or normalize it. Integer cluster units in the golden vectors are
+  sent as their decimal string.
+- An invalid request (missing field, non-decimal string, out-of-range value,
+  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
+  lacks the function returns 501.
+
+The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
+(a byte-identical copy of the platform's `lib/utils` resource, blob
+`b314abeb9e97`) and the path scenario from
+`fixtures/switchback/attribute-path-cases.json` (the Collector's copy, blob
+`7b1d3fed5985`) by `generate_switchback_scenarios.py`; do not edit them by hand.
+
+### Capability: `assignmentRules`
+
+No new endpoint — this capability gates correct handling of the per-experiment
+`assignmentRules` wire field (a JSON **string** of `{"rules": [ ... ]}`) on the
+existing `treatment`/`peek`/`variableValue`/`publish` endpoints. An experiment's
+rules are evaluated in order; the first matching rule sets the variant and the
+resulting exposure is flagged `ruleOverride: true` with `assigned: false`, so the
+backend can exclude it from analysis (like an override). A matching rule takes
+precedence over audience targeting and custom assignments, is beaten only by an
+explicit override, and serves variable values. An `assign` rule gives a fixed
+variant; a `split` rule randomizes the unit over its own `percentages`. If the
+first matching rule's variant is out of range (or a split lacks one percentage
+per variant), normal assignment applies and later rules are not tried. Rules may
+carry an `environments` array (empty = all environments). A rule variant for an
+experiment removed from the context data on refresh is rebuilt, not served stale.
+
+Wrappers must advertise `assignmentRules` truthfully and dynamically from a
+BEHAVIORAL self-test (the same discipline as `holdouts`): build a real context
+with an `assignmentRules` experiment, drive `treatment()`/`variableValue()`, and
+assert both the returned variant and the exposure's `ruleOverride`/`assigned`
+flags. A wire-model marker (an `Experiment.assignmentRules` field existing) is
+necessary but not sufficient — an SDK can carry and deserialize the field yet not
+implement rule resolution. The probe must fail closed (report `false`) on any
+exception. Scenarios 230-239 (`requires: ["assignmentRules"]`) are skipped by
+SDKs that report `false`.
+
+Exposure events gain one field for this capability: `ruleOverride` (boolean),
+`true` only on an exposure whose variant came from a matching assignment rule.
+It is reported alongside the existing `assigned`/`overridden`/`custom` flags and
+is compared only where a scenario asserts it.
+
+### Capability: `semverOperators`
+
+No new endpoint — this capability gates the semantic-version comparison
+operators `semver_eq`, `semver_gt`, `semver_gte`, `semver_lt` and `semver_lte`
+in audience filters (and rule conditions). They compare version strings
+semantically and locale-independently: a leading `v`/`V` is ignored, `+build`
+metadata is ignored, a missing version part is `0`, numeric identifiers are
+compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
+pre-release ranks below its release.
+
+Wrappers advertise `semverOperators` from a BEHAVIORAL self-test: a strict
+audience using `semver_gt` must assign the experiment's variant when the
+attribute version is greater (numeric comparison) and variant 0 with
+`audienceMismatch: true` when it is not. The probe fails closed on any
+exception. Scenarios 240-245 (`requires: ["semverOperators"]`) are skipped by
+SDKs that report `false`.

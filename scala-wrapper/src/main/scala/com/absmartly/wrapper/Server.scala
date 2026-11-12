@@ -98,7 +98,11 @@ object Server extends IOApp {
         "globalCustomFieldKeys" -> Json.fromBoolean(true),
         "getUnits" -> Json.fromBoolean(true),
         "getAttributes" -> Json.fromBoolean(true),
-        "readyError" -> Json.fromBoolean(true)
+        "readyError" -> Json.fromBoolean(true),
+        "numericUnitIds" -> Json.fromBoolean(true),
+        "publishThrowsOnFailure" -> Json.fromBoolean(true),
+        "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
+        "refreshNoOpOnFailedContext" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>

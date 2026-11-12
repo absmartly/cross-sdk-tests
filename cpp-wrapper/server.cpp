@@ -322,7 +322,9 @@ int main() {
                     {"publishFail", true}, {"variableKeysMap", true},
                     {"globalCustomFieldKeys", true}, {"getUnits", true},
                     {"getAttributes", true}, {"readyError", true},
-                    {"diagnosticsUtf8", false}};
+                    {"diagnosticsUtf8", false}, {"numericUnitIds", true},
+                    {"publishThrowsOnFailure", true}, {"trackRejectsNonObjectProperties", true},
+                    {"refreshNoOpOnFailedContext", true}};
                 res.set_content(resp.dump(), "application/json");
             });
 
