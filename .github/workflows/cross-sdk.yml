@@ -67,7 +67,7 @@ jobs:
         run: pip install -r orchestrator/requirements.txt pytest
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py generate_context_compression_scenarios.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
         run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
