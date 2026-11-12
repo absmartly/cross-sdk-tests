@@ -388,8 +388,22 @@ def test_served_encoding_must_follow_the_request():
 @pytest.mark.parametrize("header, served", [("gzip", "identity"), (None, "gzip")])
 def test_served_encoding_mismatch_in_a_scenario_is_a_harness_error(header, served):
     """The context server picked the encoding: a mismatch is the server's fault, not the SDK's."""
-    with pytest.raises(test_runner.HarnessError, match="negotiation chooses"):
+    with pytest.raises(test_runner.HarnessError, match="negotiation chooses") as raised:
         check({"encodings": ["gzip", "identity"]}, [fetch(header, served)])
+    assert raised.value.failures == []
+
+
+@pytest.mark.parametrize("order", ["sdk_failure_first", "server_fault_first"])
+def test_sdk_failure_in_the_same_step_survives_a_served_mismatch(order):
+    """A requireAdvertised failure and a served mismatch in one step: both are reported."""
+    spec = {"encodings": ["gzip", "identity"], "requireAdvertised": ["gzip"]}
+    records = [fetch(None, "identity"), fetch("gzip", "identity")]
+    if order == "server_fault_first":
+        records.reverse()
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    with pytest.raises(test_runner.HarnessError, match="negotiation chooses") as raised:
+        orch.check_context_fetches(0, "createContext", spec, records, 0)
+    assert [f["field"] for f in raised.value.failures] == ["contextFetch.acceptEncoding[gzip]"]
 
 
 def test_step_without_a_fetch_fails():

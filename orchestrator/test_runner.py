@@ -133,8 +133,13 @@ class HarnessError(Exception):
 
     Raised by the context-server control calls. Inside a scenario it is
     recorded as a harness error: it fails the run but is never counted as the
-    SDK's FAIL.
+    SDK's FAIL. `failures` carries SDK failures found before the harness fault,
+    so they are still reported as the SDK's.
     """
+
+    def __init__(self, message: str, failures: Optional[List[Dict[str, Any]]] = None) -> None:
+        super().__init__(message)
+        self.failures = failures or []
 
 
 # Capabilities the orchestrator measures itself instead of reading the wrapper's
@@ -930,6 +935,7 @@ class TestOrchestrator:
             fail("contextFetch", "the SDK's own GET {endpoint}/context on the context server", "no request")
             return failures
         preference = spec.get("encodings") or negotiation.DEFAULT_PREFERENCE
+        server_faults: List[str] = []
         for record in new:
             header = record.get("acceptEncoding")
             if record.get("status") != 200:
@@ -937,13 +943,16 @@ class TestOrchestrator:
             expected = negotiation.choose_encoding(header, preference, spec.get("force"))
             if record.get("served") != expected:
                 # The context server chose the encoding, not the SDK: a server fault.
-                raise HarnessError(
+                server_faults.append(
                     f"context server served {record.get('served')!r} for Accept-Encoding {header!r}; "
                     f"the negotiation chooses {expected!r}"
                 )
             for coding in spec.get("requireAdvertised", []):
                 if not negotiation.advertises(header, coding):
                     fail(f"contextFetch.acceptEncoding[{coding}]", f"advertises {coding}", header)
+        if server_faults:
+            # Every record was checked first, so SDK failures in this step travel with it.
+            raise HarnessError("; ".join(server_faults), failures)
         return failures
 
     def set_capabilities(self, sdk_name: str, payload: Dict[str, Any]) -> None:
@@ -1329,7 +1338,9 @@ class TestOrchestrator:
 
             except HarnessError as exc:
                 # The context server's control API failed: the harness, not the
-                # SDK. Stop the scenario; it is reported as a harness error.
+                # SDK. Stop the scenario; it is reported as a harness error. SDK
+                # failures found in the same step stay the SDK's.
+                failures.extend(exc.failures)
                 harness_error = f"step {step_index} ({action}): {exc}"
                 break
 

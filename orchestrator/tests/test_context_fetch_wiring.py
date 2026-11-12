@@ -292,6 +292,24 @@ def test_failing_control_call_is_a_harness_error_not_an_sdk_failure(
         assert results_aggregator.print_results_table({}, {"fake": row}, ["fake"], False, True) is True
 
 
+def test_wire_failure_carried_by_a_harness_error_is_an_sdk_failure(wrapper_factory, group):
+    """The scenario handler merges SDK failures carried by a HarnessError: still an SDK FAIL."""
+    wrapper = wrapper_factory("gzip")
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    wire = {"step": 0, "action": "createContext", "field": "contextFetch.acceptEncoding[gzip]",
+            "expected": "advertises gzip", "actual": None}
+
+    def faulty_check(*args, **kwargs):
+        raise test_runner.HarnessError("context server served 'identity'", [wire])
+
+    with mock.patch.object(orch, "check_context_fetches", side_effect=faulty_check), mock.patch("builtins.print"):
+        orch.run_scenario(group[2])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "served 'identity'" in result["harness_error"] and wire in result["failures"]
+    assert orch.scenario_outcomes[group[2]["name"]]["fake"] == "fail"
+
+
 def test_sdk_failure_before_a_harness_error_is_still_an_sdk_failure(server_url, wrapper_factory, group, tmp_path):
     """An SDK failure already found in the scenario is not absorbed by a later harness error."""
     wrapper = wrapper_factory("gzip")
