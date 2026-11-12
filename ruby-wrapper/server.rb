@@ -177,6 +177,22 @@ def sdk_client(endpoint, api_key: 'dummy', application: 'test', environment: 'te
   Client.create(client_config)
 end
 
+# Resolve the client application/environment for a context. The optional `client`
+# field on POST /context (the 2026-11 system-attributes round) lets a scenario
+# target the always-on application/environment audience attributes. When the field
+# is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
+# unchanged. When it is present, a blank/absent environment means "no environment
+# configured": nil leaves environment out of the SDK's evaluation map.
+def client_names(client_cfg)
+  return ['test', 'test'] if client_cfg.nil?
+
+  application = client_cfg[:application]
+  application = 'test' unless application.is_a?(String) && !application.empty?
+  environment = client_cfg[:environment]
+  environment = nil unless environment.is_a?(String) && !environment.empty?
+  [application, environment]
+end
+
 def register(context, collector, publisher)
   context_id = "ctx-#{SecureRandom.uuid}"
   $contexts[context_id] = { context: context, eventCollector: collector, publisher: publisher }
@@ -254,9 +270,10 @@ post '/context' do
   sdk_config.context_event_handler = publisher
   sdk_config.context_event_logger = collector
   throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
+  application, environment = client_names(req_data[:client])
 
   if req_data[:data]
-    sdk_config.client = sdk_client('http://unused')
+    sdk_config.client = sdk_client('http://unused', application: application, environment: environment)
     raw = req_data[:data].to_json
     data = DefaultContextDataDeserializer.new.deserialize(raw, 0, raw.size)
     context = ABSmartly.new(sdk_config).create_context_with(context_config,
@@ -267,7 +284,8 @@ post '/context' do
     sdk_config.client = sdk_client('http://127.0.0.1:1', max_retries: 0)
     context = ABSmartly.new(sdk_config).create_context(context_config)
   else
-    client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy')
+    client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy',
+                        application: application, environment: environment)
     sdk_config.client = client
     if throttle > 0
       sdk_config.context_data_provider = DeferredDataProvider.new(client, throttle)

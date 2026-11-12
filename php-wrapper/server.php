@@ -395,11 +395,31 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $endpoint = $body->endpoint ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
 
+        // Optional client config (the 2026-11 system-attributes round): a scenario
+        // can set the application/environment names so audiences can target them.
+        // When the `client` field is omitted, the fixed test/test defaults keep
+        // every pre-2026-11 scenario unchanged. When it is present, a blank/absent
+        // environment means "no environment configured": the empty string leaves
+        // environment out of the SDK's evaluation map (Context adds it only when the
+        // name is non-empty). The php SDK's ClientConfig requires a string
+        // environment, so "" is the no-environment value.
+        $clientCfg = $body->client ?? null;
+        $application = 'test';
+        $environment = 'test';
+        if ($clientCfg !== null) {
+            $application = (isset($clientCfg->application) && is_string($clientCfg->application) && $clientCfg->application !== '')
+                ? $clientCfg->application
+                : 'test';
+            $environment = (isset($clientCfg->environment) && is_string($clientCfg->environment) && $clientCfg->environment !== '')
+                ? $clientCfg->environment
+                : '';
+        }
+
         $clientConfig = new ClientConfig(
             $endpoint,
             'dummy',
-            'test',
-            'test'
+            $application,
+            $environment
         );
 
         $reactHttpClient = new ReactHttpClient();

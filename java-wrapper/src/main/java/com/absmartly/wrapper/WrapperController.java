@@ -266,6 +266,24 @@ public class WrapperController {
             @SuppressWarnings("unchecked")
             Map<String, Object> options = (Map<String, Object>) request.getOrDefault("options", new HashMap<>());
 
+            // Optional client config (the 2026-11 system-attributes round): a scenario
+            // can set the application/environment names so audiences can target them.
+            // When the `client` field is omitted, the fixed test-app/test-env defaults
+            // keep every pre-2026-11 scenario unchanged. When it is present, a
+            // blank/absent environment means "no environment configured": a null
+            // environment leaves it out of the SDK's evaluation map (buildAttributesMap
+            // calls putIfNotEmpty).
+            @SuppressWarnings("unchecked")
+            Map<String, Object> clientConfigRequest = (Map<String, Object>) request.get("client");
+            String clientApplication = "test-app";
+            String clientEnvironment = "test-env";
+            if (clientConfigRequest != null) {
+                Object app = clientConfigRequest.get("application");
+                clientApplication = (app instanceof String && !((String) app).isEmpty()) ? (String) app : "test-app";
+                Object env = clientConfigRequest.get("environment");
+                clientEnvironment = (env instanceof String && !((String) env).isEmpty()) ? (String) env : null;
+            }
+
             EventCollector eventCollector = new EventCollector();
             createCollector = eventCollector;
             CustomPublisher publisher = new CustomPublisher(eventCollector);
@@ -303,9 +321,16 @@ public class WrapperController {
                 ClientConfig clientConfig = ClientConfig.create()
                     .setEndpoint(translatedEndpoint)
                     .setAPIKey("test-api-key")
-                    .setApplication("test-app")
-                    .setEnvironment("test-env");
-                Client client = Client.create(clientConfig);
+                    .setApplication(clientApplication)
+                    .setEnvironment(clientEnvironment != null ? clientEnvironment : "placeholder");
+                // When no environment is configured, use a client that reports it as
+                // absent so Context leaves `environment` out of the evaluation map
+                // (Client.create would reject a null/empty environment outright).
+                Client client = clientEnvironment != null
+                    ? Client.create(clientConfig)
+                    : new com.absmartly.sdk.NoEnvironmentClient(
+                        clientConfig,
+                        com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
 
                 if (payloadThrottle > 0) {
                     // Delay the SDK's own fetch; the context stays not-ready until it lands.
