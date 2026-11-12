@@ -557,6 +557,20 @@ func routes(_ app: VaporApplication) throws {
         let publisher = CustomPublisher()
         let config = makeConfig(request, logger: eventCollector)
         let payloadThrottle = request["options"]["payloadThrottle"].intValue
+        // Optional client config (the 2026-11 system-attributes round): a scenario can
+        // set the application/environment names so audiences can target them. When the
+        // `client` field is omitted, the fixed test-app/test-env defaults keep every
+        // pre-2026-11 scenario unchanged. swift-sdk's DefaultClient throws on an empty
+        // environment, so the no-environment case (clientNoEnvironment) is a reviewed
+        // exception and SKIPs.
+        let clientApplication: String = {
+            let value = request["client"]["application"].string
+            return (value?.isEmpty == false) ? value! : "test-app"
+        }()
+        let clientEnvironment: String = {
+            let value = request["client"]["environment"].string
+            return (value?.isEmpty == false) ? value! : "test-env"
+        }()
         let context: Context
         let sdk: ABSmartlySDK
 
@@ -580,7 +594,7 @@ func routes(_ app: VaporApplication) throws {
             }
             // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
             let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: endpoint, environment: "test-env"))
+                apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
             let provider: ContextDataProvider? = payloadThrottle > 0
                 ? DeferredContextDataProvider(inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
                 : nil

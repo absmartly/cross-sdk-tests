@@ -54,14 +54,33 @@ fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
 
 /// SDK pointed at a mock collector endpoint (e.g. `/context_payload/{id}`);
 /// the SDK appends `/context` and fetches it itself.
-fn mock_endpoint_sdk(endpoint: &str) -> Result<ABsmartly, absmartly_sdk::SDKError> {
+fn mock_endpoint_sdk(endpoint: &str, application: &str, environment: &str) -> Result<ABsmartly, absmartly_sdk::SDKError> {
     ABsmartly::builder()
         .endpoint(endpoint)
         .api_key("test-key")
-        .application("test-app")
-        .environment("test-env")
+        .application(application)
+        .environment(environment)
         .retries(1)
         .build()
+}
+
+/// The application and environment names for a context's client, from the optional
+/// `client` field on POST /context. Defaults keep every pre-2026-11 scenario
+/// unchanged.
+fn client_names(client: &Option<ClientConfigRequest>) -> (String, String) {
+    let application = client
+        .as_ref()
+        .and_then(|c| c.application.as_ref())
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| "test-app".to_string());
+    let environment = client
+        .as_ref()
+        .and_then(|c| c.environment.as_ref())
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| "test-env".to_string());
+    (application, environment)
 }
 
 /// Refresh fetcher for a context resolved outside `create_context` (the
@@ -196,6 +215,20 @@ struct CreateContextRequest {
     mode: Option<String>,
     #[serde(default)]
     attributes: Option<HashMap<String, Value>>,
+    #[serde(default)]
+    client: Option<ClientConfigRequest>,
+}
+
+/// Optional client config (the 2026-11 system-attributes round): a scenario can set
+/// the application/environment names so audiences can target them. rust-sdk requires
+/// a non-empty environment, so the no-environment case (clientNoEnvironment) is a
+/// reviewed exception and SKIPs.
+#[derive(Deserialize)]
+struct ClientConfigRequest {
+    #[serde(default)]
+    application: Option<String>,
+    #[serde(default)]
+    environment: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -478,6 +511,8 @@ async fn create_context_handler(
 
     let fetches_from_endpoint = req.data.is_none() && req.endpoint.is_some();
 
+    let (client_application, client_environment) = client_names(&req.client);
+
     let (mut context, ready, failed) = if let Some(data) = req.data {
         let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
@@ -489,7 +524,7 @@ async fn create_context_handler(
         // the immediate path. The mock collector route answers 404 for an
         // unknown payload, so a missing payload fails the context (with
         // ready_error and an `error` event) instead of loading as empty data.
-        let sdk = match mock_endpoint_sdk(&translated_endpoint) {
+        let sdk = match mock_endpoint_sdk(&translated_endpoint, &client_application, &client_environment) {
             Ok(sdk) => Arc::new(sdk),
             Err(e) => {
                 return (

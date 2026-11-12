@@ -52,15 +52,28 @@ object Server extends IOApp {
       else delegate.fold(scala.concurrent.Future.successful(()))(_.publish(units, hashed, exposures, goals, attributes))
   }
 
-  private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector, publisher: ArmablePublisher): SDKConfig =
+  private def makeSdkConfig(endpoint: String, collector: WrapperEventCollector, publisher: ArmablePublisher,
+                            application: String = "test-app", environment: String = "test"): SDKConfig =
     SDKConfig(
       endpoint = endpoint,
       apiKey = "test-key",
-      application = "test-app",
-      environment = "test",
+      application = application,
+      environment = environment,
       eventLogger = collector,
       publisher = Some(publisher)
     )
+
+  // Optional client config (the 2026-11 system-attributes round): a scenario can set the
+  // application/environment names so audiences can target them. When the `client` field is omitted,
+  // the fixed test-app/test defaults keep every pre-2026-11 scenario unchanged. scala-sdk's SDKConfig
+  // mandates a non-empty environment, so the no-environment case (clientNoEnvironment) is a reviewed
+  // exception and SKIPs.
+  private def clientNames(cursor: io.circe.ACursor): (String, String) = {
+    val client = cursor.downField("client")
+    val application = client.downField("application").as[String].toOption.filter(_.nonEmpty).getOrElse("test-app")
+    val environment = client.downField("environment").as[String].toOption.filter(_.nonEmpty).getOrElse("test")
+    (application, environment)
+  }
 
   private def unitsObject(cursor: io.circe.ACursor): List[(String, Json)] =
     cursor.focus.flatMap(_.asObject).map(_.toList).getOrElse(Nil)
@@ -257,7 +270,8 @@ object Server extends IOApp {
                 if (payloadThrottle > 0) {
                   IO {
                     val collector = new WrapperEventCollector()
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher))
+                    val (clientApp, clientEnv) = clientNames(cursor)
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher, clientApp, clientEnv))
                     // A not-yet-ready context, readied by the SDK's own async
                     // fetch after the throttle delay, without holding a thread.
                     val context = new Context(sdk, None, units, options, collector)
@@ -271,7 +285,8 @@ object Server extends IOApp {
                 } else {
                   IO.fromFuture(IO {
                     val collector = new WrapperEventCollector()
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher))
+                    val (clientApp, clientEnv) = clientNames(cursor)
+                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher, clientApp, clientEnv))
                     sdk.createContext(units, options).map { context =>
                       (context, collector, None)
                     }

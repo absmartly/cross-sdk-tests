@@ -460,11 +460,24 @@ Future<void> startServer() async {
       // Live-fetch path: the SDK Client GETs {endpoint}/context and deserializes it
       // with DefaultContextDataDeserializer, exactly as against the real collector.
       final translatedEndpoint = endpoint != null ? translateEndpoint(endpoint) : null;
+      // Optional client config (the 2026-11 system-attributes round): a scenario can
+      // set the application/environment names so audiences can target them. When the
+      // `client` field is omitted, the fixed test/test defaults keep every
+      // pre-2026-11 scenario unchanged. dart-sdk's Client rejects a null/empty
+      // environment, so the no-environment case (clientNoEnvironment) is a reviewed
+      // exception and SKIPs.
+      final clientCfg = body['client'] as Map<String, dynamic>?;
+      final clientApplicationRaw = clientCfg?['application'];
+      final clientApplication =
+          (clientApplicationRaw is String && clientApplicationRaw.isNotEmpty) ? clientApplicationRaw : 'test';
+      final clientEnvironmentRaw = clientCfg?['environment'];
+      final clientEnvironment =
+          (clientEnvironmentRaw is String && clientEnvironmentRaw.isNotEmpty) ? clientEnvironmentRaw : 'test';
       final clientConfig = ClientConfig.create()
         .setEndpoint(translatedEndpoint ?? 'http://dummy')
         .setAPIKey('dummy')
-        .setApplication('test')
-        .setEnvironment('test');
+        .setApplication(clientApplication)
+        .setEnvironment(clientEnvironment);
       final client = Client.create(clientConfig);
 
       final sdkConfig = ABSmartlyConfig.create()

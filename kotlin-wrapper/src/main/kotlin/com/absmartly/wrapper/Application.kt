@@ -217,6 +217,18 @@ fun Application.configureRouting() {
                 val endpoint = request["endpoint"] as? String
                 val failLoad = request["failLoad"] == true
 
+                // Optional client config (the 2026-11 system-attributes round): a scenario can set
+                // the application/environment names so audiences can target them. When the `client`
+                // field is omitted, the fixed test-app/test-env defaults keep every pre-2026-11
+                // scenario unchanged. kotlin-sdk's Client mandates a non-empty environment, so the
+                // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+                @Suppress("UNCHECKED_CAST")
+                val clientConfigRequest = request["client"] as? Map<String, Any>
+                val clientApplication = (clientConfigRequest?.get("application") as? String)
+                    ?.takeIf { it.isNotEmpty() } ?: "test-app"
+                val clientEnvironment = (clientConfigRequest?.get("environment") as? String)
+                    ?.takeIf { it.isNotEmpty() } ?: "test-env"
+
                 val customPublisher = CustomPublisher()
 
                 var dataProvider: DummyContextDataProvider? = null
@@ -238,8 +250,8 @@ fun Application.configureRouting() {
                     val clientConfig = com.absmartly.sdk.ClientConfig.create()
                         .setEndpoint(translateEndpoint(endpoint))
                         .setAPIKey("test-api-key")
-                        .setApplication("test-app")
-                        .setEnvironment("test-env")
+                        .setApplication(clientApplication)
+                        .setEnvironment(clientEnvironment)
                     val client = com.absmartly.sdk.Client.create(clientConfig)
                     val sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)

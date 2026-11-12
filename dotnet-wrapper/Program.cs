@@ -312,6 +312,30 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         bool failLoad = requestJson.ContainsKey("failLoad") &&
             requestJson["failLoad"].ValueKind == JsonValueKind.True;
 
+        // Optional client config (the 2026-11 system-attributes round): a scenario can
+        // set the application/environment names so audiences can target them. When the
+        // `client` field is omitted, the fixed test/test defaults keep every pre-2026-11
+        // scenario unchanged. dotnet-sdk requires a non-empty environment, so the
+        // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        var clientApplication = "test";
+        var clientEnvironment = "test";
+        if (requestJson.TryGetValue("client", out var clientJson) &&
+            clientJson.ValueKind == JsonValueKind.Object)
+        {
+            if (clientJson.TryGetProperty("application", out var appProp) &&
+                appProp.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(appProp.GetString()))
+            {
+                clientApplication = appProp.GetString()!;
+            }
+            if (clientJson.TryGetProperty("environment", out var envProp) &&
+                envProp.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(envProp.GetString()))
+            {
+                clientEnvironment = envProp.GetString()!;
+            }
+        }
+
         if (failLoad)
         {
             // Genuinely failing fetch: nothing listens on this port, so the SDK's
@@ -330,8 +354,8 @@ app.MapPost("/context", async (HttpContext httpContext) =>
             {
                 Endpoint = endpoint,  // Use provided endpoint or dummy
                 ApiKey = "dummy",
-                Application = "test",
-                Environment = "test"
+                Application = clientApplication,
+                Environment = clientEnvironment
             },
             new ABsmartlyConfig
             {

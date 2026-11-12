@@ -547,11 +547,34 @@ int main() {
                          // unknown payload, so a missing payload fails the
                          // context instead of loading as ready-but-empty.
                          fetches_from_endpoint = true;
+                         // Optional client config (the 2026-11 system-attributes
+                         // round): a scenario can set the application/environment
+                         // names so audiences can target them. When the `client`
+                         // field is omitted, the fixed test-app/test-env defaults
+                         // keep every pre-2026-11 scenario unchanged. cpp-sdk's
+                         // Client throws on an empty environment, so the
+                         // no-environment case (clientNoEnvironment) is a reviewed
+                         // exception and SKIPs.
+                         std::string client_application = "test-app";
+                         std::string client_environment = "test-env";
+                         if (body.contains("client") && body["client"].is_object()) {
+                             const auto& client_cfg = body["client"];
+                             if (client_cfg.contains("application") &&
+                                 client_cfg["application"].is_string() &&
+                                 !client_cfg["application"].get<std::string>().empty()) {
+                                 client_application = client_cfg["application"].get<std::string>();
+                             }
+                             if (client_cfg.contains("environment") &&
+                                 client_cfg["environment"].is_string() &&
+                                 !client_cfg["environment"].get<std::string>().empty()) {
+                                 client_environment = client_cfg["environment"].get<std::string>();
+                             }
+                         }
                          absmartly::ClientConfig client_config;
                          client_config.endpoint = translate_endpoint(body["endpoint"].get<std::string>());
                          client_config.api_key = "test-api-key";
-                         client_config.application = "test-app";
-                         client_config.environment = "test-env";
+                         client_config.application = client_application;
+                         client_config.environment = client_environment;
                          auto client = std::make_shared<absmartly::Client>(
                              client_config, std::make_shared<absmartly::DefaultHTTPClient>());
                          auto provider = std::make_shared<absmartly::DefaultContextDataProvider>(client);

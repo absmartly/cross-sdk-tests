@@ -84,7 +84,7 @@ defmodule ElixirWrapper.Router do
 
       %{"endpoint" => endpoint, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_async(conn, endpoint, units, options)
+        create_context_async(conn, endpoint, units, options, params["client"])
 
       _ ->
         send_error(conn, 400, "Missing required parameters")
@@ -442,7 +442,7 @@ defmodule ElixirWrapper.Router do
     end
   end
 
-  defp create_context_async(conn, endpoint, units, options) do
+  defp create_context_async(conn, endpoint, units, options, client \\ nil) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
@@ -452,11 +452,18 @@ defmodule ElixirWrapper.Router do
     payload_throttle = options["payloadThrottle"] || 0
     translated_endpoint = translate_endpoint(endpoint)
 
+    # Optional client config (the 2026-11 system-attributes round): a scenario can
+    # set the application/environment names so audiences can target them. When the
+    # `client` field is omitted, the fixed test-app/test defaults keep every
+    # pre-2026-11 scenario unchanged. elixir-sdk requires a non-empty environment, so
+    # the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: translated_endpoint,
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
+      application: client_application,
+      environment: client_environment,
       publisher: ElixirWrapper.ArmablePublisher
     }
 
@@ -634,6 +641,26 @@ defmodule ElixirWrapper.Router do
 
   defp translate_endpoint(endpoint) do
     String.replace(endpoint, ~r/localhost:\d+/, "127.0.0.1:3000")
+  end
+
+  # Resolve the client application/environment from the optional `client` field on
+  # POST /context. Defaults keep every pre-2026-11 scenario unchanged.
+  defp client_names(nil), do: {"test-app", "test"}
+
+  defp client_names(client) when is_map(client) do
+    application =
+      case client["application"] do
+        app when is_binary(app) and app != "" -> app
+        _ -> "test-app"
+      end
+
+    environment =
+      case client["environment"] do
+        env when is_binary(env) and env != "" -> env
+        _ -> "test"
+      end
+
+    {application, environment}
   end
 
   defp with_context_action(conn, func) do
