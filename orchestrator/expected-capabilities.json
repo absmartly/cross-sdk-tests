@@ -6,9 +6,11 @@
     "false/missing value fails the run and the gated scenarios still execute) or a reviewed",
     "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
     "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
-    "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
-    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports.",
-    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`."
+    "/capabilities that are not listed in `capabilities` are ignored. A `required` entry needs evidence,",
+    "never auto-enrolled from what a wrapper currently reports: a passing CI lane, or, only for a measured",
+    "capability no lane here could observe, a code reading, in which case CI is what proves it.",
+    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`.",
+    "`measuredCapabilities` are not read from the wrapper: the orchestrator measures them (here, the Accept-Encoding the SDK sends to the context server) and checks the result against this policy exactly like an advertised capability, so a reviewed exception that starts measuring true fails the run until it is moved to `required`."
   ],
   "capabilities": {
     "diagnostics": "POST /diagnostic hashUnit, computed by the SDK's own hashing",
@@ -20,29 +22,31 @@
     "getAttributes": "POST /context/{id}/getAttributes",
     "readyError": "POST /context/{id}/readyError reports the error of a failed context",
     "holdouts": "two-arm holdout resolution, advertised from a behavioral self-test",
-    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test"
+    "holdout_arms": "three-arm holdout resolution, advertised from a behavioral self-test",
+    "contextFetchCompression": "the SDK's own GET {endpoint}/context advertises gzip (Accept-Encoding) on create and refresh and decodes the gzip body; measured by the orchestrator on the context server, never self-reported"
   },
+  "measuredCapabilities": ["contextFetchCompression"],
   "sdks": {
     "javascript": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {}
     },
     "python": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks"
       }
     },
     "ruby": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks"
       }
     },
     "liquid": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
         "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks"
@@ -53,7 +57,8 @@
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
+        "contextFetchCompression": "observed: php-sdk ReactHttpClient (the wrapper's injected client) sends no Accept-Encoding; the default curl HTTPClient sets no CURLOPT_ENCODING either; fix pending"
       }
     },
     "go": {
@@ -61,29 +66,34 @@
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
+        "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending"
       }
     },
     "rust": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
       "unsupported": {
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
+        "contextFetchCompression": "observed: rust-sdk builds reqwest 0.12 without the gzip feature, so no Accept-Encoding is sent and gzip is not decoded; fix pending"
       }
     },
     "java": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
-      "unsupported": {}
+      "unsupported": {
+        "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode; fix pending"
+      }
     },
     "kotlin": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
+        "contextFetchCompression": "observed: kotlin-sdk DefaultHTTPClient (HttpURLConnection) sends no Accept-Encoding and does not decode; fix pending"
       }
     },
     "scala": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks"
@@ -93,18 +103,19 @@
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
       "unsupported": {
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
+        "contextFetchCompression": "not observed: the swift lane fails on main CI already (cross-sdk run 43008024985 on chore/drop-js-helper-scenarios), so it cannot provide evidence; from code Linux URLSession (libcurl) advertises every built-in coding; move to required once the lane passes and shows gzip"
       }
     },
     "dart": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks"
       }
     },
     "flutter": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks"
@@ -114,7 +125,8 @@
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
       "unsupported": {
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
+        "contextFetchCompression": "not observed (lane does not build offline); from code the wrapper injects its own HttpClient and the SDK's handler sets no AutomaticDecompression; fix pending"
       }
     },
     "cpp": {
@@ -122,30 +134,32 @@
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
+        "contextFetchCompression": "observed: cpp-sdk DefaultHTTPClient (libcurl) sets no CURLOPT_ACCEPT_ENCODING, so none is sent and gzip is not decoded; fix pending"
       }
     },
     "elixir": {
       "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "diagnosticsUtf8"],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks"
+        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
+        "contextFetchCompression": "not observed (lane does not build offline); from code elixir-sdk calls HTTPoison/hackney without auto_decompress, so no Accept-Encoding; fix pending"
       }
     },
     "react": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {}
     },
     "vue2": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {}
     },
     "vue3": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {}
     },
     "angular": {
-      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8"],
+      "required": ["diagnostics", "publishFail", "variableKeysMap", "globalCustomFieldKeys", "getUnits", "getAttributes", "readyError", "holdouts", "holdout_arms", "diagnosticsUtf8", "contextFetchCompression"],
       "unsupported": {}
     }
   }

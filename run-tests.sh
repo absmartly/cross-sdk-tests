@@ -233,8 +233,8 @@ if [ "$SKIP_BUILD" = false ]; then
 
   if [ -n "$SDK_NAMES" ]; then
     SERVICES=$(get_service_names "$SDK_NAMES")
-    echo "Building containers for:$SERVICES orchestrator (parallel limit: $COMPOSE_PARALLEL_LIMIT)"
-    docker_compose_with_recovery build $SERVICES orchestrator
+    echo "Building containers for:$SERVICES context-server orchestrator (parallel limit: $COMPOSE_PARALLEL_LIMIT)"
+    docker_compose_with_recovery build $SERVICES context-server orchestrator
   else
     echo "Building heavy SDKs first (parallel limit: 2)..."
     COMPOSE_PARALLEL_LIMIT=2 docker_compose_with_recovery build $HEAVY_SDKS
@@ -265,7 +265,9 @@ if [ "${#TARGET_SDKS[@]}" -eq 0 ]; then
 fi
 
 SDK_CSV=$(IFS=,; echo "${TARGET_SDKS[*]}")
-TARGET_SERVICES=$(get_service_names "$SDK_CSV")
+# context-server: the negotiating GET /context server the SDKs fetch from in the
+# Context Fetch Compression scenarios (230-232).
+TARGET_SERVICES="context-server $(get_service_names "$SDK_CSV")"
 
 BATCH_SIZE=${COMPOSE_SERVICE_BATCH:-5}
 echo "Starting services in batches of $BATCH_SIZE:$TARGET_SERVICES"
@@ -340,24 +342,36 @@ if [ -n "$SDK_NAMES" ]; then
   # are identical.
   ensure_requests
 
+  # published_port <service> <container port>: the host port, polled for 30s.
+  published_port() {
+    local port=""
+    for _ in $(seq 1 30); do
+      port=$(docker compose port "$1" "$2" 2>/dev/null | awk -F: '{print $NF}')
+      [ -n "$port" ] && break
+      sleep 1
+    done
+    if [ -z "$port" ]; then
+      echo "ERROR: could not resolve published port for $1 after 30s" >&2
+      return 1
+    fi
+    echo "$port"
+  }
+
   # Derive SDK URLs from published ports in docker compose.yml
   SDK_URLS=""
   IFS=',' read -ra SDKS <<< "$SDK_NAMES"
   for sdk in "${SDKS[@]}"; do
-    PORT=""
-    for _ in $(seq 1 30); do
-      PORT=$(docker compose port "${sdk}-sdk" 3000 2>/dev/null | awk -F: '{print $NF}')
-      [ -n "$PORT" ] && break
-      sleep 1
-    done
-    if [ -z "$PORT" ]; then
-      echo "ERROR: could not resolve published port for ${sdk}-sdk after 30s" >&2
-      exit 1
-    fi
+    PORT=$(published_port "${sdk}-sdk" 3000) || exit 1
     SDK_URLS="${SDK_URLS}${sdk}=http://localhost:${PORT},"
   done
   SDK_URLS="${SDK_URLS%,}"
 
+  # The host-side orchestrator drives the context server through its published
+  # port; the wrapper containers reach it by service name.
+  CS_PORT=$(published_port context-server 8080) || exit 1
+
+  CONTEXT_SERVER_URL="http://localhost:${CS_PORT}" \
+  CONTEXT_SERVER_SDK_URL="http://context-server:8080" \
   SDK_URLS_OVERRIDE="$SDK_URLS" \
   TEST_SCENARIOS_PATH="test_scenarios_complete.json" \
     python3 orchestrator/test_runner.py \
