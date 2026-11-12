@@ -25,6 +25,18 @@ DEFAULT_PREFERENCE = ["gzip", "identity"]
 ALIASES = {"x-gzip": "gzip"}
 
 
+def settings_error(settings: dict) -> Optional[str]:
+    """The problem with the `encodings`/`force` keys of a payload or scenario spec, else None."""
+    if "encodings" in settings:
+        encodings = settings["encodings"]
+        if not isinstance(encodings, list) or not encodings or any(e not in CODINGS for e in encodings):
+            return f"'encodings' must be a non-empty list drawn from {list(CODINGS)}"
+    force = settings.get("force")
+    if force is not None and force not in CODINGS:
+        return f"'force' must be null or one of {list(CODINGS)}"
+    return None
+
+
 def combine_header_lines(lines: Optional[Iterable[str]]) -> Optional[str]:
     """Join repeated Accept-Encoding header lines; None when there were none."""
     lines = list(lines or [])

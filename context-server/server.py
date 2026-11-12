@@ -36,7 +36,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines
+from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines, settings_error
 
 COMPRESSORS = {"gzip": lambda body: gzip.compress(body, mtime=0), "identity": lambda body: body}
 assert set(COMPRESSORS) == set(CODINGS)
@@ -81,14 +81,7 @@ class Store:
 def validate_payload(body):
     if not isinstance(body, dict) or not isinstance(body.get("data"), dict):
         return "body must be an object with a 'data' object"
-    if "encodings" in body:
-        encodings = body["encodings"]
-        if not isinstance(encodings, list) or not encodings or any(e not in CODINGS for e in encodings):
-            return f"'encodings' must be a non-empty list drawn from {list(CODINGS)}"
-    force = body.get("force")
-    if force is not None and force not in CODINGS:
-        return f"'force' must be null or one of {list(CODINGS)}"
-    return None
+    return settings_error(body)
 
 
 NEGOTIATE = re.compile(r"^/negotiate/([^/]+)/context$")

@@ -1941,13 +1941,9 @@ def validate_context_server_spec(spec: Any) -> Optional[str]:
     unknown = set(spec) - {"encodings", "force", "requireAdvertised"}
     if unknown:
         return f"unknown keys {sorted(unknown)}"
-    codings = negotiation.CODINGS
-    encodings = spec.get("encodings", negotiation.DEFAULT_PREFERENCE)
-    if not isinstance(encodings, list) or not encodings or any(e not in codings for e in encodings):
-        return f"'encodings' must be a non-empty list drawn from {list(codings)}"
-    force = spec.get("force")
-    if force is not None and force not in codings:
-        return f"'force' must be null or one of {list(codings)}"
+    error = negotiation.settings_error(spec)
+    if error:
+        return error
     advertised = spec.get("requireAdvertised", [])
     if not isinstance(advertised, list) or any(e not in REPORTED_ENCODINGS for e in advertised):
         return f"'requireAdvertised' must be a list drawn from {list(REPORTED_ENCODINGS)}"
