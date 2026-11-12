@@ -11,24 +11,24 @@ covered it, and the scenario id(s) that pin it now. Scenarios live in
 ## Reference / oracle
 
 The JavaScript SDK is the canonical reference. For this round the reference is
-**javascript-sdk#67** (`fix/assignment-rules-edge-cases`), which `sdk-branches.sh`
+**javascript-sdk#68** (`feat/sdk-system-attributes`), which `sdk-branches.sh`
 pins for `javascript-sdk`. That branch is:
 
 * `main`, which is already the TypeScript rewrite, already carries custom
-  assignment rules (merged from #66), and already registers the `semver_*`
-  operators; plus
-* the four assignment-rule edge-case fixes of PR #67 (drop a removed
-  experiment's rule variant; treat an audience filter that throws as a mismatch;
-  parse rules once per data install; stamp system attributes with the earliest
-  event and drop user-overridden names).
+  assignment rules (merged from #66), already registers the `semver_*`
+  operators, and already carries the four assignment-rule edge-case fixes of
+  #67; plus
+* §5 of Márcio's 2026-11 brief: audiences and assignment-rule conditions always
+  evaluate with the client's configured `application` and `environment` names (no
+  opt-in), user attributes overlay the system values, an unconfigured name is
+  left out of the map, and `app_version` is dropped from both the evaluation map
+  and the publish payload.
 
-PR #61 (`worktree-typescript-rewrite`) is a *separate* open rewrite PR; it is 51
-commits ahead of `main` and does **not** contain #67's fixes, so it is not the
-oracle for this round. The expected results are recorded by
-`tools/sdk-round-2026-11/compute.js`, which builds the sibling `../javascript-sdk`
-checkout and runs every scenario's steps through it (the generator verifies the
-checkout is at the pinned #67 commit before recording anything). The expected
-`result` and `events` of every step are the SDK's real output, not hand-written.
+The expected results are recorded by `tools/sdk-round-2026-11/compute.js`, which
+builds the sibling `../javascript-sdk` checkout and runs every scenario's steps
+through it (the generator verifies the checkout is at the pinned #68 commit before
+recording anything). The expected `result` and `events` of every step are the
+SDK's real output, not hand-written.
 
 ## New capabilities
 
@@ -41,12 +41,27 @@ the feature on `main` or any open PR is skipped (a reviewed exception in
 | `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values | javascript + react/vue2/vue3/angular (behavioral self-test in `assignmentRulesSelfTest.js`), java (`AssignmentRulesSelfTest.java`) |
 | `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent | same wrappers, same self-tests |
 
-Only **javascript-sdk** (reference) and **java-sdk#17** implement either feature
+Only **javascript-sdk** (reference) and **java-sdk** implement either feature
 this round; every other SDK has no implementation on `main` or any open PR
 branch (verified across go/php/ruby/python/kotlin/rust/swift/flutter/dart/dotnet/
 scala/elixir/cpp/liquid), so each lists both capabilities as a reviewed
 exception. When an SDK ports the feature, move the capability from `unsupported`
 to `required` for that SDK.
+
+A third capability, `clientNoEnvironment`, gates only the System Attributes
+group's no-environment scenario (253):
+
+| capability | meaning | advertised by |
+| --- | --- | --- |
+| `clientNoEnvironment` | the wrapper can build a context whose client reports **no environment** (the optional `client` field on `POST /context` with `environment` omitted), so the SDK leaves `environment` out of the audience/rule evaluation map | javascript, python, go, ruby, php, java, liquid + react/vue2/vue3/angular — SDKs whose public client API accepts a no-environment client |
+
+Nine SDKs whose public `Client`/config **mandates a non-empty environment** —
+kotlin, scala, swift, dart, flutter, dotnet, cpp, elixir, rust — cannot construct
+the no-environment case black-box through the wrapper (each SDK's own
+system-attributes unit test covers it with an internal `Context` override). They
+list `clientNoEnvironment` as a reviewed `unsupported` exception, so scenario 253
+SKIPs for them while the other five System Attributes scenarios (248-252) run for
+real on every SDK.
 
 ### Reviewed per-SDK exceptions recorded this round
 
@@ -78,12 +93,20 @@ scenarios pass unchanged against the real SDK behaviour.
 ## Branch pins (sdk-branches.sh)
 
 Pinned to each SDK's open-PR head so the scenarios run against the code under
-review. The two that matter for this round:
+review. For §5 (system attributes) every SDK that evaluates audiences locally is
+pinned to its `feat/sdk-system-attributes` branch:
 
 | SDK | branch | PR |
 | --- | --- | --- |
-| javascript-sdk | `fix/assignment-rules-edge-cases` | #67 (reference) |
-| java-sdk | `feat/custom-assignment-rules-v2` | #17 (rules + semver, run for real) |
+| javascript-sdk | `feat/sdk-system-attributes` | #68 (reference) |
+| java-sdk | `feat/sdk-system-attributes` | #22 (stacks §5 on #17's rules + semver, all run for real) |
+| python3-sdk, dotnet-sdk, go-sdk, kotlin-sdk, php-sdk, ruby-sdk, swift-sdk, flutter-sdk, scala-sdk, rust-sdk, elixir-sdk, cpp-sdk | `feat/sdk-system-attributes` | #13 / #11 / #13 / #3 / #9 / #40 / #8 / #9 / #3 / #8 / #2 / #2 |
+
+Each `feat/sdk-system-attributes` branch is a descendant of that SDK's prior
+cross-SDK-passing pin, so this round's always-on application/environment behaviour
+and `app_version` removal are added on top of the behaviours earlier rounds
+pinned — **except php-sdk#9**, which branches off php-sdk `main` rather than the
+prior pin `fix/audit-operator-fixes`; see the "known failing lane" note in the PR.
 
 The react/vue2/vue3/angular wrappers build `javascript-sdk` from the same pin, so
 they inherit the reference behaviour and run the gated groups too.
@@ -91,7 +114,8 @@ they inherit the reference behaviour and run the gated groups too.
 ## Coverage matrix
 
 Legend: **new** = added this round; **existing** = already covered before this
-round. Scenario numbers are the current file numbering (1-based, contiguous).
+round. Scenario numbers are the current file numbering (ascending, with gaps from
+earlier deletions).
 
 ### Custom assignment rules (java-sdk#17, javascript-sdk#67)
 
@@ -129,6 +153,32 @@ The re-evaluation group is **ungated**: `attribute` + `treatment` are core
 actions every wrapper exposes, and every SDK in this round adopts the JS
 attribute-sequence behaviour, so the scenarios run on all SDKs.
 
+### System attributes — always-on application/environment (§5, every SDK's feat/sdk-system-attributes)
+
+Mirrors §4 tests 1, 3, 4 and 6 plus a variable read through the matched variant.
+The scenarios set the client application/environment through the optional `client`
+field on `POST /context` (option (b) of the brief, specced in `WRAPPER_API_SPEC.md`),
+using names (`sysattr-app`/`sysattr-env`) no wrapper default matches, so a scenario
+only passes when the SDK actually injects the configured names.
+
+| Behaviour change | Source | Pre-existing coverage | Scenario(s) |
+| --- | --- | --- | --- |
+| §4.1 Strict audience on the configured **environment** matches (variant 1, `audienceMismatch:false`) + a variable read through the matched variant | §5 | none | **248** (new, ungated) |
+| §4.1 Strict audience on the configured **application** matches | §5 | none | **249** (new, ungated) |
+| §4.3 Strict audience naming a different environment gives variant 0, `audienceMismatch:true` | §5 | none | **250** (new, ungated) |
+| §4.4 A user-set environment overrides the configured one and invalidates a cached assignment | §5 | 246/247 cover re-eval, not the system overlay | **251** (new, ungated) |
+| §4.4 (mirror) A user-set environment satisfies an audience the configured one did not | §5 | none | **252** (new, ungated) |
+| §4.6 No environment configured → `environment` left out of the map; the filter does not match (application still does) | §5 | none | **253** (new, `requires: clientNoEnvironment`) |
+
+The first five are **ungated** — every SDK must inject the configured
+application/environment and let a user value win, so a non-conforming SDK fails.
+Scenario 253 (no environment configured) is gated on `clientNoEnvironment`: SDKs
+whose client mandates a non-empty environment cannot build it black-box (their own
+unit tests cover it) and SKIP. `orchestrator/tests/test_system_attributes_scenarios.py`
+replays the group against two mutant models — "SDK doesn't inject" and "SDK injects
+but overrides user values" — and asserts each is killed, and digests the non-group
+scenarios so the generator touches nothing else.
+
 ## Behaviour changes covered by other work / not added here
 
 These round-2026-11 changes are either already pinned by another scenario group,
@@ -145,7 +195,8 @@ wrapper API. They are listed so the matrix is complete.
 | `in` operator haystack-first, `eq(null,null)` → null, numeric audience comparison | kotlin#1, php#8, go#10, ruby#39, python#11, dotnet#8 | Operator semantics are exercised by the audience scenarios already in the suite and by each SDK's own unit tests; not re-pinned here. |
 | Regex `/pattern/flags` slashes literal (not flags) | php#8, dotnet#8, ruby#39, python#11 | PHP-specific removal aligning to JS; not separately observable beyond existing match-operator behaviour. |
 | HTTP: only GET retried, publish never replayed; PHP connect-timeout | php#8, go#10, ruby#39, python#11 | Transport policy, not observable through the mock-endpoint wrapper API. |
-| System attributes: earliest-event stamp, user-override omission, `X-Agent`/`X-Application-Version` | java#17, js#67 | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a wrapper/spec extension; documented, not added. |
+| System attributes: always-on application/environment in audience evaluation, user-override, no-environment, `app_version` dropped | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
+| System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
 | `hash_unit` exposed as a public/diagnostic function | python#12, go#10, dotnet#8 | Covered by the existing `diagnostics` capability (`POST /diagnostic hashUnit`). |
 
