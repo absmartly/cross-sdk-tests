@@ -42,10 +42,17 @@ declare -A SDK_BRANCHES=(
   ["javascript-sdk"]="feat/sdk-system-attributes"
   ["kotlin-sdk"]="feat/sdk-system-attributes"
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
-  # php-sdk#9 (feat/sdk-system-attributes) branches off php-sdk main, NOT off the
-  # prior cross-SDK pin fix/audit-operator-fixes, so it does not carry that branch's
-  # audit fixes. The php lane is run and any resulting deviations are reported in the
-  # PR per §5 of the brief (list any SDK that fails, with the reason).
+  # php-sdk#9 (feat/sdk-system-attributes) implements §5, and per the brief the php lane
+  # is pinned to it so the group runs against the new code. BUT #9 branches off php-sdk
+  # `main`, NOT off the prior cross-SDK pin fix/audit-operator-fixes, and php main uses a
+  # different, synchronous SDK architecture (ContextEventHandler + a single synchronous
+  # ContextDataProvider; no ContextPublisher / AsyncContextDataProvider /
+  # createContextPending). The current php-wrapper is written against
+  # fix/audit-operator-fixes (React async publisher and data-provider model), so it does
+  # not even load against #9 ("Class ContextPublisher not found") and the php lane fails
+  # to start. This is a php-sdk-side coordination issue (reported per §5 step 5): #9 must
+  # be rebased onto fix/audit-operator-fixes, or the php-wrapper ported to main's
+  # architecture (a separate, large task), before the php lane can run. See the PR.
   ["php-sdk"]="feat/sdk-system-attributes"
   ["python3-sdk"]="feat/sdk-system-attributes"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
