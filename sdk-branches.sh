@@ -44,15 +44,17 @@ declare -A SDK_BRANCHES=(
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
   # php-sdk#9 (feat/sdk-system-attributes) implements §5, and per the brief the php lane
   # is pinned to it so the group runs against the new code. BUT #9 branches off php-sdk
-  # `main`, NOT off the prior cross-SDK pin fix/audit-operator-fixes, and php main uses a
-  # different, synchronous SDK architecture (ContextEventHandler + a single synchronous
-  # ContextDataProvider; no ContextPublisher / AsyncContextDataProvider /
-  # createContextPending). The current php-wrapper is written against
-  # fix/audit-operator-fixes (React async publisher and data-provider model), so it does
-  # not even load against #9 ("Class ContextPublisher not found") and the php lane fails
-  # to start. This is a php-sdk-side coordination issue (reported per §5 step 5): #9 must
-  # be rebased onto fix/audit-operator-fixes, or the php-wrapper ported to main's
-  # architecture (a separate, large task), before the php lane can run. See the PR.
+  # `main`, which is a STALE 2023 snapshot (fd81415, 2023-02-08) of the old synchronous
+  # SDK — it predates the entire ReactPHP async rewrite that the current line
+  # fix/audit-operator-fixes (2026) carries (react/http, react/async, react/promise;
+  # ContextPublisher, AsyncContextDataProvider, createContextAsync/createContextPending).
+  # The current php-wrapper is written against that async line, so it does not even load
+  # against #9 ("Class ABSmartly\SDK\Context\ContextPublisher not found") and the php lane
+  # fails to start. This is a php-sdk-side coordination issue (reported per §5 step 5): #9
+  # must be rebased onto fix/audit-operator-fixes (its sysattr change re-applied on the
+  # current SDK), not onto the 2023 main, before the php lane can run. Porting the wrapper
+  # back to the 2023 synchronous API is not viable (it would break the other 240 scenarios).
+  # See the PR description.
   ["php-sdk"]="feat/sdk-system-attributes"
   ["python3-sdk"]="feat/sdk-system-attributes"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
