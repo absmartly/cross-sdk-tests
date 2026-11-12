@@ -127,6 +127,15 @@ class MeasurementError(Exception):
     """A measured capability could not be measured (fails the run, fails closed)."""
 
 
+class HarnessError(Exception):
+    """The harness itself failed (e.g. the context server's control API).
+
+    Raised by the context-server control calls. Inside a scenario it is
+    recorded as a harness error: it fails the run but is never counted as the
+    SDK's FAIL.
+    """
+
+
 # Capabilities the orchestrator measures itself instead of reading the wrapper's
 # /capabilities: name -> the TestOrchestrator method that measures it (called
 # with sdk_name, base_url; returns the bool or raises MeasurementError). The
@@ -654,16 +663,28 @@ class TestOrchestrator:
         return self._context_server_ready or None
 
     def context_server_put(self, payload_id: str, body: Dict[str, Any]) -> None:
-        self._context_server_call("PUT", f"/payload/{payload_id}", json=body).raise_for_status()
+        """Store a payload on the context server; any failure is a HarnessError."""
+        try:
+            self._context_server_call("PUT", f"/payload/{payload_id}", json=body).raise_for_status()
+        except Exception as exc:
+            raise HarnessError(
+                f"context server PUT /payload/{payload_id} failed: {str(exc) or exc.__class__.__name__}"
+            ) from exc
 
     def context_server_requests(self, payload_id: str) -> List[Dict[str, Any]]:
-        response = self._context_server_call("GET", f"/requests/{payload_id}")
-        response.raise_for_status()
-        body = response.json()
-        recorded = body.get("requests") if isinstance(body, dict) else None
-        if not isinstance(recorded, list):
-            raise ValueError("context server returned no request list")
-        return recorded
+        """Read the recorded requests for a payload; any failure is a HarnessError."""
+        try:
+            response = self._context_server_call("GET", f"/requests/{payload_id}")
+            response.raise_for_status()
+            body = response.json()
+            recorded = body.get("requests") if isinstance(body, dict) else None
+            if not isinstance(recorded, list):
+                raise ValueError("context server returned no request list")
+            return recorded
+        except Exception as exc:
+            raise HarnessError(
+                f"context server GET /requests/{payload_id} failed: {str(exc) or exc.__class__.__name__}"
+            ) from exc
 
     def context_server_delete(self, payload_id: str) -> None:
         try:
@@ -786,7 +807,7 @@ class TestOrchestrator:
                 base_url, probe_data("exp_context_fetch_probe"), probe_data("exp_context_fetch_probe_refreshed"),
                 None, CONTEXT_CREATE_TIMEOUT,
             )
-        except (requests.RequestException, ValueError) as exc:
+        except (requests.RequestException, ValueError, HarnessError) as exc:
             raise MeasurementError(f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
         fetches = [r for r in negotiated["requests"] if r.get("status") == 200]
         if not fetches:
@@ -1007,6 +1028,13 @@ class TestOrchestrator:
                         print(f"  {sdk_name:20} {Colors.YELLOW}⊘ SKIP{Colors.RESET} ({reason})")
                     else:
                         print(f"{Colors.YELLOW}SKIP{Colors.RESET}  {scenario['name']}: {reason}")
+                elif result.get("harness_error"):
+                    # Fails the run, but is the harness's fault: never the SDK's FAIL.
+                    self.record_outcome(scenario["name"], sdk_name, "harness_error")
+                    if self.verbose:
+                        print(f"  {sdk_name:20} {Colors.RED}✗ HARNESS ERROR{Colors.RESET}: {result['harness_error']}")
+                    else:
+                        print(f"{Colors.RED}HARNESS ERROR{Colors.RESET}  {scenario['name']}: {result['harness_error']}")
                 elif result["passed"]:
                     self.record_outcome(scenario["name"], sdk_name, "pass")
                     if self.verbose:
@@ -1105,6 +1133,7 @@ class TestOrchestrator:
         if server_spec is not None:
             self.context_fetches.setdefault(scenario.get("name", ""), {})[sdk_name] = fetch_log
         seen_fetches = 0
+        harness_error: Optional[str] = None
 
         for step_index, step in enumerate(steps):
             action = step.get("action")
@@ -1275,6 +1304,12 @@ class TestOrchestrator:
                     observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),
                 )
 
+            except HarnessError as exc:
+                # The context server's control API failed: the harness, not the
+                # SDK. Stop the scenario; it is reported as a harness error.
+                harness_error = f"step {step_index} ({action}): {exc}"
+                break
+
             except requests.HTTPError as exc:
                 error_msg = None
                 error_body = None
@@ -1381,6 +1416,9 @@ class TestOrchestrator:
         if server_spec is not None and payload_id:
             self.context_server_delete(payload_id)
 
+        if harness_error is not None:
+            observations.clear()
+            return {"passed": False, "harness_error": harness_error, "failures": failures}
         return {"passed": len(failures) == 0, "failures": failures}
 
     def validate_step(
@@ -1692,6 +1730,7 @@ class TestOrchestrator:
             errors = 0
             skipped = 0
             passthrough_skipped = 0
+            harness_errors = 0
 
             for scenario_result in self.results:
                 sdk_result = scenario_result["sdks"].get(sdk_name, {})
@@ -1699,6 +1738,8 @@ class TestOrchestrator:
                     skipped += 1
                     if sdk_result.get("passthrough"):
                         passthrough_skipped += 1
+                elif sdk_result.get("harness_error"):
+                    harness_errors += 1
                 elif "error" in sdk_result:
                     errors += 1
                 elif sdk_result.get("passed"):
@@ -1706,18 +1747,20 @@ class TestOrchestrator:
                 else:
                     failed += 1
 
-            tested = total_tests - skipped
+            # A harness error tested nothing about the SDK: not in `tested`.
+            tested = total_tests - skipped - harness_errors
             consistency_failed = self.consistency_failures.get(sdk_name, [])
             capabilities_failed = sdk_name in self.capabilities_fetch_failed
             # An SDK that ran zero scenarios (everything skipped) while scenarios
             # exist has proven nothing - treat it as a failing "NO TESTS RUN"
             # state rather than a vacuous 100%.
-            no_tests_run = tested == 0 and total_tests > 0
+            no_tests_run = tested == 0 and total_tests > 0 and harness_errors == 0
 
             sdk_stats[sdk_name] = {
                 "passed": passed,
                 "failed": failed,
                 "errors": errors,
+                "harness_errors": harness_errors,
                 "skipped": skipped,
                 "passthrough_skipped": passthrough_skipped,
                 "tested": tested,
@@ -1740,6 +1783,7 @@ class TestOrchestrator:
                 "passed": 0,
                 "failed": 0,
                 "errors": total_tests,
+                "harness_errors": 0,
                 "skipped": 0,
                 "passthrough_skipped": 0,
                 "tested": total_tests,
@@ -1761,6 +1805,7 @@ class TestOrchestrator:
                 or stats.get("capabilities_failed")
                 or stats.get("capability_policy_violations")
                 or stats.get("measurement_failed")
+                or stats.get("harness_errors")
                 or stats.get("no_tests_run")
                 or stats.get("consistency_failed")
                 or stats.get("consistency_unchecked")
@@ -1843,10 +1888,15 @@ class TestOrchestrator:
                 if stats.get("measurement_failed")
                 else ""
             )
+            harness_info = (
+                f", {stats['harness_errors']} harness error(s), not counted as SDK failures"
+                if stats.get("harness_errors")
+                else ""
+            )
             print(
                 f"  {sdk_name:20} {status:8} "
                 f"({stats['passed']}/{stats['tested']} tested{skipped_info}, "
-                f"{stats['pass_rate']:.1f}%{consistency_info}{policy_info}{measurement_info})"
+                f"{stats['pass_rate']:.1f}%{consistency_info}{policy_info}{measurement_info}{harness_info})"
             )
 
         print(f"{'=' * 60}")
@@ -1857,6 +1907,18 @@ class TestOrchestrator:
             for sdk_name in sorted(self.capability_policy_violations):
                 for violation in self.capability_policy_violations[sdk_name]:
                     print(f"  {sdk_name}: {violation}")
+
+        harness_errors = [
+            (scenario_result["name"], sdk_name, sdk_result["harness_error"])
+            for scenario_result in self.results
+            for sdk_name, sdk_result in scenario_result["sdks"].items()
+            if sdk_result.get("harness_error")
+        ]
+        if harness_errors:
+            print("\nHarness errors (the harness failed, not the SDK; the run is FAILED):")
+            print(f"{'-' * 60}")
+            for scenario_name, sdk_name, message in harness_errors:
+                print(f"  {sdk_name}: {scenario_name}: {message}")
 
         # Per-SDK skip counts with reasons, so the report distinguishes reviewed
         # capability exceptions from opt-in wrapper pass-through skips (and from

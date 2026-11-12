@@ -905,6 +905,12 @@ class AggregatorTests(unittest.TestCase):
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
 
+    def test_harness_error_flag_is_distinct_from_sdk_failure(self):
+        row = self.load(dict(self.base, passed=9, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        self.assertEqual(row["failed"], 0)
+        self.assert_forced("harness_errors", 1, "HARNESS ERROR")
+
     def test_existing_flags(self):
         self.assert_forced("service_failed", True, "DOWN")
         self.assert_forced("capabilities_failed", True, "CAPS FAIL")

@@ -8,6 +8,7 @@ the directData path.
 """
 
 import copy
+import json
 import os
 import socket
 import sys
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.join(ROOT, "orchestrator"))
 sys.path.insert(0, os.path.join(ROOT, "context-server"))
 
 import generate_context_compression_scenarios as generator  # noqa: E402
+import results_aggregator  # noqa: E402
 import server as context_server  # noqa: E402
 import test_runner  # noqa: E402
 from fake_wrapper import FakeWrapper  # noqa: E402
@@ -243,6 +245,48 @@ def test_direct_data_twin_never_touches_the_network(server_url, wrapper_factory,
     with mock.patch.object(orch, "context_server_put") as put:
         assert run(orch, group[1])["passed"]
     put.assert_not_called()
+
+
+# -- a failing context-server control call is a harness error, not an SDK FAIL --
+
+
+@pytest.mark.parametrize("method, path_part, nth", [
+    ("PUT", "/payload/", 1),    # create: storing the scenario payload
+    ("PUT", "/payload/", 2),    # refresh: storing the new data
+    ("GET", "/requests/", 1),   # reading the recorder after the create fetch
+])
+def test_failing_control_call_is_a_harness_error_not_an_sdk_failure(
+        server_url, wrapper_factory, group, tmp_path, method, path_part, nth):
+    wrapper = wrapper_factory("gzip")
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    real_call = orch._context_server_call
+    seen = []
+
+    def call(m, path, **kwargs):
+        if m == method and path_part in path:
+            seen.append(path)
+            if len(seen) == nth:
+                raise test_runner.requests.ConnectionError("context server reset")
+        return real_call(m, path, **kwargs)
+
+    with mock.patch.object(orch, "_context_server_call", side_effect=call), mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "context server reset" in result["harness_error"]
+    assert not any("Request failed" in str(f.get("error")) for f in result["failures"])
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "harness_error"
+    assert wrapper.contexts == {}  # the scenario still cleans up
+
+    report_path = tmp_path / "report.json"
+    with mock.patch("builtins.print"):
+        assert orch.generate_report(str(report_path), []) == 1  # still fails the run
+    stats = json.loads(report_path.read_text())["sdk_stats"]["fake"]
+    assert stats["harness_errors"] == 1 and stats["failed"] == 0 and stats["errors"] == 0
+    row = results_aggregator.load_cross_sdk_report(str(report_path))["fake"]
+    assert row["forced_status"] == "HARNESS ERROR" and row["failed"] == 0 and row["harness_errors"] == 1
+    with mock.patch("builtins.print"):
+        assert results_aggregator.print_results_table({}, {"fake": row}, ["fake"], False, True) is True
 
 
 @pytest.mark.parametrize("mutate, reason", [

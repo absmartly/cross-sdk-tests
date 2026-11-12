@@ -343,6 +343,10 @@ def run_level_status(stats):
         return "CAPS FAIL"
     if stats.get("measurement_failed"):
         return "MEASURE FAIL"
+    if stats.get("harness_errors"):
+        # The harness failed during a scenario: the run fails, but the SDK is
+        # not blamed (harness errors are not in the failed tally).
+        return "HARNESS ERROR"
     if stats.get("capability_policy_violations"):
         return "CAPS POLICY"
     if stats.get("no_tests_run"):
@@ -386,6 +390,7 @@ def load_cross_sdk_report(report_path):
                 "failed": failed,
                 "total": tested,
                 "skipped": skipped,
+                "harness_errors": stats.get("harness_errors", 0),
                 "forced_status": forced_status,
             }
         return results
@@ -520,7 +525,7 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             forced_status = cross.get("forced_status")
             if forced_status:
                 # A run-level failure flag (DOWN / CAPS FAIL / MEASURE FAIL /
-                # CAPS POLICY / NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
+                # HARNESS ERROR / CAPS POLICY / NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
                 # passed/failed tally: the run failed even if zero individual
                 # scenarios reported a failure.
                 cells.append(f"{RED}{forced_status}{RESET}")
