@@ -75,6 +75,11 @@ jobs:
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
 
+      - name: Scenario group unit tests (no Docker)
+        run: |
+          pip install pytest
+          python -m pytest orchestrator/tests -v
+
   cross-sdk:
     name: ${{ matrix.sdk }}
     needs: harness
