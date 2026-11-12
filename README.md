@@ -108,7 +108,6 @@ across languages.
 
   This branch includes cross-sdk-tests#17 and its known-good SDK pins; #17 is
   expected to merge first. If it does not, this PR also carries its commits.
-  Switchback inertness (269) remains ungated on every lane.
 
   Scenarios 230-247 pin the
   2026-11 SDK round's reference-aligned behaviours (see

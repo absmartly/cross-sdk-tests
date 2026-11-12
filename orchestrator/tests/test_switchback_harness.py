@@ -267,7 +267,6 @@ def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_ta
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(240, len(scenarios)))
     assert len(group) == 24
-    assert numbers[group[0]] == 248 and numbers[group[-1]] == 271
     assert numbers[group[0]:] == list(range(248, 272))
 
 
