@@ -13,6 +13,23 @@ Each SDK wrapper service must implement this exact API. All responses follow the
 
 ## Endpoints
 
+### Optional Context Keys
+
+The 271-scenario suite includes ungated scenarios 272-278 for absent optional
+keys. Wrappers must pass context JSON through without filling in missing keys:
+`customFieldValues` absent is equivalent to `[]`; `holdoutIds` and top-level
+`holdouts` absent are equivalent to `[]`; `audience` and `assignmentRules`
+absent are equivalent to empty strings (no targeting/rules). Unit experiments
+need no switchback keys. These cases deliberately retain `fullOnVariant`,
+`audienceStrict`, `iteration`, seeds, splits and variant configs.
+
+Absent custom fields return `null` from `customFieldValue` and
+`customFieldValueType` and contribute no keys to context-wide `customFieldKeys`
+(which returns `[]` when no experiment has fields). Other experiments' populated
+fields remain visible. Refreshing `[]` -> absent -> populated -> absent updates
+these APIs without changing treatment or duplicating exposures. The twins also
+pin peeks, variable reads and canonical published exposure bodies.
+
 ### 1. Health Check
 
 ```http

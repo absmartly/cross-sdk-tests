@@ -58377,5 +58377,6239 @@
     "requires": [
       "switchback"
     ]
+  },
+  {
+    "name": "272 - Absent Optional Keys - Custom Fields Ordinary",
+    "description": "ordinary: omitted customFieldValues and [] twins share seeds/split and return the same treatment, peeks, variables, empty field APIs and canonical exposure bodies. All switchback keys are absent on both unit experiments.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "273 - Absent Optional Keys - Custom Fields Full-On",
+    "description": "full-on: omitted customFieldValues and [] twins share seeds/split and return the same treatment, peeks, variables, empty field APIs and canonical exposure bodies. All switchback keys are absent on both unit experiments.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 2,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 2,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-2",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-2",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-2",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-2",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 2,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": true,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 2,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": true,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "274 - Absent Optional Keys - Custom Fields Feature-Flag",
+    "description": "feature-flag: omitted customFieldValues and [] twins share seeds/split and return the same treatment, peeks, variables, empty field APIs and canonical exposure bodies. All switchback keys are absent on both unit experiments.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0,
+            1
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-1",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": true,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": true,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "275 - Absent Optional Keys - Custom Fields Mixed Context",
+    "description": "Missing custom fields do not hide or inherit another experiment's populated string, number, boolean and JSON fields; global keys include only populated keys.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 802,
+          "name": "exp_optional_populated",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_populated.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_populated.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_populated.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [
+            {
+              "name": "owner",
+              "type": "string",
+              "value": "sdk-team"
+            },
+            {
+              "name": "limit",
+              "type": "number",
+              "value": "42"
+            },
+            {
+              "name": "enabled",
+              "type": "boolean",
+              "value": "false"
+            },
+            {
+              "name": "metadata",
+              "type": "json",
+              "value": "{\"tier\":\"gold\",\"ids\":[1,2]}"
+            }
+          ],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  },
+                  {
+                    "id": 802,
+                    "name": "exp_optional_populated"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [
+            "owner",
+            "limit",
+            "enabled",
+            "metadata"
+          ],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_populated"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_populated.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": "sdk-team",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": "string",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": 42,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": "number",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": "boolean",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": {
+            "tier": "gold",
+            "ids": [
+              1,
+              2
+            ]
+          },
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": "json",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_populated",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_populated"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 802,
+                "name": "exp_optional_populated",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_populated.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_populated"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_populated"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 802,
+                    "name": "exp_optional_populated",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "276 - Absent Optional Keys - Custom Fields Refresh",
+    "description": "[] -> absent -> populated -> absent updates field values/types/global keys without changing treatment, variables or queuing a duplicate exposure; the twin stays empty.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "holdoutIds": [],
+                "assignmentRules": ""
+              },
+              {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": [],
+                "holdoutIds": [],
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "holdoutIds": [],
+                "assignmentRules": "",
+                "customFieldValues": [
+                  {
+                    "name": "owner",
+                    "type": "string",
+                    "value": "sdk-team"
+                  },
+                  {
+                    "name": "limit",
+                    "type": "number",
+                    "value": "42"
+                  },
+                  {
+                    "name": "enabled",
+                    "type": "boolean",
+                    "value": "false"
+                  },
+                  {
+                    "name": "metadata",
+                    "type": "json",
+                    "value": "{\"tier\":\"gold\",\"ids\":[1,2]}"
+                  }
+                ]
+              },
+              {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": [],
+                "holdoutIds": [],
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [
+            "owner",
+            "limit",
+            "enabled",
+            "metadata"
+          ],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": "sdk-team",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": "string",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": 42,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": "number",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": false,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": "boolean",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": {
+            "tier": "gold",
+            "ids": [
+              1,
+              2
+            ]
+          },
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": "json",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "holdoutIds": [],
+                "assignmentRules": ""
+              },
+              {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": [],
+                "holdoutIds": [],
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "277 - Absent Optional Keys - Holdouts",
+    "description": "Absent holdoutIds versus [] twins are unchanged with top-level holdouts: [] and then with holdouts removed on refresh. Neither form requires holdout support.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "assignmentRules": ""
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ],
+      "holdouts": []
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": [],
+                "assignmentRules": ""
+              },
+              {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": -559038737,
+                "seedLo": 1234567890,
+                "split": [
+                  0.34,
+                  0.33,
+                  0.33
+                ],
+                "trafficSeedHi": 1,
+                "trafficSeedLo": 2,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+                  },
+                  {
+                    "name": "C",
+                    "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+                  }
+                ],
+                "audience": "",
+                "audienceStrict": false,
+                "customFieldValues": [],
+                "holdoutIds": [],
+                "assignmentRules": ""
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "278 - Absent Optional Keys - Audience And Assignment Rules",
+    "description": "Absent audience and assignmentRules versus empty-string twins have no targeting/rules, with identical treatment, variables, fields and exposures.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 800,
+          "name": "exp_optional_absent",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_absent.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_absent.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_absent.value\": \"variant-2\"}"
+            }
+          ],
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": []
+        },
+        {
+          "id": 801,
+          "name": "exp_optional_empty",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"exp_optional_empty.value\": \"variant-0\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"exp_optional_empty.value\": \"variant-1\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"exp_optional_empty.value\": \"variant-2\"}"
+            }
+          ],
+          "audience": "",
+          "audienceStrict": false,
+          "customFieldValues": [],
+          "holdoutIds": [],
+          "assignmentRules": ""
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "test123"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent"
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "customFieldKeys",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": [],
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_absent",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 800,
+                "name": "exp_optional_absent",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_absent.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_absent"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "owner"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "limit"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "enabled"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "metadata"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValue",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customFieldValueType",
+        "params": {
+          "experimentName": "exp_optional_empty",
+          "fieldName": "unknown"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 801,
+                "name": "exp_optional_empty",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "exp_optional_empty.value",
+          "defaultValue": "missing"
+        },
+        "expect": {
+          "result": "variant-0",
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_optional_empty"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "session_id",
+                    "uid": "zAPnR6avu8v4vnZorP6-5Q"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 800,
+                    "name": "exp_optional_absent",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  },
+                  {
+                    "id": 801,
+                    "name": "exp_optional_empty",
+                    "unit": "session_id",
+                    "variant": 0,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
   }
 ]

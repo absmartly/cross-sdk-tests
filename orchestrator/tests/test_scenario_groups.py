@@ -1,6 +1,7 @@
 """Group placement and composition guards, without the external JS oracle."""
 
 import copy
+import itertools
 import json
 from pathlib import Path
 import sys
@@ -11,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
+import generate_absent_keys_scenarios as absent_keys
 from scenario_groups import place_group
 
 
@@ -34,13 +36,17 @@ def recorded_oracle(monkeypatch):
     ])
 
 
-@pytest.mark.parametrize("order", [(sdk_round, switchback), (switchback, sdk_round)],
-                         ids=["sdk-then-switchback", "switchback-then-sdk"])
-def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, monkeypatch):
+GENERATORS = {"sdk": sdk_round, "switchback": switchback, "absent": absent_keys}
+
+
+@pytest.mark.parametrize("names", list(itertools.permutations(GENERATORS)), ids="-then-".join)
+def test_generators_compose_byte_identically(names, recorded_oracle, tmp_path, monkeypatch):
+    order = [GENERATORS[name] for name in names]
     raw = Path(sdk_round.CANONICAL).read_bytes()
     path = tmp_path / "scenarios.json"
     path.write_bytes(raw)
     monkeypatch.setattr(switchback, "CANONICAL", str(path))
+    monkeypatch.setattr(absent_keys, "CANONICAL", str(path))
 
     def run(module, check=False):
         argv = [module.__file__]

@@ -692,7 +692,11 @@ func customFieldValueType(cd *ContextData, decode func(interface{}) error) (inte
 	if err := decode(&req); err != nil {
 		return nil, err
 	}
-	return cd.context.GetCustomFieldValueType(req.ExperimentName, req.FieldName), nil
+	valueType := cd.context.GetCustomFieldValueType(req.ExperimentName, req.FieldName)
+	if valueType == "" {
+		return nil, nil
+	}
+	return valueType, nil
 }
 
 func variableKeys(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
@@ -723,6 +727,9 @@ func customFieldKeys(cd *ContextData, _ func(interface{}) error) (interface{}, e
 	keys, err := cd.context.GetCustomFieldValueKeys()
 	if err != nil {
 		return nil, err
+	}
+	if keys == nil {
+		keys = []string{}
 	}
 	return keys, nil
 }

@@ -258,16 +258,16 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
     assert runner.should_skip_wrapper_test("sdk", inert[0])[0] is False
 
 
-def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
+def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous():
     scenarios = canonical()
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
     # Main removed seven JS-only scenarios without renumbering the remaining IDs.
     assert numbers == sorted(set(numbers))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(240, len(scenarios)))
+    assert group == list(range(240, 264))
     assert len(group) == 24
-    assert numbers[group[0]:] == list(range(248, 272))
+    assert numbers[group[0]:group[-1] + 1] == list(range(248, 272))
 
 
 # ---------------------------------------------------------------------------
@@ -509,7 +509,7 @@ MAIN_SHA256 = "9199f0575ee247c11c1630701e14692a7a67cf74c899eddbfcaf3099262d9495"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in canonical() if int(s["name"].split(" - ", 1)[0]) < 248]
     assert len(kept) == 240
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 
