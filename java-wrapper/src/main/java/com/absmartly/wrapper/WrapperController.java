@@ -43,14 +43,13 @@ public class WrapperController {
     }
 
     /**
-     * Unwraps async wrapper exceptions (CompletionException from either the
-     * java8 backport or the JDK, ExecutionException) so the reported message is
+     * Unwraps async wrapper exceptions (CompletionException, ExecutionException)
+     * so the reported message is
      * the SDK/publisher's own error, not "java.lang.RuntimeException: ...".
      */
     private static Throwable rootCause(Throwable error) {
         Throwable current = error;
-        while ((current instanceof java8.util.concurrent.CompletionException
-                || current instanceof java.util.concurrent.CompletionException
+        while ((current instanceof java.util.concurrent.CompletionException
                 || current instanceof java.util.concurrent.ExecutionException)
             && current.getCause() != null) {
             current = current.getCause();
@@ -404,8 +403,8 @@ public class WrapperController {
             } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
                 ContextDataProvider failingProvider = new ContextDataProvider() {
                     @Override
-                    public java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
-                        java8.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java8.util.concurrent.CompletableFuture<>();
+                    public java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
+                        java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java.util.concurrent.CompletableFuture<>();
                         f.completeExceptionally(new RuntimeException("Context load failed"));
                         return f;
                     }

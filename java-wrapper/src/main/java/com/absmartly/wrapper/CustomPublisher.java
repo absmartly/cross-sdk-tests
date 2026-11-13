@@ -3,7 +3,7 @@ package com.absmartly.wrapper;
 import com.absmartly.sdk.Context;
 import com.absmartly.sdk.ContextEventHandler;
 import com.absmartly.sdk.json.PublishEvent;
-import java8.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletableFuture;
 
 // Test contexts publish nowhere, so a publish succeeds without sending
 // anything. With publishToEndpoint the wrapper passes the SDK's own

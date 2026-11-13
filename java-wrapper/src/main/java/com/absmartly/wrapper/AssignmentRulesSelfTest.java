@@ -153,7 +153,7 @@ final class AssignmentRulesSelfTest {
         ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
             .setContextDataProvider(new DummyContextDataProvider())
             .setContextEventHandler((context, event) ->
-                java8.util.concurrent.CompletableFuture.completedFuture(null))
+                java.util.concurrent.CompletableFuture.completedFuture(null))
             .setContextEventLogger(logger);
         ABSmartly sdk = ABSmartly.create(sdkConfig);
         com.absmartly.sdk.Context context = sdk.createContextWith(contextConfig, contextData);

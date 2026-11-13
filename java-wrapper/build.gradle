@@ -13,9 +13,14 @@ repositories {
     mavenCentral()
 }
 
+// The Docker build installs core-api from the sibling java-sdk checkout and records its version here;
+// building outside Docker falls back to the released 1.7.0.
+def coreApiVersionFile = file("${System.getProperty('user.home')}/.m2/core-api.version")
+def coreApiVersion = coreApiVersionFile.exists() ? coreApiVersionFile.text.trim() : '1.7.0'
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'com.absmartly.sdk:core-api:1.7.0'
+    implementation "com.absmartly.sdk:core-api:${coreApiVersion}"
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 }
 
