@@ -524,15 +524,10 @@ def build_groups():
     return groups
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate the 2026-11 feature-parity scenario groups.")
-    parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
-    parser.add_argument("--file", default=CANONICAL, help=argparse.SUPPRESS)
-    args = parser.parse_args()
-
-    with open(args.file, encoding="utf-8") as src:
-        raw = src.read()
-    kept = [s for s in json.loads(raw) if not any(m in s["name"] for m in PARITY_MARKERS)]
+def assemble(existing, build_groups):
+    """The canonical file with the parity groups (from `build_groups()`) rebuilt after every other
+    scenario. Returns (updated scenarios, the rebuilt groups)."""
+    kept = [s for s in existing if not any(m in s["name"] for m in PARITY_MARKERS)]
     groups = build_groups()
     # The parity groups own FIRST_NUMBER..; any other scenario numbered in that range (e.g. a later
     # generator appending without knowing it) is a collision, not something to renumber silently.
@@ -541,7 +536,19 @@ def main():
     if clashes or max(taken) >= FIRST_NUMBER:
         raise SystemExit(f"scenarios {clashes or [max(taken)]} collide with the parity range "
                          f"starting at {FIRST_NUMBER}")
-    updated = kept + groups
+    return kept + groups, groups
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate the 2026-11 feature-parity scenario groups.")
+    parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
+    parser.add_argument("--file", default=CANONICAL, help=argparse.SUPPRESS)
+    args = parser.parse_args()
+
+    with open(args.file, encoding="utf-8") as src:
+        raw = src.read()
+    updated, groups = assemble(json.loads(raw), build_groups)
+    kept = [s for s in updated if s not in groups]
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:

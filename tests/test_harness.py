@@ -1013,7 +1013,6 @@ class CapturedRequestsTest(unittest.TestCase):
                          ["requests[0].headers.X-Agent"])
         self.assertEqual([f["field"] for f in self.agent_failures("absmartly-java-sdk/1.2.3", sdk="kotlin")],
                          ["requests[0].headers.X-Agent"])
-        # Lanes whose client is another SDK's name it as that SDK.
         self.assertEqual(self.agent_failures("absmartly-dart-sdk/3.0.0", sdk="flutter"), [])
         self.assertEqual(self.agent_failures("absmartly-ruby-sdk/1.2.0", sdk="liquid"), [])
 
@@ -1107,7 +1106,40 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         self.assertEqual(parity_ids, list(range(300, 322)))
         self.assertEqual(numbers, sorted(numbers))
 
-    def test_round_generator_keeps_parity_groups_last_and_unnumbered(self):
+    @staticmethod
+    def rebuilt(existing, markers):
+        """A stub for a generator's group builder: the existing groups' scenarios, unchanged apart
+        from being renumbered from first_number (what a regeneration from the reference yields)."""
+        groups = [s for s in existing if any(m in s["name"] for m in markers)]
+
+        def build(first_number=None):
+            start = first_number if first_number is not None else int(groups[0]["name"].split(" - ", 1)[0])
+            return [dict(s, name=f"{start + i} - {s['name'].split(' - ', 1)[1]}") for i, s in enumerate(groups)]
+        return build
+
+    def load(self):
         sys.path.insert(0, REPO_ROOT)
+        with open(SCENARIOS_PATH) as src:
+            return json.load(src)
+
+    def test_round_generator_preserves_the_parity_groups(self):
+        """Running the 2026-11 round generator's assembly on the canonical file reproduces it exactly:
+        its groups keep 230-253 and the parity groups stay last with their numbers."""
         import generate_sdk_round_2026_11_scenarios as round2611
-        self.assertEqual(set(round2611.LATER_GROUP_MARKERS), set(self.PARITY))
+        existing = self.load()
+        updated, groups = round2611.assemble(existing, self.rebuilt(existing, self.ROUND))
+        self.assertEqual(groups[0]["name"].split(" - ", 1)[0], "230")
+        self.assertEqual(updated, existing)
+
+    def test_parity_generator_preserves_the_round_groups(self):
+        import generate_parity_round_scenarios as parity
+        existing = self.load()
+        updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
+        self.assertEqual(updated, existing)
+
+    def test_parity_generator_rejects_a_scenario_in_its_range(self):
+        import generate_parity_round_scenarios as parity
+        existing = self.load()
+        intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
+        with self.assertRaises(SystemExit):
+            parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))

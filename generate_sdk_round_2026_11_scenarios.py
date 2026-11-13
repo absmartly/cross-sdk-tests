@@ -644,6 +644,18 @@ def build_all_groups(first_number):
     return groups
 
 
+def assemble(existing, build_groups):
+    """The canonical file with this round's groups rebuilt: `build_groups(first_number)` returns the
+    groups numbered from first_number. Returns (updated scenarios, the rebuilt groups)."""
+    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    kept = [s for s in existing
+            if not any(m in s["name"] for m in GROUP_MARKERS) and s not in later]
+    # Number after the highest retained ID, not the count: earlier scenarios may
+    # have been deleted without renumbering (e.g. #18), leaving gaps.
+    groups = build_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
+    return kept + groups + later, groups
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate the 2026-11 SDK-round scenario groups.")
     parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
@@ -653,13 +665,7 @@ def main():
     with open(args.file, encoding="utf-8") as src:
         raw = src.read()
     existing = json.loads(raw)
-    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
-    kept = [s for s in existing
-            if not any(m in s["name"] for m in GROUP_MARKERS) and s not in later]
-    # Number after the highest retained ID, not the count: earlier scenarios may
-    # have been deleted without renumbering (e.g. #18), leaving gaps.
-    groups = build_all_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    updated = kept + groups + later
+    updated, groups = assemble(existing, build_all_groups)
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:
