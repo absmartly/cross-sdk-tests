@@ -36,7 +36,9 @@ defmodule ElixirWrapper.Router do
       numericUnitIds: true,
       publishThrowsOnFailure: true,
       trackRejectsNonObjectProperties: true,
-      refreshNoOpOnFailedContext: true
+      refreshNoOpOnFailedContext: true,
+      assignmentRules: true,
+      semverOperators: true
     })
   end
 

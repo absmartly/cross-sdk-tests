@@ -237,6 +237,8 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    // The SDK sends X-Agent without a version (absmartly-javascript-sdk).
+    xAgentHeader: false,
     passThroughOperations: [
       'peek', 'track', 'attribute', 'variableValue', 'peekVariableValue',
       'customFieldValue', 'override', 'customAssignment', 'pending',
@@ -264,9 +266,29 @@ app.get('/context_payload/:payloadId', (req, res) => {
   }, throttle);
 });
 
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+const capturedRequests = {};
+
+function captureRequest(req) {
+  const list = capturedRequests[req.params.payloadId] || (capturedRequests[req.params.payloadId] = []);
+  list.push({ method: req.method, headers: req.headers });
+}
+
 app.get('/context_payload/:payloadId/context', (req, res) => {
+  captureRequest(req);
   const data = payloadStore[req.params.payloadId] || { experiments: [] };
   res.json(data);
+});
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+app.put('/context_payload/:payloadId/context', (req, res) => {
+  captureRequest(req);
+  res.json({});
+});
+
+app.get('/context_payload/:payloadId/requests', (req, res) => {
+  res.json({ requests: capturedRequests[req.params.payloadId] || [] });
 });
 
 app.post('/context', async (req, res) => {
@@ -322,7 +344,10 @@ app.post('/context', async (req, res) => {
     const contextId = `ctx-${Date.now()}-${Math.random()}`;
 
     const eventCollector = new EventCollector();
-    const customPublisher = new CustomPublisher(eventCollector);
+    // publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    const customPublisher = new CustomPublisher(eventCollector, {
+      forwardToSdk: Boolean(req.body.publishToEndpoint && endpoint)
+    });
 
     const sdk = buildSdk(req.body.client, eventCollector, customPublisher, endpoint);
 

@@ -45,6 +45,9 @@ SCENARIOS_PATH = os.environ.get(
 )
 
 GROUP_MARKER = " - System Attributes - "
+# Groups appended after this one (generate_parity_round_scenarios.py, 300+). They are neither
+# "kept" scenarios for the digest nor part of this group; this group must directly precede them.
+LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
@@ -229,9 +232,12 @@ def same(a, b):
 class SystemAttributesGroupTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.scenarios = load()
+        everything = load()
+        cls.later = [s for s in everything if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+        cls.scenarios = [s for s in everything if s not in cls.later]
         cls.group = [s for s in cls.scenarios if GROUP_MARKER in s["name"]]
         cls.kept = [s for s in cls.scenarios if GROUP_MARKER not in s["name"]]
+        cls.everything = everything
 
     def test_group_present(self):
         self.assertEqual(len(self.group), GROUP_SIZE)
@@ -311,6 +317,13 @@ class SystemAttributesGroupTest(unittest.TestCase):
         self.assertEqual(len(numbers), len(set(numbers)), "scenario numbers are unique")
         tail = self.scenarios[-len(self.group):]
         self.assertEqual(tail, self.group, "the group must be the contiguous tail of the file")
+        # Only the later parity groups may follow it, all numbered above it.
+        self.assertEqual(self.everything[:len(self.scenarios)], self.scenarios,
+                         "only the later parity groups may follow this group")
+        if self.later:
+            last = int(self.group[-1]["name"].split(" - ", 1)[0])
+            first_later = int(self.later[0]["name"].split(" - ", 1)[0])
+            self.assertGreater(first_later, last)
 
 
 if __name__ == "__main__":

@@ -27,7 +27,8 @@
     "publishThrowsOnFailure": "a direct publish() call whose collector/transport fails surfaces the failure to the caller by throwing; the pending events are preserved and an error event is logged",
     "trackRejectsNonObjectProperties": "track() rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing \"Goal '<name>' properties must be of type object.\", matching the JS reference",
     "refreshNoOpOnFailedContext": "refresh() on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference)",
-    "clientNoEnvironment": "the wrapper can build a context whose client reports no environment (the optional client field on POST /context with environment omitted), so the SDK leaves environment out of the audience/rule evaluation map (the 2026-11 system-attributes 'no environment configured' case, scenario 253). SDKs whose public client API mandates a non-empty environment cannot express this black-box; their own unit tests cover it, so they list a reviewed exception"
+    "clientNoEnvironment": "the wrapper can build a context whose client reports no environment (the optional client field on POST /context with environment omitted), so the SDK leaves environment out of the audience/rule evaluation map (the 2026-11 system-attributes 'no environment configured' case, scenario 253). SDKs whose public client API mandates a non-empty environment cannot express this black-box; their own unit tests cover it, so they list a reviewed exception",
+    "xAgentHeader": "the SDK's own requests carry X-Agent: absmartly-<lang>-sdk/<version> (the feature-parity round); the wrapper records the requests its mock collector serves (GET /context_payload/{id}/requests) and, with publishToEndpoint on POST /context, publishes through the SDK's own publisher to PUT {endpoint}/context"
   },
   "sdks": {
     "javascript": {
@@ -50,7 +51,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment"
       ],
-      "unsupported": {}
+      "unsupported": {
+        "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches"
+      }
     },
     "python": {
       "required": [
@@ -64,13 +67,14 @@
         "diagnosticsUtf8",
         "numericUnitIds",
         "publishThrowsOnFailure",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
-        "assignmentRules": "python-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "python-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)"
       }
@@ -89,13 +93,14 @@
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
-        "assignmentRules": "ruby-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "ruby-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks"
       }
     },
     "liquid": {
@@ -112,13 +117,14 @@
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
-        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
-        "assignmentRules": "liquid-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "liquid-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks"
       }
     },
     "php": {
@@ -132,14 +138,15 @@
         "diagnosticsUtf8",
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
         "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
-        "assignmentRules": "php-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "php-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception"
       }
@@ -157,14 +164,15 @@
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
-        "assignmentRules": "go-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "go-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round"
+        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks"
       }
     },
     "rust": {
@@ -180,13 +188,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
-        "assignmentRules": "rust-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "rust-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally"
       }
     },
@@ -208,7 +217,8 @@
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
-        "clientNoEnvironment"
+        "clientNoEnvironment",
+        "xAgentHeader"
       ],
       "unsupported": {}
     },
@@ -225,13 +235,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
-        "assignmentRules": "kotlin-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "kotlin-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "kotlin-sdk's Client has a private constructor and a non-null environment, and Context.create is internal, so the wrapper cannot build a no-environment client black-box; kotlin-sdk's own ContextSystemAttributesTest covers the no-environment case via an internal Context.create(environment=null)"
       }
     },
@@ -248,13 +259,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
-        "assignmentRules": "scala-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "scala-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes"
       }
     },
@@ -271,13 +283,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
-        "assignmentRules": "swift-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "swift-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally"
       }
     },
@@ -294,13 +307,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
-        "assignmentRules": "dart-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "dart-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)"
       }
     },
@@ -317,13 +331,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
-        "assignmentRules": "flutter-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "flutter-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)"
       }
     },
@@ -339,13 +354,14 @@
         "diagnosticsUtf8",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
-        "assignmentRules": "dotnet-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "dotnet-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally"
       }
@@ -362,14 +378,15 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
         "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
-        "assignmentRules": "cpp-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "cpp-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally"
       }
     },
@@ -386,13 +403,14 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext"
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader"
       ],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
-        "assignmentRules": "elixir-sdk has no custom assignment rules on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
-        "semverOperators": "elixir-sdk has no semver_* operators on main or any open PR branch; only javascript-sdk (reference) and java-sdk#17 implement them this round",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally"
       }
     },
@@ -416,7 +434,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment"
       ],
-      "unsupported": {}
+      "unsupported": {
+        "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches"
+      }
     },
     "vue2": {
       "required": [
@@ -438,7 +458,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment"
       ],
-      "unsupported": {}
+      "unsupported": {
+        "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches"
+      }
     },
     "vue3": {
       "required": [
@@ -460,7 +482,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment"
       ],
-      "unsupported": {}
+      "unsupported": {
+        "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches"
+      }
     },
     "angular": {
       "required": [
@@ -482,7 +506,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment"
       ],
-      "unsupported": {}
+      "unsupported": {
+        "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches"
+      }
     }
   }
 }

@@ -285,6 +285,8 @@ void main() async {
         'publishThrowsOnFailure': true,
         'trackRejectsNonObjectProperties': true,
         'refreshNoOpOnFailedContext': true,
+        'assignmentRules': true,
+        'semverOperators': true,
       }),
       headers: {'Content-Type': 'application/json'},
     );

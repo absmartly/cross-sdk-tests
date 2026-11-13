@@ -79,7 +79,9 @@ app.MapGet("/capabilities", () => Results.Ok(new
     numericUnitIds = false,
     publishThrowsOnFailure = true,
     trackRejectsNonObjectProperties = true,
-    refreshNoOpOnFailedContext = true
+    refreshNoOpOnFailedContext = true,
+    assignmentRules = true,
+    semverOperators = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>

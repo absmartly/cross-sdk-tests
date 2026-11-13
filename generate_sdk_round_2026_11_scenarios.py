@@ -70,7 +70,7 @@ SDK_PATH = os.environ.get("SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "
 # This branch is main (the TypeScript rewrite, custom assignment rules from #66, the semver_*
 # operators, and the four #67 edge-case fixes, all already merged to main) plus §5 of Márcio's
 # 2026-11 brief: always-on application/environment audience attributes and app_version removal.
-PINNED_COMMIT = "437a425c570ee34af098cf7e77d6cfb37ab4b475"
+PINNED_COMMIT = "9403b837cf5fe224c82035b5c67bd7a4969421d0"
 JS_SDK_VERSION = "1.14.0"
 
 RULES_MARKER = " - Custom Assignment Rules - "

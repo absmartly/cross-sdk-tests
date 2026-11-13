@@ -422,6 +422,47 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
 
 
+def validate_captured_requests(
+    step_index: int, body: Any, params: Dict[str, Any], expected: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Check the requests a wrapper's mock collector recorded (GET /context_payload/{id}/requests).
+
+    Keeps the requests whose method is `params.method`; there must be at least
+    `expected.minRequests` (default 1) of them, and every one must carry each header in
+    `expected.headerPatterns` (names compared case-insensitively) with a value fully matching
+    its regex. Only pass/fail is compared across SDKs: header values name the SDK.
+    """
+    action = "capturedRequests"
+
+    def failure(field: str, expected_value: Any, actual_value: Any) -> Dict[str, Any]:
+        return {"step": step_index, "action": action, "field": field,
+                "expected": describe(expected_value), "actual": describe(actual_value)}
+
+    captured = body.get("requests") if isinstance(body, dict) else None
+    if not isinstance(captured, list) or not all(isinstance(r, dict) for r in captured):
+        return [failure("requests", "a JSON object with a list of request objects", body)]
+    method = params.get("method")
+    matching = [r for r in captured if method is None or str(r.get("method", "")).upper() == method]
+    minimum = expected.get("minRequests", 1)
+    if len(matching) < minimum:
+        seen = [r.get("method") for r in captured]
+        return [failure("requests.length", f">= {minimum} {method} request(s)", f"{len(matching)} (methods seen: {seen})")]
+    failures = []
+    for i, request in enumerate(matching):
+        headers = request.get("headers")
+        if not isinstance(headers, dict):
+            failures.append(failure(f"requests[{i}].headers", "an object", headers))
+            continue
+        lowered = {str(k).lower(): v for k, v in headers.items()}
+        for name, pattern in expected.get("headerPatterns", {}).items():
+            value = lowered.get(name.lower(), MISSING)
+            if isinstance(value, list) and len(value) == 1:
+                value = value[0]
+            if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
+                failures.append(failure(f"requests[{i}].headers.{name}", f"matches /{pattern}/", value))
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -798,6 +839,10 @@ class TestOrchestrator:
                     }
                     if "client" in params:
                         create_body["client"] = params["client"]
+                    if params.get("publishToEndpoint"):
+                        # Publish through the SDK's own publisher to the mock collector
+                        # (PUT {endpoint}/context) so its request can be inspected.
+                        create_body["publishToEndpoint"] = True
                     response = requests.post(
                         f"{base_url}/context",
                         json=create_body,
@@ -806,6 +851,18 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
                     context_id = data["result"]["contextId"]
+
+                elif action == "capturedRequests":
+                    # Requests the SDK itself sent to this scenario's mock collector
+                    # endpoint (/context_payload/{id}/context), as the wrapper recorded them.
+                    if not payload_id:
+                        raise ValueError("capturedRequests needs a context created through the mock endpoint")
+                    response = requests.get(f"{base_url}/context_payload/{payload_id}/requests", timeout=5)
+                    response.raise_for_status()
+                    step_failures = validate_captured_requests(step_index, response.json(), params, expected)
+                    failures.extend(step_failures)
+                    observations[step_index] = (action, json.dumps({"passed": not step_failures}))
+                    continue
 
                 elif action == "createContextFailed":
                     response = requests.post(

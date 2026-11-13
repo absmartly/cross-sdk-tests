@@ -80,7 +80,9 @@ fun Application.configureRouting() {
                 "numericUnitIds" to true,
                 "publishThrowsOnFailure" to true,
                 "trackRejectsNonObjectProperties" to true,
-                "refreshNoOpOnFailedContext" to true
+                "refreshNoOpOnFailedContext" to true,
+                "assignmentRules" to true,
+                "semverOperators" to true
             ))
         }
 

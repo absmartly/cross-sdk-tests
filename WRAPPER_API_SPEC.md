@@ -223,6 +223,52 @@ GET /context_payload/{payloadId}/context?application=...&environment=...
 3. SDK calls `GET {endpoint}/context?application=...&environment=...`
 4. Wrapper returns stored payload
 
+### 2b-i. Captured Requests and Publish To Endpoint (capability `xAgentHeader`)
+
+Scenarios 320-321 check the `X-Agent` header the SDK itself sends. Every
+wrapper that advertises `xAgentHeader` must:
+
+1. **Record every request its mock collector serves**, per payload id, in
+   arrival order: the method and every request header exactly as received.
+
+   ```http
+   GET /context_payload/{payloadId}/requests
+   ```
+
+   ```json
+   {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0", "x-api-key": "..."}}]}
+   ```
+
+   Header names may use any case (the orchestrator compares them
+   case-insensitively); a value may be a string or a one-element list. Unknown
+   payload ids return `{"requests": []}`.
+
+2. **Accept the SDK's publish** on the same mock collector path:
+
+   ```http
+   PUT /context_payload/{payloadId}/context
+   ```
+
+   records the request like the GET above and answers `200` with `{}`.
+
+3. **Honour `publishToEndpoint: true` on `POST /context`** (only together with
+   `endpoint`): `publish()` on that context goes through the SDK's own default
+   publisher/HTTP client to `PUT {endpoint}/context`, instead of the wrapper's
+   in-memory publisher. Publish events, `publishFail` and every other endpoint
+   behave as usual. Without the flag nothing changes.
+
+The headers must be the SDK's own: the wrapper must not set, rewrite or strip
+`X-Agent` (or any other header) on the SDK's requests, and must not fetch or
+publish on the SDK's behalf. The orchestrator reads the recorded requests with
+the `capturedRequests` step (`params.method` selects GET or PUT; `expect`
+carries `minRequests` and `headerPatterns`, header name to a regex that must
+match the whole value). For the parity round the contract is
+`absmartly-<lang>-sdk/<semver>`.
+
+The javascript-family wrappers implement the endpoints but list `xAgentHeader`
+as a reviewed exception: javascript-sdk#68 (the reference) still sends the
+unversioned `absmartly-javascript-sdk`.
+
 ### 2c. Diagnostics Endpoint (utility/class verification)
 
 Run direct utility diagnostics in wrappers.
@@ -864,6 +910,8 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
+| PUT | /context_payload/{id}/context | Mock collector publish endpoint (`xAgentHeader`) |
+| GET | /context_payload/{id}/requests | Requests the mock collector recorded (`xAgentHeader`) |
 | POST | /context | Create context |
 | POST | /context/{id}/setUnit | Set unit |
 | POST | /context/{id}/getUnit | Get unit |

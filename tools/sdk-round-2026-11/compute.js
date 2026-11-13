@@ -11,6 +11,7 @@
 //     both the evaluation map and the publish payload.
 //
 // stdin:  {"cases": [{"contextData": {...}, "units": {...}, "client": {application, environment}?, "steps": [{"action", "params"}]}]}
+// (contextData is passed through whole, so a case can carry `holdouts` next to `experiments`.)
 // stdout: {"sdkVersion": "...", "cases": [{"ready": {...}, "readyEvents": [...], "steps": [{"result", "events"}]}]}
 //
 // Each step's `events` is the exact list of events the SDK's eventLogger received while that step
@@ -164,6 +165,10 @@ async function runCase(c) {
 				break;
 			case "attribute":
 				context.attribute(p.name, p.value);
+				result = null;
+				break;
+			case "setUnit":
+				context.unit(p.unitType, p.uid);
 				result = null;
 				break;
 			case "pending":

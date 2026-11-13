@@ -115,7 +115,9 @@ object Server extends IOApp {
         "numericUnitIds" -> Json.fromBoolean(true),
         "publishThrowsOnFailure" -> Json.fromBoolean(true),
         "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
-        "refreshNoOpOnFailedContext" -> Json.fromBoolean(true)
+        "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
+        "assignmentRules" -> Json.fromBoolean(true),
+        "semverOperators" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>

@@ -250,7 +250,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
             'refreshNoOpOnFailedContext' => true,
-            'clientNoEnvironment' => true
+            'clientNoEnvironment' => true,
+            'assignmentRules' => true,
+            'semverOperators' => true
         ]);
     }
 

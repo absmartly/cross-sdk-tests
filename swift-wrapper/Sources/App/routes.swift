@@ -170,6 +170,7 @@ class EventCollector: ContextEventLogger {
         dict["fullOn"] = exposure.fullOn
         dict["custom"] = exposure.custom
         dict["audienceMismatch"] = exposure.audienceMismatch
+        dict["ruleOverride"] = exposure.ruleOverride
         return dict
     }
 
@@ -482,7 +483,9 @@ func routes(_ app: VaporApplication) throws {
             "numericUnitIds": true,
             "publishThrowsOnFailure": true,
             "trackRejectsNonObjectProperties": true,
-            "refreshNoOpOnFailedContext": true
+            "refreshNoOpOnFailedContext": true,
+            "assignmentRules": true,
+            "semverOperators": true
         ])
     }
 

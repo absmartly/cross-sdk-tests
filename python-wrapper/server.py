@@ -166,7 +166,9 @@ def capabilities():
         'publishThrowsOnFailure': True,
         'trackRejectsNonObjectProperties': False,
         'refreshNoOpOnFailedContext': False,
-        'clientNoEnvironment': True
+        'clientNoEnvironment': True,
+        'assignmentRules': True,
+        'semverOperators': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])

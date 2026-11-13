@@ -254,6 +254,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
 		"clientNoEnvironment":             true,
+		"assignmentRules":                 true,
+		"semverOperators":                 true,
 	})
 }
 

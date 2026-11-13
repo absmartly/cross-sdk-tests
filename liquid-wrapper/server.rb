@@ -244,6 +244,8 @@ get '/capabilities' do
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    assignmentRules: true,
+    semverOperators: true,
     passThroughOperations: [
       'attribute', 'override', 'customAssignment', 'pending', 'isFinalized',
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',
