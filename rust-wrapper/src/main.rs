@@ -184,8 +184,6 @@ struct ContextData_ {
 struct AppState {
     contexts: RwLock<HashMap<String, Arc<ContextData_>>>,
     payloads: RwLock<HashMap<String, ContextData>>,
-    /// Requests the SDK sent to each payload's mock collector endpoint, for
-    /// the capturedRequests step (X-Agent scenarios).
     captured_requests: Mutex<HashMap<String, Vec<Value>>>,
 }
 

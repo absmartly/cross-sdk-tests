@@ -78,6 +78,9 @@ SEMVER_MARKER = " - Semver Operators - "
 REEVAL_MARKER = " - Audience Re-Evaluation - "
 SYSATTR_MARKER = " - System Attributes - "
 GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
+# Groups owned by generate_parity_round_scenarios.py (300+). They stay after this round's groups and
+# are left out of the numbering, so regenerating either file never renumbers or moves the other's.
+LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
@@ -650,11 +653,13 @@ def main():
     with open(args.file, encoding="utf-8") as src:
         raw = src.read()
     existing = json.loads(raw)
-    kept = [s for s in existing if not any(m in s["name"] for m in GROUP_MARKERS)]
+    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    kept = [s for s in existing
+            if not any(m in s["name"] for m in GROUP_MARKERS) and s not in later]
     # Number after the highest retained ID, not the count: earlier scenarios may
     # have been deleted without renumbering (e.g. #18), leaving gaps.
     groups = build_all_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    updated = kept + groups
+    updated = kept + groups + later
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:

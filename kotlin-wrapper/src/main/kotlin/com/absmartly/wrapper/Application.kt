@@ -38,8 +38,6 @@ fun Application.configureRouting() {
     val contexts = ConcurrentHashMap<String, ContextWrapper>()
     val payloadStore = ConcurrentHashMap<String, Any>()
     val objectMapper = jacksonObjectMapper()
-    // Requests the SDK sent to each payload's mock collector endpoint, for the
-    // capturedRequests step (X-Agent scenarios).
     val capturedRequests = ConcurrentHashMap<String, MutableList<Map<String, Any>>>()
 
     fun ApplicationCall.captureRequest(payloadId: String) {

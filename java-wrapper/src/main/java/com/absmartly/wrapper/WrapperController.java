@@ -19,8 +19,6 @@ public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
-    // Requests the SDK sent to each payload's mock collector endpoint, for the
-    // capturedRequests step (X-Agent scenarios).
     private final Map<String, List<Map<String, Object>>> capturedRequests = new ConcurrentHashMap<>();
 
     private void captureRequest(String payloadId, String method, Map<String, String> headers) {

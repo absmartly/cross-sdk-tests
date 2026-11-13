@@ -371,8 +371,7 @@ class PayloadStore {
     }
 }
 
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios). Locked like PayloadStore.
+// Locked like PayloadStore.
 class CapturedRequests {
     private var requests: [String: [[String: Any]]] = [:]
     private let lock = NSLock()

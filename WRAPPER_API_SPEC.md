@@ -262,8 +262,11 @@ The headers must be the SDK's own: the wrapper must not set, rewrite or strip
 publish on the SDK's behalf. The orchestrator reads the recorded requests with
 the `capturedRequests` step (`params.method` selects GET or PUT; `expect`
 carries `minRequests` and `headerPatterns`, header name to a regex that must
-match the whole value). For the parity round the contract is
-`absmartly-<lang>-sdk/<semver>`.
+match the whole value; `{lang}` in a regex is replaced with the language of
+the SDK under test: the lane name, except flutter → `dart`, liquid → `ruby`
+and the JS framework wrappers → `javascript`). For the parity round the
+contract is `absmartly-<lang>-sdk/<semver>`, with `<semver>` per the semver.org
+2.0.0 grammar (no leading zeroes, no empty pre-release or build identifiers).
 
 The javascript-family wrappers implement the endpoints but list `xAgentHeader`
 as a reviewed exception: javascript-sdk#68 (the reference) still sends the

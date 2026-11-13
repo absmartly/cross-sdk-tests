@@ -63,8 +63,7 @@ defmodule ElixirWrapper.ContextStore do
     GenServer.call(__MODULE__, {:get_payload, payload_id})
   end
 
-  # Requests the SDK sent to a payload's mock collector endpoint, in arrival
-  # order, for the capturedRequests step (X-Agent scenarios).
+  # Stored newest first; captured_requests/1 returns them in arrival order.
   def capture_request(payload_id, request) do
     GenServer.call(__MODULE__, {:capture_request, payload_id, request})
   end
@@ -133,13 +132,13 @@ defmodule ElixirWrapper.ContextStore do
         [] -> []
       end
 
-    :ets.insert(state.requests, {payload_id, previous ++ [request]})
+    :ets.insert(state.requests, {payload_id, [request | previous]})
     {:reply, :ok, state}
   end
 
   def handle_call({:captured_requests, payload_id}, _from, state) do
     case :ets.lookup(state.requests, payload_id) do
-      [{^payload_id, list}] -> {:reply, list, state}
+      [{^payload_id, list}] -> {:reply, Enum.reverse(list), state}
       [] -> {:reply, [], state}
     end
   end

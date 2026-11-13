@@ -175,8 +175,6 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 
 $contexts = [];
 $payloadStore = [];
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 $capturedRequests = [];
 
 function canonicalError(string $message): string

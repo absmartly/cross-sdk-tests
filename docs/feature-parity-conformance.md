@@ -17,8 +17,9 @@ traffic-seed, swapped-seed, zero-seed and normal-split results.
 
 The X-Agent group is the exception: the reference sends the unversioned
 `absmartly-javascript-sdk`, so the expectation is the round's contract,
-`absmartly-<lang>-sdk/<semver>`, asserted with a regex, and the JS-family lanes
-list `xAgentHeader` as a reviewed exception.
+`absmartly-<lang>-sdk/<semver>`, asserted with a regex. `<lang>` must name the
+SDK under test and `<semver>` must follow the semver.org 2.0.0 grammar. The
+JS-family lanes list `xAgentHeader` as a reviewed exception.
 
 ## Coverage
 
@@ -58,3 +59,10 @@ rebuild.
 (`GET /context_payload/{id}/requests`), and `createContext` forwards
 `publishToEndpoint` so the SDK publishes through its own HTTP client to
 `PUT {endpoint}/context`. See WRAPPER_API_SPEC.md section 2b-i.
+
+## Generators
+
+`generate_sdk_round_2026_11_scenarios.py` owns 230-253 and
+`generate_parity_round_scenarios.py` owns 300-321. Each regenerates only its own
+groups and leaves the other's where they are, so both `--check` runs pass on the
+same file (pinned by `ScenarioGeneratorsCoexistTest` in `tests/test_harness.py`).

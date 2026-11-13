@@ -286,9 +286,8 @@ get '/context_payload/:payload_id' do
   data.to_json
 end
 
-# Requests the SDK sent to each payload's mock collector endpoint, for the
-# capturedRequests step (X-Agent scenarios). Rack keeps request headers in the
-# env as HTTP_* (plus CONTENT_TYPE/CONTENT_LENGTH); turn them back into names.
+# Rack keeps request headers in the env as HTTP_* (plus CONTENT_TYPE/CONTENT_LENGTH);
+# turn them back into names.
 $captured_requests = Hash.new { |h, k| h[k] = [] }
 
 def capture_request

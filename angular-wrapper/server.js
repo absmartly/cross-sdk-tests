@@ -221,8 +221,6 @@ app.get('/context_payload/:payloadId', (req, res) => {
   }, throttle);
 });
 
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 const capturedRequests = {};
 
 function captureRequest(req) {

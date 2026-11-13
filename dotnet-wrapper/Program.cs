@@ -42,8 +42,6 @@ app.Use(async (context, next) =>
 var contexts = new ConcurrentDictionary<string, ContextData>();
 var payloadStore = new ConcurrentDictionary<string, string>();
 const string EmptyPayload = "{\"experiments\":[]}";
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 var capturedRequests = new ConcurrentDictionary<string, List<object>>();
 
 void CaptureRequest(string payloadId, HttpRequest request)

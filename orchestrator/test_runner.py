@@ -422,15 +422,30 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
 
 
+# The SDK language each lane's requests name (the <lang> of an X-Agent such as absmartly-<lang>-sdk/1.0.0)
+# where it is not the lane name: flutter uses the dart_sdk client, liquid wraps ruby-sdk, and the
+# framework wrappers wrap javascript-sdk.
+SDK_AGENT_LANGUAGE = {
+    "flutter": "dart",
+    "liquid": "ruby",
+    "react": "javascript",
+    "vue2": "javascript",
+    "vue3": "javascript",
+    "angular": "javascript",
+}
+
+
 def validate_captured_requests(
-    step_index: int, body: Any, params: Dict[str, Any], expected: Dict[str, Any]
+    step_index: int, body: Any, params: Dict[str, Any], expected: Dict[str, Any], sdk_name: str = ""
 ) -> List[Dict[str, Any]]:
     """Check the requests a wrapper's mock collector recorded (GET /context_payload/{id}/requests).
 
     Keeps the requests whose method is `params.method`; there must be at least
     `expected.minRequests` (default 1) of them, and every one must carry each header in
     `expected.headerPatterns` (names compared case-insensitively) with a value fully matching
-    its regex. Only pass/fail is compared across SDKs: header values name the SDK.
+    its regex. `{lang}` in a regex stands for the language of the SDK under test
+    (SDK_AGENT_LANGUAGE, else the lane name). Only pass/fail is compared across SDKs: header
+    values name the SDK.
     """
     action = "capturedRequests"
 
@@ -455,6 +470,7 @@ def validate_captured_requests(
             continue
         lowered = {str(k).lower(): v for k, v in headers.items()}
         for name, pattern in expected.get("headerPatterns", {}).items():
+            pattern = pattern.replace("{lang}", re.escape(SDK_AGENT_LANGUAGE.get(sdk_name, sdk_name)))
             value = lowered.get(name.lower(), MISSING)
             if isinstance(value, list) and len(value) == 1:
                 value = value[0]
@@ -859,7 +875,9 @@ class TestOrchestrator:
                         raise ValueError("capturedRequests needs a context created through the mock endpoint")
                     response = requests.get(f"{base_url}/context_payload/{payload_id}/requests", timeout=5)
                     response.raise_for_status()
-                    step_failures = validate_captured_requests(step_index, response.json(), params, expected)
+                    step_failures = validate_captured_requests(
+                        step_index, response.json(), params, expected, sdk_name
+                    )
                     failures.extend(step_failures)
                     observations[step_index] = (action, json.dumps({"passed": not step_failures}))
                     continue

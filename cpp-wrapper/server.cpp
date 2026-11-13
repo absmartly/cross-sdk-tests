@@ -152,8 +152,6 @@ static std::atomic<int> context_counter{0};
 static std::mutex payloads_mu;
 static std::map<std::string, absmartly::ContextData> payload_store;
 
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 static std::mutex captured_mu;
 static std::map<std::string, json> captured_requests;
 

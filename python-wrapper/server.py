@@ -196,8 +196,6 @@ def get_context_payload(payload_id):
 
     return jsonify(data)
 
-# Requests the SDK sent to each payload's mock collector endpoint, for the
-# capturedRequests step (X-Agent scenarios).
 captured_requests = {}
 
 def capture_request(payload_id):

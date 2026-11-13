@@ -352,8 +352,6 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 type CapturedRequest struct {
 	Method  string              `json:"method"`
 	Headers map[string][]string `json:"headers"`

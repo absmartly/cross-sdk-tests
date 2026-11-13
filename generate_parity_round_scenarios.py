@@ -75,8 +75,14 @@ SPLIT_UNITS = (("split-unit-21", [0.1, 0.45, 0.45]),
 # zero seeds.
 LATE_UNIT = "late-unit-1"
 
-# The X-Agent contract from the brief: absmartly-<lang>-sdk/<semver>.
-XAGENT_PATTERN = r"^absmartly-[a-z0-9]+-sdk/[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$"
+# The X-Agent contract from the brief: absmartly-<lang>-sdk/<semver>. The version is the semver.org
+# 2.0.0 grammar (no leading zeroes, no empty identifiers). {lang} is replaced by the orchestrator with
+# the language of the SDK under test, so the header must also name that SDK.
+_NUM = r"(?:0|[1-9][0-9]*)"
+_PRE_ID = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+_BUILD_ID = r"[0-9A-Za-z-]+"
+XAGENT_PATTERN = (rf"^absmartly-{{lang}}-sdk/{_NUM}\.{_NUM}\.{_NUM}"
+                  rf"(?:-{_PRE_ID}(?:\.{_PRE_ID})*)?(?:\+{_BUILD_ID}(?:\.{_BUILD_ID})*)?$")
 
 
 def seeded(exp, *, seed=SEED, traffic_seed=TRAFFIC_SEED, unit_type=None, full_on=None):
@@ -527,10 +533,15 @@ def main():
     with open(args.file, encoding="utf-8") as src:
         raw = src.read()
     kept = [s for s in json.loads(raw) if not any(m in s["name"] for m in PARITY_MARKERS)]
-    highest = max(int(s["name"].split(" - ", 1)[0]) for s in kept)
-    if highest >= FIRST_NUMBER:
-        raise SystemExit(f"scenario {highest} collides with the parity range starting at {FIRST_NUMBER}")
-    updated = kept + build_groups()
+    groups = build_groups()
+    # The parity groups own FIRST_NUMBER..; any other scenario numbered in that range (e.g. a later
+    # generator appending without knowing it) is a collision, not something to renumber silently.
+    taken = {int(s["name"].split(" - ", 1)[0]) for s in kept}
+    clashes = sorted(taken & {int(g["name"].split(" - ", 1)[0]) for g in groups})
+    if clashes or max(taken) >= FIRST_NUMBER:
+        raise SystemExit(f"scenarios {clashes or [max(taken)]} collide with the parity range "
+                         f"starting at {FIRST_NUMBER}")
+    updated = kept + groups
     rendered = json.dumps(updated, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:

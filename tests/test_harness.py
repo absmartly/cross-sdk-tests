@@ -977,19 +977,53 @@ if __name__ == "__main__":
 class CapturedRequestsTest(unittest.TestCase):
     """validate_captured_requests: the X-Agent scenarios' check of a wrapper's recorded requests."""
 
-    PATTERN = r"^absmartly-[a-z0-9]+-sdk/[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$"
-    EXPECT = {"minRequests": 1, "headerPatterns": {"X-Agent": PATTERN}}
+    @classmethod
+    def setUpClass(cls):
+        with open(SCENARIOS_PATH) as src:
+            scenario = next(s for s in json.load(src) if " - X-Agent - " in s["name"])
+        # The exact expectation the X-Agent scenarios carry.
+        cls.EXPECT = next(st["expect"] for st in scenario["steps"] if st["action"] == "capturedRequests")
 
-    def check(self, body, method="GET"):
-        return test_runner.validate_captured_requests(3, body, {"method": method}, self.EXPECT)
+    def check(self, body, method="GET", sdk="go"):
+        return test_runner.validate_captured_requests(3, body, {"method": method}, self.EXPECT, sdk)
+
+    def agent_failures(self, agent, sdk="go"):
+        return self.check({"requests": [{"method": "GET", "headers": {"X-Agent": agent}}]}, sdk=sdk)
+
+    def test_valid_semver_versions_pass(self):
+        for agent in ("absmartly-go-sdk/0.0.0", "absmartly-go-sdk/1.2.3", "absmartly-go-sdk/10.20.30",
+                      "absmartly-go-sdk/1.0.0-alpha", "absmartly-go-sdk/1.0.0-alpha.1",
+                      "absmartly-go-sdk/1.0.0-0.3.7", "absmartly-go-sdk/1.0.0-x-y.0a",
+                      "absmartly-go-sdk/1.0.0+20130313144700", "absmartly-go-sdk/1.0.0-beta+exp.sha.5114f85"):
+            with self.subTest(agent=agent):
+                self.assertEqual(self.agent_failures(agent), [])
+
+    def test_malformed_versions_fail(self):
+        for agent in ("absmartly-go-sdk/1.2.3-", "absmartly-go-sdk/1.2.3+", "absmartly-go-sdk/01.2.3",
+                      "absmartly-go-sdk/1.02.3", "absmartly-go-sdk/1.2.03", "absmartly-go-sdk/1.2",
+                      "absmartly-go-sdk/1.2.3-01", "absmartly-go-sdk/1.2.3-a..b", "absmartly-go-sdk/1.2.3+a..b",
+                      "absmartly-go-sdk/1.2.3-.a", "absmartly-go-sdk/1.2.3.4", "absmartly-go-sdk/v1.2.3",
+                      "absmartly-go-sdk/HEAD-20261113-1638", "absmartly-go-sdk/1.2.3 "):
+            with self.subTest(agent=agent):
+                self.assertEqual([f["field"] for f in self.agent_failures(agent)],
+                                 ["requests[0].headers.X-Agent"])
+
+    def test_agent_must_name_the_sdk_under_test(self):
+        self.assertEqual([f["field"] for f in self.agent_failures("absmartly-wrong-sdk/1.2.3")],
+                         ["requests[0].headers.X-Agent"])
+        self.assertEqual([f["field"] for f in self.agent_failures("absmartly-java-sdk/1.2.3", sdk="kotlin")],
+                         ["requests[0].headers.X-Agent"])
+        # Lanes whose client is another SDK's name it as that SDK.
+        self.assertEqual(self.agent_failures("absmartly-dart-sdk/3.0.0", sdk="flutter"), [])
+        self.assertEqual(self.agent_failures("absmartly-ruby-sdk/1.2.0", sdk="liquid"), [])
 
     def test_versioned_agent_passes_any_header_case_and_list_value(self):
         body = {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0"}},
-                             {"method": "get", "headers": {"X-AGENT": ["absmartly-java-sdk/1.7.0-rc.1"]}}]}
+                             {"method": "get", "headers": {"X-AGENT": ["absmartly-go-sdk/1.7.0-rc.1"]}}]}
         self.assertEqual(self.check(body), [])
 
     def test_unversioned_or_missing_agent_fails(self):
-        for headers in ({"X-Agent": "absmartly-javascript-sdk"}, {"X-Agent": "javascript-client"},
+        for headers in ({"X-Agent": "absmartly-go-sdk"}, {"X-Agent": "go-client"},
                         {"User-Agent": "absmartly-go-sdk/1.2.0"}, {"X-Agent": ["a", "b"]}):
             with self.subTest(headers=headers):
                 failures = self.check({"requests": [{"method": "GET", "headers": headers}]})
@@ -1053,3 +1087,27 @@ class CapturedRequestsTest(unittest.TestCase):
         self.assertIs(create["publishToEndpoint"], True)
         payload_url = next(url for method, url, _ in calls if method == "PUT")
         self.assertIn(("GET", payload_url + "/requests", None), calls)
+
+
+class ScenarioGeneratorsCoexistTest(unittest.TestCase):
+    """The 2026-11 round generator (230-253) and the parity generator (300+) share one canonical file;
+    each must leave the other's groups where they are, numbered as they are."""
+
+    ROUND = (" - Custom Assignment Rules - ", " - Semver Operators - ", " - Audience Re-Evaluation - ",
+             " - System Attributes - ")
+    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
+
+    def test_groups_keep_their_ranges_and_order(self):
+        with open(SCENARIOS_PATH) as src:
+            names = [s["name"] for s in json.load(src)]
+        numbers = [int(n.split(" - ", 1)[0]) for n in names]
+        round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
+        parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
+        self.assertEqual(round_ids, list(range(230, 254)))
+        self.assertEqual(parity_ids, list(range(300, 322)))
+        self.assertEqual(numbers, sorted(numbers))
+
+    def test_round_generator_keeps_parity_groups_last_and_unnumbered(self):
+        sys.path.insert(0, REPO_ROOT)
+        import generate_sdk_round_2026_11_scenarios as round2611
+        self.assertEqual(set(round2611.LATER_GROUP_MARKERS), set(self.PARITY))

@@ -216,8 +216,6 @@ shelf.Handler withEventsWindow(shelf.Handler inner) {
 // the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
 final Map<String, Map<String, dynamic>> payloadStore = {};
 
-// Requests the SDK sent to each payload's mock collector endpoint, for the
-// capturedRequests step (X-Agent scenarios).
 final Map<String, List<Map<String, dynamic>>> capturedRequests = {};
 
 void captureRequest(shelf.Request request, String payloadId) {
