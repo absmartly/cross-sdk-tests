@@ -13,6 +13,7 @@ require 'context_data_provider'
 require 'default_context_data_provider'
 require 'default_context_data_deserializer'
 require 'context_publisher'
+require 'default_context_publisher'
 require 'context_event_logger'
 require 'hashing'
 
@@ -111,12 +112,17 @@ class DeferredDataProvider < ContextDataProvider
   end
 end
 
+# Test contexts publish nowhere: a publish succeeds without sending anything.
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
+# Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher < ContextPublisher
   attr_accessor :should_fail
 
-  def initialize(event_collector)
+  def initialize(event_collector, sdk_publisher = nil)
     @event_collector = event_collector
     @should_fail = false
+    @sdk_publisher = sdk_publisher
   end
 
   def publish(context, event)
@@ -124,6 +130,7 @@ class CustomPublisher < ContextPublisher
       @should_fail = false
       raise 'Publish failed'
     end
+    return @sdk_publisher.publish(context, event) if @sdk_publisher
     self
   end
 end
@@ -237,7 +244,8 @@ get '/capabilities' do
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
     assignmentRules: true,
-    semverOperators: true }.to_json
+    semverOperators: true,
+    xAgentHeader: true }.to_json
 end
 
 put '/context_payload/:payload_id' do
@@ -246,12 +254,38 @@ put '/context_payload/:payload_id' do
   { success: true }.to_json
 end
 
+# Requests the SDK sent to each payload's mock collector endpoint, for the
+# capturedRequests step (X-Agent scenarios). Rack keeps request headers in the
+# env as HTTP_* (plus CONTENT_TYPE/CONTENT_LENGTH); turn them back into names.
+$captured_requests = Hash.new { |h, k| h[k] = [] }
+
+def capture_request
+  headers = request.env.each_with_object({}) do |(key, value), h|
+    name = key.start_with?('HTTP_') ? key.delete_prefix('HTTP_') : (key if %w[CONTENT_TYPE CONTENT_LENGTH].include?(key))
+    h[name.downcase.tr('_', '-')] = value if name
+  end
+  $captured_requests[params['payload_id']] << { method: request.request_method, headers: headers }
+end
+
 get '/context_payload/:payload_id/context' do
+  capture_request
   # A never-stored payload id is a missing collector payload: answer 404 so the
   content_type :json
   data = $payload_store[params['payload_id']]
   halt 404, { error: 'Payload not found' }.to_json if data.nil?
   data.to_json
+end
+
+# Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+put '/context_payload/:payload_id/context' do
+  capture_request
+  content_type :json
+  {}.to_json
+end
+
+get '/context_payload/:payload_id/requests' do
+  content_type :json
+  { requests: $captured_requests.fetch(params['payload_id'], []) }.to_json
 end
 
 post '/context' do
@@ -298,6 +332,11 @@ post '/context' do
     client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy',
                         application: application, environment: environment)
     sdk_config.client = client
+    # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    if req_data[:publishToEndpoint] && req_data[:endpoint]
+      publisher = CustomPublisher.new(collector, DefaultContextPublisher.new(client))
+      sdk_config.context_event_handler = publisher
+    end
     if throttle > 0
       sdk_config.context_data_provider = DeferredDataProvider.new(client, throttle)
       context = ABSmartly.new(sdk_config).create_context_async(context_config)

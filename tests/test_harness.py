@@ -972,3 +972,84 @@ class StaticRepoChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CapturedRequestsTest(unittest.TestCase):
+    """validate_captured_requests: the X-Agent scenarios' check of a wrapper's recorded requests."""
+
+    PATTERN = r"^absmartly-[a-z0-9]+-sdk/[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$"
+    EXPECT = {"minRequests": 1, "headerPatterns": {"X-Agent": PATTERN}}
+
+    def check(self, body, method="GET"):
+        return test_runner.validate_captured_requests(3, body, {"method": method}, self.EXPECT)
+
+    def test_versioned_agent_passes_any_header_case_and_list_value(self):
+        body = {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0"}},
+                             {"method": "get", "headers": {"X-AGENT": ["absmartly-java-sdk/1.7.0-rc.1"]}}]}
+        self.assertEqual(self.check(body), [])
+
+    def test_unversioned_or_missing_agent_fails(self):
+        for headers in ({"X-Agent": "absmartly-javascript-sdk"}, {"X-Agent": "javascript-client"},
+                        {"User-Agent": "absmartly-go-sdk/1.2.0"}, {"X-Agent": ["a", "b"]}):
+            with self.subTest(headers=headers):
+                failures = self.check({"requests": [{"method": "GET", "headers": headers}]})
+                self.assertEqual([f["field"] for f in failures], ["requests[0].headers.X-Agent"])
+
+    def test_every_matching_request_is_checked(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}},
+                             {"method": "GET", "headers": {}}]}
+        self.assertEqual([f["field"] for f in self.check(body)], ["requests[1].headers.X-Agent"])
+
+    def test_no_request_of_the_method_fails(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
+        failures = self.check(body, method="PUT")
+        self.assertEqual([f["field"] for f in failures], ["requests.length"])
+
+    def test_malformed_body_fails(self):
+        for body in ({}, {"requests": "x"}, [], {"requests": ["GET"]}):
+            with self.subTest(body=body):
+                self.assertEqual([f["field"] for f in self.check(body)], ["requests"])
+
+    def test_create_forwards_publish_to_endpoint_and_step_reads_payload_requests(self):
+        calls = []
+
+        class Response:
+            def __init__(self, body):
+                self.body = body
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.body
+
+        def put(url, json=None, timeout=None):
+            calls.append(("PUT", url, json))
+            return Response({"success": True})
+
+        def post(url, json=None, timeout=None):
+            calls.append(("POST", url, json))
+            return Response({"result": {"contextId": "c1", "ready": True, "failed": False,
+                                        "finalized": False}, "events": []})
+
+        def get(url, timeout=None):
+            calls.append(("GET", url, None))
+            return Response({"requests": [{"method": "GET",
+                                           "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]})
+
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContext", "params": {"units": {}, "publishToEndpoint": True},
+             "expect": {"result": {"ready": True}}},
+            {"action": "capturedRequests", "params": {"method": "GET"}, "expect": self.EXPECT},
+        ]}
+        orch = TestOrchestrator({"go": "http://go"}, capability_policy=make_policy())
+        with mock.patch.object(test_runner.requests, "put", put), \
+                mock.patch.object(test_runner.requests, "post", post), \
+                mock.patch.object(test_runner.requests, "get", get), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("go", "http://go", scenario)
+        self.assertTrue(result["passed"], result)
+        create = next(body for method, url, body in calls if method == "POST" and url == "http://go/context")
+        self.assertIs(create["publishToEndpoint"], True)
+        payload_url = next(url for method, url, _ in calls if method == "PUT")
+        self.assertIn(("GET", payload_url + "/requests", None), calls)

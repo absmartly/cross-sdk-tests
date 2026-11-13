@@ -38,6 +38,14 @@ fun Application.configureRouting() {
     val contexts = ConcurrentHashMap<String, ContextWrapper>()
     val payloadStore = ConcurrentHashMap<String, Any>()
     val objectMapper = jacksonObjectMapper()
+    // Requests the SDK sent to each payload's mock collector endpoint, for the
+    // capturedRequests step (X-Agent scenarios).
+    val capturedRequests = ConcurrentHashMap<String, MutableList<Map<String, Any>>>()
+
+    fun ApplicationCall.captureRequest(payloadId: String) {
+        val list = capturedRequests.computeIfAbsent(payloadId) { java.util.Collections.synchronizedList(mutableListOf()) }
+        list.add(mapOf("method" to request.httpMethod.value, "headers" to request.headers.entries().associate { it.key to it.value.joinToString(", ") }))
+    }
     val ownPort = System.getenv("PORT")?.toIntOrNull() ?: 3000
 
     // The orchestrator addresses the wrapper by its host-mapped port; inside the
@@ -82,7 +90,8 @@ fun Application.configureRouting() {
                 "trackRejectsNonObjectProperties" to true,
                 "refreshNoOpOnFailedContext" to true,
                 "assignmentRules" to true,
-                "semverOperators" to true
+                "semverOperators" to true,
+                "xAgentHeader" to true
             ))
         }
 
@@ -133,10 +142,23 @@ fun Application.configureRouting() {
 
         get("/context_payload/{payloadId}/context") {
             val payloadId = call.parameters["payloadId"]!!
+            call.captureRequest(payloadId)
             val data = payloadStore[payloadId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Payload not found")
             )
             call.respond(data)
+        }
+
+        // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+        put("/context_payload/{payloadId}/context") {
+            call.captureRequest(call.parameters["payloadId"]!!)
+            call.respond(emptyMap<String, Any>())
+        }
+
+        get("/context_payload/{payloadId}/requests") {
+            val requests = capturedRequests[call.parameters["payloadId"]!!]
+            val snapshot = requests?.let { synchronized(it) { it.toList() } } ?: emptyList()
+            call.respond(mapOf("requests" to snapshot))
         }
 
         post("/context") {
@@ -231,7 +253,7 @@ fun Application.configureRouting() {
                 val clientEnvironment = (clientConfigRequest?.get("environment") as? String)
                     ?.takeIf { it.isNotEmpty() } ?: "test-env"
 
-                val customPublisher = CustomPublisher()
+                var customPublisher = CustomPublisher()
 
                 var dataProvider: DummyContextDataProvider? = null
                 var throttledProvider: ThrottledContextDataProvider? = null
@@ -266,6 +288,11 @@ fun Application.configureRouting() {
                         .setApplication(clientApplication)
                         .setEnvironment(clientEnvironment)
                     val client = com.absmartly.sdk.Client.create(clientConfig)
+                    // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
+                    // (its real HTTP client) to {endpoint}/context.
+                    if (request["publishToEndpoint"] == true) {
+                        customPublisher = CustomPublisher(com.absmartly.sdk.DefaultContextPublisher(client))
+                    }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
                         .setContextPublisher(customPublisher)
@@ -799,7 +826,9 @@ fun Application.configureRouting() {
             try {
                 // Await the SDK publish so the collector PUT completes before we
                 // respond; otherwise e2e publish races the collector verification.
-                wrapper.context.publish().join()
+                // Block on an IO thread: with publishToEndpoint the SDK's PUT comes
+                // back into this server.
+                withContext(Dispatchers.IO) { wrapper.context.publish().join() }
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {

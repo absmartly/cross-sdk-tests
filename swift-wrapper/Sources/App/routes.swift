@@ -371,8 +371,32 @@ class PayloadStore {
     }
 }
 
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios). Locked like PayloadStore.
+class CapturedRequests {
+    private var requests: [String: [[String: Any]]] = [:]
+    private let lock = NSLock()
+
+    func record(_ req: Request, payloadId: String) {
+        var headers: [String: String] = [:]
+        for (name, value) in req.headers {
+            headers[name] = headers[name].map { "\($0), \(value)" } ?? value
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        requests[payloadId, default: []].append(["method": req.method.rawValue, "headers": headers])
+    }
+
+    func list(_ payloadId: String) -> [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests[payloadId] ?? []
+    }
+}
+
 let contextManager = ContextManager()
 let payloadStore = PayloadStore()
+let capturedRequests = CapturedRequests()
 
 let payloadNotFoundBody: [String: Any] = ["error": "payload not found"]
 
@@ -485,7 +509,8 @@ func routes(_ app: VaporApplication) throws {
             "trackRejectsNonObjectProperties": true,
             "refreshNoOpOnFailedContext": true,
             "assignmentRules": true,
-            "semverOperators": true
+            "semverOperators": true,
+            "xAgentHeader": true
         ])
     }
 
@@ -522,7 +547,24 @@ func routes(_ app: VaporApplication) throws {
         return HTTPResponse(status: .ok, body: .init(data: data))
     }
     app.get("context_payload", ":payloadId", use: servePayload)
-    app.get("context_payload", ":payloadId", "context", use: servePayload)
+    app.get("context_payload", ":payloadId", "context") { req async throws -> HTTPResponse in
+        if let payloadId = req.parameters.get("payloadId") {
+            capturedRequests.record(req, payloadId: payloadId)
+        }
+        return try await servePayload(req)
+    }
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    app.on(.PUT, "context_payload", ":payloadId", "context", body: .collect(maxSize: "10mb")) { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        capturedRequests.record(req, payloadId: payloadId)
+        return try reply([:])
+    }
+
+    app.get("context_payload", ":payloadId", "requests") { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        return try reply(["requests": capturedRequests.list(payloadId)])
+    }
 
     app.post("context") { req async throws -> HTTPResponse in
         let request = try requestBody(req)
@@ -557,7 +599,10 @@ func routes(_ app: VaporApplication) throws {
             return try contextResult(contextId, context, eventCollector)
         }
 
-        let publisher = CustomPublisher()
+        // publishToEndpoint: the SDK's own DefaultContextPublisher (wired in below
+        // once the endpoint's client exists) sends PUT {endpoint}/context.
+        let publishToEndpoint = request["publishToEndpoint"].boolValue && request["endpoint"].string != nil
+        var publisher = CustomPublisher()
         let config = makeConfig(request, logger: eventCollector)
         let payloadThrottle = request["options"]["payloadThrottle"].intValue
         // Optional client config (the 2026-11 system-attributes round): a scenario can
@@ -605,6 +650,9 @@ func routes(_ app: VaporApplication) throws {
             // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
             let client = try DefaultClient(config: ClientConfig(
                 apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+            if publishToEndpoint {
+                publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
+            }
             let provider: ContextDataProvider? = payloadThrottle > 0
                 ? DeferredContextDataProvider(inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
                 : nil

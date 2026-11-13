@@ -38,7 +38,8 @@ defmodule ElixirWrapper.Router do
       trackRejectsNonObjectProperties: true,
       refreshNoOpOnFailedContext: true,
       assignmentRules: true,
-      semverOperators: true
+      semverOperators: true,
+      xAgentHeader: true
     })
   end
 
@@ -86,7 +87,15 @@ defmodule ElixirWrapper.Router do
 
       %{"endpoint" => endpoint, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_async(conn, endpoint, units, options, params["client"])
+
+        create_context_async(
+          conn,
+          endpoint,
+          units,
+          options,
+          params["client"],
+          params["publishToEndpoint"] == true
+        )
 
       _ ->
         send_error(conn, 400, "Missing required parameters")
@@ -108,6 +117,7 @@ defmodule ElixirWrapper.Router do
 
   get "/context_payload/:payload_id/context" do
     payload_id = conn.path_params["payload_id"]
+    capture_request(conn, payload_id)
 
     case ContextStore.get_payload(payload_id) do
       {:ok, data} ->
@@ -116,6 +126,16 @@ defmodule ElixirWrapper.Router do
       {:error, _} ->
         send_error(conn, 404, "Payload not found")
     end
+  end
+
+  # Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+  put "/context_payload/:payload_id/context" do
+    capture_request(conn, conn.path_params["payload_id"])
+    send_json(conn, 200, %{})
+  end
+
+  get "/context_payload/:payload_id/requests" do
+    send_json(conn, 200, %{requests: ContextStore.captured_requests(conn.path_params["payload_id"])})
   end
 
   post "/context/:context_id/setUnit" do
@@ -449,7 +469,7 @@ defmodule ElixirWrapper.Router do
     end
   end
 
-  defp create_context_async(conn, endpoint, units, options, client \\ nil) do
+  defp create_context_async(conn, endpoint, units, options, client, publish_to_endpoint) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
@@ -471,7 +491,12 @@ defmodule ElixirWrapper.Router do
       api_key: "test-key",
       application: client_application,
       environment: client_environment,
-      publisher: ElixirWrapper.ArmablePublisher
+      # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+      publisher:
+        if(publish_to_endpoint,
+          do: ElixirWrapper.ArmableE2EPublisher,
+          else: ElixirWrapper.ArmablePublisher
+        )
     }
 
     context_options =
@@ -644,6 +669,17 @@ defmodule ElixirWrapper.Router do
           send_error(conn, 500, "Failed to create e2e context: #{inspect(reason)}")
       end
     end
+  end
+
+  # Records the method and every request header as received (Plug lower-cases
+  # header names).
+  defp capture_request(conn, payload_id) do
+    headers =
+      Enum.reduce(conn.req_headers, %{}, fn {name, value}, acc ->
+        Map.update(acc, name, [value], &(&1 ++ [value]))
+      end)
+
+    ContextStore.capture_request(payload_id, %{method: conn.method, headers: headers})
   end
 
   defp translate_endpoint(endpoint) do

@@ -121,7 +121,7 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 // When armed via /publishFail it fails the next SDK-invoked Publish exactly
 // once; what happens to pending events after that failure is decided entirely
 // by the SDK's own Flush() logic. Otherwise it forwards to inner (the SDK's
-// DefaultContextEventHandler in e2e mode) or, in mock mode where there is no
+// DefaultContextEventHandler in e2e mode and with publishToEndpoint) or, in mock mode where there is no
 // collector, delivers nothing.
 type CustomPublisher struct {
 	eventCollector *EventCollector
@@ -176,6 +176,9 @@ type CreateContextRequest struct {
 	Mode       string                 `json:"mode"`
 	Attributes map[string]interface{} `json:"attributes"`
 	Client     *ClientConfigRequest   `json:"client"`
+	// PublishToEndpoint makes publish() go through the SDK's own default
+	// publisher to PUT {endpoint}/context (X-Agent scenarios).
+	PublishToEndpoint bool `json:"publishToEndpoint"`
 }
 
 type StorePayloadRequest struct {
@@ -256,6 +259,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"clientNoEnvironment":             true,
 		"assignmentRules":                 true,
 		"semverOperators":                 true,
+		"xAgentHeader":                    true,
 	})
 }
 
@@ -348,7 +352,52 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+type CapturedRequest struct {
+	Method  string              `json:"method"`
+	Headers map[string][]string `json:"headers"`
+}
+
+var (
+	capturedRequests   = make(map[string][]CapturedRequest)
+	capturedRequestsMu sync.Mutex
+)
+
+func captureRequest(r *http.Request) {
+	payloadID := mux.Vars(r)["payloadId"]
+	headers := make(map[string][]string, len(r.Header)+1)
+	for name, values := range r.Header {
+		headers[name] = append([]string(nil), values...)
+	}
+	// Go moves Host out of r.Header; keep it so every header is recorded.
+	if r.Host != "" {
+		headers["Host"] = []string{r.Host}
+	}
+	capturedRequestsMu.Lock()
+	capturedRequests[payloadID] = append(capturedRequests[payloadID], CapturedRequest{Method: r.Method, Headers: headers})
+	capturedRequestsMu.Unlock()
+}
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+func mockApiPublishHandler(w http.ResponseWriter, r *http.Request) {
+	captureRequest(r)
+	io.Copy(io.Discard, r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+func capturedRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	payloadID := mux.Vars(r)["payloadId"]
+	capturedRequestsMu.Lock()
+	requests := append([]CapturedRequest{}, capturedRequests[payloadID]...)
+	capturedRequestsMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"requests": requests})
+}
+
 func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
+	captureRequest(r)
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
 
@@ -469,6 +518,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				Application_: application,
 				Environment_: environment,
 			})
+			if req.PublishToEndpoint {
+				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
+			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:              client,
 				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
@@ -484,6 +536,10 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				Application_: application,
 				Environment_: environment,
 			})
+			// publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+			if req.PublishToEndpoint {
+				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
+			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:             client,
 				ContextPublisher_:   customPublisher,
@@ -864,6 +920,8 @@ func main() {
 	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")
+	router.HandleFunc("/context_payload/{payloadId}/context", mockApiPublishHandler).Methods("PUT")
+	router.HandleFunc("/context_payload/{payloadId}/requests", capturedRequestsHandler).Methods("GET")
 	router.HandleFunc("/context", createContextHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/setUnit", contextRoute(setUnit)).Methods("POST")
 	router.HandleFunc("/context/{contextId}/getUnit", contextRoute(getUnit)).Methods("POST")

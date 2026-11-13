@@ -63,12 +63,23 @@ defmodule ElixirWrapper.ContextStore do
     GenServer.call(__MODULE__, {:get_payload, payload_id})
   end
 
+  # Requests the SDK sent to a payload's mock collector endpoint, in arrival
+  # order, for the capturedRequests step (X-Agent scenarios).
+  def capture_request(payload_id, request) do
+    GenServer.call(__MODULE__, {:capture_request, payload_id, request})
+  end
+
+  def captured_requests(payload_id) do
+    GenServer.call(__MODULE__, {:captured_requests, payload_id})
+  end
+
   @impl true
   def init(:ok) do
     contexts = :ets.new(:contexts, [:set, :private])
     payloads = :ets.new(:payloads, [:set, :private])
     flags = :ets.new(:flags, [:set, :private])
-    {:ok, %{contexts: contexts, payloads: payloads, flags: flags}}
+    requests = :ets.new(:requests, [:set, :private])
+    {:ok, %{contexts: contexts, payloads: payloads, flags: flags, requests: requests}}
   end
 
   @impl true
@@ -113,6 +124,24 @@ defmodule ElixirWrapper.ContextStore do
   def handle_call({:store_payload, payload_id, data}, _from, state) do
     :ets.insert(state.payloads, {payload_id, data})
     {:reply, :ok, state}
+  end
+
+  def handle_call({:capture_request, payload_id, request}, _from, state) do
+    previous =
+      case :ets.lookup(state.requests, payload_id) do
+        [{^payload_id, list}] -> list
+        [] -> []
+      end
+
+    :ets.insert(state.requests, {payload_id, previous ++ [request]})
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:captured_requests, payload_id}, _from, state) do
+    case :ets.lookup(state.requests, payload_id) do
+      [{^payload_id, list}] -> {:reply, list, state}
+      [] -> {:reply, [], state}
+    end
   end
 
   def handle_call({:get_payload, payload_id}, _from, state) do

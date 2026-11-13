@@ -216,6 +216,17 @@ shelf.Handler withEventsWindow(shelf.Handler inner) {
 // the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
 final Map<String, Map<String, dynamic>> payloadStore = {};
 
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+final Map<String, List<Map<String, dynamic>>> capturedRequests = {};
+
+void captureRequest(shelf.Request request, String payloadId) {
+  capturedRequests.putIfAbsent(payloadId, () => []).add({
+    'method': request.method,
+    'headers': Map<String, String>.from(request.headers),
+  });
+}
+
 String translateEndpoint(String endpoint) {
   return endpoint
       .replaceAllMapped(RegExp(r'http://localhost:\d+'), (m) => 'http://localhost:3000')
@@ -262,6 +273,7 @@ Future<void> startServer() async {
         'refreshNoOpOnFailedContext': true,
         'assignmentRules': true,
         'semverOperators': true,
+        'xAgentHeader': true,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
@@ -357,6 +369,7 @@ Future<void> startServer() async {
   });
 
   router.get('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    captureRequest(request, payloadId);
     // Unknown payload: 404 so the SDK's fetch fails, rather than serving an
     // empty-but-valid payload the SDK never received.
     final data = payloadStore[payloadId];
@@ -365,6 +378,23 @@ Future<void> startServer() async {
     }
     return shelf.Response.ok(
       jsonEncode(data),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+  router.put('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    captureRequest(request, payloadId);
+    await request.read().drain<void>();
+    return shelf.Response.ok(
+      jsonEncode({}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/context_payload/<payloadId>/requests', (shelf.Request request, String payloadId) {
+    return shelf.Response.ok(
+      jsonEncode({'requests': capturedRequests[payloadId] ?? []}),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -448,7 +478,6 @@ Future<void> startServer() async {
       final failLoad = body['failLoad'] == true;
 
       final eventCollector = EventCollector();
-      final publisher = CustomPublisher(eventCollector);
       final dataProvider = CustomDataProvider();
 
       ContextData? contextDataForCreation;
@@ -481,6 +510,11 @@ Future<void> startServer() async {
         .setApplication(clientApplication)
         .setEnvironment(clientEnvironment);
       final client = Client.create(clientConfig);
+      // publishToEndpoint: publish through the SDK's own DefaultContextPublisher to
+      // PUT {endpoint}/context (the mock collector below), as the e2e path does.
+      final publishToEndpoint = body['publishToEndpoint'] == true && translatedEndpoint != null;
+      final publisher = CustomPublisher(eventCollector,
+          delegate: publishToEndpoint ? DefaultContextPublisher(client) : null);
 
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)

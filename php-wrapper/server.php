@@ -86,14 +86,20 @@ class EventCollector implements ContextEventLogger
     }
 }
 
+// Test contexts publish nowhere: a publish succeeds without sending anything.
+// With publishToEndpoint the wrapper passes the SDK's own ContextPublisher as
+// $sdkPublisher, so the publish is the SDK's real PUT {endpoint}/context.
+// Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends ContextPublisher
 {
     private EventCollector $eventCollector;
+    private ?ContextPublisher $sdkPublisher;
     public bool $shouldFail = false;
 
-    public function __construct(EventCollector $eventCollector)
+    public function __construct(EventCollector $eventCollector, ?ContextPublisher $sdkPublisher = null)
     {
         $this->eventCollector = $eventCollector;
+        $this->sdkPublisher = $sdkPublisher;
     }
 
     public function publish(PublishEvent $event): void
@@ -101,6 +107,9 @@ class CustomPublisher extends ContextPublisher
         if ($this->shouldFail) {
             $this->shouldFail = false;
             throw new \RuntimeException('publish failed');
+        }
+        if ($this->sdkPublisher !== null) {
+            $this->sdkPublisher->publish($event);
         }
     }
 }
@@ -166,6 +175,9 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 
 $contexts = [];
 $payloadStore = [];
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+$capturedRequests = [];
 
 function canonicalError(string $message): string
 {
@@ -214,7 +226,7 @@ function translateEndpoint(string $endpoint): string
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
 }
 
-$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore) {
+$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore, &$capturedRequests) {
     $method = $request->getMethod();
     $path = $request->getUri()->getPath();
 
@@ -252,7 +264,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'refreshNoOpOnFailedContext' => true,
             'clientNoEnvironment' => true,
             'assignmentRules' => true,
-            'semverOperators' => true
+            'semverOperators' => true,
+            'xAgentHeader' => true
         ]);
     }
 
@@ -286,10 +299,21 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         return jsonResponse(200, ['success' => true]);
     }
 
-    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
+    // Mock ABsmartly API. Every request the SDK sends here is recorded for the
+    // capturedRequests step (X-Agent scenarios); with publishToEndpoint the SDK
+    // also publishes PUT {endpoint}/context here.
+    if (($method === 'GET' || $method === 'PUT') && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
         $payloadId = $matches[1];
+        $capturedRequests[$payloadId][] = ['method' => $method, 'headers' => $request->getHeaders()];
+        if ($method === 'PUT') {
+            return jsonResponse(200, (object)[]);
+        }
         $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
         return jsonResponse(200, $data);
+    }
+
+    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/requests$#', $path, $matches)) {
+        return jsonResponse(200, ['requests' => $capturedRequests[$matches[1]] ?? []]);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/(.+)$#', $path, $matches)) {
@@ -393,7 +417,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextId = 'ctx-' . time() . '-' . mt_rand();
 
         $eventCollector = new EventCollector();
-        $publisher = new CustomPublisher($eventCollector);
 
         $endpoint = $body->endpoint ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
@@ -428,6 +451,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $reactHttpClient = new ReactHttpClient();
         $reactHttpClient->timeout = 10000;
         $client = new Client($clientConfig, $reactHttpClient);
+
+        // publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+        $sdkPublisher = (($body->publishToEndpoint ?? false) && isset($body->endpoint))
+            ? new ContextPublisher($client)
+            : null;
+        $publisher = new CustomPublisher($eventCollector, $sdkPublisher);
 
         $sdkConfig = new Config($client);
         $sdkConfig->setContextPublisher($publisher);

@@ -78,6 +78,18 @@ across languages.
   until it ports them, while the two ungated groups (246-247, 248-253) run on
   every SDK.
 
+  Scenarios 300-321 pin the 2026-11 feature-parity round, where every SDK
+  ports assignment rules, the `semver_*` operators and a versioned `X-Agent`
+  (see [docs/feature-parity-conformance.md](docs/feature-parity-conformance.md)):
+  300-314 (`requires: assignmentRules`) cover split rules hashed with the
+  experiment seed, environment scoping, first match, precedence over holdouts,
+  traffic and full-on, the missing-unit split, malformed/wrong-count splits and
+  the percentage tolerance; 315-319 (`requires: semverOperators`) cover each
+  operator, pre-release ordering and invalid versions; 320-321
+  (`requires: xAgentHeader`) check the SDK's own context fetch and publish
+  requests carry `absmartly-<lang>-sdk/<version>`. With the parity pins in
+  `sdk-branches.sh` every SDK requires the rules and semver capabilities.
+
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
   scenarios (the JavaScript SDK is the canonical reference).

@@ -92,8 +92,8 @@ public:
 // call fail (one-shot) with "Publish failed", so the publishFail capability
 // exercises the SDK's real failure path instead of the wrapper short-circuiting
 // publish. Whether pending events survive is decided entirely by the SDK.
-// In e2e mode the delegate is the SDK's DefaultContextPublisher (real HTTP);
-// in local mode there is no collector, so a successful transport is a no-op.
+// In e2e mode and with publishToEndpoint the delegate is the SDK's
+// DefaultContextPublisher (real HTTP); otherwise in local mode there is no collector, so a successful transport is a no-op.
 class FailablePublisher : public absmartly::ContextPublisher {
 public:
     explicit FailablePublisher(std::shared_ptr<absmartly::ContextPublisher> delegate = nullptr)
@@ -151,6 +151,27 @@ static std::atomic<int> context_counter{0};
 
 static std::mutex payloads_mu;
 static std::map<std::string, absmartly::ContextData> payload_store;
+
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+static std::mutex captured_mu;
+static std::map<std::string, json> captured_requests;
+
+static void capture_request(const std::string& payload_id, const httplib::Request& req) {
+    json headers = json::object();
+    for (const auto& [name, value] : req.headers) {
+        if (!headers.contains(name)) {
+            headers[name] = json::array();
+        }
+        headers[name].push_back(value);
+    }
+    std::lock_guard<std::mutex> lock(captured_mu);
+    auto& list = captured_requests[payload_id];
+    if (!list.is_array()) {
+        list = json::array();
+    }
+    list.push_back({{"method", req.method}, {"headers", headers}});
+}
 
 static int server_port = 3000;
 
@@ -325,7 +346,8 @@ int main() {
                     {"diagnosticsUtf8", false}, {"numericUnitIds", true},
                     {"publishThrowsOnFailure", true}, {"trackRejectsNonObjectProperties", true},
                     {"refreshNoOpOnFailedContext", true},
-                    {"assignmentRules", true}, {"semverOperators", true}};
+                    {"assignmentRules", true}, {"semverOperators", true},
+                    {"xAgentHeader", true}};
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -359,6 +381,28 @@ int main() {
                  json resp = make_response(result, window_events());
                  res.set_content(resp.dump(), "application/json");
              });
+
+    // Mock collector - with publishToEndpoint the SDK publishes
+    // PUT {endpoint}/context here. Registered before the payload-store PUT,
+    // whose pattern would otherwise match this path too.
+    svr.Put(R"(/context_payload/([^/]+)/context)",
+            [](const httplib::Request& req, httplib::Response& res) {
+                capture_request(req.matches[1], req);
+                res.set_content("{}", "application/json");
+            });
+
+    svr.Get(R"(/context_payload/([^/]+)/requests)",
+            [](const httplib::Request& req, httplib::Response& res) {
+                json requests = json::array();
+                {
+                    std::lock_guard<std::mutex> lock(captured_mu);
+                    auto it = captured_requests.find(req.matches[1]);
+                    if (it != captured_requests.end()) {
+                        requests = it->second;
+                    }
+                }
+                res.set_content(json{{"requests", requests}}.dump(), "application/json");
+            });
 
     svr.Put(R"(/context_payload/(.+))",
             [](const httplib::Request& req, httplib::Response& res) {
@@ -413,6 +457,7 @@ int main() {
     svr.Get(R"(/context_payload/([^/]+)/context)",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
+                capture_request(payload_id, req);
                 std::optional<absmartly::ContextData> cd = find_payload(payload_id);
                 if (!cd) {
                     res.status = 404;
@@ -587,6 +632,14 @@ int main() {
                          auto client = std::make_shared<absmartly::Client>(
                              client_config, std::make_shared<absmartly::DefaultHTTPClient>());
                          auto provider = std::make_shared<absmartly::DefaultContextDataProvider>(client);
+                         // publishToEndpoint: publish through the SDK's own
+                         // publisher to {endpoint}/context (this same server,
+                         // whose thread pool keeps serving while publish waits).
+                         if (body.contains("publishToEndpoint") && body["publishToEndpoint"].is_boolean() &&
+                             body["publishToEndpoint"].get<bool>()) {
+                             publisher = std::make_shared<FailablePublisher>(
+                                 std::make_shared<absmartly::DefaultContextPublisher>(client));
+                         }
 
                          if (payload_throttle > 0) {
                              // Return before the data arrives: the context stays

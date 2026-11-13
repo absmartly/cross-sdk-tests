@@ -25,6 +25,17 @@ object Server extends IOApp {
   private val pendingFetches = TrieMap[String, FiberIO[Unit]]()
   private val payloads = TrieMap[String, Json]()
   private val contextCounter = new AtomicInteger(0)
+  // Requests the SDK sent to each payload's mock collector endpoint, for the
+  // capturedRequests step (X-Agent scenarios).
+  private val capturedRequests = TrieMap[String, Vector[Json]]()
+
+  private def captureRequest(payloadId: String, req: Request[IO]): IO[Unit] = IO {
+    val headers = Json.fromFields(req.headers.headers.map(h => h.name.toString -> Json.fromString(h.value)))
+    val entry = Json.obj("method" -> Json.fromString(req.method.name), "headers" -> headers)
+    capturedRequests.synchronized {
+      capturedRequests(payloadId) = capturedRequests.getOrElse(payloadId, Vector.empty) :+ entry
+    }
+  }
 
   final case class InvalidRequest(message: String) extends Exception(message)
 
@@ -42,11 +53,14 @@ object Server extends IOApp {
    * one-shot transport failure; the real `Context.publish()` path then runs,
    * receives the failed Future and is responsible for preserving pending events
    * (Context.scala `_flush` re-queues on failure). The wrapper never fakes the
-   * publish result itself.
+   * publish result itself. With a delegate (e2e mode, or publishToEndpoint) the
+   * publish goes through the SDK's own DefaultContextPublisher instead.
    */
-  final class ArmablePublisher(delegate: Option[ContextPublisher] = None) extends ContextPublisher {
+  final class ArmablePublisher(initialDelegate: Option[ContextPublisher] = None) extends ContextPublisher {
     private val failNext = new java.util.concurrent.atomic.AtomicBoolean(false)
+    @volatile private var delegate: Option[ContextPublisher] = initialDelegate
     def arm(): Unit = failNext.set(true)
+    def forwardTo(publisher: ContextPublisher): Unit = delegate = Some(publisher)
     def publish(units: Map[String, String], hashed: Boolean, exposures: List[Exposure], goals: List[Goal], attributes: Option[List[Attribute]]): scala.concurrent.Future[Unit] =
       if (failNext.getAndSet(false)) scala.concurrent.Future.failed(new RuntimeException("Publish failed"))
       else delegate.fold(scala.concurrent.Future.successful(()))(_.publish(units, hashed, exposures, goals, attributes))
@@ -117,7 +131,8 @@ object Server extends IOApp {
         "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
         "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
         "assignmentRules" -> Json.fromBoolean(true),
-        "semverOperators" -> Json.fromBoolean(true)
+        "semverOperators" -> Json.fromBoolean(true),
+        "xAgentHeader" -> Json.fromBoolean(true)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -154,11 +169,18 @@ object Server extends IOApp {
         }
       }
 
-    case GET -> Root / "context_payload" / payloadId / "context" :? _ =>
-      payloads.get(payloadId) match {
+    case req @ GET -> Root / "context_payload" / payloadId / "context" :? _ =>
+      captureRequest(payloadId, req) *> (payloads.get(payloadId) match {
         case Some(data) => Ok(data)
         case None => NotFound(errorBody("Payload not found"))
-      }
+      })
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    case req @ PUT -> Root / "context_payload" / payloadId / "context" =>
+      captureRequest(payloadId, req) *> Ok(Json.obj())
+
+    case GET -> Root / "context_payload" / payloadId / "requests" =>
+      Ok(Json.obj("requests" -> Json.fromValues(capturedRequests.getOrElse(payloadId, Vector.empty))))
 
     case req @ POST -> Root / "context_payload" / payloadId / "context" =>
       payloads.get(payloadId) match {
@@ -272,12 +294,20 @@ object Server extends IOApp {
               case Some(endpoint) =>
                 val payloadThrottle = cursor.downField("options").downField("payloadThrottle").as[Int].getOrElse(0)
                 val translatedEndpoint = translateEndpoint(endpoint)
+                // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
+                // (its real HTTP client) to {endpoint}/context.
+                val publishToEndpoint = cursor.downField("publishToEndpoint").as[Boolean].getOrElse(false)
+                def sdkConfig(collector: WrapperEventCollector): SDKConfig = {
+                  val (clientApp, clientEnv) = clientNames(cursor)
+                  val config = makeSdkConfig(translatedEndpoint, collector, publisher, clientApp, clientEnv)
+                  if (publishToEndpoint) publisher.forwardTo(new DefaultContextPublisher(config))
+                  config
+                }
 
                 if (payloadThrottle > 0) {
                   IO {
                     val collector = new WrapperEventCollector()
-                    val (clientApp, clientEnv) = clientNames(cursor)
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher, clientApp, clientEnv))
+                    val sdk = new SDK(sdkConfig(collector))
                     // A not-yet-ready context, readied by the SDK's own async
                     // fetch after the throttle delay, without holding a thread.
                     val context = new Context(sdk, None, units, options, collector)
@@ -291,8 +321,7 @@ object Server extends IOApp {
                 } else {
                   IO.fromFuture(IO {
                     val collector = new WrapperEventCollector()
-                    val (clientApp, clientEnv) = clientNames(cursor)
-                    val sdk = new SDK(makeSdkConfig(translatedEndpoint, collector, publisher, clientApp, clientEnv))
+                    val sdk = new SDK(sdkConfig(collector))
                     sdk.createContext(units, options).map { context =>
                       (context, collector, None)
                     }

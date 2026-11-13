@@ -18,6 +18,7 @@ from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
 from sdk.default_context_data_provider import DefaultContextDataProvider
+from sdk.default_context_publisher import DefaultContextPublisher
 from sdk import utils as sdk_utils
 import jsons
 import threading
@@ -110,9 +111,14 @@ class EventCollector(ContextEventLogger):
                 return str(data)
 
 class CustomPublisher(ContextPublisher):
-    def __init__(self, event_collector):
+    # Test contexts publish nowhere: a publish succeeds without sending anything.
+    # With publishToEndpoint the wrapper passes the SDK's own
+    # DefaultContextPublisher as sdk_publisher, so the publish is the SDK's real
+    # PUT {endpoint}/context. Either way /publishFail arms a one-shot failure.
+    def __init__(self, event_collector, sdk_publisher=None):
         self.event_collector = event_collector
         self._should_fail = False
+        self._sdk_publisher = sdk_publisher
 
     def publish(self, context, event):
         if self._should_fail:
@@ -120,6 +126,8 @@ class CustomPublisher(ContextPublisher):
             future = Future()
             future.set_exception(Exception('Publish failed'))
             return future
+        if self._sdk_publisher is not None:
+            return self._sdk_publisher.publish(context, event)
         future = Future()
         future.set_result(None)
         return future
@@ -168,7 +176,8 @@ def capabilities():
         'refreshNoOpOnFailedContext': False,
         'clientNoEnvironment': True,
         'assignmentRules': True,
-        'semverOperators': True
+        'semverOperators': True,
+        'xAgentHeader': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -187,14 +196,35 @@ def get_context_payload(payload_id):
 
     return jsonify(data)
 
+# Requests the SDK sent to each payload's mock collector endpoint, for the
+# capturedRequests step (X-Agent scenarios).
+captured_requests = {}
+
+def capture_request(payload_id):
+    captured_requests.setdefault(payload_id, []).append({
+        'method': request.method,
+        'headers': dict(request.headers)
+    })
+
 @app.route('/context_payload/<payload_id>/context', methods=['GET'])
 def mock_api_context(payload_id):
+    capture_request(payload_id)
     # A never-stored payload id is a missing collector payload: answer 404 so
     # the SDK's own fetch fails the context, instead of serving an
     # empty-but-valid payload that would make it silently ready.
     if payload_id not in payload_store:
         return jsonify({'error': 'Payload not found'}), 404
     return jsonify(payload_store[payload_id])
+
+# Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+@app.route('/context_payload/<payload_id>/context', methods=['PUT'])
+def mock_api_publish(payload_id):
+    capture_request(payload_id)
+    return jsonify({})
+
+@app.route('/context_payload/<payload_id>/requests', methods=['GET'])
+def captured_payload_requests(payload_id):
+    return jsonify({'requests': captured_requests.get(payload_id, [])})
 
 @app.route('/context', methods=['POST'])
 def create_context():
@@ -257,7 +287,6 @@ def create_context():
     context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
     event_collector = EventCollector()
-    publisher = CustomPublisher(event_collector)
 
     client_config = ClientConfig()
     endpoint = req_data.get('endpoint')
@@ -284,6 +313,12 @@ def create_context():
     http_client_config = DefaultHTTPClientConfig()
     http_client = DefaultHTTPClient(http_client_config)
     client = Client(client_config, http_client)
+
+    # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    sdk_publisher = None
+    if req_data.get('publishToEndpoint') and endpoint:
+        sdk_publisher = DefaultContextPublisher(client)
+    publisher = CustomPublisher(event_collector, sdk_publisher)
 
     sdk_config = ABSmartlyConfig()
     sdk_config.client = client

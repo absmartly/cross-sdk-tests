@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
     routing::{delete, get, post, put},
     Json, Router,
@@ -21,8 +21,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
 /// mode it sends through the SDK's own `ABsmartly::publish` (same request and
 /// headers as the SDK's default publisher, blocking on the multi-thread
-/// runtime the same way); in mock mode there is no collector, so it delivers
-/// nothing.
+/// runtime the same way), as it does for a mock-endpoint context created with
+/// publishToEndpoint; otherwise in mock mode there is no collector, so it
+/// delivers nothing.
 struct ArmablePublisher {
     fail_next: Arc<AtomicBool>,
     sdk: Option<Arc<Client>>,
@@ -183,6 +184,9 @@ struct ContextData_ {
 struct AppState {
     contexts: RwLock<HashMap<String, Arc<ContextData_>>>,
     payloads: RwLock<HashMap<String, ContextData>>,
+    /// Requests the SDK sent to each payload's mock collector endpoint, for
+    /// the capturedRequests step (X-Agent scenarios).
+    captured_requests: Mutex<HashMap<String, Vec<Value>>>,
 }
 
 impl AppState {
@@ -190,6 +194,7 @@ impl AppState {
         Self {
             contexts: RwLock::new(HashMap::new()),
             payloads: RwLock::new(HashMap::new()),
+            captured_requests: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -217,6 +222,9 @@ struct CreateContextRequest {
     attributes: Option<HashMap<String, Value>>,
     #[serde(default)]
     client: Option<ClientConfigRequest>,
+    /// Publish through the SDK's own publisher to PUT {endpoint}/context.
+    #[serde(default, rename = "publishToEndpoint")]
+    publish_to_endpoint: bool,
 }
 
 /// Optional client config (the 2026-11 system-attributes round): a scenario can set
@@ -339,7 +347,8 @@ async fn capabilities_handler() -> impl IntoResponse {
         "trackRejectsNonObjectProperties": true,
         "refreshNoOpOnFailedContext": true,
         "assignmentRules": true,
-        "semverOperators": true
+        "semverOperators": true,
+        "xAgentHeader": true
     }))
 }
 
@@ -403,16 +412,59 @@ async fn get_payload_handler(
     }
 }
 
+/// Records a request served by a payload's mock collector endpoint: the method
+/// and every header as received (non-UTF-8 values are decoded lossily).
+fn capture_request(state: &AppState, payload_id: &str, method: &Method, headers: &HeaderMap) {
+    let mut recorded = serde_json::Map::new();
+    for name in headers.keys() {
+        let values: Vec<Value> = headers
+            .get_all(name)
+            .iter()
+            .map(|v| Value::String(String::from_utf8_lossy(v.as_bytes()).into_owned()))
+            .collect();
+        recorded.insert(name.as_str().to_string(), Value::Array(values));
+    }
+    state
+        .captured_requests
+        .lock()
+        .unwrap()
+        .entry(payload_id.to_string())
+        .or_default()
+        .push(json!({"method": method.as_str(), "headers": recorded}));
+}
+
 // Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
 async fn mock_api_context_handler(
     State(state): State<Arc<AppState>>,
     Path(payload_id): Path<String>,
+    method: Method,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
+    capture_request(&state, &payload_id, &method, &headers);
     let payloads = state.payloads.read().unwrap();
     match payloads.get(&payload_id).cloned() {
         Some(data) => Json(data).into_response(),
         None => (StatusCode::NOT_FOUND, Json(json!({"error": "payload not found"}))).into_response(),
     }
+}
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+async fn mock_api_publish_handler(
+    State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
+    method: Method,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    capture_request(&state, &payload_id, &method, &headers);
+    Json(json!({}))
+}
+
+async fn captured_requests_handler(
+    State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
+) -> impl IntoResponse {
+    let requests = state.captured_requests.lock().unwrap().get(&payload_id).cloned().unwrap_or_default();
+    Json(json!({ "requests": requests }))
 }
 
 async fn create_context_handler(
@@ -515,6 +567,10 @@ async fn create_context_handler(
 
     let (client_application, client_environment) = client_names(&req.client);
 
+    // publishToEndpoint: publish through the SDK's own client to {endpoint}/context.
+    // Set below when the endpoint path builds that client.
+    let mut endpoint_publisher_sdk: Option<Arc<Client>> = None;
+
     let (mut context, ready, failed) = if let Some(data) = req.data {
         // Honour the requested client config: seed the inline-data context with
         // the same application/environment the endpoint path uses, so a strict
@@ -555,7 +611,10 @@ async fn create_context_handler(
                 }
             }
             let publish_fail = Arc::new(AtomicBool::new(false));
-            ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
+            ctx.set_publisher(Box::new(ArmablePublisher {
+                fail_next: publish_fail.clone(),
+                sdk: req.publish_to_endpoint.then(|| sdk.clone()),
+            }));
             ctx.set_data_fetcher(sdk_data_fetcher(sdk.clone()));
 
             let (ready, failed, finalized) = (ctx.is_ready(), ctx.is_failed(), ctx.is_finalized());
@@ -611,6 +670,9 @@ async fn create_context_handler(
             })
             .into_response();
         } else {
+            if req.publish_to_endpoint {
+                endpoint_publisher_sdk = Some(sdk.clone());
+            }
             let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
             let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
             (ctx, ready, failed)
@@ -631,7 +693,7 @@ async fn create_context_handler(
     };
 
     let publish_fail = Arc::new(AtomicBool::new(false));
-    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
+    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: endpoint_publisher_sdk }));
 
     let finalized = context.is_finalized();
 
@@ -898,7 +960,8 @@ async fn publish_fail_handler(State(state): State<Arc<AppState>>, Path(context_i
 
 // Context::publish hands the event to the context's ArmablePublisher (which
 // delivers nothing in mock mode and sends via the SDK's ABsmartly::publish in
-// e2e mode).
+// e2e mode and with publishToEndpoint; the SDK's PUT comes back to this server,
+// which with_context's block_in_place keeps serving).
 async fn publish_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
     with_context(&state, &context_id, StatusCode::INTERNAL_SERVER_ERROR, |c| c.publish().map(|_| Value::Null))
 }
@@ -955,7 +1018,8 @@ async fn main() {
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
         .route("/context_payload/{payloadId}", put(store_payload_handler).get(get_payload_handler))
-        .route("/context_payload/{payloadId}/context", get(mock_api_context_handler))
+        .route("/context_payload/{payloadId}/context", get(mock_api_context_handler).put(mock_api_publish_handler))
+        .route("/context_payload/{payloadId}/requests", get(captured_requests_handler))
         .route("/context", post(create_context_handler))
         .route("/context/{contextId}/setUnit", post(set_unit_handler))
         .route("/context/{contextId}/getUnit", post(get_unit_handler))

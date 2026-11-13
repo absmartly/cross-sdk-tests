@@ -42,6 +42,16 @@ app.Use(async (context, next) =>
 var contexts = new ConcurrentDictionary<string, ContextData>();
 var payloadStore = new ConcurrentDictionary<string, string>();
 const string EmptyPayload = "{\"experiments\":[]}";
+// Requests the SDK sent to each payload's mock collector endpoint, for the
+// capturedRequests step (X-Agent scenarios).
+var capturedRequests = new ConcurrentDictionary<string, List<object>>();
+
+void CaptureRequest(string payloadId, HttpRequest request)
+{
+    var headers = request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+    var list = capturedRequests.GetOrAdd(payloadId, _ => new List<object>());
+    lock (list) list.Add(new { method = request.Method, headers });
+}
 
 string TranslateEndpoint(string endpoint)
 {
@@ -81,7 +91,8 @@ app.MapGet("/capabilities", () => Results.Ok(new
     trackRejectsNonObjectProperties = true,
     refreshNoOpOnFailedContext = true,
     assignmentRules = true,
-    semverOperators = true
+    semverOperators = true,
+    xAgentHeader = true
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -154,8 +165,28 @@ app.MapGet("/context_payload/{payloadId}", async (string payloadId, [FromQuery] 
     return Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json");
 });
 
-app.MapGet("/context_payload/{payloadId}/context", (string payloadId) =>
-    Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json"));
+app.MapGet("/context_payload/{payloadId}/context", (string payloadId, HttpContext httpContext) =>
+{
+    CaptureRequest(payloadId, httpContext.Request);
+    return Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json");
+});
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+app.MapPut("/context_payload/{payloadId}/context", (string payloadId, HttpContext httpContext) =>
+{
+    CaptureRequest(payloadId, httpContext.Request);
+    return Results.Ok(new { });
+});
+
+app.MapGet("/context_payload/{payloadId}/requests", (string payloadId) =>
+{
+    List<object> snapshot = new();
+    if (capturedRequests.TryGetValue(payloadId, out var list))
+    {
+        lock (list) snapshot.AddRange(list);
+    }
+    return Results.Ok(new { requests = snapshot });
+});
 
 app.MapPost("/context", async (HttpContext httpContext) =>
 {
@@ -347,22 +378,37 @@ app.MapPost("/context", async (HttpContext httpContext) =>
 
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var publishFailFlag = new PublishFailFlag();
+        // payloadThrottle only delays the HTTP GET of context data (simulated
+        // network latency); everything else is the SDK's own fetch path.
+        var httpClientFactory = new DummyHttpClientFactory(payloadThrottle);
+        var serviceConfig = new ABSmartlyServiceConfiguration
+        {
+            Endpoint = endpoint,  // Use provided endpoint or dummy
+            ApiKey = "dummy",
+            Application = clientApplication,
+            Environment = clientEnvironment
+        };
+
+        // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
+        // (its real service client) to {endpoint}/context, as e2e mode does.
+        IContextPublisher publishDelegate = null;
+        if (requestJson.TryGetValue("publishToEndpoint", out var publishToEndpoint) &&
+            publishToEndpoint.ValueKind == JsonValueKind.True && requestJson.ContainsKey("endpoint"))
+        {
+            publishDelegate = new ABSmartly.Services.DefaultContextPublisher(new ABSmartlyService(
+                serviceConfig,
+                httpClientFactory,
+                new ABSmartly.Services.DefaultContextDataDeserializer(),
+                new ABSmartly.Services.DefaultContextEventSerializer()));
+        }
 
         var sdk = new ABsmartly.Sdk(
-            // payloadThrottle only delays the HTTP GET of context data (simulated
-            // network latency); everything else is the SDK's own fetch path.
-            new DummyHttpClientFactory(payloadThrottle),
-            new ABSmartlyServiceConfiguration
-            {
-                Endpoint = endpoint,  // Use provided endpoint or dummy
-                ApiKey = "dummy",
-                Application = clientApplication,
-                Environment = clientEnvironment
-            },
+            httpClientFactory,
+            serviceConfig,
             new ABsmartlyConfig
             {
                 ContextEventLogger = eventCollector,
-                ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag)
+                ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag, publishDelegate)
             }
         );
 

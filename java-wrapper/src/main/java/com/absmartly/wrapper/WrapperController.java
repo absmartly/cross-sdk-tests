@@ -19,6 +19,16 @@ public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    // Requests the SDK sent to each payload's mock collector endpoint, for the
+    // capturedRequests step (X-Agent scenarios).
+    private final Map<String, List<Map<String, Object>>> capturedRequests = new ConcurrentHashMap<>();
+
+    private void captureRequest(String payloadId, String method, Map<String, String> headers) {
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("method", method);
+        entry.put("headers", new LinkedHashMap<>(headers));
+        capturedRequests.computeIfAbsent(payloadId, k -> Collections.synchronizedList(new ArrayList<>())).add(entry);
+    }
 
     private String translateEndpoint(String endpoint) {
         if (endpoint == null) return null;
@@ -93,6 +103,7 @@ public class WrapperController {
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
+        response.put("xAgentHeader", true);
         return response;
     }
 
@@ -174,7 +185,8 @@ public class WrapperController {
     }
 
     @GetMapping("/context_payload/{payloadId}/context")
-    public ResponseEntity<?> mockApiContext(@PathVariable String payloadId) {
+    public ResponseEntity<?> mockApiContext(@PathVariable String payloadId, @RequestHeader Map<String, String> headers) {
+        captureRequest(payloadId, "GET", headers);
         // A never-stored payload id is a missing collector payload: answer 404
         // so the SDK's own fetch fails the context, instead of serving an
         // empty-but-valid payload that would make it silently ready.
@@ -184,6 +196,25 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Payload not found"));
         }
         return ResponseEntity.ok(data);
+    }
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    @PutMapping("/context_payload/{payloadId}/context")
+    public Map<String, Object> mockApiPublish(@PathVariable String payloadId, @RequestHeader Map<String, String> headers) {
+        captureRequest(payloadId, "PUT", headers);
+        return Collections.emptyMap();
+    }
+
+    @GetMapping("/context_payload/{payloadId}/requests")
+    public Map<String, Object> capturedRequests(@PathVariable String payloadId) {
+        List<Map<String, Object>> requests = capturedRequests.get(payloadId);
+        List<Map<String, Object>> snapshot = new ArrayList<>();
+        if (requests != null) {
+            synchronized (requests) {
+                snapshot.addAll(requests);
+            }
+        }
+        return Collections.singletonMap("requests", snapshot);
     }
 
     @PostMapping("/context")
@@ -287,7 +318,6 @@ public class WrapperController {
 
             EventCollector eventCollector = new EventCollector();
             createCollector = eventCollector;
-            CustomPublisher publisher = new CustomPublisher(eventCollector);
 
             ContextConfig contextConfig = ContextConfig.create();
 
@@ -323,6 +353,12 @@ public class WrapperController {
                 : new com.absmartly.sdk.NoEnvironmentClient(
                     namedClientConfig,
                     com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+
+            // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
+            // (its real HTTP client) to {endpoint}/context.
+            boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
+            CustomPublisher publisher = new CustomPublisher(eventCollector,
+                publishToEndpoint ? new DefaultContextEventHandler(namedClient) : null);
 
             if (contextData != null) {
                 // Sync: createContextWith - use dummy data provider, but keep the
