@@ -13,8 +13,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{
-    utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
+use absmartly::{
+    utils, Client, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// nothing.
 struct ArmablePublisher {
     fail_next: Arc<AtomicBool>,
-    sdk: Option<Arc<ABsmartly>>,
+    sdk: Option<Arc<Client>>,
 }
 
 impl ContextPublisher for ArmablePublisher {
@@ -54,8 +54,8 @@ fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
 
 /// SDK pointed at a mock collector endpoint (e.g. `/context_payload/{id}`);
 /// the SDK appends `/context` and fetches it itself.
-fn mock_endpoint_sdk(endpoint: &str, application: &str, environment: &str) -> Result<ABsmartly, absmartly_sdk::SDKError> {
-    ABsmartly::builder()
+fn mock_endpoint_sdk(endpoint: &str, application: &str, environment: &str) -> Result<Client, absmartly::Error> {
+    Client::builder()
         .endpoint(endpoint)
         .api_key("test-key")
         .application(application)
@@ -86,7 +86,7 @@ fn client_names(client: &Option<ClientConfigRequest>) -> (String, String) {
 /// Refresh fetcher for a context resolved outside `create_context` (the
 /// throttled path). It fetches through the SDK's own client, as the fetcher
 /// the SDK installs in `create_context` does.
-fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher {
+fn sdk_data_fetcher(sdk: Arc<Client>) -> absmartly::context::DataFetcher {
     Box::new(move || {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
@@ -435,7 +435,7 @@ async fn create_context_handler(
 
         let units: HashMap<String, Value> = req.units.clone();
 
-        let sdk = match ABsmartly::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
+        let sdk = match Client::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 return (
@@ -518,7 +518,7 @@ async fn create_context_handler(
         // the same application/environment the endpoint path uses, so a strict
         // audience on either configured name matches here too (WRAPPER_API_SPEC
         // promises client config in both create modes).
-        let sdk = ABsmartly::new("http://dummy", "test-key", &client_application, &client_environment).expect("Failed to create SDK");
+        let sdk = Client::new("http://dummy", "test-key", &client_application, &client_environment).expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
@@ -614,7 +614,7 @@ async fn create_context_handler(
             (ctx, ready, failed)
         }
     } else if req.fail_load {
-        let sdk = ABsmartly::builder()
+        let sdk = Client::builder()
             .endpoint("http://127.0.0.1:1")
             .api_key("test-key").application("test-app").environment("test-env")
             .retries(1).build().expect("Failed to create SDK");
@@ -622,7 +622,7 @@ async fn create_context_handler(
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     } else {
-        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        let sdk = Client::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
         let ctx = sdk.create_context_with(units, ContextData::default(), Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)

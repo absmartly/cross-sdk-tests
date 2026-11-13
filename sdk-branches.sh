@@ -2,66 +2,36 @@
 # Single source of truth for per-SDK known-good branches, used by both
 # setup-sdks.sh (local runs) and .github/workflows/cross-sdk.yml (CI).
 # Edit branches here only — do not duplicate this map elsewhere.
-# 2026-11 system-attributes round (§5 of Márcio's brief): every SDK that
-# evaluates audiences locally is pinned to its `feat/sdk-system-attributes`
-# branch, which makes `application` + `environment` always-on attributes in the
-# audience/rule evaluation map and drops `app_version`. These 14 branches are the
-# Phase-1 reference-aligned heads (javascript-sdk#68 is the REFERENCE; java #22,
-# python3 #13, dotnet #11, go #13, kotlin #3, php #9, ruby #40, swift #8,
-# flutter #9, scala #3, rust #8, elixir #2, cpp #2). None are merged yet.
+# 2026-11 feature-parity round: every non-JS SDK is pinned to its
+# `feat/assignment-rules-semver-x-agent-publish` branch, which ports from
+# javascript-sdk the custom assignment rules (Experiment.assignmentRules), the
+# semver_* JSON-expression operators, the javascript-sdk#68 system attributes
+# (always-on application/environment in audience/rule evaluation, no app_version)
+# and the `X-Agent: absmartly-<lang>-sdk/<version>` request header. None are merged
+# yet. javascript-sdk and java-sdk stay on feat/sdk-system-attributes
+# (javascript-sdk#68 is the REFERENCE and contains main; java-sdk#22 stacks on #17's
+# rules + semver). The JS-family wrappers (react/vue2/vue3/angular) build
+# javascript-sdk from its pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
 # tools/sdk-round-2026-11/compute.js records the expected results from the
-# javascript-sdk branch (see PINNED_COMMIT in the generator). Each
-# feat/sdk-system-attributes branch is a descendant of that SDK's prior
-# cross-SDK-passing pin, so this round's audience/app_version behaviour is added
-# on top of the behaviours earlier rounds already pinned — except php (see note).
+# javascript-sdk branch (see PINNED_COMMIT in the generator).
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="feat/angular-sdk-complete"
-  ["cpp-sdk"]="feat/sdk-system-attributes"
-  # dotnet-sdk#11 (feat/sdk-system-attributes) stacks the system-attributes change
-  # on top of #8 (fix/audit-operator-fixes, the JSON custom-field fix for scenarios
-  # 16, 54-57), so the dotnet lane keeps that fix and gains always-on
-  # application/environment. The wrapper constructs the #8 entry point (class
-  # ABsmartly, ABsmartlyConfig); ABSdk/ABSdkConfig remain as [Obsolete] aliases.
-  ["dotnet-sdk"]="feat/sdk-system-attributes"
-  ["elixir-sdk"]="feat/sdk-system-attributes"
-  ["flutter-sdk"]="feat/sdk-system-attributes"
-  ["go-sdk"]="feat/sdk-system-attributes"
-  # java-sdk#22 (feat/sdk-system-attributes) stacks the system-attributes change
-  # on top of #17's custom assignment rules + semver_* operators, so the java lane
-  # still runs the "Custom Assignment Rules" and "Semver Operators" groups for real
-  # (expected-capabilities.json marks java required for assignmentRules/semverOperators)
-  # and now also the ungated "System Attributes" group.
+  ["cpp-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["dotnet-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["elixir-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["flutter-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["go-sdk"]="feat/assignment-rules-semver-x-agent-publish"
   ["java-sdk"]="feat/sdk-system-attributes"
-  # javascript-sdk#68 (feat/sdk-system-attributes) is the JavaScript reference for
-  # this round: main (the TypeScript rewrite, custom assignment rules from #66, the
-  # semver_* operators, and the four #67 edge-case fixes, all already on main) plus
-  # the always-on application/environment audience attributes and app_version removal.
-  # tools/sdk-round-2026-11/compute.js records the expected results from exactly this
-  # branch (PINNED_COMMIT). The JS-family wrappers (react/vue2/vue3/angular) build
-  # javascript-sdk from this pin too, so they inherit the same behaviour.
   ["javascript-sdk"]="feat/sdk-system-attributes"
-  ["kotlin-sdk"]="feat/sdk-system-attributes"
+  ["kotlin-sdk"]="feat/assignment-rules-semver-x-agent-publish"
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
-  # php-sdk#9 (feat/sdk-system-attributes) implements §5, and per the brief the php lane
-  # is pinned to it so the group runs against the new code. BUT #9 branches off php-sdk
-  # `main`, which is a STALE 2023 snapshot (fd81415, 2023-02-08) of the old synchronous
-  # SDK — it predates the entire ReactPHP async rewrite that the current line
-  # fix/audit-operator-fixes (2026) carries (react/http, react/async, react/promise;
-  # ContextPublisher, AsyncContextDataProvider, createContextAsync/createContextPending).
-  # The current php-wrapper is written against that async line, so it does not even load
-  # against #9 ("Class ABSmartly\SDK\Context\ContextPublisher not found") and the php lane
-  # fails to start. This is a php-sdk-side coordination issue (reported per §5 step 5): #9
-  # must be rebased onto fix/audit-operator-fixes (its sysattr change re-applied on the
-  # current SDK), not onto the 2023 main, before the php lane can run. Porting the wrapper
-  # back to the 2023 synchronous API is not viable (it would break the other 240 scenarios).
-  # See the PR description.
-  ["php-sdk"]="feat/sdk-system-attributes"
-  ["python3-sdk"]="feat/sdk-system-attributes"
+  ["php-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["python3-sdk"]="feat/assignment-rules-semver-x-agent-publish"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-  ["ruby-sdk"]="feat/sdk-system-attributes"
-  ["rust-sdk"]="feat/sdk-system-attributes"
-  ["scala-sdk"]="feat/sdk-system-attributes"
-  ["swift-sdk"]="feat/sdk-system-attributes"
+  ["ruby-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["rust-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["scala-sdk"]="feat/assignment-rules-semver-x-agent-publish"
+  ["swift-sdk"]="feat/assignment-rules-semver-x-agent-publish"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
 )
