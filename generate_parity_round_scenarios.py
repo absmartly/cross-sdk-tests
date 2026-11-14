@@ -491,7 +491,8 @@ def client_application_scenarios(first_number):
                            "context instead and fails.",
             "contextData": {"experiments": [env]},
             "steps": [{"action": "createContextWith", "params": create_params,
-                       "expect": {"errorAnyOf": BLANK_APPLICATION_ERRORS, "events": []}}],
+                       "expect": {"status": 400, "errorAnyOf": BLANK_APPLICATION_ERRORS,
+                                  "events": []}}],
             "requires": [REJECTS_BLANK_APP_CAPABILITY],
         },
         {

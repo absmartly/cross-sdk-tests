@@ -421,7 +421,6 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         }
         catch (ArgumentException ex)
         {
-            // The SDK's own client-config validation (e.g. a blank application).
             return Results.BadRequest(new { error = ex.Message, events = Array.Empty<object>() });
         }
 

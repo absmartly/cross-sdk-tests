@@ -426,7 +426,6 @@ post '/context' do
   # `environment` out of the audience/rule evaluation map.
   client_config.environment = lc_environment.nil? ? 'placeholder' : lc_environment
 
-  # Client.create rejects an invalid application: surface its message as a 400.
   begin
     client = Client.create(client_config)
   rescue ArgumentError => e

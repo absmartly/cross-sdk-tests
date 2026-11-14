@@ -321,9 +321,8 @@ post '/context' do
   sdk_config.context_event_logger = collector
   throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
   application, environment = client_names(req_data[:client])
-  # Client.create rejects an invalid application: surface its message as a 400.
-  build_client = lambda do |endpoint|
-    sdk_client(endpoint, application: application, environment: environment)
+  build_client = lambda do |endpoint, max_retries: nil|
+    sdk_client(endpoint, application: application, environment: environment, max_retries: max_retries)
   rescue ArgumentError => e
     halt 400, { error: e.message, events: [] }.to_json
   end
@@ -337,7 +336,7 @@ post '/context' do
   elsif req_data[:failLoad]
     # A real fetch against a closed port: the SDK's client fails the way a
     # network failure does.
-    sdk_config.client = sdk_client('http://127.0.0.1:1', max_retries: 0)
+    sdk_config.client = build_client.call('http://127.0.0.1:1', max_retries: 0)
     context = ABSmartly.new(sdk_config).create_context(context_config)
   else
     client = build_client.call(translate_endpoint(req_data[:endpoint]) || 'http://dummy')

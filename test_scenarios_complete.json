@@ -35837,6 +35837,7 @@
           }
         },
         "expect": {
+          "status": 400,
           "errorAnyOf": [
             "Invalid 'application' in options argument",
             "Missing Application configuration",

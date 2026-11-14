@@ -283,8 +283,6 @@ fun Application.configureRouting() {
                         .setAPIKey("test-api-key")
                         .setApplication(clientApplication)
                         .setEnvironment(clientEnvironment)
-                    // Client construction rejects an invalid application: surface the
-                    // SDK's own message as a 400.
                     val client = try {
                         com.absmartly.sdk.Client.create(clientConfig)
                     } catch (e: IllegalArgumentException) {
@@ -308,8 +306,6 @@ fun Application.configureRouting() {
                         .setAPIKey("test-api-key")
                         .setApplication(clientApplication)
                         .setEnvironment(clientEnvironment)
-                    // Client construction rejects an invalid application: surface the
-                    // SDK's own message as a 400.
                     val client = try {
                         com.absmartly.sdk.Client.create(clientConfig)
                     } catch (e: IllegalArgumentException) {

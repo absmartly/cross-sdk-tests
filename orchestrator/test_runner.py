@@ -435,6 +435,10 @@ SDK_AGENT_LANGUAGE = {
 }
 
 
+def _as_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else [value]
+
+
 def validate_captured_requests(
     step_index: int, body: Any, params: Dict[str, Any], expected: Dict[str, Any], sdk_name: str = ""
 ) -> List[Dict[str, Any]]:
@@ -468,7 +472,11 @@ def validate_captured_requests(
         if not isinstance(headers, dict):
             failures.append(failure(f"requests[{i}].headers", "an object", headers))
             continue
-        lowered = {str(k).lower(): v for k, v in headers.items()}
+        lowered: Dict[str, Any] = {}
+        for k, v in headers.items():
+            # Case-variant duplicates are combined, so no captured value escapes the pattern check.
+            key = str(k).lower()
+            lowered[key] = [*_as_list(lowered[key]), *_as_list(v)] if key in lowered else v
         for name, pattern in expected.get("headerPatterns", {}).items():
             pattern = pattern.replace("{lang}", re.escape(SDK_AGENT_LANGUAGE.get(sdk_name, sdk_name)))
             value = lowered.get(name.lower(), MISSING)
@@ -997,6 +1005,19 @@ class TestOrchestrator:
                             "actual": "error response body is not a JSON object",
                         }
                     )
+
+                if "status" in expected:
+                    actual_status = exc.response.status_code if exc.response is not None else None
+                    if actual_status != expected["status"]:
+                        failures.append(
+                            {
+                                "step": step_index,
+                                "action": action,
+                                "field": "status",
+                                "expected": expected["status"],
+                                "actual": actual_status,
+                            }
+                        )
 
                 if "errorContains" in expected:
                     if expected["errorContains"].lower() not in error_msg.lower():

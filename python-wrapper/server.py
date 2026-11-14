@@ -70,21 +70,23 @@ class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
         self._lock = threading.Lock()
+        self._pending_alias = False
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
-        # The python3-sdk emits the legacy "close" event *and* its cross-SDK
+        # The python3-sdk emits the legacy "close" event and then its cross-SDK
         # alias "finalize" for the same lifecycle transition. The contract (and
         # the JS reference) name this event "finalize" and expect it once, so
-        # translate "close" -> "finalize" and drop the raw "finalize" the SDK
-        # pairs it with, the way the other wrappers normalise event names.
-        # Dropping the raw "finalize" (rather than de-duplicating on the last
-        # stored event) keeps one "finalize" per transition without masking a
-        # future "finalize" that the SDK might emit on a repeated close().
+        # translate "close" -> "finalize" and drop only the alias that directly
+        # follows a "close"; any other "finalize" stays visible to the harness.
         if event_type_str == 'close':
             event_type_str = 'finalize'
-        elif event_type_str == 'finalize':
+            self._pending_alias = True
+        elif event_type_str == 'finalize' and self._pending_alias:
+            self._pending_alias = False
             return
+        else:
+            self._pending_alias = False
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
             self.events.append({
@@ -306,13 +308,10 @@ def create_context():
         client_config.application = 'test'
         client_config.environment = 'test'
     else:
-        if 'application' in client_cfg:
-            application = client_cfg['application']
-            if not isinstance(application, str):
-                return jsonify({'error': "Invalid 'application' in client argument", 'events': []}), 400
-            client_config.application = application
-        else:
-            client_config.application = 'test'
+        application = client_cfg.get('application', 'test')
+        if not isinstance(application, str):
+            return jsonify({'error': "Invalid 'application' in client argument", 'events': []}), 400
+        client_config.application = application
         environment = client_cfg.get('environment')
         client_config.environment = environment if isinstance(environment, str) and environment else None
 

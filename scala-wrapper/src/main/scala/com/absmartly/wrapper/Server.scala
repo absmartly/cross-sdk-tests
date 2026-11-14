@@ -28,7 +28,14 @@ object Server extends IOApp {
   private val capturedRequests = TrieMap[String, Vector[Json]]()
 
   private def captureRequest(payloadId: String, req: Request[IO]): IO[Unit] = IO {
-    val headers = Json.fromFields(req.headers.headers.map(h => h.name.toString -> Json.fromString(h.value)))
+    // Repeated (or case-variant) names keep every value, so none escapes the harness check.
+    val headers = Json.fromFields(
+      req.headers.headers
+        .groupBy(_.name.toString.toLowerCase)
+        .map { case (name, values) =>
+          name -> (if (values.size == 1) Json.fromString(values.head.value)
+                   else Json.fromValues(values.map(h => Json.fromString(h.value))))
+        })
     val entry = Json.obj("method" -> Json.fromString(req.method.name), "headers" -> headers)
     capturedRequests.synchronized {
       capturedRequests(payloadId) = capturedRequests.getOrElse(payloadId, Vector.empty) :+ entry
@@ -86,7 +93,6 @@ object Server extends IOApp {
     val application =
       if (applicationField.succeeded) applicationField.as[String].left.map(_ => "Invalid 'application' in client argument")
       else Right("test-app")
-    // SDKConfig construction rejects an invalid application: surface the SDK's own message.
     application.flatMap { app =>
       try {
         SDKConfig(endpoint = "http://localhost:3000", apiKey = "test-key", application = app, environment = environment)

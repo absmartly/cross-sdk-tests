@@ -106,7 +106,10 @@ Rules:
   entirely — the "no environment configured" case. A wrapper whose SDK client
   requires a non-empty environment at construction must still honour this (for
   example by reporting the configured environment as absent), never by
-  substituting a placeholder the audience could match.
+  substituting a placeholder the audience could match. A wrapper that cannot build
+  a no-environment client at all reports `clientNoEnvironment: false` (a reviewed
+  policy exception) and scenario 253, the only one that exercises this case, skips
+  for it.
 - When the whole `client` object is omitted, the wrapper uses its own default
   application/environment, exactly as before — every pre-2026-11 scenario is
   unaffected.

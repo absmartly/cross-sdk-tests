@@ -65,18 +65,19 @@ across languages.
   240-245 (`requires: semverOperators`) cover the `semver_*` audience operators
   (numeric, not lexicographic, comparison). 246-247 (ungated) pin audience
   re-evaluation after `setAttribute`: a flipped strict audience reassigns the
-  unit and queues a fresh exposure. 248-253 (ungated, the §5 system-attributes
-  group) pin that every SDK always evaluates audiences and rule conditions with
-  the client's configured `application` and `environment` names (no opt-in),
-  user attributes overlay the system values, an unconfigured name is left out of
-  the map (the no-environment case), and `app_version` is gone — a variable read
-  goes through the matched variant too. The scenarios set the client
-  application/environment through the optional `client` field on `POST /context`
-  (see [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md)). The two gated groups are
-  expected to run on the JavaScript reference and its framework wrappers and on
-  java-sdk; every other SDK lists the two capabilities as reviewed exceptions
-  until it ports them, while the two ungated groups (246-247, 248-253) run on
-  every SDK.
+  unit and queues a fresh exposure. 248-253 (the §5 system-attributes group;
+  248-252 ungated, 253 `requires: clientNoEnvironment`) pin that every SDK
+  always evaluates audiences and rule conditions with the client's configured
+  `application` and `environment` names (no opt-in), user attributes overlay
+  the system values, an unconfigured name is left out of the map (the
+  no-environment case, 253), and a variable read goes through the matched
+  variant too. The SDKs also drop `app_version` from evaluation; these
+  scenarios do not exercise that, the SDKs' own unit tests do. The scenarios set
+  the client application/environment through the optional `client` field on
+  `POST /context` (see [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md)). With the
+  parity pins every SDK requires the rules and semver capabilities, the
+  ungated scenarios (246-252) run on every SDK, and 253 runs on the SDKs that
+  advertise `clientNoEnvironment`.
 
   Scenarios 300-323 pin the 2026-11 feature-parity round, where every SDK
   ports assignment rules, the `semver_*` operators and a versioned `X-Agent`

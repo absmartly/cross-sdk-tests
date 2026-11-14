@@ -355,8 +355,6 @@ public class WrapperController {
             // When no environment is configured, use a client that reports it as
             // absent so Context leaves `environment` out of the evaluation map
             // (Client.create would reject a null/empty environment outright).
-            // Client construction rejects an invalid application: surface the SDK's
-            // own message as a 400.
             Client namedClient;
             try {
                 namedClient = clientEnvironment != null

@@ -1137,6 +1137,13 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
         self.assertEqual(updated, existing)
 
+    def test_round_generator_rejects_numbers_reaching_the_parity_range(self):
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        intruder = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        with self.assertRaises(SystemExit):
+            round2611.assemble([intruder] + existing, self.rebuilt(existing, self.ROUND))
+
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity
         existing = self.load()
@@ -1203,6 +1210,11 @@ class BlankClientApplicationTest(unittest.TestCase):
             self.assertEqual(posted[0][1]["client"]["application"], "")
         repaired, _ = self.run_scenario(scenario, [(200, self.READY)])
         self.assertFalse(repaired["passed"])
+        for status in (401, 404, 500, 503):
+            wrong_status, _ = self.run_scenario(
+                scenario, [(status, {"error": "Missing Application configuration", "events": []})])
+            self.assertFalse(wrong_status["passed"], status)
+            self.assertEqual(wrong_status["failures"][0]["field"], "status")
         unrelated, _ = self.run_scenario(scenario, [(400, {"error": "Missing endpoint configuration",
                                                            "events": []})])
         self.assertFalse(unrelated["passed"])

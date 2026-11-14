@@ -622,27 +622,21 @@ int main() {
                  std::string context_id = make_context_id();
                  bool fetches_from_endpoint = false;
 
-                 // The inline-data and failLoad paths build Context without a
-                 // Client, so construct one from the requested config to let the
-                 // SDK validate it (e.g. reject a blank application) on every path.
-                 if (!(!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string())) {
-                     try {
+                 try {
+                     std::unique_ptr<absmartly::Context> ctx;
+
+                     // The inline-data and failLoad paths build Context without a
+                     // Client, so construct one from the requested config to let the
+                     // SDK validate it (e.g. reject a blank application) on every
+                     // path; its exception becomes the 400 below.
+                     if (!(!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string())) {
                          absmartly::ClientConfig check_config;
                          check_config.endpoint = "http://localhost:3000";
                          check_config.api_key = "test-api-key";
                          check_config.application = client_application;
                          check_config.environment = client_environment;
                          absmartly::Client(check_config, std::make_shared<absmartly::DefaultHTTPClient>());
-                     } catch (const std::invalid_argument& e) {
-                         res.status = 400;
-                         res.set_content(make_error_response(e.what(), "CREATE_ERROR").dump(),
-                                         "application/json");
-                         return;
                      }
-                 }
-
-                 try {
-                     std::unique_ptr<absmartly::Context> ctx;
 
                      if (!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string()) {
                          // Live fetch: the SDK's Client GETs `{endpoint}/context`
