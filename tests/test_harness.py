@@ -972,3 +972,268 @@ class StaticRepoChecks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CapturedRequestsTest(unittest.TestCase):
+    """validate_captured_requests: the X-Agent scenarios' check of a wrapper's recorded requests."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(SCENARIOS_PATH) as src:
+            scenario = next(s for s in json.load(src) if " - X-Agent - " in s["name"])
+        # The exact expectation the X-Agent scenarios carry.
+        cls.EXPECT = next(st["expect"] for st in scenario["steps"] if st["action"] == "capturedRequests")
+
+    def check(self, body, method="GET", sdk="go"):
+        return test_runner.validate_captured_requests(3, body, {"method": method}, self.EXPECT, sdk)
+
+    def agent_failures(self, agent, sdk="go"):
+        return self.check({"requests": [{"method": "GET", "headers": {"X-Agent": agent}}]}, sdk=sdk)
+
+    def test_valid_semver_versions_pass(self):
+        for agent in ("absmartly-go-sdk/0.0.0", "absmartly-go-sdk/1.2.3", "absmartly-go-sdk/10.20.30",
+                      "absmartly-go-sdk/1.0.0-alpha", "absmartly-go-sdk/1.0.0-alpha.1",
+                      "absmartly-go-sdk/1.0.0-0.3.7", "absmartly-go-sdk/1.0.0-x-y.0a",
+                      "absmartly-go-sdk/1.0.0+20130313144700", "absmartly-go-sdk/1.0.0-beta+exp.sha.5114f85"):
+            with self.subTest(agent=agent):
+                self.assertEqual(self.agent_failures(agent), [])
+
+    def test_malformed_versions_fail(self):
+        for agent in ("absmartly-go-sdk/1.2.3-", "absmartly-go-sdk/1.2.3+", "absmartly-go-sdk/01.2.3",
+                      "absmartly-go-sdk/1.02.3", "absmartly-go-sdk/1.2.03", "absmartly-go-sdk/1.2",
+                      "absmartly-go-sdk/1.2.3-01", "absmartly-go-sdk/1.2.3-a..b", "absmartly-go-sdk/1.2.3+a..b",
+                      "absmartly-go-sdk/1.2.3-.a", "absmartly-go-sdk/1.2.3.4", "absmartly-go-sdk/v1.2.3",
+                      "absmartly-go-sdk/HEAD-20261113-1638", "absmartly-go-sdk/1.2.3 "):
+            with self.subTest(agent=agent):
+                self.assertEqual([f["field"] for f in self.agent_failures(agent)],
+                                 ["requests[0].headers.X-Agent"])
+
+    def test_agent_must_name_the_sdk_under_test(self):
+        self.assertEqual([f["field"] for f in self.agent_failures("absmartly-wrong-sdk/1.2.3")],
+                         ["requests[0].headers.X-Agent"])
+        self.assertEqual([f["field"] for f in self.agent_failures("absmartly-java-sdk/1.2.3", sdk="kotlin")],
+                         ["requests[0].headers.X-Agent"])
+        self.assertEqual(self.agent_failures("absmartly-dart-sdk/3.0.0", sdk="flutter"), [])
+        self.assertEqual(self.agent_failures("absmartly-ruby-sdk/1.2.0", sdk="liquid"), [])
+
+    def test_versioned_agent_passes_any_header_case_and_list_value(self):
+        body = {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0"}},
+                             {"method": "get", "headers": {"X-AGENT": ["absmartly-go-sdk/1.7.0-rc.1"]}}]}
+        self.assertEqual(self.check(body), [])
+
+    def test_unversioned_or_missing_agent_fails(self):
+        for headers in ({"X-Agent": "absmartly-go-sdk"}, {"X-Agent": "go-client"},
+                        {"User-Agent": "absmartly-go-sdk/1.2.0"}, {"X-Agent": ["a", "b"]}):
+            with self.subTest(headers=headers):
+                failures = self.check({"requests": [{"method": "GET", "headers": headers}]})
+                self.assertEqual([f["field"] for f in failures], ["requests[0].headers.X-Agent"])
+
+    def test_every_matching_request_is_checked(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}},
+                             {"method": "GET", "headers": {}}]}
+        self.assertEqual([f["field"] for f in self.check(body)], ["requests[1].headers.X-Agent"])
+
+    def test_no_request_of_the_method_fails(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
+        failures = self.check(body, method="PUT")
+        self.assertEqual([f["field"] for f in failures], ["requests.length"])
+
+    def test_malformed_body_fails(self):
+        for body in ({}, {"requests": "x"}, [], {"requests": ["GET"]}):
+            with self.subTest(body=body):
+                self.assertEqual([f["field"] for f in self.check(body)], ["requests"])
+
+    def test_create_forwards_publish_to_endpoint_and_step_reads_payload_requests(self):
+        calls = []
+
+        class Response:
+            def __init__(self, body):
+                self.body = body
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.body
+
+        def put(url, json=None, timeout=None):
+            calls.append(("PUT", url, json))
+            return Response({"success": True})
+
+        def post(url, json=None, timeout=None):
+            calls.append(("POST", url, json))
+            return Response({"result": {"contextId": "c1", "ready": True, "failed": False,
+                                        "finalized": False}, "events": []})
+
+        def get(url, timeout=None):
+            calls.append(("GET", url, None))
+            return Response({"requests": [{"method": "GET",
+                                           "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]})
+
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContext", "params": {"units": {}, "publishToEndpoint": True},
+             "expect": {"result": {"ready": True}}},
+            {"action": "capturedRequests", "params": {"method": "GET"}, "expect": self.EXPECT},
+        ]}
+        orch = TestOrchestrator({"go": "http://go"}, capability_policy=make_policy())
+        with mock.patch.object(test_runner.requests, "put", put), \
+                mock.patch.object(test_runner.requests, "post", post), \
+                mock.patch.object(test_runner.requests, "get", get), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("go", "http://go", scenario)
+        self.assertTrue(result["passed"], result)
+        create = next(body for method, url, body in calls if method == "POST" and url == "http://go/context")
+        self.assertIs(create["publishToEndpoint"], True)
+        payload_url = next(url for method, url, _ in calls if method == "PUT")
+        self.assertIn(("GET", payload_url + "/requests", None), calls)
+
+
+class ScenarioGeneratorsCoexistTest(unittest.TestCase):
+    """The 2026-11 round generator (230-253) and the parity generator (300+) share one canonical file;
+    each must leave the other's groups where they are, numbered as they are."""
+
+    ROUND = (" - Custom Assignment Rules - ", " - Semver Operators - ", " - Audience Re-Evaluation - ",
+             " - System Attributes - ")
+    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ", " - Client Application - ")
+
+    def test_groups_keep_their_ranges_and_order(self):
+        with open(SCENARIOS_PATH) as src:
+            names = [s["name"] for s in json.load(src)]
+        numbers = [int(n.split(" - ", 1)[0]) for n in names]
+        round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
+        parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
+        self.assertEqual(round_ids, list(range(230, 254)))
+        self.assertEqual(parity_ids, list(range(300, 324)))
+        self.assertEqual(numbers, sorted(numbers))
+
+    @staticmethod
+    def rebuilt(existing, markers):
+        """A stub for a generator's group builder: the existing groups' scenarios, unchanged apart
+        from being renumbered from first_number (what a regeneration from the reference yields)."""
+        groups = [s for s in existing if any(m in s["name"] for m in markers)]
+
+        def build(first_number=None):
+            start = first_number if first_number is not None else int(groups[0]["name"].split(" - ", 1)[0])
+            return [dict(s, name=f"{start + i} - {s['name'].split(' - ', 1)[1]}") for i, s in enumerate(groups)]
+        return build
+
+    def load(self):
+        sys.path.insert(0, REPO_ROOT)
+        with open(SCENARIOS_PATH) as src:
+            return json.load(src)
+
+    def test_round_generator_preserves_the_parity_groups(self):
+        """Running the 2026-11 round generator's assembly on the canonical file reproduces it exactly:
+        its groups keep 230-253 and the parity groups stay last with their numbers."""
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        updated, groups = round2611.assemble(existing, self.rebuilt(existing, self.ROUND))
+        self.assertEqual(groups[0]["name"].split(" - ", 1)[0], "230")
+        self.assertEqual(updated, existing)
+
+    def test_parity_generator_preserves_the_round_groups(self):
+        import generate_parity_round_scenarios as parity
+        existing = self.load()
+        updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
+        self.assertEqual(updated, existing)
+
+    def test_round_generator_rejects_numbers_reaching_the_parity_range(self):
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        intruder = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        with self.assertRaises(SystemExit):
+            round2611.assemble([intruder] + existing, self.rebuilt(existing, self.ROUND))
+
+    def test_parity_generator_rejects_a_scenario_in_its_range(self):
+        import generate_parity_round_scenarios as parity
+        existing = self.load()
+        intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
+        with self.assertRaises(SystemExit):
+            parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
+
+
+class BlankClientApplicationTest(unittest.TestCase):
+    """Scenarios 322-323 catch a wrapper that repairs an explicitly blank client.application into its
+    default instead of handing it to the SDK."""
+
+    def scenario(self, capability):
+        with open(SCENARIOS_PATH) as src:
+            found = [s for s in json.load(src) if s.get("requires") == [capability]
+                     and " - Client Application - " in s["name"]]
+        self.assertEqual(len(found), 1, capability)
+        return found[0]
+
+    def run_scenario(self, scenario, responses):
+        """Replay the scenario against a fake wrapper that answers each step with `responses` in order."""
+        import requests
+
+        posted = []
+        replies = iter(responses)
+
+        def call(url, json=None, timeout=None):
+            posted.append((url, json))
+            status, body = next(replies)
+            resp = requests.Response()
+            resp.status_code = status
+            resp._content = test_runner.json.dumps(body).encode()
+            resp.url = url
+            return resp
+
+        capability = scenario["requires"][0]
+        policy = {"capabilities": {capability: "c"},
+                  "sdks": {"alpha": {"required": [capability], "unsupported": {}}}}
+        orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=policy)
+        orch.capabilities["alpha"] = {capability: True}
+        with mock.patch.object(test_runner.requests, "post", call), \
+                mock.patch.object(test_runner.requests, "get", call), \
+                mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertNotIn("skipped", result)
+        return result, posted
+
+    READY = {"result": {"contextId": "c1", "ready": True, "failed": False, "finalized": False},
+             "events": [{"type": "ready", "data": {"experiments": [{"id": 611, "name": "exp_blank_app_env"}]}}]}
+
+    def test_blank_application_reaches_the_wrapper_unchanged(self):
+        for capability in ("clientRejectsBlankApplication", "clientAcceptsBlankApplication"):
+            create = self.scenario(capability)["steps"][0]
+            self.assertEqual(create["params"]["client"]["application"], "", capability)
+
+    def test_rejecting_lane_passes_on_the_sdk_error_and_fails_on_a_repaired_name(self):
+        scenario = self.scenario("clientRejectsBlankApplication")
+        for message in ("Invalid 'application' in options argument", "Missing Application configuration",
+                        "requirement failed: application must not be empty",
+                        "Configuration error: application cannot be empty"):
+            result, posted = self.run_scenario(scenario, [(400, {"error": message, "events": []})])
+            self.assertTrue(result["passed"], (message, result))
+            self.assertEqual(posted[0][1]["client"]["application"], "")
+        repaired, _ = self.run_scenario(scenario, [(200, self.READY)])
+        self.assertFalse(repaired["passed"])
+        for status in (401, 404, 500, 503):
+            wrong_status, _ = self.run_scenario(
+                scenario, [(status, {"error": "Missing Application configuration", "events": []})])
+            self.assertFalse(wrong_status["passed"], status)
+            self.assertEqual(wrong_status["failures"][0]["field"], "status")
+        unrelated, _ = self.run_scenario(scenario, [(400, {"error": "Missing endpoint configuration",
+                                                           "events": []})])
+        self.assertFalse(unrelated["passed"])
+
+    def test_accepting_lane_fails_when_the_default_application_leaks_into_the_map(self):
+        scenario = self.scenario("clientAcceptsBlankApplication")
+        steps = scenario["steps"]
+
+        def reply(step, matched_present):
+            expect = step["expect"]
+            if step["action"] != "treatment":
+                return 200, {"result": expect["result"], "events": expect["events"]}
+            if not matched_present or step["params"]["experimentName"] != "exp_blank_app_present":
+                return 200, {"result": expect["result"], "events": expect["events"]}
+            exposure = dict(expect["events"][0]["data"], variant=1, assigned=True, audienceMismatch=False)
+            return 200, {"result": 1, "events": [{"type": "exposure", "data": exposure}]}
+
+        create = (200, dict(self.READY, events=steps[0]["expect"]["events"]))
+        honest, _ = self.run_scenario(scenario, [create] + [reply(s, False) for s in steps[1:]])
+        self.assertTrue(honest["passed"], honest)
+        repaired, _ = self.run_scenario(scenario, [create] + [reply(s, True) for s in steps[1:]])
+        self.assertFalse(repaired["passed"])

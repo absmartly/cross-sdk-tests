@@ -35,6 +35,13 @@ class EventCollector implements ContextEventLogger
 
         $eventName = strtolower($eventName);
 
+        // The php-sdk emits "Close" (owner kept it deliberately); the cross-SDK
+        // contract and the JS reference name this lifecycle event "finalize".
+        // Translate it here the way the other wrappers normalise event names.
+        if ($eventName === 'close') {
+            $eventName = 'finalize';
+        }
+
         $data = null;
         if ($eventData !== null) {
             $data = $this->deepCopy($eventData);
@@ -79,14 +86,20 @@ class EventCollector implements ContextEventLogger
     }
 }
 
+// Test contexts publish nowhere: a publish succeeds without sending anything.
+// With publishToEndpoint the wrapper passes the SDK's own ContextPublisher as
+// $sdkPublisher, so the publish is the SDK's real PUT {endpoint}/context.
+// Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends ContextPublisher
 {
     private EventCollector $eventCollector;
+    private ?ContextPublisher $sdkPublisher;
     public bool $shouldFail = false;
 
-    public function __construct(EventCollector $eventCollector)
+    public function __construct(EventCollector $eventCollector, ?ContextPublisher $sdkPublisher = null)
     {
         $this->eventCollector = $eventCollector;
+        $this->sdkPublisher = $sdkPublisher;
     }
 
     public function publish(PublishEvent $event): void
@@ -94,6 +107,9 @@ class CustomPublisher extends ContextPublisher
         if ($this->shouldFail) {
             $this->shouldFail = false;
             throw new \RuntimeException('publish failed');
+        }
+        if ($this->sdkPublisher !== null) {
+            $this->sdkPublisher->publish($event);
         }
     }
 }
@@ -159,9 +175,25 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 
 $contexts = [];
 $payloadStore = [];
+$capturedRequests = [];
+
+function canonicalError(string $message): string
+{
+    // The php-sdk deliberately keeps its v1 error text
+    // ('Unit "x" UID is already set'); the cross-SDK contract (and the JS
+    // reference) word this "Unit 'x' UID already set.". Map the wording rather
+    // than masking it.
+    if (preg_match('/^Unit "([^"]+)" UID is already set\.?$/', $message, $m)) {
+        return "Unit '{$m[1]}' UID already set.";
+    }
+    return $message;
+}
 
 function jsonResponse(int $status, $data): Response
 {
+    if (is_array($data) && isset($data['error']) && is_string($data['error'])) {
+        $data['error'] = canonicalError($data['error']);
+    }
     return new Response(
         $status,
         ['Content-Type' => 'application/json'],
@@ -192,7 +224,7 @@ function translateEndpoint(string $endpoint): string
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
 }
 
-$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore) {
+$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore, &$capturedRequests) {
     $method = $request->getMethod();
     $path = $request->getUri()->getPath();
 
@@ -216,7 +248,24 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'globalCustomFieldKeys' => true,
             'getUnits' => true,
             'getAttributes' => true,
-            'readyError' => true
+            'readyError' => true,
+            // Reviewed PHP exceptions (owner decisions by Marcio, for v1.0.3
+            // compatibility), see orchestrator/expected-capabilities.json:
+            //  - numeric unit uids are stored and returned as strings, so a
+            //    numeric uid does not round-trip as a number through
+            //    getUnit/getUnits (scenarios 02, 116, 196, 197).
+            'numericUnitIds' => false,
+            //  - publish()/flush() log a collector failure and return instead
+            //    of throwing; only close() surfaces the error (scenario 193).
+            'publishThrowsOnFailure' => false,
+            'trackRejectsNonObjectProperties' => true,
+            'refreshNoOpOnFailedContext' => true,
+            'clientNoEnvironment' => true,
+            'clientRejectsBlankApplication' => false,
+            'clientAcceptsBlankApplication' => true,
+            'assignmentRules' => true,
+            'semverOperators' => true,
+            'xAgentHeader' => true
         ]);
     }
 
@@ -250,10 +299,21 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         return jsonResponse(200, ['success' => true]);
     }
 
-    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
+    // Mock ABsmartly API. Every request the SDK sends here is recorded for the
+    // capturedRequests step (X-Agent scenarios); with publishToEndpoint the SDK
+    // also publishes PUT {endpoint}/context here.
+    if (($method === 'GET' || $method === 'PUT') && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
         $payloadId = $matches[1];
+        $capturedRequests[$payloadId][] = ['method' => $method, 'headers' => $request->getHeaders()];
+        if ($method === 'PUT') {
+            return jsonResponse(200, (object)[]);
+        }
         $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
         return jsonResponse(200, $data);
+    }
+
+    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/requests$#', $path, $matches)) {
+        return jsonResponse(200, ['requests' => $capturedRequests[$matches[1]] ?? []]);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/(.+)$#', $path, $matches)) {
@@ -311,7 +371,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
             if (isset($body->units)) {
                 foreach ((array)$body->units as $unitType => $uid) {
-                    $contextConfig->setUnit($unitType, $uid);
+                    // php-sdk keeps units as strings (owner decision) and
+                    // ContextConfig::setUnit is strict-typed string, so a
+                    // numeric uid from the JSON body must be coerced here or
+                    // the wrapper crashes with an uncaught TypeError.
+                    $contextConfig->setUnit($unitType, is_scalar($uid) ? (string)$uid : $uid);
                 }
             }
 
@@ -353,21 +417,50 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextId = 'ctx-' . time() . '-' . mt_rand();
 
         $eventCollector = new EventCollector();
-        $publisher = new CustomPublisher($eventCollector);
 
         $endpoint = $body->endpoint ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
 
+        // Optional client config (the 2026-11 system-attributes round): a scenario
+        // can set the application/environment names so audiences can target them.
+        // When the `client` field is omitted, the fixed test/test defaults keep
+        // every pre-2026-11 scenario unchanged. When it is present, an explicitly
+        // supplied application is forwarded as-is so the SDK validates it; only an
+        // omitted one falls back to the default. A blank/absent environment means
+        // "no environment configured": the empty string leaves environment out of
+        // the SDK's evaluation map (Context adds it only when the name is non-empty). The php SDK's ClientConfig requires a string
+        // environment, so "" is the no-environment value.
+        $clientCfg = $body->client ?? null;
+        $application = 'test';
+        $environment = 'test';
+        if ($clientCfg !== null) {
+            if (is_object($clientCfg) && property_exists($clientCfg, 'application')) {
+                if (!is_string($clientCfg->application)) {
+                    return jsonResponse(400, ['error' => "Invalid 'application' in client argument", 'events' => []]);
+                }
+                $application = $clientCfg->application;
+            }
+            $environment = (isset($clientCfg->environment) && is_string($clientCfg->environment) && $clientCfg->environment !== '')
+                ? $clientCfg->environment
+                : '';
+        }
+
         $clientConfig = new ClientConfig(
             $endpoint,
             'dummy',
-            'test',
-            'test'
+            $application,
+            $environment
         );
 
         $reactHttpClient = new ReactHttpClient();
         $reactHttpClient->timeout = 10000;
         $client = new Client($clientConfig, $reactHttpClient);
+
+        // publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+        $sdkPublisher = (($body->publishToEndpoint ?? false) && isset($body->endpoint))
+            ? new ContextPublisher($client)
+            : null;
+        $publisher = new CustomPublisher($eventCollector, $sdkPublisher);
 
         $sdkConfig = new Config($client);
         $sdkConfig->setContextPublisher($publisher);
@@ -394,7 +487,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
 
         if (isset($body->units)) {
             foreach ((array)$body->units as $unitType => $uid) {
-                $contextConfig->setUnit($unitType, $uid);
+                // See the note above: coerce numeric units to strings so the
+                // strict-typed ContextConfig::setUnit does not throw.
+                $contextConfig->setUnit($unitType, is_scalar($uid) ? (string)$uid : $uid);
             }
         }
 

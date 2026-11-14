@@ -39,6 +39,7 @@ RUN rm -rf /angular-sdk/node_modules/@absmartly 2>/dev/null || true && \
 
 COPY cross-sdk-tests/angular-wrapper/server.js cross-sdk-tests/angular-wrapper/render.mjs ./
 COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
+COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 
 EXPOSE 3000
 

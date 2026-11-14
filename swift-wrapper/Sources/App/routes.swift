@@ -77,7 +77,10 @@ class EventCollector: ContextEventLogger {
                 "data": convertGoalToDict(goal),
                 "timestamp": timestamp
             ]
-        case .finalize:
+        case .close:
+            // The swift-sdk's real enum case is `.close` (`.finalize` is only a
+            // static alias and cannot be matched as a switch pattern). Emit the
+            // cross-SDK event name "finalize", like the other wrappers.
             eventRecord = [
                 "type": "finalize",
                 "data": NSNull(),
@@ -167,6 +170,7 @@ class EventCollector: ContextEventLogger {
         dict["fullOn"] = exposure.fullOn
         dict["custom"] = exposure.custom
         dict["audienceMismatch"] = exposure.audienceMismatch
+        dict["ruleOverride"] = exposure.ruleOverride
         return dict
     }
 
@@ -367,8 +371,31 @@ class PayloadStore {
     }
 }
 
+// Locked like PayloadStore.
+class CapturedRequests {
+    private var requests: [String: [[String: Any]]] = [:]
+    private let lock = NSLock()
+
+    func record(_ req: Request, payloadId: String) {
+        var headers: [String: String] = [:]
+        for (name, value) in req.headers {
+            headers[name] = headers[name].map { "\($0), \(value)" } ?? value
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        requests[payloadId, default: []].append(["method": req.method.rawValue, "headers": headers])
+    }
+
+    func list(_ payloadId: String) -> [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests[payloadId] ?? []
+    }
+}
+
 let contextManager = ContextManager()
 let payloadStore = PayloadStore()
+let capturedRequests = CapturedRequests()
 
 let payloadNotFoundBody: [String: Any] = ["error": "payload not found"]
 
@@ -399,6 +426,37 @@ func call(_ storage: ContextStorage, _ body: () async throws -> Any?) async thro
     } catch {
         let events = Array(storage.eventCollector.events.suffix(from: before))
         return try reply(["error": error.localizedDescription, "events": sanitizeForJSON(events)], status: .badRequest)
+    }
+}
+
+// The swift-sdk public API is intentionally non-throwing (v1.4.0 contract, kept
+// by maintainer decision on swift-sdk#7). Misuse that every other SDK throws on
+// — a blank or duplicate unit UID, a mutation after finalize, or a read before
+// the context is ready — does NOT throw here: the SDK leaves state unchanged and
+// reports the failure by logging an `.error` event instead (see Context.swift
+// `reportError`/`ensureReady`/`ensureNotClosed`, "The public API never throws").
+//
+// The cross-SDK scenarios and the JS reference expect that misuse to surface to
+// the caller as an error, so this helper bridges the two models: if the SDK
+// logged an `.error` event during the call, we surface its message as the HTTP
+// error the scenario asserts. The JS reference throws synchronously WITHOUT
+// emitting an event, so the surfaced error's events window excludes the
+// consumed `.error` event (any other events the call produced are preserved).
+// When no `.error` is logged this behaves exactly like `call`.
+func callSurfacingLoggedError(_ storage: ContextStorage, _ body: () async throws -> Any?) async throws -> HTTPResponse {
+    let before = storage.eventCollector.events.count
+    do {
+        let value = try await body()
+        let newEvents = Array(storage.eventCollector.events.suffix(from: before))
+        if let errorEvent = newEvents.first(where: { ($0["type"] as? String) == "error" }) {
+            let message = ((errorEvent["data"] as? [String: Any])?["message"] as? String) ?? "Context error"
+            let passthrough = newEvents.filter { ($0["type"] as? String) != "error" }
+            return try reply(["error": message, "events": sanitizeForJSON(passthrough)], status: .badRequest)
+        }
+        return try reply(["result": sanitizeForJSON(value), "events": sanitizeForJSON(newEvents)])
+    } catch {
+        let newEvents = Array(storage.eventCollector.events.suffix(from: before))
+        return try reply(["error": error.localizedDescription, "events": sanitizeForJSON(newEvents)], status: .badRequest)
     }
 }
 
@@ -444,7 +502,16 @@ func routes(_ app: VaporApplication) throws {
             "globalCustomFieldKeys": true,
             "getUnits": true,
             "getAttributes": true,
-            "readyError": true
+            "readyError": true,
+            "numericUnitIds": true,
+            "publishThrowsOnFailure": true,
+            "trackRejectsNonObjectProperties": true,
+            "refreshNoOpOnFailedContext": true,
+            "assignmentRules": true,
+            "semverOperators": true,
+            "xAgentHeader": true,
+            "clientRejectsBlankApplication": true,
+            "clientAcceptsBlankApplication": false
         ])
     }
 
@@ -481,7 +548,24 @@ func routes(_ app: VaporApplication) throws {
         return HTTPResponse(status: .ok, body: .init(data: data))
     }
     app.get("context_payload", ":payloadId", use: servePayload)
-    app.get("context_payload", ":payloadId", "context", use: servePayload)
+    app.get("context_payload", ":payloadId", "context") { req async throws -> HTTPResponse in
+        if let payloadId = req.parameters.get("payloadId") {
+            capturedRequests.record(req, payloadId: payloadId)
+        }
+        return try await servePayload(req)
+    }
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    app.on(.PUT, "context_payload", ":payloadId", "context", body: .collect(maxSize: "10mb")) { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        capturedRequests.record(req, payloadId: payloadId)
+        return try reply([:])
+    }
+
+    app.get("context_payload", ":payloadId", "requests") { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        return try reply(["requests": capturedRequests.list(payloadId)])
+    }
 
     app.post("context") { req async throws -> HTTPResponse in
         let request = try requestBody(req)
@@ -516,9 +600,32 @@ func routes(_ app: VaporApplication) throws {
             return try contextResult(contextId, context, eventCollector)
         }
 
-        let publisher = CustomPublisher()
+        // publishToEndpoint: the SDK's own DefaultContextPublisher (wired in below
+        // once the endpoint's client exists) sends PUT {endpoint}/context.
+        let publishToEndpoint = request["publishToEndpoint"].boolValue && request["endpoint"].string != nil
+        var publisher = CustomPublisher()
         let config = makeConfig(request, logger: eventCollector)
         let payloadThrottle = request["options"]["payloadThrottle"].intValue
+        // Optional client config (the 2026-11 system-attributes round): a scenario can
+        // set the application/environment names so audiences can target them. When the
+        // `client` field is omitted, the fixed test-app/test-env defaults keep every
+        // pre-2026-11 scenario unchanged. An explicitly supplied application is
+        // forwarded as-is so the SDK validates it; only an omitted one falls back to
+        // the default. swift-sdk's DefaultClient throws on an empty environment, so
+        // the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        let clientApplication: String
+        if request["client"]["application"].exists() {
+            guard let value = request["client"]["application"].string else {
+                return try errorReply("Invalid 'application' in client argument")
+            }
+            clientApplication = value
+        } else {
+            clientApplication = "test-app"
+        }
+        let clientEnvironment: String = {
+            let value = request["client"]["environment"].string
+            return (value?.isEmpty == false) ? value! : "test-env"
+        }()
         let context: Context
         let sdk: ABSmartlySDK
 
@@ -532,17 +639,37 @@ func routes(_ app: VaporApplication) throws {
             } catch {
                 return try errorReply("Invalid context data: \(error.localizedDescription)")
             }
+            // Honour the requested client config for inline-data contexts too, so
+            // an audience on application/environment matches here as it does in
+            // endpoint mode (finding 1). The SDK reads these names from the config
+            // client; inline data never fetches, so the endpoint is a dummy.
+            let dataClient: DefaultClient
+            do {
+                dataClient = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication,
+                    endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
-                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: nil))
+                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: dataClient))
             context = sdk.createContextWithData(config: config, contextData: contextData)
         } else if var endpoint = request["endpoint"].string {
             if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {
                 endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
             }
             // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: endpoint, environment: "test-env"))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
+            if publishToEndpoint {
+                publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
+            }
             let provider: ContextDataProvider? = payloadThrottle > 0
                 ? DeferredContextDataProvider(inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
                 : nil
@@ -555,8 +682,13 @@ func routes(_ app: VaporApplication) throws {
             }
         } else if request["failLoad"].boolValue {
             // A real fetch failure: the SDK's own client against a port nothing listens on.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: "http://127.0.0.1:1", environment: "test-env"))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: "http://127.0.0.1:1", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
                 variableParser: nil, scheduler: nil, client: client))
@@ -573,7 +705,8 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "setUnit") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) {
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenarios 34, 35, 149.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.setUnit(unitType: request["unitType"].stringValue, value: request["uid"])
             return nil
         }
@@ -595,7 +728,8 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "attribute") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) {
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenarios 148, 188.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.setAttribute(name: request["name"].stringValue, value: request["value"])
             return nil
         }
@@ -615,20 +749,23 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "treatment") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
     }
 
     app.post("context", ":contextId", "peek") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
     }
 
     app.post("context", ":contextId", "variableValue") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        return try await call(storage) {
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.getVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
     }
@@ -637,7 +774,8 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
-        return try await call(storage) {
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.peekVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
         }
     }
@@ -658,7 +796,7 @@ func routes(_ app: VaporApplication) throws {
             // value is rejected at the type boundary with the SDK-wide message.
             return try errorReply("Goal '\(goalName)' properties must be of type object.")
         }
-        return try await call(storage) {
+        return try await callSurfacingLoggedError(storage) {
             try storage.context.track(goalName, properties: props)
             return nil
         }
@@ -704,7 +842,8 @@ func routes(_ app: VaporApplication) throws {
 
     app.post("context", ":contextId", "variableKeys") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { Array(try storage.context.getVariableKeys().keys) }
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) { Array(try storage.context.getVariableKeys().keys) }
     }
 
     app.post("context", ":contextId", "variableKeysMap") { req async throws -> HTTPResponse in
@@ -741,7 +880,8 @@ func routes(_ app: VaporApplication) throws {
 
     app.get("context", ":contextId", "experiments") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { try storage.context.getExperiments() }
+        // Surfaces a logged `.error` (see callSurfacingLoggedError): scenario 201.
+        return try await callSurfacingLoggedError(storage) { try storage.context.getExperiments() }
     }
 
     app.post("context", ":contextId", "readyError") { req async throws -> HTTPResponse in

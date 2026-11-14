@@ -1,7 +1,80 @@
 const express = require('express');
 const absmartly = require('@absmartly/javascript-sdk');
+const Client = require('@absmartly/javascript-sdk/lib/client').default;
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
+const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+
+// Default client config for a test context. A scenario can override the
+// application/environment names through the optional `client` field on
+// POST /context (the 2026-11 system-attributes round), including the
+// "no environment configured" case (client.environment omitted).
+const DEFAULT_APPLICATION = 'test';
+const DEFAULT_ENVIRONMENT = 'test';
+
+// The real Client rejects an empty environment at construction, so for the
+// "no environment configured" case we subclass it to report the environment as
+// absent while still constructing with a placeholder. Audiences then see no
+// `environment` key, exactly as the SDK intends.
+class NoEnvironmentClient extends Client {
+  getEnvironment() {
+    return undefined;
+  }
+}
+
+// Build an SDK with the requested client application/environment. When `client`
+// is omitted entirely the wrapper uses its own defaults, so every pre-2026-11
+// scenario is unaffected. When `client` is present, an explicitly provided
+// application is used as-is so the SDK still validates it (e.g. rejects an empty
+// string) — only an omitted application falls back to the default. The
+// environment is used only when it is a non-empty string; an absent/blank
+// environment means "no environment configured" (the spec treats a blank
+// environment as valid, unlike a blank application).
+function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
+  const eventLogger = (ctx, eventName, eventData) => {
+    eventCollector.handleEvent(ctx, eventName, eventData);
+  };
+  let application = DEFAULT_APPLICATION;
+  let hasEnvironment = true;
+  let environment = DEFAULT_ENVIRONMENT;
+  if (clientConfig != null) {
+    if (clientConfig.application !== undefined) {
+      // Explicitly provided: do not silently repair a rejected name. An empty
+      // or otherwise invalid value is forwarded so the real SDK rejects it,
+      // instead of masking the error behind the default application.
+      application = clientConfig.application;
+    }
+    hasEnvironment =
+      typeof clientConfig.environment === 'string' && clientConfig.environment.length > 0;
+    environment = hasEnvironment ? clientConfig.environment : undefined;
+  }
+  if (hasEnvironment) {
+    return new absmartly.SDK({
+      endpoint: endpoint || 'http://dummy',
+      apiKey: 'dummy',
+      application,
+      environment,
+      eventLogger,
+      publisher,
+    });
+  }
+  const client = new NoEnvironmentClient({
+    endpoint: endpoint || 'http://dummy',
+    apiKey: 'dummy',
+    application,
+    environment: 'placeholder',
+  });
+  return new absmartly.SDK({ client, eventLogger, publisher });
+}
+
+// The SDK's Client constructor rejects invalid configuration with
+// `Invalid '<key>' in options argument` / `Missing '<key>' in options argument`.
+// Such a rejection is a 400 (bad request), not a 500: the caller sent invalid
+// client configuration that the SDK legitimately refuses.
+function isSdkOptionsValidationError(error) {
+  return typeof error?.message === 'string' &&
+    /^(Invalid|Missing) '.*' in options argument$/.test(error.message);
+}
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
@@ -93,7 +166,12 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms] = await Promise.all([holdoutSelfTest.runHoldouts(), holdoutSelfTest.runHoldoutArms()]);
+  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+    holdoutSelfTest.runHoldouts(),
+    holdoutSelfTest.runHoldoutArms(),
+    assignmentRulesSelfTest.runAssignmentRules(),
+    assignmentRulesSelfTest.runSemverOperators(),
+  ]);
 
   res.json({diagnosticsUtf8: true,
 
@@ -105,8 +183,19 @@ app.get('/capabilities', async (req, res) => {
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
+    clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
+    // The SDK sends X-Agent without a version (absmartly-javascript-sdk).
+    xAgentHeader: false,
     holdouts,
-    holdout_arms: holdoutArms
+    holdout_arms: holdoutArms,
+    assignmentRules,
+    semverOperators
   });
 });
 
@@ -125,10 +214,28 @@ app.get('/context_payload/:payloadId', (req, res) => {
   }, throttle);
 });
 
+const capturedRequests = {};
+
+function captureRequest(req) {
+  const list = capturedRequests[req.params.payloadId] || (capturedRequests[req.params.payloadId] = []);
+  list.push({ method: req.method, headers: req.headers });
+}
+
 // Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
 app.get('/context_payload/:payloadId/context', (req, res) => {
+  captureRequest(req);
   const data = payloadStore[req.params.payloadId] || { experiments: [] };
   res.json(data);
+});
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+app.put('/context_payload/:payloadId/context', (req, res) => {
+  captureRequest(req);
+  res.json({});
+});
+
+app.get('/context_payload/:payloadId/requests', (req, res) => {
+  res.json({ requests: capturedRequests[req.params.payloadId] || [] });
 });
 
 app.post('/context', async (req, res) => {
@@ -188,18 +295,12 @@ app.post('/context', async (req, res) => {
     const contextId = `ctx-${Date.now()}-${Math.random()}`;
 
     const eventCollector = new EventCollector();
-    const customPublisher = new CustomPublisher(eventCollector);
-
-    const sdk = new absmartly.SDK({
-      endpoint: endpoint || 'http://dummy',
-      apiKey: 'dummy',
-      application: 'test',
-      environment: 'test',
-      eventLogger: (ctx, eventName, eventData) => {
-        eventCollector.handleEvent(ctx, eventName, eventData);
-      },
-      publisher: customPublisher
+    // publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    const customPublisher = new CustomPublisher(eventCollector, {
+      forwardToSdk: Boolean(req.body.publishToEndpoint && endpoint)
     });
+
+    const sdk = buildSdk(req.body.client, eventCollector, customPublisher, endpoint);
 
     let context;
     const payloadThrottle = options?.payloadThrottle || 0;
@@ -255,7 +356,10 @@ app.post('/context', async (req, res) => {
     });
   } catch (error) {
     console.error('Context creation error:', error);
-    res.status(500).json({ error: error.message, type: error.constructor.name });
+    // Invalid client configuration the SDK rejects is a 400, not a 500: the
+    // caller sent bad input (e.g. an empty application), not a server fault.
+    const status = isSdkOptionsValidationError(error) ? 400 : 500;
+    res.status(status).json({ error: error.message, type: error.constructor.name, events: [] });
   }
 });
 

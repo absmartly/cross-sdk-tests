@@ -255,6 +255,15 @@ shelf.Handler withEventsWindow(shelf.Handler inner) {
 // the SDK's own Client/DefaultContextDataDeserializer parses the real JSON.
 final Map<String, Map<String, dynamic>> payloadStore = {};
 
+final Map<String, List<Map<String, dynamic>>> capturedRequests = {};
+
+void captureRequest(shelf.Request request, String payloadId) {
+  capturedRequests.putIfAbsent(payloadId, () => []).add({
+    'method': request.method,
+    'headers': Map<String, String>.from(request.headers),
+  });
+}
+
 void main() async {
   final router = Router();
 
@@ -281,6 +290,15 @@ void main() async {
         'getUnits': true,
         'getAttributes': true,
         'readyError': true,
+        'numericUnitIds': true,
+        'publishThrowsOnFailure': true,
+        'trackRejectsNonObjectProperties': true,
+        'refreshNoOpOnFailedContext': true,
+        'assignmentRules': true,
+        'semverOperators': true,
+        'xAgentHeader': true,
+        'clientRejectsBlankApplication': true,
+        'clientAcceptsBlankApplication': false,
       }),
       headers: {'Content-Type': 'application/json'},
     );
@@ -367,6 +385,7 @@ void main() async {
   });
 
   router.get('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    captureRequest(request, payloadId);
     // Unknown payload: 404 so the SDK's fetch fails, rather than serving an
     // empty-but-valid payload the SDK never received.
     final data = payloadStore[payloadId];
@@ -375,6 +394,23 @@ void main() async {
     }
     return shelf.Response.ok(
       jsonEncode(data),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+  router.put('/context_payload/<payloadId>/context', (shelf.Request request, String payloadId) async {
+    captureRequest(request, payloadId);
+    await request.read().drain<void>();
+    return shelf.Response.ok(
+      jsonEncode({}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/context_payload/<payloadId>/requests', (shelf.Request request, String payloadId) {
+    return shelf.Response.ok(
+      jsonEncode({'requests': capturedRequests[payloadId] ?? []}),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -460,19 +496,43 @@ void main() async {
       final contextId = 'ctx-${DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
 
       final eventCollector = EventCollector();
-      final publisher = CustomPublisher(eventCollector);
       final dataProvider = CustomDataProvider();
 
       final translatedEndpoint = endpoint != null ? translateEndpoint(endpoint) : null;
       final payloadThrottle = options['payloadThrottle'] as int? ?? 0;
 
+      // Optional client config (the 2026-11 system-attributes round): a scenario can
+      // set the application/environment names so audiences can target them. When the
+      // `client` field is omitted, the fixed test/test defaults keep every
+      // pre-2026-11 scenario unchanged. An explicitly supplied application is
+      // forwarded as-is so the SDK validates it; only an omitted one falls back to
+      // 'test'. dart-sdk's Client rejects a null/empty environment, so the
+      // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+      final clientCfg = body['client'] as Map<String, dynamic>?;
+      final clientApplicationRaw = clientCfg?['application'];
+      if (clientCfg != null && clientCfg.containsKey('application') && clientApplicationRaw is! String) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': "Invalid 'application' in client argument", 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      final clientApplication = clientApplicationRaw is String ? clientApplicationRaw : 'test';
+      final clientEnvironmentRaw = clientCfg?['environment'];
+      final clientEnvironment =
+          (clientEnvironmentRaw is String && clientEnvironmentRaw.isNotEmpty) ? clientEnvironmentRaw : 'test';
+
+      // publishToEndpoint: publish through the SDK's own DefaultContextPublisher to
+      // PUT {endpoint}/context (the mock collector below), as the e2e path does.
+      final publishToEndpoint = body['publishToEndpoint'] == true && translatedEndpoint != null;
       HTTPClient httpClient;
       if (data != null) {
         final contextData = ContextData.fromMap(data);
         dataProvider.setData(contextData);
+      }
+      if (data != null && !publishToEndpoint) {
         httpClient = DummyHTTPClient();
       } else {
-        // Use real HTTP client to fetch from endpoint
+        // Use real HTTP client to fetch from (and with publishToEndpoint, publish to) endpoint
         final httpClientConfig = DefaultHTTPClientConfig();
         httpClient = DefaultHTTPClient(httpClientConfig);
       }
@@ -480,10 +540,20 @@ void main() async {
       final clientConfig = ClientConfig.create()
         .setEndpoint(translatedEndpoint ?? 'http://dummy')
         .setAPIKey('dummy')
-        .setApplication('test')
-        .setEnvironment('test');
+        .setApplication(clientApplication)
+        .setEnvironment(clientEnvironment);
 
-      final client = Client.create(clientConfig, httpClient: httpClient);
+      final Client client;
+      try {
+        client = Client.create(clientConfig, httpClient: httpClient);
+      } on ArgumentError catch (e) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': '${e.message}', 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      final publisher = CustomPublisher(eventCollector,
+          delegate: publishToEndpoint ? DefaultContextPublisher(client) : null);
 
       final sdkConfig = ABSmartlyConfig.create()
         .setClient(client)

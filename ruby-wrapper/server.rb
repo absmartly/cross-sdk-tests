@@ -13,6 +13,7 @@ require 'context_data_provider'
 require 'default_context_data_provider'
 require 'default_context_data_deserializer'
 require 'context_publisher'
+require 'default_context_publisher'
 require 'context_event_logger'
 require 'hashing'
 
@@ -111,12 +112,17 @@ class DeferredDataProvider < ContextDataProvider
   end
 end
 
+# Test contexts publish nowhere: a publish succeeds without sending anything.
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
+# Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher < ContextPublisher
   attr_accessor :should_fail
 
-  def initialize(event_collector)
+  def initialize(event_collector, sdk_publisher = nil)
     @event_collector = event_collector
     @should_fail = false
+    @sdk_publisher = sdk_publisher
   end
 
   def publish(context, event)
@@ -124,6 +130,7 @@ class CustomPublisher < ContextPublisher
       @should_fail = false
       raise 'Publish failed'
     end
+    return @sdk_publisher.publish(context, event) if @sdk_publisher
     self
   end
 end
@@ -133,8 +140,15 @@ def events_since(collector, from)
   collector.events[from..-1] || []
 end
 
+def canonical_error(message)
+  # The ruby-sdk deliberately keeps its v1 error text ("Unit 'x' already
+  # set."); the cross-SDK contract (and the JS reference) word this
+  # "Unit 'x' UID already set.". Map the wording rather than masking it.
+  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
+end
+
 def sdk_error(status, e, collector, from)
-  halt status, { error: e.message, events: collector ? events_since(collector, from) : [] }.to_json
+  halt status, { error: canonical_error(e.message), events: collector ? events_since(collector, from) : [] }.to_json
 end
 
 $contexts = {}
@@ -165,9 +179,37 @@ def sdk_client(endpoint, api_key: 'dummy', application: 'test', environment: 'te
   client_config.endpoint = endpoint
   client_config.api_key = api_key
   client_config.application = application
-  client_config.environment = environment
+  # Client.create rejects a nil/empty environment, so for the "no environment
+  # configured" case build the client with a placeholder environment and report it
+  # as absent, so the SDK leaves `environment` out of the audience/rule evaluation
+  # map (matching the SDK's own no-environment behaviour).
+  client_config.environment = environment.nil? || environment.empty? ? 'placeholder' : environment
   client_config.max_retries = max_retries unless max_retries.nil?
-  Client.create(client_config)
+  client = Client.create(client_config)
+  if environment.nil? || environment.empty?
+    client.define_singleton_method(:environment) { nil }
+  end
+  client
+end
+
+# Resolve the client application/environment for a context. The optional `client`
+# field on POST /context (the 2026-11 system-attributes round) lets a scenario
+# target the always-on application/environment audience attributes. When the field
+# is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
+# unchanged. When it is present, an explicitly supplied application is forwarded
+# as-is so the SDK validates it; only an omitted one falls back to the default. A
+# blank/absent environment means "no environment configured": nil leaves
+# environment out of the SDK's evaluation map.
+def client_names(client_cfg)
+  return ['test', 'test'] if client_cfg.nil?
+
+  application = client_cfg.key?(:application) ? client_cfg[:application] : 'test'
+  unless application.is_a?(String)
+    halt 400, { error: "Invalid 'application' in client argument", events: [] }.to_json
+  end
+  environment = client_cfg[:environment]
+  environment = nil unless environment.is_a?(String) && !environment.empty?
+  [application, environment]
 end
 
 def register(context, collector, publisher)
@@ -199,7 +241,17 @@ get '/capabilities' do
     globalCustomFieldKeys: true,
     getUnits: true,
     getAttributes: true,
-    readyError: true }.to_json
+    readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
+    clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
+    assignmentRules: true,
+    semverOperators: true,
+    xAgentHeader: true }.to_json
 end
 
 put '/context_payload/:payload_id' do
@@ -208,12 +260,37 @@ put '/context_payload/:payload_id' do
   { success: true }.to_json
 end
 
+# Rack keeps request headers in the env as HTTP_* (plus CONTENT_TYPE/CONTENT_LENGTH);
+# turn them back into names.
+$captured_requests = Hash.new { |h, k| h[k] = [] }
+
+def capture_request
+  headers = request.env.each_with_object({}) do |(key, value), h|
+    name = key.start_with?('HTTP_') ? key.delete_prefix('HTTP_') : (key if %w[CONTENT_TYPE CONTENT_LENGTH].include?(key))
+    h[name.downcase.tr('_', '-')] = value if name
+  end
+  $captured_requests[params['payload_id']] << { method: request.request_method, headers: headers }
+end
+
 get '/context_payload/:payload_id/context' do
+  capture_request
   # A never-stored payload id is a missing collector payload: answer 404 so the
   content_type :json
   data = $payload_store[params['payload_id']]
   halt 404, { error: 'Payload not found' }.to_json if data.nil?
   data.to_json
+end
+
+# Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+put '/context_payload/:payload_id/context' do
+  capture_request
+  content_type :json
+  {}.to_json
+end
+
+get '/context_payload/:payload_id/requests' do
+  content_type :json
+  { requests: $captured_requests.fetch(params['payload_id'], []) }.to_json
 end
 
 post '/context' do
@@ -243,9 +320,15 @@ post '/context' do
   sdk_config.context_event_handler = publisher
   sdk_config.context_event_logger = collector
   throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
+  application, environment = client_names(req_data[:client])
+  build_client = lambda do |endpoint, max_retries: nil|
+    sdk_client(endpoint, application: application, environment: environment, max_retries: max_retries)
+  rescue ArgumentError => e
+    halt 400, { error: e.message, events: [] }.to_json
+  end
 
   if req_data[:data]
-    sdk_config.client = sdk_client('http://unused')
+    sdk_config.client = build_client.call('http://unused')
     raw = req_data[:data].to_json
     data = DefaultContextDataDeserializer.new.deserialize(raw, 0, raw.size)
     context = ABSmartly.new(sdk_config).create_context_with(context_config,
@@ -253,11 +336,16 @@ post '/context' do
   elsif req_data[:failLoad]
     # A real fetch against a closed port: the SDK's client fails the way a
     # network failure does.
-    sdk_config.client = sdk_client('http://127.0.0.1:1', max_retries: 0)
+    sdk_config.client = build_client.call('http://127.0.0.1:1', max_retries: 0)
     context = ABSmartly.new(sdk_config).create_context(context_config)
   else
-    client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy')
+    client = build_client.call(translate_endpoint(req_data[:endpoint]) || 'http://dummy')
     sdk_config.client = client
+    # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    if req_data[:publishToEndpoint] && req_data[:endpoint]
+      publisher = CustomPublisher.new(collector, DefaultContextPublisher.new(client))
+      sdk_config.context_event_handler = publisher
+    end
     if throttle > 0
       sdk_config.context_data_provider = DeferredDataProvider.new(client, throttle)
       context = ABSmartly.new(sdk_config).create_context_async(context_config)
@@ -295,7 +383,7 @@ post('/context/:context_id/readyError') do
     error ? { isError: true, message: error.to_s } : nil
   end
 end
-post('/context/:context_id/variableKeysMap') { with_context { |c| c.variable_keys.transform_keys(&:to_s) } }
+post('/context/:context_id/variableKeysMap') { with_context { |c| c.variable_keys_list.transform_keys(&:to_s) } }
 post('/context/:context_id/variableKeys') { with_context { |c| c.variable_keys.keys.map(&:to_s) } }
 post('/context/:context_id/globalCustomFieldKeys') { with_context { |c| c.custom_field_keys } }
 post('/context/:context_id/customFieldKeys') { with_context { |c| c.custom_field_keys } }

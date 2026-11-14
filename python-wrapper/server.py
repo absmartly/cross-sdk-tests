@@ -18,6 +18,7 @@ from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
 from sdk.default_context_data_provider import DefaultContextDataProvider
+from sdk.default_context_publisher import DefaultContextPublisher
 from sdk import utils as sdk_utils
 import jsons
 import threading
@@ -69,9 +70,23 @@ class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
         self._lock = threading.Lock()
+        self._pending_alias = False
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
+        # The python3-sdk emits the legacy "close" event and then its cross-SDK
+        # alias "finalize" for the same lifecycle transition. The contract (and
+        # the JS reference) name this event "finalize" and expect it once, so
+        # translate "close" -> "finalize" and drop only the alias that directly
+        # follows a "close"; any other "finalize" stays visible to the harness.
+        if event_type_str == 'close':
+            event_type_str = 'finalize'
+            self._pending_alias = True
+        elif event_type_str == 'finalize' and self._pending_alias:
+            self._pending_alias = False
+            return
+        else:
+            self._pending_alias = False
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
             self.events.append({
@@ -98,9 +113,14 @@ class EventCollector(ContextEventLogger):
                 return str(data)
 
 class CustomPublisher(ContextPublisher):
-    def __init__(self, event_collector):
+    # Test contexts publish nowhere: a publish succeeds without sending anything.
+    # With publishToEndpoint the wrapper passes the SDK's own
+    # DefaultContextPublisher as sdk_publisher, so the publish is the SDK's real
+    # PUT {endpoint}/context. Either way /publishFail arms a one-shot failure.
+    def __init__(self, event_collector, sdk_publisher=None):
         self.event_collector = event_collector
         self._should_fail = False
+        self._sdk_publisher = sdk_publisher
 
     def publish(self, context, event):
         if self._should_fail:
@@ -108,6 +128,8 @@ class CustomPublisher(ContextPublisher):
             future = Future()
             future.set_exception(Exception('Publish failed'))
             return future
+        if self._sdk_publisher is not None:
+            return self._sdk_publisher.publish(context, event)
         future = Future()
         future.set_result(None)
         return future
@@ -124,7 +146,12 @@ def ok(collector, since, result, status=200):
     return jsonify({'result': result, 'events': collector.since(since)}), status
 
 def fail(collector, since, err, status=400):
-    return jsonify({'error': str(err), 'events': collector.since(since)}), status
+    # The python3-sdk deliberately keeps its v1 error texts (e.g. "Unit already
+    # set.") but carries the cross-SDK wording on ``canonical_message``
+    # ("Unit 'session_id' UID already set."). Surface the canonical text so the
+    # cross-SDK contract matches; this maps the wording rather than masking it.
+    message = getattr(err, 'canonical_message', None) or str(err)
+    return jsonify({'error': message, 'events': collector.since(since)}), status
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -144,7 +171,17 @@ def capabilities():
         'globalCustomFieldKeys': True,
         'getUnits': True,
         'getAttributes': True,
-        'readyError': True
+        'readyError': True,
+        'numericUnitIds': True,
+        'publishThrowsOnFailure': True,
+        'trackRejectsNonObjectProperties': False,
+        'refreshNoOpOnFailedContext': False,
+        'clientNoEnvironment': True,
+        'clientRejectsBlankApplication': False,
+        'clientAcceptsBlankApplication': True,
+        'assignmentRules': True,
+        'semverOperators': True,
+        'xAgentHeader': True
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -163,14 +200,33 @@ def get_context_payload(payload_id):
 
     return jsonify(data)
 
+captured_requests = {}
+
+def capture_request(payload_id):
+    captured_requests.setdefault(payload_id, []).append({
+        'method': request.method,
+        'headers': dict(request.headers)
+    })
+
 @app.route('/context_payload/<payload_id>/context', methods=['GET'])
 def mock_api_context(payload_id):
+    capture_request(payload_id)
     # A never-stored payload id is a missing collector payload: answer 404 so
     # the SDK's own fetch fails the context, instead of serving an
     # empty-but-valid payload that would make it silently ready.
     if payload_id not in payload_store:
         return jsonify({'error': 'Payload not found'}), 404
     return jsonify(payload_store[payload_id])
+
+# Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+@app.route('/context_payload/<payload_id>/context', methods=['PUT'])
+def mock_api_publish(payload_id):
+    capture_request(payload_id)
+    return jsonify({})
+
+@app.route('/context_payload/<payload_id>/requests', methods=['GET'])
+def captured_payload_requests(payload_id):
+    return jsonify({'requests': captured_requests.get(payload_id, [])})
 
 @app.route('/context', methods=['POST'])
 def create_context():
@@ -233,19 +289,41 @@ def create_context():
     context_id = f"ctx-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
     event_collector = EventCollector()
-    publisher = CustomPublisher(event_collector)
 
     client_config = ClientConfig()
     endpoint = req_data.get('endpoint')
     translated_endpoint = translate_endpoint(endpoint) if endpoint else 'http://dummy'
     client_config.endpoint = translated_endpoint
     client_config.api_key = 'dummy'
-    client_config.application = 'test'
-    client_config.environment = 'test'
+    # Optional client config (2026-11 system-attributes round): a scenario can set
+    # the application/environment names so audiences can target them. When the
+    # `client` field is omitted, keep the fixed test/test defaults so every
+    # pre-2026-11 scenario is unchanged. When it is present, an explicitly supplied
+    # application is forwarded as-is so the SDK validates it; only an omitted one
+    # falls back to the default. The environment is used only when it is a non-empty
+    # string — an absent/blank environment means "no environment configured", so
+    # leave it unset and the SDK leaves environment out of the evaluation map.
+    client_cfg = req_data.get('client')
+    if client_cfg is None:
+        client_config.application = 'test'
+        client_config.environment = 'test'
+    else:
+        application = client_cfg.get('application', 'test')
+        if not isinstance(application, str):
+            return jsonify({'error': "Invalid 'application' in client argument", 'events': []}), 400
+        client_config.application = application
+        environment = client_cfg.get('environment')
+        client_config.environment = environment if isinstance(environment, str) and environment else None
 
     http_client_config = DefaultHTTPClientConfig()
     http_client = DefaultHTTPClient(http_client_config)
     client = Client(client_config, http_client)
+
+    # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+    sdk_publisher = None
+    if req_data.get('publishToEndpoint') and endpoint:
+        sdk_publisher = DefaultContextPublisher(client)
+    publisher = CustomPublisher(event_collector, sdk_publisher)
 
     sdk_config = ABSmartlyConfig()
     sdk_config.client = client
@@ -277,9 +355,13 @@ def create_context():
         context = failing_sdk.create_context(context_config)
     elif payload_throttle > 0 and endpoint:
         # Delay the SDK's own fetch; the context stays not-ready until it lands.
+        # Keep .client so the delayed context still evaluates audiences against
+        # the configured names: the SDK reads them from the config client, not
+        # from the custom (deferred) data provider (finding 2).
         deferred_provider = DeferredContextDataProvider(
             DefaultContextDataProvider(client), payload_throttle)
         deferred_sdk_config = ABSmartlyConfig()
+        deferred_sdk_config.client = client
         deferred_sdk_config.context_data_provider = deferred_provider
         deferred_sdk_config.context_event_logger = event_collector
         deferred_sdk_config.context_event_handler = publisher
@@ -728,7 +810,7 @@ def variable_keys_map(context_id):
     events_before = collector.count()
 
     try:
-        keys = context.get_variable_keys()
+        keys = context.get_variable_keys_all()
         new_events = collector.since(events_before)
         return jsonify({'result': keys, 'events': new_events})
     except Exception as e:

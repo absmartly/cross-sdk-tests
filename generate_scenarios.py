@@ -6,7 +6,7 @@ Reconstructed from test_scenarios_complete.json
 WARNING - THIS GENERATOR IS STALE. DO NOT USE ITS OUTPUT AS THE ORACLE.
 ============================================================================
 NOT CANONICAL. The checked-in test_scenarios_complete.json is the CANONICAL
-source of truth for the cross-SDK suite (229 scenarios); the harness never
+source of truth for the cross-SDK suite (240 scenarios); the harness never
 runs this script, and nothing (CI included) may be wired to it. This
 generator is OUT OF DATE:
 

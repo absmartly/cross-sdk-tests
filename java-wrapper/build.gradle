@@ -13,9 +13,20 @@ repositories {
     mavenCentral()
 }
 
+// The Docker build installs core-api from the sibling java-sdk checkout and records its version here.
+// No released core-api has the java.util futures the wrapper uses, so there is no fallback: outside
+// Docker, install it the same way (see Dockerfile) or pass -PcoreApiVersion=<installed version>.
+def coreApiVersionFile = file("${System.getProperty('user.home')}/.m2/core-api.version")
+def coreApiVersion = project.findProperty('coreApiVersion') ?:
+    (coreApiVersionFile.exists() ? coreApiVersionFile.text.trim() : null)
+if (!coreApiVersion) {
+    throw new GradleException("core-api is not installed locally: build java-sdk's core-api into mavenLocal " +
+        "and record its version in ${coreApiVersionFile} (as the Dockerfile does), or pass -PcoreApiVersion=<version>")
+}
+
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'com.absmartly.sdk:core-api:1.7.0'
+    implementation "com.absmartly.sdk:core-api:${coreApiVersion}"
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 }
 

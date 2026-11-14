@@ -38,6 +38,12 @@ fun Application.configureRouting() {
     val contexts = ConcurrentHashMap<String, ContextWrapper>()
     val payloadStore = ConcurrentHashMap<String, Any>()
     val objectMapper = jacksonObjectMapper()
+    val capturedRequests = ConcurrentHashMap<String, MutableList<Map<String, Any>>>()
+
+    fun ApplicationCall.captureRequest(payloadId: String) {
+        val list = capturedRequests.computeIfAbsent(payloadId) { java.util.Collections.synchronizedList(mutableListOf()) }
+        list.add(mapOf("method" to request.httpMethod.value, "headers" to request.headers.entries().associate { it.key to it.value.joinToString(", ") }))
+    }
     val ownPort = System.getenv("PORT")?.toIntOrNull() ?: 3000
 
     // The orchestrator addresses the wrapper by its host-mapped port; inside the
@@ -76,7 +82,16 @@ fun Application.configureRouting() {
                 "globalCustomFieldKeys" to true,
                 "getUnits" to true,
                 "getAttributes" to true,
-                "readyError" to true
+                "readyError" to true,
+                "numericUnitIds" to true,
+                "publishThrowsOnFailure" to true,
+                "trackRejectsNonObjectProperties" to true,
+                "refreshNoOpOnFailedContext" to true,
+                "assignmentRules" to true,
+                "semverOperators" to true,
+                "xAgentHeader" to true,
+                "clientRejectsBlankApplication" to true,
+                "clientAcceptsBlankApplication" to false
             ))
         }
 
@@ -127,10 +142,23 @@ fun Application.configureRouting() {
 
         get("/context_payload/{payloadId}/context") {
             val payloadId = call.parameters["payloadId"]!!
+            call.captureRequest(payloadId)
             val data = payloadStore[payloadId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Payload not found")
             )
             call.respond(data)
+        }
+
+        // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+        put("/context_payload/{payloadId}/context") {
+            call.captureRequest(call.parameters["payloadId"]!!)
+            call.respond(emptyMap<String, Any>())
+        }
+
+        get("/context_payload/{payloadId}/requests") {
+            val requests = capturedRequests[call.parameters["payloadId"]!!]
+            val snapshot = requests?.let { synchronized(it) { it.toList() } } ?: emptyList()
+            call.respond(mapOf("requests" to snapshot))
         }
 
         post("/context") {
@@ -213,7 +241,30 @@ fun Application.configureRouting() {
                 val endpoint = request["endpoint"] as? String
                 val failLoad = request["failLoad"] == true
 
-                val customPublisher = CustomPublisher()
+                // Optional client config (the 2026-11 system-attributes round): a scenario can set
+                // the application/environment names so audiences can target them. When the `client`
+                // field is omitted, the fixed test-app/test-env defaults keep every pre-2026-11
+                // scenario unchanged. An explicitly supplied application is forwarded as-is so the
+                // SDK validates it; only an omitted one falls back to test-app. kotlin-sdk's Client
+                // mandates a non-empty environment, so the no-environment case (clientNoEnvironment)
+                // is a reviewed exception and SKIPs.
+                @Suppress("UNCHECKED_CAST")
+                val clientConfigRequest = request["client"] as? Map<String, Any?>
+                val clientApplication = if (clientConfigRequest != null && clientConfigRequest.containsKey("application")) {
+                    clientConfigRequest["application"] as? String ?: run {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to "Invalid 'application' in client argument",
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
+                } else {
+                    "test-app"
+                }
+                val clientEnvironment = (clientConfigRequest?.get("environment") as? String)
+                    ?.takeIf { it.isNotEmpty() } ?: "test-env"
+
+                var customPublisher = CustomPublisher()
 
                 var dataProvider: DummyContextDataProvider? = null
                 var throttledProvider: ThrottledContextDataProvider? = null
@@ -223,7 +274,26 @@ fun Application.configureRouting() {
                 if (request.containsKey("data")) {
                     val contextData = objectMapper.convertValue(request["data"], ContextData::class.java)
                     dataProvider = DummyContextDataProvider()
+                    // Honour the requested client config for inline-data contexts:
+                    // the SDK seeds evaluation names from the config Client, so
+                    // without a client carrying the configured names an audience on
+                    // application/environment would not match here (finding 1).
+                    val clientConfig = com.absmartly.sdk.ClientConfig.create()
+                        .setEndpoint("http://localhost")
+                        .setAPIKey("test-api-key")
+                        .setApplication(clientApplication)
+                        .setEnvironment(clientEnvironment)
+                    val client = try {
+                        com.absmartly.sdk.Client.create(clientConfig)
+                    } catch (e: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to (e.message ?: e.toString()),
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
                     val sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
                         .setContextDataProvider(dataProvider)
                         .setContextPublisher(customPublisher)
                     sdk = ABsmartly.create(sdkConfig)
@@ -234,9 +304,22 @@ fun Application.configureRouting() {
                     val clientConfig = com.absmartly.sdk.ClientConfig.create()
                         .setEndpoint(translateEndpoint(endpoint))
                         .setAPIKey("test-api-key")
-                        .setApplication("test-app")
-                        .setEnvironment("test-env")
-                    val client = com.absmartly.sdk.Client.create(clientConfig)
+                        .setApplication(clientApplication)
+                        .setEnvironment(clientEnvironment)
+                    val client = try {
+                        com.absmartly.sdk.Client.create(clientConfig)
+                    } catch (e: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to (e.message ?: e.toString()),
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
+                    // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
+                    // (its real HTTP client) to {endpoint}/context.
+                    if (request["publishToEndpoint"] == true) {
+                        customPublisher = CustomPublisher(com.absmartly.sdk.DefaultContextPublisher(client))
+                    }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
                         .setContextPublisher(customPublisher)
@@ -770,7 +853,9 @@ fun Application.configureRouting() {
             try {
                 // Await the SDK publish so the collector PUT completes before we
                 // respond; otherwise e2e publish races the collector verification.
-                wrapper.context.publish().join()
+                // Block on an IO thread: with publishToEndpoint the SDK's PUT comes
+                // back into this server.
+                withContext(Dispatchers.IO) { wrapper.context.publish().join() }
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
                 call.respond(mapOf("result" to null, "events" to newEvents))
             } catch (e: Exception) {

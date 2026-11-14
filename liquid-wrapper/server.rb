@@ -7,6 +7,7 @@ require 'absmartly/liquid'
 require 'context_data_provider'
 require 'default_context_data_provider'
 require 'context_publisher'
+require 'default_context_publisher'
 require 'a_b_smartly_config'
 require 'default_context_data_deserializer'
 require 'hashing'
@@ -38,8 +39,13 @@ class EventCollector
   end
 
   def handle_event(event_type, data)
+    # The underlying ruby-sdk emits "close" for the lifecycle seal; the
+    # cross-SDK contract (and the JS reference) name this event "finalize".
+    # Normalise it here the way the other wrappers do.
+    type = event_type.to_s
+    type = 'finalize' if type == 'close'
     @events << {
-      type: event_type.to_s,
+      type: type,
       data: deep_copy(data),
       timestamp: (Time.now.to_f * 1000).to_i
     }
@@ -173,8 +179,15 @@ def events_since(collector, events_before)
   collector.events[events_before..-1] || []
 end
 
+def canonical_error(message)
+  # The underlying ruby-sdk keeps its v1 error text ("Unit 'x' already set.");
+  # the cross-SDK contract words this "Unit 'x' UID already set.". Map the
+  # wording rather than masking it.
+  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
+end
+
 def error_response(status, error, collector, events_before)
-  body = { error: error.message }
+  body = { error: canonical_error(error.message) }
   body[:events] = collector ? events_since(collector, events_before) : []
   halt status, body.to_json
 end
@@ -185,12 +198,17 @@ rescue ArgumentError, TypeError
   raise "Liquid template rendered a non-integer variant: #{rendered.inspect}"
 end
 
+# Test contexts publish nowhere: a publish succeeds without sending anything.
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
+# Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher < ContextPublisher
   attr_accessor :should_fail
 
-  def initialize(event_collector)
+  def initialize(event_collector, sdk_publisher = nil)
     @event_collector = event_collector
     @should_fail = false
+    @sdk_publisher = sdk_publisher
   end
 
   def publish(context, event)
@@ -198,6 +216,7 @@ class CustomPublisher < ContextPublisher
       @should_fail = false
       raise 'Publish failed'
     end
+    return @sdk_publisher.publish(context, event) if @sdk_publisher
     self
   end
 end
@@ -227,6 +246,16 @@ get '/capabilities' do
     getUnits: true,
     getAttributes: true,
     readyError: true,
+    numericUnitIds: true,
+    publishThrowsOnFailure: true,
+    trackRejectsNonObjectProperties: true,
+    refreshNoOpOnFailedContext: true,
+    clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
+    assignmentRules: true,
+    semverOperators: true,
+    xAgentHeader: true,
     passThroughOperations: [
       'attribute', 'override', 'customAssignment', 'pending', 'isFinalized',
       'publish', 'finalize', 'setUnit', 'getUnit', 'getAttribute',
@@ -259,7 +288,20 @@ get '/context_payload/:payload_id' do
   data.to_json
 end
 
+# Rack keeps request headers in the env as HTTP_* (plus CONTENT_TYPE/CONTENT_LENGTH);
+# turn them back into names.
+$captured_requests = Hash.new { |h, k| h[k] = [] }
+
+def capture_request
+  headers = request.env.each_with_object({}) do |(key, value), h|
+    name = key.start_with?('HTTP_') ? key.delete_prefix('HTTP_') : (key if %w[CONTENT_TYPE CONTENT_LENGTH].include?(key))
+    h[name.downcase.tr('_', '-')] = value if name
+  end
+  $captured_requests[params['payload_id']] << { method: request.request_method, headers: headers }
+end
+
 get '/context_payload/:payload_id/context' do
+  capture_request
   # A never-stored payload id is a missing collector payload: answer 404 so the
   # SDK's own fetch fails the context, instead of serving an empty-but-valid
   # payload that would make it silently ready.
@@ -267,6 +309,18 @@ get '/context_payload/:payload_id/context' do
   data = $payload_store[params['payload_id']]
   halt 404, { error: 'Payload not found' }.to_json if data.nil?
   data.to_json
+end
+
+# Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+put '/context_payload/:payload_id/context' do
+  capture_request
+  content_type :json
+  {}.to_json
+end
+
+get '/context_payload/:payload_id/requests' do
+  content_type :json
+  { requests: $captured_requests.fetch(params['payload_id'], []) }.to_json
 end
 
 post '/context' do
@@ -341,17 +395,48 @@ post '/context' do
   context_id = "ctx-#{Time.now.to_i}-#{rand(100000)}"
 
   event_collector = EventCollector.new
-  publisher = CustomPublisher.new(event_collector)
 
   client_config = ClientConfig.new
   endpoint = req_data[:endpoint]
   translated_endpoint = endpoint ? translate_endpoint(endpoint) : 'http://dummy'
   client_config.endpoint = translated_endpoint
   client_config.api_key = 'dummy'
-  client_config.application = 'test'
-  client_config.environment = 'test'
+  # Optional client config (the 2026-11 system-attributes round): a scenario can set
+  # the application/environment names so audiences can target them. When the `client`
+  # field is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
+  # unchanged. When it is present, an explicitly supplied application is forwarded
+  # as-is so the SDK validates it; only an omitted one falls back to the default. A
+  # blank/absent environment means "no environment configured".
+  client_cfg = req_data[:client]
+  if client_cfg.nil?
+    lc_application = 'test'
+    lc_environment = 'test'
+  else
+    lc_application = client_cfg.key?(:application) ? client_cfg[:application] : 'test'
+    unless lc_application.is_a?(String)
+      content_type :json
+      halt 400, { error: "Invalid 'application' in client argument", events: [] }.to_json
+    end
+    lc_environment = client_cfg[:environment]
+    lc_environment = nil unless lc_environment.is_a?(String) && !lc_environment.empty?
+  end
+  client_config.application = lc_application
+  # Client.create rejects a nil/empty environment, so for the no-environment case
+  # build with a placeholder and report the environment as absent, so the SDK leaves
+  # `environment` out of the audience/rule evaluation map.
+  client_config.environment = lc_environment.nil? ? 'placeholder' : lc_environment
 
-  client = Client.create(client_config)
+  begin
+    client = Client.create(client_config)
+  rescue ArgumentError => e
+    content_type :json
+    halt 400, { error: e.message, events: [] }.to_json
+  end
+  client.define_singleton_method(:environment) { nil } if lc_environment.nil?
+
+  # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+  sdk_publisher = DefaultContextPublisher.new(client) if req_data[:publishToEndpoint] && endpoint
+  publisher = CustomPublisher.new(event_collector, sdk_publisher)
 
   sdk_config = ABSmartlyConfig.new
   sdk_config.client = client
@@ -583,7 +668,7 @@ post '/context/:context_id/readyError' do
 end
 
 post '/context/:context_id/variableKeysMap' do
-  sdk_route(params['context_id']) { |context| context.variable_keys.transform_keys(&:to_s) }
+  sdk_route(params['context_id']) { |context| context.variable_keys_list.transform_keys(&:to_s) }
 end
 
 post '/context/:context_id/globalCustomFieldKeys' do

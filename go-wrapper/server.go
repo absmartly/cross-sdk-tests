@@ -79,6 +79,11 @@ func (ec *EventCollector) HandleEvent(context sdk.Context, eventType sdk.EventTy
 		eventTypeLower = "exposure"
 	case sdk.Goal:
 		eventTypeLower = "goal"
+	case sdk.Close:
+		// The go-sdk emits "Close"; the cross-SDK contract (and the JS
+		// reference) names this lifecycle event "finalize". Normalise it
+		// the same way the java/kotlin wrappers do.
+		eventTypeLower = "finalize"
 	case sdk.Error:
 		eventTypeLower = "error"
 	}
@@ -116,7 +121,7 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 // When armed via /publishFail it fails the next SDK-invoked Publish exactly
 // once; what happens to pending events after that failure is decided entirely
 // by the SDK's own Flush() logic. Otherwise it forwards to inner (the SDK's
-// DefaultContextEventHandler in e2e mode) or, in mock mode where there is no
+// DefaultContextEventHandler in e2e mode and with publishToEndpoint) or, in mock mode where there is no
 // collector, delivers nothing.
 type CustomPublisher struct {
 	eventCollector *EventCollector
@@ -157,6 +162,12 @@ type Response struct {
 	Error  string      `json:"error,omitempty"`
 }
 
+type ClientConfigRequest struct {
+	// Raw so an absent key, null and non-string values can be told apart.
+	Application json.RawMessage `json:"application"`
+	Environment *string         `json:"environment"`
+}
+
 type CreateContextRequest struct {
 	Data       jsonmodels.ContextData `json:"data"`
 	Endpoint   string                 `json:"endpoint"`
@@ -165,6 +176,10 @@ type CreateContextRequest struct {
 	FailLoad   bool                   `json:"failLoad"`
 	Mode       string                 `json:"mode"`
 	Attributes map[string]interface{} `json:"attributes"`
+	Client     *ClientConfigRequest   `json:"client"`
+	// PublishToEndpoint makes publish() go through the SDK's own default
+	// publisher to PUT {endpoint}/context (X-Agent scenarios).
+	PublishToEndpoint bool `json:"publishToEndpoint"`
 }
 
 type StorePayloadRequest struct {
@@ -189,7 +204,23 @@ func writeSDKError(w http.ResponseWriter, status int, err error, events []Event)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(Response{Result: nil, Events: events, Error: err.Error()})
+	json.NewEncoder(w).Encode(Response{Result: nil, Events: events, Error: errorText(err)})
+}
+
+// errorText maps an SDK error to the cross-SDK canonical wording when the
+// error exposes one. The go-sdk deliberately keeps its v1 error texts (e.g.
+// "unit already set") but implements a Canonical() method that returns the
+// shared phrasing ("Unit 'session_id' UID already set."); the wrapper surfaces
+// the canonical text so the cross-SDK contract matches.
+func errorText(err error) string {
+	type canonicaler interface{ Canonical() string }
+	var c canonicaler
+	if errors.As(err, &c) {
+		if msg := c.Canonical(); msg != "" {
+			return msg
+		}
+	}
+	return err.Error()
 }
 
 func writeResult(w http.ResponseWriter, result interface{}, events []Event) {
@@ -221,7 +252,17 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"getAttributes":         true,
 		// The Go SDK has no ReadyError API (SetDataFailed discards the error),
 		// so the wrapper cannot report it without fabricating it.
-		"readyError": false,
+		"readyError":                      false,
+		"numericUnitIds":                  true,
+		"publishThrowsOnFailure":          true,
+		"trackRejectsNonObjectProperties": true,
+		"refreshNoOpOnFailedContext":      true,
+		"clientNoEnvironment":             true,
+		"clientRejectsBlankApplication":   false,
+		"clientAcceptsBlankApplication":   true,
+		"assignmentRules":                 true,
+		"semverOperators":                 true,
+		"xAgentHeader":                    true,
 	})
 }
 
@@ -314,7 +355,50 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+type CapturedRequest struct {
+	Method  string              `json:"method"`
+	Headers map[string][]string `json:"headers"`
+}
+
+var (
+	capturedRequests   = make(map[string][]CapturedRequest)
+	capturedRequestsMu sync.Mutex
+)
+
+func captureRequest(r *http.Request) {
+	payloadID := mux.Vars(r)["payloadId"]
+	headers := make(map[string][]string, len(r.Header)+1)
+	for name, values := range r.Header {
+		headers[name] = append([]string(nil), values...)
+	}
+	// Go moves Host out of r.Header; keep it so every header is recorded.
+	if r.Host != "" {
+		headers["Host"] = []string{r.Host}
+	}
+	capturedRequestsMu.Lock()
+	capturedRequests[payloadID] = append(capturedRequests[payloadID], CapturedRequest{Method: r.Method, Headers: headers})
+	capturedRequestsMu.Unlock()
+}
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+func mockApiPublishHandler(w http.ResponseWriter, r *http.Request) {
+	captureRequest(r)
+	io.Copy(io.Discard, r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte("{}"))
+}
+
+func capturedRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	payloadID := mux.Vars(r)["payloadId"]
+	capturedRequestsMu.Lock()
+	requests := append([]CapturedRequest{}, capturedRequests[payloadID]...)
+	capturedRequestsMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"requests": requests})
+}
+
 func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
+	captureRequest(r)
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
 
@@ -330,13 +414,44 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// clientNames returns the application and environment names for a context's
+// client. The optional `client` field on POST /context (the 2026-11
+// system-attributes round) overrides the defaults so a scenario can target the
+// always-on application/environment audience attributes. When the whole field is
+// omitted, the fixed test-app/test-env defaults keep every pre-2026-11 scenario
+// unchanged. When it is present, an explicitly supplied application is forwarded
+// as-is so the SDK validates it; only an omitted one falls back to the default. A
+// blank/absent environment means "no environment configured": the empty string
+// leaves environment out of the SDK's evaluation map (Context only adds it when
+// len(Environment_) > 0). A non-string application returns ok=false.
+func clientNames(cfg *ClientConfigRequest) (string, string, bool) {
+	if cfg == nil {
+		return "test-app", "test-env", true
+	}
+	application := "test-app"
+	if len(cfg.Application) > 0 {
+		if cfg.Application[0] != '"' || json.Unmarshal(cfg.Application, &application) != nil {
+			return "", "", false
+		}
+	}
+	environment := ""
+	if cfg.Environment != nil && *cfg.Environment != "" {
+		environment = *cfg.Environment
+	}
+	return application, environment, true
+}
+
 func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	application, environment, ok := clientNames(req.Client)
+	if !ok {
+		writeSDKError(w, http.StatusBadRequest, fmt.Errorf("Invalid 'application' in client argument"), nil)
+		return
+	}
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 
@@ -403,7 +518,20 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				done(data, nil)
 			}()
+			// Seed the configured system names on the delayed context too: the
+			// SDK reads them from Client_ independently of the data provider, so
+			// a custom (deferred) provider must not drop them (finding 2).
+			client := sdk.CreateDefaultClient(sdk.ClientConfig{
+				Endpoint_:    endpoint,
+				ApiKey_:      "test-api-key",
+				Application_: application,
+				Environment_: environment,
+			})
+			if req.PublishToEndpoint {
+				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
+			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
+				Client_:              client,
 				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
 				ContextPublisher_:    customPublisher,
 				ContextEventLogger_:  eventCollector,
@@ -413,9 +541,13 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			client := sdk.CreateDefaultClient(sdk.ClientConfig{
 				Endpoint_:    endpoint,
 				ApiKey_:      "test-api-key",
-				Application_: "test-app",
-				Environment_: "test-env",
+				Application_: application,
+				Environment_: environment,
 			})
+			// publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+			if req.PublishToEndpoint {
+				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
+			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:             client,
 				ContextPublisher_:   customPublisher,
@@ -433,7 +565,19 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		absmartly = &a
 	default:
+		// Honour the requested client config for inline-data contexts too: the
+		// SDK seeds evaluation names from Client_, so without a client carrying
+		// the configured names an audience on application/environment would see
+		// nothing here (finding 1). The endpoint is a dummy; inline data never
+		// fetches.
+		client := sdk.CreateDefaultClient(sdk.ClientConfig{
+			Endpoint_:    "http://localhost",
+			ApiKey_:      "test-api-key",
+			Application_: application,
+			Environment_: environment,
+		})
 		a := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:             client,
 			ContextPublisher_:   customPublisher,
 			ContextEventLogger_: eventCollector,
 		})
@@ -683,7 +827,11 @@ func variableKeys(cd *ContextData, _ func(interface{}) error) (interface{}, erro
 }
 
 func variableKeysMap(cd *ContextData, _ func(interface{}) error) (interface{}, error) {
-	keys, err := cd.context.GetVariableKeys()
+	// variableKeysMap must return the full list of experiments defining each
+	// key (two experiments sharing a key both appear), so call the list-shaped
+	// API rather than GetVariableKeys (which keeps the v1 first-experiment-only
+	// signature).
+	keys, err := cd.context.GetVariableKeysAll()
 	if err != nil {
 		return nil, err
 	}
@@ -779,6 +927,8 @@ func main() {
 	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")
+	router.HandleFunc("/context_payload/{payloadId}/context", mockApiPublishHandler).Methods("PUT")
+	router.HandleFunc("/context_payload/{payloadId}/requests", capturedRequestsHandler).Methods("GET")
 	router.HandleFunc("/context", createContextHandler).Methods("POST")
 	router.HandleFunc("/context/{contextId}/setUnit", contextRoute(setUnit)).Methods("POST")
 	router.HandleFunc("/context/{contextId}/getUnit", contextRoute(getUnit)).Methods("POST")

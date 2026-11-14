@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 222-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 270-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -74,6 +74,11 @@ jobs:
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
+
+      - name: Scenario group unit tests (no Docker)
+        run: |
+          pip install pytest
+          python -m pytest orchestrator/tests -v
 
   cross-sdk:
     name: ${{ matrix.sdk }}

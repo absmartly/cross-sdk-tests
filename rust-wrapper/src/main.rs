@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
     routing::{delete, get, post, put},
     Json, Router,
@@ -13,19 +13,20 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
-use absmartly_sdk::{
-    utils, ABsmartly, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
+use absmartly::{
+    utils, Client, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
 /// mode it sends through the SDK's own `ABsmartly::publish` (same request and
 /// headers as the SDK's default publisher, blocking on the multi-thread
-/// runtime the same way); in mock mode there is no collector, so it delivers
-/// nothing.
+/// runtime the same way), as it does for a mock-endpoint context created with
+/// publishToEndpoint; otherwise in mock mode there is no collector, so it
+/// delivers nothing.
 struct ArmablePublisher {
     fail_next: Arc<AtomicBool>,
-    sdk: Option<Arc<ABsmartly>>,
+    sdk: Option<Arc<Client>>,
 }
 
 impl ContextPublisher for ArmablePublisher {
@@ -54,20 +55,50 @@ fn logging_options(ec: &Arc<EventCollector>) -> ContextOptions {
 
 /// SDK pointed at a mock collector endpoint (e.g. `/context_payload/{id}`);
 /// the SDK appends `/context` and fetches it itself.
-fn mock_endpoint_sdk(endpoint: &str) -> Result<ABsmartly, absmartly_sdk::SDKError> {
-    ABsmartly::builder()
+fn mock_endpoint_sdk(endpoint: &str, application: &str, environment: &str) -> Result<Client, absmartly::Error> {
+    Client::builder()
         .endpoint(endpoint)
         .api_key("test-key")
-        .application("test-app")
-        .environment("test-env")
+        .application(application)
+        .environment(environment)
         .retries(1)
         .build()
+}
+
+/// The application and environment names for a context's client, from the optional
+/// `client` field on POST /context. Defaults keep every pre-2026-11 scenario
+/// unchanged. An explicitly supplied application is forwarded as-is so the SDK
+/// validates it; only an omitted one falls back to the default. A non-string one
+/// is rejected (Err).
+fn client_names(client: &Option<ClientConfigRequest>) -> Result<(String, String), &'static str> {
+    let application = match client.as_ref().and_then(|c| c.application.as_ref()) {
+        None => "test-app".to_string(),
+        Some(Value::String(s)) => s.clone(),
+        Some(_) => return Err("Invalid 'application' in client argument"),
+    };
+    let environment = client
+        .as_ref()
+        .and_then(|c| c.environment.as_ref())
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| "test-env".to_string());
+    Ok((application, environment))
+}
+
+/// Keeps a present-but-null `application` distinct from an absent one.
+fn present_value<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
+}
+
+/// The SDK's own client-construction error as a 400.
+fn sdk_config_error(e: absmartly::Error) -> axum::response::Response {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": e.to_string(), "events": []}))).into_response()
 }
 
 /// Refresh fetcher for a context resolved outside `create_context` (the
 /// throttled path). It fetches through the SDK's own client, as the fetcher
 /// the SDK installs in `create_context` does.
-fn sdk_data_fetcher(sdk: Arc<ABsmartly>) -> absmartly_sdk::context::DataFetcher {
+fn sdk_data_fetcher(sdk: Arc<Client>) -> absmartly::context::DataFetcher {
     Box::new(move || {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
@@ -164,6 +195,7 @@ struct ContextData_ {
 struct AppState {
     contexts: RwLock<HashMap<String, Arc<ContextData_>>>,
     payloads: RwLock<HashMap<String, ContextData>>,
+    captured_requests: Mutex<HashMap<String, Vec<Value>>>,
 }
 
 impl AppState {
@@ -171,6 +203,7 @@ impl AppState {
         Self {
             contexts: RwLock::new(HashMap::new()),
             payloads: RwLock::new(HashMap::new()),
+            captured_requests: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -196,6 +229,23 @@ struct CreateContextRequest {
     mode: Option<String>,
     #[serde(default)]
     attributes: Option<HashMap<String, Value>>,
+    #[serde(default)]
+    client: Option<ClientConfigRequest>,
+    /// Publish through the SDK's own publisher to PUT {endpoint}/context.
+    #[serde(default, rename = "publishToEndpoint")]
+    publish_to_endpoint: bool,
+}
+
+/// Optional client config (the 2026-11 system-attributes round): a scenario can set
+/// the application/environment names so audiences can target them. rust-sdk requires
+/// a non-empty environment, so the no-environment case (clientNoEnvironment) is a
+/// reviewed exception and SKIPs.
+#[derive(Deserialize)]
+struct ClientConfigRequest {
+    #[serde(default, deserialize_with = "present_value")]
+    application: Option<Value>,
+    #[serde(default)]
+    environment: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -300,7 +350,16 @@ async fn capabilities_handler() -> impl IntoResponse {
         "globalCustomFieldKeys": true,
         "getUnits": true,
         "getAttributes": true,
-        "readyError": true
+        "readyError": true,
+        "numericUnitIds": true,
+        "publishThrowsOnFailure": true,
+        "trackRejectsNonObjectProperties": true,
+        "refreshNoOpOnFailedContext": true,
+        "assignmentRules": true,
+        "semverOperators": true,
+        "xAgentHeader": true,
+        "clientRejectsBlankApplication": true,
+        "clientAcceptsBlankApplication": false
     }))
 }
 
@@ -364,16 +423,59 @@ async fn get_payload_handler(
     }
 }
 
+/// Records a request served by a payload's mock collector endpoint: the method
+/// and every header as received (non-UTF-8 values are decoded lossily).
+fn capture_request(state: &AppState, payload_id: &str, method: &Method, headers: &HeaderMap) {
+    let mut recorded = serde_json::Map::new();
+    for name in headers.keys() {
+        let values: Vec<Value> = headers
+            .get_all(name)
+            .iter()
+            .map(|v| Value::String(String::from_utf8_lossy(v.as_bytes()).into_owned()))
+            .collect();
+        recorded.insert(name.as_str().to_string(), Value::Array(values));
+    }
+    state
+        .captured_requests
+        .lock()
+        .unwrap()
+        .entry(payload_id.to_string())
+        .or_default()
+        .push(json!({"method": method.as_str(), "headers": recorded}));
+}
+
 // Mock ABsmartly API - SDK calls GET /context_payload/{payloadId}/context?application=...&environment=...
 async fn mock_api_context_handler(
     State(state): State<Arc<AppState>>,
     Path(payload_id): Path<String>,
+    method: Method,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
+    capture_request(&state, &payload_id, &method, &headers);
     let payloads = state.payloads.read().unwrap();
     match payloads.get(&payload_id).cloned() {
         Some(data) => Json(data).into_response(),
         None => (StatusCode::NOT_FOUND, Json(json!({"error": "payload not found"}))).into_response(),
     }
+}
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+async fn mock_api_publish_handler(
+    State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
+    method: Method,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    capture_request(&state, &payload_id, &method, &headers);
+    Json(json!({}))
+}
+
+async fn captured_requests_handler(
+    State(state): State<Arc<AppState>>,
+    Path(payload_id): Path<String>,
+) -> impl IntoResponse {
+    let requests = state.captured_requests.lock().unwrap().get(&payload_id).cloned().unwrap_or_default();
+    Json(json!({ "requests": requests }))
 }
 
 async fn create_context_handler(
@@ -398,7 +500,7 @@ async fn create_context_handler(
 
         let units: HashMap<String, Value> = req.units.clone();
 
-        let sdk = match ABsmartly::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
+        let sdk = match Client::new(&e2e_endpoint, &e2e_api_key, &e2e_app, &e2e_env) {
             Ok(s) => Arc::new(s),
             Err(e) => {
                 return (
@@ -474,8 +576,26 @@ async fn create_context_handler(
 
     let fetches_from_endpoint = req.data.is_none() && req.endpoint.is_some();
 
+    let (client_application, client_environment) = match client_names(&req.client) {
+        Ok(names) => names,
+        Err(msg) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"error": msg, "events": []}))).into_response();
+        }
+    };
+
+    // publishToEndpoint: publish through the SDK's own client to {endpoint}/context.
+    // Set below when the endpoint path builds that client.
+    let mut endpoint_publisher_sdk: Option<Arc<Client>> = None;
+
     let (mut context, ready, failed) = if let Some(data) = req.data {
-        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        // Honour the requested client config: seed the inline-data context with
+        // the same application/environment the endpoint path uses, so a strict
+        // audience on either configured name matches here too (WRAPPER_API_SPEC
+        // promises client config in both create modes).
+        let sdk = match Client::new("http://dummy", "test-key", &client_application, &client_environment) {
+            Ok(sdk) => sdk,
+            Err(e) => return sdk_config_error(e),
+        };
         let ctx = sdk.create_context_with(units, data, Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
@@ -485,27 +605,30 @@ async fn create_context_handler(
         // the immediate path. The mock collector route answers 404 for an
         // unknown payload, so a missing payload fails the context (with
         // ready_error and an `error` event) instead of loading as empty data.
-        let sdk = match mock_endpoint_sdk(&translated_endpoint) {
+        let sdk = match mock_endpoint_sdk(&translated_endpoint, &client_application, &client_environment) {
             Ok(sdk) => Arc::new(sdk),
-            Err(e) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({"error": format!("Failed to create SDK: {}", e), "events": []})),
-                ).into_response();
-            }
+            Err(e) => return sdk_config_error(e),
         };
 
         if payload_throttle_ms > 0 {
             // The context exists (not ready) before its data arrives, so calls
             // made meanwhile (e.g. track before ready) land on this context.
             let mut ctx = Context::new_loading_with_options(logging_options(&event_collector));
+            // Seed the configured system names on the context that will actually
+            // evaluate the fetched data. `become_ready(data)` below does not carry
+            // over the temporary fetching context's names, so without this the
+            // delayed path would misassign configured-name audiences (finding 2).
+            ctx.set_system_attributes(Some(&client_application), Some(&client_environment));
             for (unit_type, uid) in &units {
                 if let Err(e) = ctx.set_unit(unit_type, uid.clone()) {
                     return err_with_events(StatusCode::BAD_REQUEST, e, &event_collector, 0).into_response();
                 }
             }
             let publish_fail = Arc::new(AtomicBool::new(false));
-            ctx.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
+            ctx.set_publisher(Box::new(ArmablePublisher {
+                fail_next: publish_fail.clone(),
+                sdk: req.publish_to_endpoint.then(|| sdk.clone()),
+            }));
             ctx.set_data_fetcher(sdk_data_fetcher(sdk.clone()));
 
             let (ready, failed, finalized) = (ctx.is_ready(), ctx.is_failed(), ctx.is_finalized());
@@ -561,27 +684,36 @@ async fn create_context_handler(
             })
             .into_response();
         } else {
+            if req.publish_to_endpoint {
+                endpoint_publisher_sdk = Some(sdk.clone());
+            }
             let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
             let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
             (ctx, ready, failed)
         }
     } else if req.fail_load {
-        let sdk = ABsmartly::builder()
+        let sdk = match Client::builder()
             .endpoint("http://127.0.0.1:1")
-            .api_key("test-key").application("test-app").environment("test-env")
-            .retries(1).build().expect("Failed to create SDK");
+            .api_key("test-key").application(&client_application).environment(&client_environment)
+            .retries(1).build() {
+            Ok(sdk) => sdk,
+            Err(e) => return sdk_config_error(e),
+        };
         let ctx = sdk.create_context_or_failed(units, Some(logging_options(&event_collector))).await;
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     } else {
-        let sdk = ABsmartly::new("http://dummy", "test-key", "test-app", "test-env").expect("Failed to create SDK");
+        let sdk = match Client::new("http://dummy", "test-key", &client_application, &client_environment) {
+            Ok(sdk) => sdk,
+            Err(e) => return sdk_config_error(e),
+        };
         let ctx = sdk.create_context_with(units, ContextData::default(), Some(logging_options(&event_collector)));
         let (ready, failed) = (ctx.is_ready(), ctx.is_failed());
         (ctx, ready, failed)
     };
 
     let publish_fail = Arc::new(AtomicBool::new(false));
-    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: None }));
+    context.set_publisher(Box::new(ArmablePublisher { fail_next: publish_fail.clone(), sdk: endpoint_publisher_sdk }));
 
     let finalized = context.is_finalized();
 
@@ -848,7 +980,8 @@ async fn publish_fail_handler(State(state): State<Arc<AppState>>, Path(context_i
 
 // Context::publish hands the event to the context's ArmablePublisher (which
 // delivers nothing in mock mode and sends via the SDK's ABsmartly::publish in
-// e2e mode).
+// e2e mode and with publishToEndpoint; the SDK's PUT comes back to this server,
+// which with_context's block_in_place keeps serving).
 async fn publish_handler(State(state): State<Arc<AppState>>, Path(context_id): Path<String>) -> HandlerResult {
     with_context(&state, &context_id, StatusCode::INTERNAL_SERVER_ERROR, |c| c.publish().map(|_| Value::Null))
 }
@@ -905,7 +1038,8 @@ async fn main() {
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
         .route("/context_payload/{payloadId}", put(store_payload_handler).get(get_payload_handler))
-        .route("/context_payload/{payloadId}/context", get(mock_api_context_handler))
+        .route("/context_payload/{payloadId}/context", get(mock_api_context_handler).put(mock_api_publish_handler))
+        .route("/context_payload/{payloadId}/requests", get(captured_requests_handler))
         .route("/context", post(create_context_handler))
         .route("/context/{contextId}/setUnit", post(set_unit_handler))
         .route("/context/{contextId}/getUnit", post(get_unit_handler))
