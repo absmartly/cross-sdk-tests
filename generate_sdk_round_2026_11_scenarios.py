@@ -654,7 +654,6 @@ def assemble(existing, build_groups):
     # Number after the highest retained ID, not the count: earlier scenarios may
     # have been deleted without renumbering (e.g. #18), leaving gaps.
     groups = build_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    # The later groups keep their own numbers, so these must stay below them.
     if later:
         last = int(groups[-1]["name"].split(" - ", 1)[0])
         first_later = min(int(s["name"].split(" - ", 1)[0]) for s in later)

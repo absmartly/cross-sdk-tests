@@ -474,7 +474,6 @@ def validate_captured_requests(
             continue
         lowered: Dict[str, Any] = {}
         for k, v in headers.items():
-            # Case-variant duplicates are combined, so no captured value escapes the pattern check.
             key = str(k).lower()
             lowered[key] = [*_as_list(lowered[key]), *_as_list(v)] if key in lowered else v
         for name, pattern in expected.get("headerPatterns", {}).items():

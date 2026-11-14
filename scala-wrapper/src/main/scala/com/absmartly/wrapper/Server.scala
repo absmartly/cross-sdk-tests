@@ -28,7 +28,6 @@ object Server extends IOApp {
   private val capturedRequests = TrieMap[String, Vector[Json]]()
 
   private def captureRequest(payloadId: String, req: Request[IO]): IO[Unit] = IO {
-    // Repeated (or case-variant) names keep every value, so none escapes the harness check.
     val headers = Json.fromFields(
       req.headers.headers
         .groupBy(_.name.toString.toLowerCase)
