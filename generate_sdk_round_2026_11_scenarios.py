@@ -80,7 +80,8 @@ SYSATTR_MARKER = " - System Attributes - "
 GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
 # Groups owned by generate_parity_round_scenarios.py (300+). They stay after this round's groups and
 # are left out of the numbering, so regenerating either file never renumbers or moves the other's.
-LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
+LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ",
+                       " - Client Application - ")
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"

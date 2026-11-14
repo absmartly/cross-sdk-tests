@@ -90,7 +90,9 @@ app.MapGet("/capabilities", () => Results.Ok(new
     refreshNoOpOnFailedContext = true,
     assignmentRules = true,
     semverOperators = true,
-    xAgentHeader = true
+    xAgentHeader = true,
+    clientRejectsBlankApplication = true,
+    clientAcceptsBlankApplication = false
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -346,17 +348,21 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         // Optional client config (the 2026-11 system-attributes round): a scenario can
         // set the application/environment names so audiences can target them. When the
         // `client` field is omitted, the fixed test/test defaults keep every pre-2026-11
-        // scenario unchanged. dotnet-sdk requires a non-empty environment, so the
-        // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        // scenario unchanged. An explicitly supplied application is forwarded as-is so
+        // the SDK validates it; only an omitted one falls back to the default.
+        // dotnet-sdk requires a non-empty environment, so the no-environment case
+        // (clientNoEnvironment) is a reviewed exception and SKIPs.
         var clientApplication = "test";
         var clientEnvironment = "test";
         if (requestJson.TryGetValue("client", out var clientJson) &&
             clientJson.ValueKind == JsonValueKind.Object)
         {
-            if (clientJson.TryGetProperty("application", out var appProp) &&
-                appProp.ValueKind == JsonValueKind.String &&
-                !string.IsNullOrEmpty(appProp.GetString()))
+            if (clientJson.TryGetProperty("application", out var appProp))
             {
+                if (appProp.ValueKind != JsonValueKind.String)
+                {
+                    return Results.BadRequest(new { error = "Invalid 'application' in client argument", events = Array.Empty<object>() });
+                }
                 clientApplication = appProp.GetString()!;
             }
             if (clientJson.TryGetProperty("environment", out var envProp) &&
@@ -390,25 +396,34 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
         // (its real service client) to {endpoint}/context, as e2e mode does.
         IContextPublisher publishDelegate = null;
-        if (requestJson.TryGetValue("publishToEndpoint", out var publishToEndpoint) &&
-            publishToEndpoint.ValueKind == JsonValueKind.True && requestJson.ContainsKey("endpoint"))
+        ABsmartly.Sdk sdk;
+        try
         {
-            publishDelegate = new ABSmartly.Services.DefaultContextPublisher(new ABSmartlyService(
-                serviceConfig,
-                httpClientFactory,
-                new ABSmartly.Services.DefaultContextDataDeserializer(),
-                new ABSmartly.Services.DefaultContextEventSerializer()));
-        }
-
-        var sdk = new ABsmartly.Sdk(
-            httpClientFactory,
-            serviceConfig,
-            new ABsmartlyConfig
+            if (requestJson.TryGetValue("publishToEndpoint", out var publishToEndpoint) &&
+                publishToEndpoint.ValueKind == JsonValueKind.True && requestJson.ContainsKey("endpoint"))
             {
-                ContextEventLogger = eventCollector,
-                ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag, publishDelegate)
+                publishDelegate = new ABSmartly.Services.DefaultContextPublisher(new ABSmartlyService(
+                    serviceConfig,
+                    httpClientFactory,
+                    new ABSmartly.Services.DefaultContextDataDeserializer(),
+                    new ABSmartly.Services.DefaultContextEventSerializer()));
             }
-        );
+
+            sdk = new ABsmartly.Sdk(
+                httpClientFactory,
+                serviceConfig,
+                new ABsmartlyConfig
+                {
+                    ContextEventLogger = eventCollector,
+                    ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag, publishDelegate)
+                }
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            // The SDK's own client-config validation (e.g. a blank application).
+            return Results.BadRequest(new { error = ex.Message, events = Array.Empty<object>() });
+        }
 
         var contextConfig = new ContextConfig
         {

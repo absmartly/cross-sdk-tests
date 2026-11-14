@@ -188,6 +188,8 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
     // The SDK sends X-Agent without a version (absmartly-javascript-sdk).
     xAgentHeader: false,
     holdouts,
@@ -357,7 +359,7 @@ app.post('/context', async (req, res) => {
     // Invalid client configuration the SDK rejects is a 400, not a 500: the
     // caller sent bad input (e.g. an empty application), not a server fault.
     const status = isSdkOptionsValidationError(error) ? 400 : 500;
-    res.status(status).json({ error: error.message, type: error.constructor.name });
+    res.status(status).json({ error: error.message, type: error.constructor.name, events: [] });
   }
 });
 

@@ -1094,7 +1094,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
 
     ROUND = (" - Custom Assignment Rules - ", " - Semver Operators - ", " - Audience Re-Evaluation - ",
              " - System Attributes - ")
-    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
+    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ", " - Client Application - ")
 
     def test_groups_keep_their_ranges_and_order(self):
         with open(SCENARIOS_PATH) as src:
@@ -1103,7 +1103,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
         parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
         self.assertEqual(round_ids, list(range(230, 254)))
-        self.assertEqual(parity_ids, list(range(300, 322)))
+        self.assertEqual(parity_ids, list(range(300, 324)))
         self.assertEqual(numbers, sorted(numbers))
 
     @staticmethod
@@ -1143,3 +1143,85 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
         with self.assertRaises(SystemExit):
             parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
+
+
+class BlankClientApplicationTest(unittest.TestCase):
+    """Scenarios 322-323 catch a wrapper that repairs an explicitly blank client.application into its
+    default instead of handing it to the SDK."""
+
+    def scenario(self, capability):
+        with open(SCENARIOS_PATH) as src:
+            found = [s for s in json.load(src) if s.get("requires") == [capability]
+                     and " - Client Application - " in s["name"]]
+        self.assertEqual(len(found), 1, capability)
+        return found[0]
+
+    def run_scenario(self, scenario, responses):
+        """Replay the scenario against a fake wrapper that answers each step with `responses` in order."""
+        import requests
+
+        posted = []
+        replies = iter(responses)
+
+        def call(url, json=None, timeout=None):
+            posted.append((url, json))
+            status, body = next(replies)
+            resp = requests.Response()
+            resp.status_code = status
+            resp._content = test_runner.json.dumps(body).encode()
+            resp.url = url
+            return resp
+
+        capability = scenario["requires"][0]
+        policy = {"capabilities": {capability: "c"},
+                  "sdks": {"alpha": {"required": [capability], "unsupported": {}}}}
+        orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=policy)
+        orch.capabilities["alpha"] = {capability: True}
+        with mock.patch.object(test_runner.requests, "post", call), \
+                mock.patch.object(test_runner.requests, "get", call), \
+                mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertNotIn("skipped", result)
+        return result, posted
+
+    READY = {"result": {"contextId": "c1", "ready": True, "failed": False, "finalized": False},
+             "events": [{"type": "ready", "data": {"experiments": [{"id": 611, "name": "exp_blank_app_env"}]}}]}
+
+    def test_blank_application_reaches_the_wrapper_unchanged(self):
+        for capability in ("clientRejectsBlankApplication", "clientAcceptsBlankApplication"):
+            create = self.scenario(capability)["steps"][0]
+            self.assertEqual(create["params"]["client"]["application"], "", capability)
+
+    def test_rejecting_lane_passes_on_the_sdk_error_and_fails_on_a_repaired_name(self):
+        scenario = self.scenario("clientRejectsBlankApplication")
+        for message in ("Invalid 'application' in options argument", "Missing Application configuration",
+                        "requirement failed: application must not be empty",
+                        "Configuration error: application cannot be empty"):
+            result, posted = self.run_scenario(scenario, [(400, {"error": message, "events": []})])
+            self.assertTrue(result["passed"], (message, result))
+            self.assertEqual(posted[0][1]["client"]["application"], "")
+        repaired, _ = self.run_scenario(scenario, [(200, self.READY)])
+        self.assertFalse(repaired["passed"])
+        unrelated, _ = self.run_scenario(scenario, [(400, {"error": "Missing endpoint configuration",
+                                                           "events": []})])
+        self.assertFalse(unrelated["passed"])
+
+    def test_accepting_lane_fails_when_the_default_application_leaks_into_the_map(self):
+        scenario = self.scenario("clientAcceptsBlankApplication")
+        steps = scenario["steps"]
+
+        def reply(step, matched_present):
+            expect = step["expect"]
+            if step["action"] != "treatment":
+                return 200, {"result": expect["result"], "events": expect["events"]}
+            if not matched_present or step["params"]["experimentName"] != "exp_blank_app_present":
+                return 200, {"result": expect["result"], "events": expect["events"]}
+            exposure = dict(expect["events"][0]["data"], variant=1, assigned=True, audienceMismatch=False)
+            return 200, {"result": 1, "events": [{"type": "exposure", "data": exposure}]}
+
+        create = (200, dict(self.READY, events=steps[0]["expect"]["events"]))
+        honest, _ = self.run_scenario(scenario, [create] + [reply(s, False) for s in steps[1:]])
+        self.assertTrue(honest["passed"], honest)
+        repaired, _ = self.run_scenario(scenario, [create] + [reply(s, True) for s in steps[1:]])
+        self.assertFalse(repaired["passed"])

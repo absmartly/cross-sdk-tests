@@ -75,14 +75,26 @@ object Server extends IOApp {
 
   // Optional client config (the 2026-11 system-attributes round): a scenario can set the
   // application/environment names so audiences can target them. When the `client` field is omitted,
-  // the fixed test-app/test defaults keep every pre-2026-11 scenario unchanged. scala-sdk's SDKConfig
-  // mandates a non-empty environment, so the no-environment case (clientNoEnvironment) is a reviewed
-  // exception and SKIPs.
-  private def clientNames(cursor: io.circe.ACursor): (String, String) = {
+  // the fixed test-app/test defaults keep every pre-2026-11 scenario unchanged. An explicitly supplied
+  // application is forwarded as-is so the SDK validates it; only an omitted one falls back to test-app.
+  // scala-sdk's SDKConfig mandates a non-empty environment, so the no-environment case
+  // (clientNoEnvironment) is a reviewed exception and SKIPs. Left carries the 400 error message.
+  private def clientNames(cursor: io.circe.ACursor): Either[String, (String, String)] = {
     val client = cursor.downField("client")
-    val application = client.downField("application").as[String].toOption.filter(_.nonEmpty).getOrElse("test-app")
+    val applicationField = client.downField("application")
     val environment = client.downField("environment").as[String].toOption.filter(_.nonEmpty).getOrElse("test")
-    (application, environment)
+    val application =
+      if (applicationField.succeeded) applicationField.as[String].left.map(_ => "Invalid 'application' in client argument")
+      else Right("test-app")
+    // SDKConfig construction rejects an invalid application: surface the SDK's own message.
+    application.flatMap { app =>
+      try {
+        SDKConfig(endpoint = "http://localhost:3000", apiKey = "test-key", application = app, environment = environment)
+        Right((app, environment))
+      } catch {
+        case e: IllegalArgumentException => Left(e.getMessage)
+      }
+    }
   }
 
   private def unitsObject(cursor: io.circe.ACursor): List[(String, Json)] =
@@ -128,7 +140,9 @@ object Server extends IOApp {
         "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
         "assignmentRules" -> Json.fromBoolean(true),
         "semverOperators" -> Json.fromBoolean(true),
-        "xAgentHeader" -> Json.fromBoolean(true)
+        "xAgentHeader" -> Json.fromBoolean(true),
+        "clientRejectsBlankApplication" -> Json.fromBoolean(true),
+        "clientAcceptsBlankApplication" -> Json.fromBoolean(false)
       ))
 
     case req @ POST -> Root / "diagnostic" =>
@@ -238,7 +252,9 @@ object Server extends IOApp {
             case _ =>
               NotImplemented(errorBody("e2e mode not configured"))
           }
-        } else {
+        } else clientNames(cursor) match {
+        case Left(message) => BadRequest(errorBody(message))
+        case Right((clientApp, clientEnv)) =>
 
         val units = parseUnitsMap(cursor.downField("units"))
 
@@ -250,7 +266,6 @@ object Server extends IOApp {
         )
 
         val endpointOpt = cursor.downField("endpoint").as[String].toOption
-        val (clientApp, clientEnv) = clientNames(cursor)
         // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
         // (its real HTTP client) to {endpoint}/context. It only reads the connection
         // fields of the config, so it can be built before the publisher it backs.

@@ -175,6 +175,8 @@ def capabilities():
         'trackRejectsNonObjectProperties': False,
         'refreshNoOpOnFailedContext': False,
         'clientNoEnvironment': True,
+        'clientRejectsBlankApplication': False,
+        'clientAcceptsBlankApplication': True,
         'assignmentRules': True,
         'semverOperators': True,
         'xAgentHeader': True
@@ -294,17 +296,23 @@ def create_context():
     # Optional client config (2026-11 system-attributes round): a scenario can set
     # the application/environment names so audiences can target them. When the
     # `client` field is omitted, keep the fixed test/test defaults so every
-    # pre-2026-11 scenario is unchanged. When it is present, the environment is used
-    # only when it is a non-empty string — an absent/blank environment means "no
-    # environment configured", so leave it unset and the SDK leaves environment out
-    # of the evaluation map.
+    # pre-2026-11 scenario is unchanged. When it is present, an explicitly supplied
+    # application is forwarded as-is so the SDK validates it; only an omitted one
+    # falls back to the default. The environment is used only when it is a non-empty
+    # string — an absent/blank environment means "no environment configured", so
+    # leave it unset and the SDK leaves environment out of the evaluation map.
     client_cfg = req_data.get('client')
     if client_cfg is None:
         client_config.application = 'test'
         client_config.environment = 'test'
     else:
-        application = client_cfg.get('application')
-        client_config.application = application if isinstance(application, str) and application else 'test'
+        if 'application' in client_cfg:
+            application = client_cfg['application']
+            if not isinstance(application, str):
+                return jsonify({'error': "Invalid 'application' in client argument", 'events': []}), 400
+            client_config.application = application
+        else:
+            client_config.application = 'test'
         environment = client_cfg.get('environment')
         client_config.environment = environment if isinstance(environment, str) and environment else None
 

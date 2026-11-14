@@ -35774,5 +35774,271 @@
     "requires": [
       "xAgentHeader"
     ]
+  },
+  {
+    "name": "322 - Client Application - An Explicitly Blank Application Is Rejected",
+    "description": "POST /context with client.application \"\" on an SDK whose client rejects a blank application: the wrapper forwards the value unchanged, so creation fails with the SDK's own validation error as a 400. A wrapper that repairs the blank name into its default application returns a ready context instead and fails.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 611,
+          "name": "exp_blank_app_env",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "errorAnyOf": [
+            "Invalid 'application' in options argument",
+            "Missing Application configuration",
+            "Missing application configuration",
+            "application cannot be empty",
+            "application must not be empty"
+          ],
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "clientRejectsBlankApplication"
+    ]
+  },
+  {
+    "name": "323 - Client Application - An Explicitly Blank Application Is Left Out Of The Evaluation Map",
+    "description": "POST /context with client.application \"\" on an SDK that accepts a blank application: the SDK leaves application out of the evaluation map, so a strict audience requiring application to be present misses (variant 0, audienceMismatch:true), while the configured environment still matches. A wrapper that repairs the blank name into its default application makes the first audience match and fails. Expectations follow the system-attributes contract (scenario 253's absence check), not the JS reference, which rejects a blank application.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 610,
+          "name": "exp_blank_app_present",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"not\":{\"null\":{\"var\":\"application\"}}}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        },
+        {
+          "id": 611,
+          "name": "exp_blank_app_env",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 610,
+                    "name": "exp_blank_app_present"
+                  },
+                  {
+                    "id": 611,
+                    "name": "exp_blank_app_env"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_blank_app_present"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 610,
+                "name": "exp_blank_app_present",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_blank_app_env"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 611,
+                "name": "exp_blank_app_env",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "clientAcceptsBlankApplication"
+    ]
   }
 ]

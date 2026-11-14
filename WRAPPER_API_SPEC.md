@@ -116,7 +116,14 @@ Rules:
   them. The SDK does not publish them (the collector adds them server-side).
 - A wrapper must still reject input its own SDK rejects (e.g. a blank application
   name the SDK forbids) with its documented 400; it must not silently coerce bad
-  input into a value the SDK would accept.
+  input into a value the SDK would accept. Concretely: only an **omitted**
+  `client.application` falls back to the default; any supplied string, including
+  `""`, is passed to the SDK unchanged on every creation path, and an SDK
+  rejection is a 400 carrying the SDK's own message (and `events`). A non-string
+  `client.application` is a 400 (`Invalid 'application' in client argument`).
+  `/capabilities` advertises `clientRejectsBlankApplication` when the SDK rejects
+  `""` and `clientAcceptsBlankApplication` when it accepts it (the SDK then leaves
+  `application` out of the evaluation map); scenarios 322-323 check both.
 
 #### E2E Mode
 When `mode: "e2e"` is set, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.

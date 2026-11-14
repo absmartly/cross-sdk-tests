@@ -251,6 +251,8 @@ get '/capabilities' do
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
     assignmentRules: true,
     semverOperators: true,
     xAgentHeader: true,
@@ -402,15 +404,19 @@ post '/context' do
   # Optional client config (the 2026-11 system-attributes round): a scenario can set
   # the application/environment names so audiences can target them. When the `client`
   # field is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
-  # unchanged. When it is present, a blank/absent environment means "no environment
-  # configured".
+  # unchanged. When it is present, an explicitly supplied application is forwarded
+  # as-is so the SDK validates it; only an omitted one falls back to the default. A
+  # blank/absent environment means "no environment configured".
   client_cfg = req_data[:client]
   if client_cfg.nil?
     lc_application = 'test'
     lc_environment = 'test'
   else
-    lc_application = client_cfg[:application]
-    lc_application = 'test' unless lc_application.is_a?(String) && !lc_application.empty?
+    lc_application = client_cfg.key?(:application) ? client_cfg[:application] : 'test'
+    unless lc_application.is_a?(String)
+      content_type :json
+      halt 400, { error: "Invalid 'application' in client argument", events: [] }.to_json
+    end
     lc_environment = client_cfg[:environment]
     lc_environment = nil unless lc_environment.is_a?(String) && !lc_environment.empty?
   end
@@ -420,7 +426,13 @@ post '/context' do
   # `environment` out of the audience/rule evaluation map.
   client_config.environment = lc_environment.nil? ? 'placeholder' : lc_environment
 
-  client = Client.create(client_config)
+  # Client.create rejects an invalid application: surface its message as a 400.
+  begin
+    client = Client.create(client_config)
+  rescue ArgumentError => e
+    content_type :json
+    halt 400, { error: e.message, events: [] }.to_json
+  end
   client.define_singleton_method(:environment) { nil } if lc_environment.nil?
 
   # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.

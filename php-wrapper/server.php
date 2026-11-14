@@ -261,6 +261,8 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'trackRejectsNonObjectProperties' => true,
             'refreshNoOpOnFailedContext' => true,
             'clientNoEnvironment' => true,
+            'clientRejectsBlankApplication' => false,
+            'clientAcceptsBlankApplication' => true,
             'assignmentRules' => true,
             'semverOperators' => true,
             'xAgentHeader' => true
@@ -422,18 +424,22 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         // Optional client config (the 2026-11 system-attributes round): a scenario
         // can set the application/environment names so audiences can target them.
         // When the `client` field is omitted, the fixed test/test defaults keep
-        // every pre-2026-11 scenario unchanged. When it is present, a blank/absent
-        // environment means "no environment configured": the empty string leaves
-        // environment out of the SDK's evaluation map (Context adds it only when the
-        // name is non-empty). The php SDK's ClientConfig requires a string
+        // every pre-2026-11 scenario unchanged. When it is present, an explicitly
+        // supplied application is forwarded as-is so the SDK validates it; only an
+        // omitted one falls back to the default. A blank/absent environment means
+        // "no environment configured": the empty string leaves environment out of
+        // the SDK's evaluation map (Context adds it only when the name is non-empty). The php SDK's ClientConfig requires a string
         // environment, so "" is the no-environment value.
         $clientCfg = $body->client ?? null;
         $application = 'test';
         $environment = 'test';
         if ($clientCfg !== null) {
-            $application = (isset($clientCfg->application) && is_string($clientCfg->application) && $clientCfg->application !== '')
-                ? $clientCfg->application
-                : 'test';
+            if (is_object($clientCfg) && property_exists($clientCfg, 'application')) {
+                if (!is_string($clientCfg->application)) {
+                    return jsonResponse(400, ['error' => "Invalid 'application' in client argument", 'events' => []]);
+                }
+                $application = $clientCfg->application;
+            }
             $environment = (isset($clientCfg->environment) && is_string($clientCfg->environment) && $clientCfg->environment !== '')
                 ? $clientCfg->environment
                 : '';

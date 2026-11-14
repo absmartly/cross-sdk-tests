@@ -39,7 +39,9 @@ defmodule ElixirWrapper.Router do
       refreshNoOpOnFailedContext: true,
       assignmentRules: true,
       semverOperators: true,
-      xAgentHeader: true
+      xAgentHeader: true,
+      clientRejectsBlankApplication: false,
+      clientAcceptsBlankApplication: true
     })
   end
 
@@ -76,6 +78,9 @@ defmodule ElixirWrapper.Router do
       %{"mode" => "e2e", "units" => units} = params ->
         attributes = params["attributes"] || %{}
         create_context_e2e(conn, units, attributes)
+
+      %{"client" => %{"application" => app}} when not is_binary(app) ->
+        send_error(conn, 400, "Invalid 'application' in client argument")
 
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
@@ -687,13 +692,15 @@ defmodule ElixirWrapper.Router do
   end
 
   # Resolve the client application/environment from the optional `client` field on
-  # POST /context. Defaults keep every pre-2026-11 scenario unchanged.
+  # POST /context. Defaults keep every pre-2026-11 scenario unchanged. An explicitly
+  # supplied application is forwarded as-is so the SDK validates it; only an omitted
+  # one falls back to "test-app".
   defp client_names(nil), do: {"test-app", "test"}
 
   defp client_names(client) when is_map(client) do
     application =
-      case client["application"] do
-        app when is_binary(app) and app != "" -> app
+      case client do
+        %{"application" => app} when is_binary(app) -> app
         _ -> "test-app"
       end
 

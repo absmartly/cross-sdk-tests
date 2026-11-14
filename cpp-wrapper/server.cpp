@@ -345,7 +345,9 @@ int main() {
                     {"publishThrowsOnFailure", true}, {"trackRejectsNonObjectProperties", true},
                     {"refreshNoOpOnFailedContext", true},
                     {"assignmentRules", true}, {"semverOperators", true},
-                    {"xAgentHeader", true}};
+                    {"xAgentHeader", true},
+                    {"clientRejectsBlankApplication", true},
+                    {"clientAcceptsBlankApplication", false}};
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -578,16 +580,23 @@ int main() {
                  // delayed paths, so the SDK's own client->config propagation does not
                  // apply there. When the `client` field is omitted, the fixed
                  // test-app/test-env defaults keep every pre-2026-11 scenario
-                 // unchanged. cpp-sdk's Client throws on an empty environment, so the
-                 // no-environment case (clientNoEnvironment) is a reviewed exception
-                 // and SKIPs.
+                 // unchanged. An explicitly supplied application is used as-is (even
+                 // blank) so the SDK's Client rejects what it forbids; only an
+                 // omitted one falls back to the default. cpp-sdk's Client throws on
+                 // an empty environment, so the no-environment case
+                 // (clientNoEnvironment) is a reviewed exception and SKIPs.
                  std::string client_application = "test-app";
                  std::string client_environment = "test-env";
                  if (body.contains("client") && body["client"].is_object()) {
                      const auto& client_cfg = body["client"];
-                     if (client_cfg.contains("application") &&
-                         client_cfg["application"].is_string() &&
-                         !client_cfg["application"].get<std::string>().empty()) {
+                     if (client_cfg.contains("application")) {
+                         if (!client_cfg["application"].is_string()) {
+                             res.status = 400;
+                             res.set_content(
+                                 make_error_response("Invalid 'application' in client argument", "CREATE_ERROR").dump(),
+                                 "application/json");
+                             return;
+                         }
                          client_application = client_cfg["application"].get<std::string>();
                      }
                      if (client_cfg.contains("environment") &&
@@ -612,6 +621,25 @@ int main() {
                  auto publisher = std::make_shared<FailablePublisher>();
                  std::string context_id = make_context_id();
                  bool fetches_from_endpoint = false;
+
+                 // The inline-data and failLoad paths build Context without a
+                 // Client, so construct one from the requested config to let the
+                 // SDK validate it (e.g. reject a blank application) on every path.
+                 if (!(!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string())) {
+                     try {
+                         absmartly::ClientConfig check_config;
+                         check_config.endpoint = "http://localhost:3000";
+                         check_config.api_key = "test-api-key";
+                         check_config.application = client_application;
+                         check_config.environment = client_environment;
+                         absmartly::Client(check_config, std::make_shared<absmartly::DefaultHTTPClient>());
+                     } catch (const std::invalid_argument& e) {
+                         res.status = 400;
+                         res.set_content(make_error_response(e.what(), "CREATE_ERROR").dump(),
+                                         "application/json");
+                         return;
+                     }
+                 }
 
                  try {
                      std::unique_ptr<absmartly::Context> ctx;

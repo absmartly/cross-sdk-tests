@@ -272,6 +272,8 @@ Future<void> startServer() async {
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
+        'clientRejectsBlankApplication': true,
+        'clientAcceptsBlankApplication': false,
         'passThroughOperations': [
           'peek', 'track', 'attribute', 'override', 'customAssignment',
           'pending', 'isFinalized', 'publish', 'finalize', 'setUnit', 'getUnit',
@@ -492,13 +494,19 @@ Future<void> startServer() async {
       // Optional client config (the 2026-11 system-attributes round): a scenario can
       // set the application/environment names so audiences can target them. When the
       // `client` field is omitted, the fixed test/test defaults keep every
-      // pre-2026-11 scenario unchanged. dart-sdk's Client rejects a null/empty
-      // environment, so the no-environment case (clientNoEnvironment) is a reviewed
-      // exception and SKIPs.
+      // pre-2026-11 scenario unchanged. An explicitly supplied application is
+      // forwarded as-is so the SDK validates it; only an omitted one falls back to
+      // 'test'. dart-sdk's Client rejects a null/empty environment, so the
+      // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
       final clientCfg = body['client'] as Map<String, dynamic>?;
       final clientApplicationRaw = clientCfg?['application'];
-      final clientApplication =
-          (clientApplicationRaw is String && clientApplicationRaw.isNotEmpty) ? clientApplicationRaw : 'test';
+      if (clientCfg != null && clientCfg.containsKey('application') && clientApplicationRaw is! String) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': "Invalid 'application' in client argument", 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      final clientApplication = clientApplicationRaw is String ? clientApplicationRaw : 'test';
       final clientEnvironmentRaw = clientCfg?['environment'];
       final clientEnvironment =
           (clientEnvironmentRaw is String && clientEnvironmentRaw.isNotEmpty) ? clientEnvironmentRaw : 'test';
@@ -507,7 +515,15 @@ Future<void> startServer() async {
         .setAPIKey('dummy')
         .setApplication(clientApplication)
         .setEnvironment(clientEnvironment);
-      final client = Client.create(clientConfig);
+      final Client client;
+      try {
+        client = Client.create(clientConfig);
+      } on ArgumentError catch (e) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': '${e.message}', 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
       // publishToEndpoint: publish through the SDK's own DefaultContextPublisher to
       // PUT {endpoint}/context (the mock collector below), as the e2e path does.
       final publishToEndpoint = body['publishToEndpoint'] == true && translatedEndpoint != null;

@@ -47,7 +47,8 @@ SCENARIOS_PATH = os.environ.get(
 GROUP_MARKER = " - System Attributes - "
 # Groups appended after this one (generate_parity_round_scenarios.py, 300+). They are neither
 # "kept" scenarios for the digest nor part of this group; this group must directly precede them.
-LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ")
+LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ",
+                       " - Client Application - ")
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before

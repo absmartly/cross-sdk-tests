@@ -509,7 +509,9 @@ func routes(_ app: VaporApplication) throws {
             "refreshNoOpOnFailedContext": true,
             "assignmentRules": true,
             "semverOperators": true,
-            "xAgentHeader": true
+            "xAgentHeader": true,
+            "clientRejectsBlankApplication": true,
+            "clientAcceptsBlankApplication": false
         ])
     }
 
@@ -607,13 +609,19 @@ func routes(_ app: VaporApplication) throws {
         // Optional client config (the 2026-11 system-attributes round): a scenario can
         // set the application/environment names so audiences can target them. When the
         // `client` field is omitted, the fixed test-app/test-env defaults keep every
-        // pre-2026-11 scenario unchanged. swift-sdk's DefaultClient throws on an empty
-        // environment, so the no-environment case (clientNoEnvironment) is a reviewed
-        // exception and SKIPs.
-        let clientApplication: String = {
-            let value = request["client"]["application"].string
-            return (value?.isEmpty == false) ? value! : "test-app"
-        }()
+        // pre-2026-11 scenario unchanged. An explicitly supplied application is
+        // forwarded as-is so the SDK validates it; only an omitted one falls back to
+        // the default. swift-sdk's DefaultClient throws on an empty environment, so
+        // the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        let clientApplication: String
+        if request["client"]["application"].exists() {
+            guard let value = request["client"]["application"].string else {
+                return try errorReply("Invalid 'application' in client argument")
+            }
+            clientApplication = value
+        } else {
+            clientApplication = "test-app"
+        }
         let clientEnvironment: String = {
             let value = request["client"]["environment"].string
             return (value?.isEmpty == false) ? value! : "test-env"
@@ -635,9 +643,14 @@ func routes(_ app: VaporApplication) throws {
             // an audience on application/environment matches here as it does in
             // endpoint mode (finding 1). The SDK reads these names from the config
             // client; inline data never fetches, so the endpoint is a dummy.
-            let dataClient = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: clientApplication,
-                endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
+            let dataClient: DefaultClient
+            do {
+                dataClient = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication,
+                    endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
                 contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: dataClient))
@@ -647,8 +660,13 @@ func routes(_ app: VaporApplication) throws {
                 endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
             }
             // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             if publishToEndpoint {
                 publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
             }
@@ -664,8 +682,13 @@ func routes(_ app: VaporApplication) throws {
             }
         } else if request["failLoad"].boolValue {
             // A real fetch failure: the SDK's own client against a port nothing listens on.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: "http://127.0.0.1:1", environment: "test-env"))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: "http://127.0.0.1:1", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
                 variableParser: nil, scheduler: nil, client: client))

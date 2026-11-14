@@ -96,6 +96,8 @@ public class WrapperController {
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
         response.put("clientNoEnvironment", true);
+        response.put("clientRejectsBlankApplication", true);
+        response.put("clientAcceptsBlankApplication", false);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
@@ -298,8 +300,10 @@ public class WrapperController {
             // Optional client config (the 2026-11 system-attributes round): a scenario
             // can set the application/environment names so audiences can target them.
             // When the `client` field is omitted, the fixed test-app/test-env defaults
-            // keep every pre-2026-11 scenario unchanged. When it is present, a
-            // blank/absent environment means "no environment configured": a null
+            // keep every pre-2026-11 scenario unchanged. An explicitly supplied
+            // application is forwarded as-is so the SDK validates it; only an omitted
+            // one falls back to test-app. A blank/absent environment means
+            // "no environment configured": a null
             // environment leaves it out of the SDK's evaluation map (buildAttributesMap
             // calls putIfNotEmpty).
             @SuppressWarnings("unchecked")
@@ -307,8 +311,14 @@ public class WrapperController {
             String clientApplication = "test-app";
             String clientEnvironment = "test-env";
             if (clientConfigRequest != null) {
-                Object app = clientConfigRequest.get("application");
-                clientApplication = (app instanceof String && !((String) app).isEmpty()) ? (String) app : "test-app";
+                if (clientConfigRequest.containsKey("application")) {
+                    Object app = clientConfigRequest.get("application");
+                    if (!(app instanceof String)) {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(errorBody("Invalid 'application' in client argument", Collections.emptyList()));
+                    }
+                    clientApplication = (String) app;
+                }
                 Object env = clientConfigRequest.get("environment");
                 clientEnvironment = (env instanceof String && !((String) env).isEmpty()) ? (String) env : null;
             }
@@ -345,11 +355,19 @@ public class WrapperController {
             // When no environment is configured, use a client that reports it as
             // absent so Context leaves `environment` out of the evaluation map
             // (Client.create would reject a null/empty environment outright).
-            Client namedClient = clientEnvironment != null
-                ? Client.create(namedClientConfig)
-                : new com.absmartly.sdk.NoEnvironmentClient(
-                    namedClientConfig,
-                    com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+            // Client construction rejects an invalid application: surface the SDK's
+            // own message as a 400.
+            Client namedClient;
+            try {
+                namedClient = clientEnvironment != null
+                    ? Client.create(namedClientConfig)
+                    : new com.absmartly.sdk.NoEnvironmentClient(
+                        namedClientConfig,
+                        com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(errorBody(e.getMessage(), Collections.emptyList()));
+            }
 
             // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
             // (its real HTTP client) to {endpoint}/context.

@@ -224,6 +224,8 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
     // The SDK sends X-Agent without a version (absmartly-javascript-sdk).
     xAgentHeader: false,
     passThroughOperations: [
@@ -392,7 +394,7 @@ app.post('/context', async (req, res) => {
   } catch (error) {
     console.error('Context creation error:', error);
     const status = isSdkOptionsValidationError(error) ? 400 : 500;
-    res.status(status).json({ error: error.message, type: error.constructor.name });
+    res.status(status).json({ error: error.message, type: error.constructor.name, events: [] });
   }
 });
 

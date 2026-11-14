@@ -89,7 +89,9 @@ fun Application.configureRouting() {
                 "refreshNoOpOnFailedContext" to true,
                 "assignmentRules" to true,
                 "semverOperators" to true,
-                "xAgentHeader" to true
+                "xAgentHeader" to true,
+                "clientRejectsBlankApplication" to true,
+                "clientAcceptsBlankApplication" to false
             ))
         }
 
@@ -242,12 +244,23 @@ fun Application.configureRouting() {
                 // Optional client config (the 2026-11 system-attributes round): a scenario can set
                 // the application/environment names so audiences can target them. When the `client`
                 // field is omitted, the fixed test-app/test-env defaults keep every pre-2026-11
-                // scenario unchanged. kotlin-sdk's Client mandates a non-empty environment, so the
-                // no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+                // scenario unchanged. An explicitly supplied application is forwarded as-is so the
+                // SDK validates it; only an omitted one falls back to test-app. kotlin-sdk's Client
+                // mandates a non-empty environment, so the no-environment case (clientNoEnvironment)
+                // is a reviewed exception and SKIPs.
                 @Suppress("UNCHECKED_CAST")
-                val clientConfigRequest = request["client"] as? Map<String, Any>
-                val clientApplication = (clientConfigRequest?.get("application") as? String)
-                    ?.takeIf { it.isNotEmpty() } ?: "test-app"
+                val clientConfigRequest = request["client"] as? Map<String, Any?>
+                val clientApplication = if (clientConfigRequest != null && clientConfigRequest.containsKey("application")) {
+                    clientConfigRequest["application"] as? String ?: run {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to "Invalid 'application' in client argument",
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
+                } else {
+                    "test-app"
+                }
                 val clientEnvironment = (clientConfigRequest?.get("environment") as? String)
                     ?.takeIf { it.isNotEmpty() } ?: "test-env"
 
@@ -270,7 +283,17 @@ fun Application.configureRouting() {
                         .setAPIKey("test-api-key")
                         .setApplication(clientApplication)
                         .setEnvironment(clientEnvironment)
-                    val client = com.absmartly.sdk.Client.create(clientConfig)
+                    // Client construction rejects an invalid application: surface the
+                    // SDK's own message as a 400.
+                    val client = try {
+                        com.absmartly.sdk.Client.create(clientConfig)
+                    } catch (e: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to (e.message ?: e.toString()),
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
                     val sdkConfig = ABSmartlyConfig.create()
                         .setClient(client)
                         .setContextDataProvider(dataProvider)
@@ -285,7 +308,17 @@ fun Application.configureRouting() {
                         .setAPIKey("test-api-key")
                         .setApplication(clientApplication)
                         .setEnvironment(clientEnvironment)
-                    val client = com.absmartly.sdk.Client.create(clientConfig)
+                    // Client construction rejects an invalid application: surface the
+                    // SDK's own message as a 400.
+                    val client = try {
+                        com.absmartly.sdk.Client.create(clientConfig)
+                    } catch (e: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to (e.message ?: e.toString()),
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
                     // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
                     // (its real HTTP client) to {endpoint}/context.
                     if (request["publishToEndpoint"] == true) {

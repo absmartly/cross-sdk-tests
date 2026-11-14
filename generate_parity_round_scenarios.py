@@ -40,8 +40,8 @@ import sys
 
 import generate_sdk_round_2026_11_scenarios as round2611
 from generate_sdk_round_2026_11_scenarios import (
-    PENDING, attribute, audience_filter, custom_assignment, experiment, override, peek, rules,
-    treatment, variable_value,
+    PENDING, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
+    rules, treatment, variable_value,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -54,13 +54,24 @@ FIRST_NUMBER = 300
 RULES_MARKER = " - Assignment Rules - "
 SEMVER_MARKER = " - Semver Comparison - "
 XAGENT_MARKER = " - X-Agent - "
-PARITY_MARKERS = (RULES_MARKER, SEMVER_MARKER, XAGENT_MARKER)
+CLIENT_APP_MARKER = " - Client Application - "
+PARITY_MARKERS = (RULES_MARKER, SEMVER_MARKER, XAGENT_MARKER, CLIENT_APP_MARKER)
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
 HOLDOUTS_CAPABILITY = "holdouts"
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 XAGENT_CAPABILITY = "xAgentHeader"
+REJECTS_BLANK_APP_CAPABILITY = "clientRejectsBlankApplication"
+ACCEPTS_BLANK_APP_CAPABILITY = "clientAcceptsBlankApplication"
+# Each rejecting SDK's own client-construction message for a blank application.
+BLANK_APPLICATION_ERRORS = [
+    "Invalid 'application' in options argument",
+    "Missing Application configuration",
+    "Missing application configuration",
+    "application cannot be empty",
+    "application must not be empty",
+]
 
 UNIT = {"session_id": "svk-unit-1"}
 
@@ -444,6 +455,75 @@ def xagent_scenarios(first_number):
 
 
 # ---------------------------------------------------------------------------
+# Explicitly blank client application (not computed by the JS reference: it rejects "" outright)
+# ---------------------------------------------------------------------------
+
+def client_application_scenarios(first_number):
+    """A wrapper must hand an explicitly supplied `client.application` to its SDK unchanged, never
+    repair a blank one into its own default (WRAPPER_API_SPEC.md, POST /context `client`). SDKs split
+    on what they then do with "": most reject it at client construction (the wrapper's 400), the rest
+    accept it and leave `application` out of the evaluation map. Each lane runs the one that matches
+    its SDK; a wrapper that substitutes a default fails either way (an accepted context in the first,
+    a present application in the second)."""
+    blank = {"application": "", "environment": SYSATTR_ENV}
+    create_params = {"units": UNIT, "options": {"publishDelay": -1, "refreshPeriod": 0},
+                     "client": blank}
+    present = experiment(610, "exp_blank_app_present",
+                         audience=audience_filter({"not": {"null": {"var": "application"}}}),
+                         audience_strict=True)
+    env = experiment(611, "exp_blank_app_env",
+                     audience=audience_filter({"eq": [{"var": "environment"}, {"value": SYSATTR_ENV}]}),
+                     audience_strict=True)
+
+    def exposure(exp, matched):
+        return {"type": "exposure", "data": {
+            "id": exp["id"], "name": exp["name"], "unit": "session_id", "variant": 1 if matched else 0,
+            "assigned": matched, "eligible": True, "overridden": False, "fullOn": False,
+            "custom": False, "audienceMismatch": not matched}}
+
+    return [
+        {
+            "name": f"{first_number}{CLIENT_APP_MARKER}An Explicitly Blank Application Is Rejected",
+            "description": "POST /context with client.application \"\" on an SDK whose client "
+                           "rejects a blank application: the wrapper forwards the value unchanged, so "
+                           "creation fails with the SDK's own validation error as a 400. A wrapper "
+                           "that repairs the blank name into its default application returns a ready "
+                           "context instead and fails.",
+            "contextData": {"experiments": [env]},
+            "steps": [{"action": "createContextWith", "params": create_params,
+                       "expect": {"errorAnyOf": BLANK_APPLICATION_ERRORS, "events": []}}],
+            "requires": [REJECTS_BLANK_APP_CAPABILITY],
+        },
+        {
+            "name": f"{first_number + 1}{CLIENT_APP_MARKER}An Explicitly Blank Application Is Left Out "
+                    f"Of The Evaluation Map",
+            "description": "POST /context with client.application \"\" on an SDK that accepts a blank "
+                           "application: the SDK leaves application out of the evaluation map, so a "
+                           "strict audience requiring application to be present misses (variant 0, "
+                           "audienceMismatch:true), while the configured environment still matches. A "
+                           "wrapper that repairs the blank name into its default application makes "
+                           "the first audience match and fails. Expectations follow the system-"
+                           "attributes contract (scenario 253's absence check), not the JS reference, "
+                           "which rejects a blank application.",
+            "contextData": {"experiments": [present, env]},
+            "steps": [
+                {"action": "createContextWith", "params": create_params,
+                 "expect": {"result": {"ready": True, "failed": False, "finalized": False},
+                            "events": [{"type": "ready", "data": {"experiments": [
+                                {"id": 610, "name": "exp_blank_app_present"},
+                                {"id": 611, "name": "exp_blank_app_env"}]}}]}},
+                {"action": "treatment", "params": {"experimentName": "exp_blank_app_present"},
+                 "expect": {"result": 0, "events": [exposure(present, False)]}},
+                {"action": "treatment", "params": {"experimentName": "exp_blank_app_env"},
+                 "expect": {"result": 1, "events": [exposure(env, True)]}},
+                {"action": "pending", "params": {}, "expect": {"result": 2, "events": []}},
+            ],
+            "requires": [ACCEPTS_BLANK_APP_CAPABILITY],
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # JS reference run
 # ---------------------------------------------------------------------------
 
@@ -521,6 +601,7 @@ def build_groups():
             groups.append(build_scenario(s, ran, n, marker, strip_rule_override=marker != RULES_MARKER))
             n += 1
     groups.extend(xagent_scenarios(n))
+    groups.extend(client_application_scenarios(FIRST_NUMBER + len(groups)))
     return groups
 
 

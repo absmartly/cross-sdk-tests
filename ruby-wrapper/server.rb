@@ -196,13 +196,17 @@ end
 # field on POST /context (the 2026-11 system-attributes round) lets a scenario
 # target the always-on application/environment audience attributes. When the field
 # is omitted, the fixed test/test defaults keep every pre-2026-11 scenario
-# unchanged. When it is present, a blank/absent environment means "no environment
-# configured": nil leaves environment out of the SDK's evaluation map.
+# unchanged. When it is present, an explicitly supplied application is forwarded
+# as-is so the SDK validates it; only an omitted one falls back to the default. A
+# blank/absent environment means "no environment configured": nil leaves
+# environment out of the SDK's evaluation map.
 def client_names(client_cfg)
   return ['test', 'test'] if client_cfg.nil?
 
-  application = client_cfg[:application]
-  application = 'test' unless application.is_a?(String) && !application.empty?
+  application = client_cfg.key?(:application) ? client_cfg[:application] : 'test'
+  unless application.is_a?(String)
+    halt 400, { error: "Invalid 'application' in client argument", events: [] }.to_json
+  end
   environment = client_cfg[:environment]
   environment = nil unless environment.is_a?(String) && !environment.empty?
   [application, environment]
@@ -243,6 +247,8 @@ get '/capabilities' do
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     clientNoEnvironment: true,
+    clientRejectsBlankApplication: true,
+    clientAcceptsBlankApplication: false,
     assignmentRules: true,
     semverOperators: true,
     xAgentHeader: true }.to_json
@@ -315,9 +321,15 @@ post '/context' do
   sdk_config.context_event_logger = collector
   throttle = ((req_data[:options] || {})[:payloadThrottle] || 0).to_i
   application, environment = client_names(req_data[:client])
+  # Client.create rejects an invalid application: surface its message as a 400.
+  build_client = lambda do |endpoint|
+    sdk_client(endpoint, application: application, environment: environment)
+  rescue ArgumentError => e
+    halt 400, { error: e.message, events: [] }.to_json
+  end
 
   if req_data[:data]
-    sdk_config.client = sdk_client('http://unused', application: application, environment: environment)
+    sdk_config.client = build_client.call('http://unused')
     raw = req_data[:data].to_json
     data = DefaultContextDataDeserializer.new.deserialize(raw, 0, raw.size)
     context = ABSmartly.new(sdk_config).create_context_with(context_config,
@@ -328,8 +340,7 @@ post '/context' do
     sdk_config.client = sdk_client('http://127.0.0.1:1', max_retries: 0)
     context = ABSmartly.new(sdk_config).create_context(context_config)
   else
-    client = sdk_client(translate_endpoint(req_data[:endpoint]) || 'http://dummy',
-                        application: application, environment: environment)
+    client = build_client.call(translate_endpoint(req_data[:endpoint]) || 'http://dummy')
     sdk_config.client = client
     # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
     if req_data[:publishToEndpoint] && req_data[:endpoint]

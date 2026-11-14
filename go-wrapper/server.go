@@ -163,8 +163,9 @@ type Response struct {
 }
 
 type ClientConfigRequest struct {
-	Application *string `json:"application"`
-	Environment *string `json:"environment"`
+	// Raw so an absent key, null and non-string values can be told apart.
+	Application json.RawMessage `json:"application"`
+	Environment *string         `json:"environment"`
 }
 
 type CreateContextRequest struct {
@@ -257,6 +258,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
 		"clientNoEnvironment":             true,
+		"clientRejectsBlankApplication":   false,
+		"clientAcceptsBlankApplication":   true,
 		"assignmentRules":                 true,
 		"semverOperators":                 true,
 		"xAgentHeader":                    true,
@@ -416,28 +419,37 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 // system-attributes round) overrides the defaults so a scenario can target the
 // always-on application/environment audience attributes. When the whole field is
 // omitted, the fixed test-app/test-env defaults keep every pre-2026-11 scenario
-// unchanged. When it is present, a blank/absent environment means "no environment
-// configured": the empty string leaves environment out of the SDK's evaluation
-// map (Context only adds it when len(Environment_) > 0).
-func clientNames(cfg *ClientConfigRequest) (string, string) {
+// unchanged. When it is present, an explicitly supplied application is forwarded
+// as-is so the SDK validates it; only an omitted one falls back to the default. A
+// blank/absent environment means "no environment configured": the empty string
+// leaves environment out of the SDK's evaluation map (Context only adds it when
+// len(Environment_) > 0). A non-string application returns ok=false.
+func clientNames(cfg *ClientConfigRequest) (string, string, bool) {
 	if cfg == nil {
-		return "test-app", "test-env"
+		return "test-app", "test-env", true
 	}
 	application := "test-app"
-	if cfg.Application != nil && *cfg.Application != "" {
-		application = *cfg.Application
+	if len(cfg.Application) > 0 {
+		if cfg.Application[0] != '"' || json.Unmarshal(cfg.Application, &application) != nil {
+			return "", "", false
+		}
 	}
 	environment := ""
 	if cfg.Environment != nil && *cfg.Environment != "" {
 		environment = *cfg.Environment
 	}
-	return application, environment
+	return application, environment, true
 }
 
 func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	var req CreateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	application, environment, ok := clientNames(req.Client)
+	if !ok {
+		writeSDKError(w, http.StatusBadRequest, fmt.Errorf("Invalid 'application' in client argument"), nil)
 		return
 	}
 	eventCollector := &EventCollector{events: []Event{}}
@@ -509,7 +521,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			// Seed the configured system names on the delayed context too: the
 			// SDK reads them from Client_ independently of the data provider, so
 			// a custom (deferred) provider must not drop them (finding 2).
-			application, environment := clientNames(req.Client)
 			client := sdk.CreateDefaultClient(sdk.ClientConfig{
 				Endpoint_:    endpoint,
 				ApiKey_:      "test-api-key",
@@ -527,7 +538,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			})
 			absmartly = &a
 		} else {
-			application, environment := clientNames(req.Client)
 			client := sdk.CreateDefaultClient(sdk.ClientConfig{
 				Endpoint_:    endpoint,
 				ApiKey_:      "test-api-key",
@@ -560,7 +570,6 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		// the configured names an audience on application/environment would see
 		// nothing here (finding 1). The endpoint is a dummy; inline data never
 		// fetches.
-		application, environment := clientNames(req.Client)
 		client := sdk.CreateDefaultClient(sdk.ClientConfig{
 			Endpoint_:    "http://localhost",
 			ApiKey_:      "test-api-key",
