@@ -76,7 +76,7 @@ jobs:
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
 
-      - name: Orchestrator unit tests: scenario groups and switchback harness (no Docker)
+      - name: "Orchestrator unit tests: scenario groups and switchback harness (no Docker)"
         run: |
           pip install pytest
           python -m pytest orchestrator/tests -v
