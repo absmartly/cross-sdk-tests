@@ -36497,5 +36497,207 @@
     "requires": [
       "assignmentRules"
     ]
+  },
+  {
+    "name": "326 - Assignment Rules - Rule Environment Scope Uses The Configured Environment, Not A User-Set One",
+    "description": "With client environment 'sysattr-env', the user sets attribute environment 'user-env'. A rule scoped to environments ['user-env'] is skipped (normal variant 1, ruleOverride:false) and a rule scoped to the configured environment still matches (variant 0, ruleOverride:true): a user attribute overrides conditions, never the scope. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 484,
+          "name": "exp_rules_scope_user",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"user-scope\",\"type\":\"assign\",\"variant\":0,\"environments\":[\"user-env\"]}]}"
+        },
+        {
+          "id": 485,
+          "name": "exp_rules_scope_cfg",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"cfg-scope\",\"type\":\"assign\",\"variant\":0,\"environments\":[\"sysattr-env\"]}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 484,
+                    "name": "exp_rules_scope_user"
+                  },
+                  {
+                    "id": 485,
+                    "name": "exp_rules_scope_cfg"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "environment",
+          "value": "user-env"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_scope_user"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 484,
+                "name": "exp_rules_scope_user",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_scope_cfg"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 485,
+                "name": "exp_rules_scope_cfg",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
   }
 ]

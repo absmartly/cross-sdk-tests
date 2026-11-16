@@ -364,6 +364,19 @@ def rules_system_attributes_specs():
             [attribute("environment", "user-env"), treatment("exp_rules_sys_env_cfg"),
              treatment("exp_rules_sys_env_user"), PENDING],
             client=client, requires=[RULES_CAPABILITY]),
+        spec(
+            "Rule Environment Scope Uses The Configured Environment, Not A User-Set One",
+            f"With client environment '{SYSATTR_ENV}', the user sets attribute environment "
+            "'user-env'. A rule scoped to environments ['user-env'] is skipped (normal variant 1, "
+            "ruleOverride:false) and a rule scoped to the configured environment still matches "
+            "(variant 0, ruleOverride:true): a user attribute overrides conditions, never the scope.",
+            [experiment(484, "exp_rules_scope_user", assignment_rules=rules(
+                {"name": "user-scope", "type": "assign", "variant": 0, "environments": ["user-env"]})),
+             experiment(485, "exp_rules_scope_cfg", assignment_rules=rules(
+                 {"name": "cfg-scope", "type": "assign", "variant": 0, "environments": [SYSATTR_ENV]}))],
+            [attribute("environment", "user-env"), treatment("exp_rules_scope_user"),
+             treatment("exp_rules_scope_cfg"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
     ]
 
 

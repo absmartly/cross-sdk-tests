@@ -1263,7 +1263,7 @@ experiment removed from the context data on refresh is rebuilt, not served stale
 
 `assignmentRules` is `required` for every SDK in
 `orchestrator/expected-capabilities.json`, so the scenarios (230-239, 300-314,
-324-325, `requires: ["assignmentRules"]`) are what verify the behaviour: a
+324-326, `requires: ["assignmentRules"]`) are what verify the behaviour: a
 wrapper that reports `false` is a policy violation, and the scenarios still run
 and fail. A wrapper may therefore advertise it as a constant `true`. If the
 capability ever becomes a reviewed exception for some SDK again, that wrapper

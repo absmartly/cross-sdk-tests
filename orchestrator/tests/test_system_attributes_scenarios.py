@@ -3,9 +3,8 @@
 The group pins that every SDK evaluates audiences with the client's configured ``application`` and
 ``environment`` names, always on, with user attributes overlaid on top (a user-set value wins), and
 an unconfigured name left out of the map. It mirrors §4 tests 1, 3, 4 and 6 plus a variable read
-through the matched variant. (The SDK applies the same names to assignment-rule conditions and drops
-``app_version`` too; those two are covered by the SDKs' own unit tests and the rule/semver groups,
-not re-exercised black-box here.)
+through the matched variant. (The SDK applies the same names to assignment-rule conditions, pinned by
+parity scenarios 324-326, and drops ``app_version``, covered by the SDKs' own unit tests.)
 
 Like the other SDK-round groups, this module is a black-box check of the *scenarios themselves*,
 independent of the generator and of any wrapper. It reads only the JSON and:

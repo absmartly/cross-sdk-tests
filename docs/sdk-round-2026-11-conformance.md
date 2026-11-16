@@ -99,7 +99,7 @@ it must only name refs that stay put. As of 2026-11-16:
 
 | SDK | pin | why |
 | --- | --- | --- |
-| cpp, dotnet, elixir, java, kotlin, python3, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same tree as the PR head CI tested |
+| cpp, dotnet, elixir, java, kotlin, python3, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same SDK sources as the PR head CI tested |
 | javascript-sdk | `feat/sdk-system-attributes` | javascript-sdk#68 is open; it is the reference, and the generators pin its commit `9403b83` |
 | go-sdk, php-sdk, flutter-sdk | `feat/assignment-rules-semver-x-agent-publish` | go#14, php#10, flutter#10 are open |
 | angular, react, vue2, vue3, liquid | unchanged from `main` | not part of this round |
@@ -126,7 +126,7 @@ re-run CI after any force-push to those four branches.
 
 ### Scenario numbering versus open PRs
 
-This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-325
+This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-326
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
 `scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
 fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
@@ -220,7 +220,7 @@ wrapper API. They are listed so the matrix is complete.
 | Regex `/pattern/flags` slashes literal (not flags) | php#8, dotnet#8, ruby#39, python#11 | PHP-specific removal aligning to JS; not separately observable beyond existing match-operator behaviour. |
 | HTTP: only GET retried, publish never replayed; PHP connect-timeout | php#8, go#10, ruby#39, python#11 | Transport policy, not observable through the mock-endpoint wrapper API. |
 | System attributes: always-on application/environment in audience evaluation, user-override, no-environment | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
-| System attributes applied to assignment-rule conditions | §5, js#68, java#22 | **Covered** by the feature-parity group: 324 (rule conditions on the configured `environment` and `application` match) and 325 (a user-set `environment` overrides the configured one in a rule condition). An SDK that evaluates rule conditions on user attributes only fails 324. |
+| System attributes applied to assignment-rule conditions | §5, js#68, java#22 | **Covered** by the feature-parity group: 324 (rule conditions on the configured `environment` and `application` match) 325 (a user-set `environment` overrides the configured one in a rule condition) and 326 (a rule's `environments` scope uses the configured environment, not a user-set one). An SDK that evaluates rule conditions on user attributes only fails 324; one that reads the scope from the user-overlaid map fails 326. |
 | System attributes: `app_version` dropped from the evaluation map | §5, js#68, java#22 | Not re-exercised black-box: no wrapper injects an `app_version`, so its absence is not observable. Covered by each SDK's own system-attributes unit tests. |
 | System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
