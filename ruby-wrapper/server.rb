@@ -140,15 +140,8 @@ def events_since(collector, from)
   collector.events[from..-1] || []
 end
 
-def canonical_error(message)
-  # The ruby-sdk deliberately keeps its v1 error text ("Unit 'x' already
-  # set."); the cross-SDK contract (and the JS reference) word this
-  # "Unit 'x' UID already set.". Map the wording rather than masking it.
-  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
-end
-
 def sdk_error(status, e, collector, from)
-  halt status, { error: canonical_error(e.message), events: collector ? events_since(collector, from) : [] }.to_json
+  halt status, { error: e.message, events: collector ? events_since(collector, from) : [] }.to_json
 end
 
 $contexts = {}
@@ -246,6 +239,8 @@ get '/capabilities' do
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
+    throwsOnMisuse: true,
+    singleFinalizeEvent: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,

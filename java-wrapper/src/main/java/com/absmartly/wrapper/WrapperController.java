@@ -95,6 +95,8 @@ public class WrapperController {
         response.put("publishThrowsOnFailure", true);
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
+        response.put("throwsOnMisuse", true);
+        response.put("singleFinalizeEvent", true);
         response.put("clientNoEnvironment", true);
         response.put("clientRejectsBlankApplication", true);
         response.put("clientAcceptsBlankApplication", false);
@@ -426,6 +428,7 @@ public class WrapperController {
                     }
                 };
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setClient(namedClient)
                     .setContextDataProvider(failingProvider)
                     .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
@@ -436,6 +439,7 @@ public class WrapperController {
             } else {
                 DummyContextDataProvider dataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setClient(namedClient)
                     .setContextDataProvider(dataProvider)
                     .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
@@ -445,6 +449,7 @@ public class WrapperController {
 
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
             ContextWrapper wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
+            wrapper.setClient(namedClient);
             contexts.put(contextId, wrapper);
 
             Map<String, Object> result = new HashMap<>();
@@ -1307,7 +1312,11 @@ public class WrapperController {
 
     @DeleteMapping("/context/{contextId}")
     public ResponseEntity<?> deleteContext(@PathVariable String contextId) {
-        contexts.remove(contextId);
+        ContextWrapper removed = contexts.remove(contextId);
+        if (removed != null) {
+            // Release the per-context Client's HTTP client (an Apache async reactor).
+            removed.closeClient();
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("result", "deleted");

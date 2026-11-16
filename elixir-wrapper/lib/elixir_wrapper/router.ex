@@ -37,6 +37,8 @@ defmodule ElixirWrapper.Router do
       publishThrowsOnFailure: true,
       trackRejectsNonObjectProperties: true,
       refreshNoOpOnFailedContext: true,
+      throwsOnMisuse: true,
+      singleFinalizeEvent: true,
       assignmentRules: true,
       semverOperators: true,
       xAgentHeader: true,
@@ -82,13 +84,22 @@ defmodule ElixirWrapper.Router do
       %{"client" => %{"application" => app}} when not is_binary(app) ->
         send_error(conn, 400, "Invalid 'application' in client argument")
 
+      # elixir-sdk requires a non-empty environment: a supplied client without one
+      # fails closed instead of evaluating with a placeholder an audience could match.
+      %{"client" => client}
+      when is_map(client) and
+             (not is_map_key(client, "environment") or
+                not is_binary(:erlang.map_get("environment", client)) or
+                :erlang.map_get("environment", client) == "") ->
+        send_error(conn, 400, "client.environment is required by elixir-sdk; no-environment contexts are not supported")
+
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
         create_context_sync(conn, data, units, options, params["client"])
 
       %{"failLoad" => true, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_failed(conn, units, options)
+        create_context_failed(conn, units, options, params["client"])
 
       %{"endpoint" => endpoint, "units" => units} = params ->
         options = params["options"] || %{}
@@ -560,18 +571,20 @@ defmodule ElixirWrapper.Router do
     end
   end
 
-  defp create_context_failed(conn, units, options) do
+  defp create_context_failed(conn, units, options, client) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
       EventCollector.push(collector, event_type, event_data)
     end
 
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: "http://localhost:3000",
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
+      application: client_application,
+      environment: client_environment,
       publisher: ElixirWrapper.ArmablePublisher
     }
 

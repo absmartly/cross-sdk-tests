@@ -87,6 +87,8 @@ fun Application.configureRouting() {
                 "publishThrowsOnFailure" to true,
                 "trackRejectsNonObjectProperties" to true,
                 "refreshNoOpOnFailedContext" to true,
+                "throwsOnMisuse" to true,
+                "singleFinalizeEvent" to true,
                 "assignmentRules" to true,
                 "semverOperators" to true,
                 "xAgentHeader" to true,
@@ -247,7 +249,8 @@ fun Application.configureRouting() {
                 // scenario unchanged. An explicitly supplied application is forwarded as-is so the
                 // SDK validates it; only an omitted one falls back to test-app. kotlin-sdk's Client
                 // mandates a non-empty environment, so the no-environment case (clientNoEnvironment)
-                // is a reviewed exception and SKIPs.
+                // is a reviewed exception and SKIPs; a supplied `client` without an environment fails
+                // closed with a 400 rather than evaluating with a placeholder an audience could match.
                 @Suppress("UNCHECKED_CAST")
                 val clientConfigRequest = request["client"] as? Map<String, Any?>
                 val clientApplication = if (clientConfigRequest != null && clientConfigRequest.containsKey("application")) {
@@ -261,8 +264,17 @@ fun Application.configureRouting() {
                 } else {
                     "test-app"
                 }
-                val clientEnvironment = (clientConfigRequest?.get("environment") as? String)
-                    ?.takeIf { it.isNotEmpty() } ?: "test-env"
+                val clientEnvironment = if (clientConfigRequest == null) {
+                    "test-env"
+                } else {
+                    (clientConfigRequest["environment"] as? String)?.takeIf { it.isNotEmpty() } ?: run {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to "client.environment is required by kotlin-sdk; no-environment contexts are not supported",
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
+                }
 
                 var customPublisher = CustomPublisher()
 
@@ -346,7 +358,22 @@ fun Application.configureRouting() {
                             return f
                         }
                     }
+                    val clientConfig = com.absmartly.sdk.ClientConfig.create()
+                        .setEndpoint("http://localhost")
+                        .setAPIKey("test-api-key")
+                        .setApplication(clientApplication)
+                        .setEnvironment(clientEnvironment)
+                    val client = try {
+                        com.absmartly.sdk.Client.create(clientConfig)
+                    } catch (e: IllegalArgumentException) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf(
+                            "error" to (e.message ?: e.toString()),
+                            "events" to emptyList<Any>()
+                        ))
+                        return@post
+                    }
                     val sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
                         .setContextDataProvider(failingProvider)
                         .setContextPublisher(customPublisher)
                         .setContextEventLogger(eventCollector)

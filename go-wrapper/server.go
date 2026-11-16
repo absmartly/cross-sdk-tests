@@ -257,6 +257,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"publishThrowsOnFailure":          true,
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
+		"throwsOnMisuse":                  true,
+		"singleFinalizeEvent":             true,
 		"clientNoEnvironment":             true,
 		"clientRejectsBlankApplication":   false,
 		"clientAcceptsBlankApplication":   true,
@@ -558,7 +560,14 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	case req.FailLoad:
 		dataFuture, done := future.New()
 		done(nil, fmt.Errorf("Context load failed"))
+		client := sdk.CreateDefaultClient(sdk.ClientConfig{
+			Endpoint_:    "http://localhost",
+			ApiKey_:      "test-api-key",
+			Application_: application,
+			Environment_: environment,
+		})
 		a := sdk.Create(sdk.ABSmartlyConfig{
+			Client_:              client,
 			ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
 			ContextPublisher_:    customPublisher,
 			ContextEventLogger_:  eventCollector,

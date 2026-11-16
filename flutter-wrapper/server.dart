@@ -269,6 +269,8 @@ Future<void> startServer() async {
         'publishThrowsOnFailure': true,
         'trackRejectsNonObjectProperties': true,
         'refreshNoOpOnFailedContext': true,
+        'throwsOnMisuse': true,
+        'singleFinalizeEvent': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
@@ -508,8 +510,13 @@ Future<void> startServer() async {
       }
       final clientApplication = clientApplicationRaw is String ? clientApplicationRaw : 'test';
       final clientEnvironmentRaw = clientCfg?['environment'];
-      final clientEnvironment =
-          (clientEnvironmentRaw is String && clientEnvironmentRaw.isNotEmpty) ? clientEnvironmentRaw : 'test';
+      if (clientCfg != null && (clientEnvironmentRaw is! String || clientEnvironmentRaw.isEmpty)) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': "client.environment is required by flutter-sdk; no-environment contexts are not supported", 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      final clientEnvironment = clientEnvironmentRaw is String ? clientEnvironmentRaw : 'test';
       final clientConfig = ClientConfig.create()
         .setEndpoint(translatedEndpoint ?? 'http://dummy')
         .setAPIKey('dummy')

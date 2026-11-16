@@ -70,23 +70,9 @@ class EventCollector(ContextEventLogger):
     def __init__(self):
         self.events = []
         self._lock = threading.Lock()
-        self._pending_alias = False
 
     def handle_event(self, event_type, data):
         event_type_str = event_type.value if hasattr(event_type, 'value') else str(event_type)
-        # The python3-sdk emits the legacy "close" event and then its cross-SDK
-        # alias "finalize" for the same lifecycle transition. The contract (and
-        # the JS reference) name this event "finalize" and expect it once, so
-        # translate "close" -> "finalize" and drop only the alias that directly
-        # follows a "close"; any other "finalize" stays visible to the harness.
-        if event_type_str == 'close':
-            event_type_str = 'finalize'
-            self._pending_alias = True
-        elif event_type_str == 'finalize' and self._pending_alias:
-            self._pending_alias = False
-            return
-        else:
-            self._pending_alias = False
         serialized_data = self._serialize(data) if data is not None else None
         with self._lock:
             self.events.append({
@@ -176,6 +162,8 @@ def capabilities():
         'publishThrowsOnFailure': True,
         'trackRejectsNonObjectProperties': False,
         'refreshNoOpOnFailedContext': False,
+        'throwsOnMisuse': True,
+        'singleFinalizeEvent': False,
         'clientNoEnvironment': True,
         'clientRejectsBlankApplication': False,
         'clientAcceptsBlankApplication': True,
@@ -348,6 +336,7 @@ def create_context():
         context = sdk.create_context_with(context_config, context_data)
     elif fail_load:
         failing_sdk_config = ABSmartlyConfig()
+        failing_sdk_config.client = client
         failing_sdk_config.context_data_provider = FailingContextDataProvider()
         failing_sdk_config.context_event_logger = event_collector
         failing_sdk_config.context_event_handler = publisher

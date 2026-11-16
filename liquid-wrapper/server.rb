@@ -39,13 +39,8 @@ class EventCollector
   end
 
   def handle_event(event_type, data)
-    # The underlying ruby-sdk emits "close" for the lifecycle seal; the
-    # cross-SDK contract (and the JS reference) name this event "finalize".
-    # Normalise it here the way the other wrappers do.
-    type = event_type.to_s
-    type = 'finalize' if type == 'close'
     @events << {
-      type: type,
+      type: event_type.to_s,
       data: deep_copy(data),
       timestamp: (Time.now.to_f * 1000).to_i
     }
@@ -179,15 +174,8 @@ def events_since(collector, events_before)
   collector.events[events_before..-1] || []
 end
 
-def canonical_error(message)
-  # The underlying ruby-sdk keeps its v1 error text ("Unit 'x' already set.");
-  # the cross-SDK contract words this "Unit 'x' UID already set.". Map the
-  # wording rather than masking it.
-  message.sub(/\AUnit '([^']+)' already set\.?\z/, "Unit '\\1' UID already set.")
-end
-
 def error_response(status, error, collector, events_before)
-  body = { error: canonical_error(error.message) }
+  body = { error: error.message }
   body[:events] = collector ? events_since(collector, events_before) : []
   halt status, body.to_json
 end
@@ -250,6 +238,8 @@ get '/capabilities' do
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
+    throwsOnMisuse: true,
+    singleFinalizeEvent: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,
@@ -713,7 +703,7 @@ post '/context/:context_id/finalize' do
   events_before = collector.events.length
 
   begin
-    context.close
+    context.finalize
     new_events = events_since(collector, events_before)
 
     content_type :json
