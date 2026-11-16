@@ -372,7 +372,7 @@ final class SwitchbackSelfTest {
     }
 
     private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",
-        "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch");
+        "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch", "ruleOverride");
 
     // The serialized bytes, not just the PublishEvent object, must carry the served values: one
     // exposure equal to expected in every field but a positive integral exposedAt, published hashed
@@ -425,13 +425,25 @@ final class SwitchbackSelfTest {
     }
 
     // Every Exposure field equals expected, except exposedAt, which must be set.
-    private static boolean servedAs(Exposure actual, Exposure expected) {
+    static boolean servedAs(Exposure actual, Exposure expected) {
         return actual.id == expected.id && expected.name.equals(actual.name)
             && expected.unit.equals(actual.unit) && actual.variant == expected.variant
             && actual.assigned == expected.assigned && actual.eligible == expected.eligible
             && actual.overridden == expected.overridden && actual.fullOn == expected.fullOn
             && actual.custom == expected.custom && actual.audienceMismatch == expected.audienceMismatch
-            && actual.exposedAt > 0;
+            && ruleOverride(actual) == ruleOverride(expected) && actual.exposedAt > 0;
+    }
+
+    private static final Field RULE_OVERRIDE = HoldoutProbeSupport.findField(Exposure.class, "ruleOverride");
+
+    // Read reflectively so the wrapper still compiles against a core-api without assignment rules,
+    // whose exposures cannot be rule-won.
+    private static boolean ruleOverride(Exposure exposure) {
+        try {
+            return RULE_OVERRIDE != null && RULE_OVERRIDE.getBoolean(exposure);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Exposure.ruleOverride is not readable", e);
+        }
     }
 
     // Object keys must match exactly and arrays must have equal length, recursively; scalar values

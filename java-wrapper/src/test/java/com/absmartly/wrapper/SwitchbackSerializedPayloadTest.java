@@ -1,5 +1,6 @@
 package com.absmartly.wrapper;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,7 +24,7 @@ class SwitchbackSerializedPayloadTest {
             + "\"units\":[{\"type\":\"unit_serving\",\"uid\":\"r5uxZRoi-JuM5yYJa0kmSQ\"}],"
             + "\"exposures\":[{\"id\":513,\"name\":\"sb_payload\",\"unit\":\"unit_serving\",\"variant\":1,"
             + "\"exposedAt\":1700000000000,\"assigned\":true,\"eligible\":true,\"overridden\":false,"
-            + "\"fullOn\":false,\"custom\":false,\"audienceMismatch\":false}]}");
+            + "\"fullOn\":false,\"custom\":false,\"audienceMismatch\":false,\"ruleOverride\":false}]}");
     }
 
     private static ObjectNode exposure(ObjectNode event) {
@@ -37,7 +38,7 @@ class SwitchbackSerializedPayloadTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"variant", "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch",
-        "id", "name", "unit"})
+        "ruleOverride", "id", "name", "unit"})
     void rejectsACorruptedServedValue(String field) throws Exception {
         ObjectNode event = correctEvent();
         switch (field) {
@@ -57,6 +58,16 @@ class SwitchbackSerializedPayloadTest {
         String mismatch = SwitchbackSelfTest.serializedMismatch(event, SERVED, MAPPER);
         assertNotNull(mismatch);
         assertTrue(mismatch.contains(field), mismatch);
+    }
+
+    @Test
+    void rejectsAnOrdinaryExposureFlaggedAsRuleWon() {
+        Exposure flagged = new Exposure(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
+            false, false, false, true);
+        Exposure ordinary = new Exposure(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
+            false, false, false, false);
+        assertTrue(SwitchbackSelfTest.servedAs(ordinary, SERVED));
+        assertFalse(SwitchbackSelfTest.servedAs(flagged, SERVED));
     }
 
     @Test
