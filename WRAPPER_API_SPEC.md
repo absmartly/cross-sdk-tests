@@ -859,7 +859,11 @@ A wrapper is a thin adapter between HTTP JSON and the SDK. It must not:
 
 Allowed: converting between JSON and the SDK's native types, mapping the SDK's
 idiomatic error (exception, Go `error`, Rust `Err`, Elixir `{:error, _}`) to a
-400 with its message, awaiting the SDK's async APIs, and injecting a test
+400 with its message (the SDK's own text, or a cross-SDK wording the SDK itself
+exposes on the error, such as python3-sdk's `canonical_message` or go-sdk's
+`Canonical()`; never a wording the wrapper writes), serializing an SDK event-type
+enum to the contract's name when the SDK logs exactly one event for that
+transition (for example go-sdk's `Close` constant as `finalize`), awaiting the SDK's async APIs, and injecting a test
 transport where a scenario asks for one (`publishFail`, `failLoad`,
 `payloadThrottle`). A `failLoad` transport must fail the fetch the way a real
 network failure does (reject or raise); it must not return malformed data.
@@ -1257,15 +1261,17 @@ per variant), normal assignment applies and later rules are not tried. Rules may
 carry an `environments` array (empty = all environments). A rule variant for an
 experiment removed from the context data on refresh is rebuilt, not served stale.
 
-Wrappers must advertise `assignmentRules` truthfully and dynamically from a
-BEHAVIORAL self-test (the same discipline as `holdouts`): build a real context
-with an `assignmentRules` experiment, drive `treatment()`/`variableValue()`, and
-assert both the returned variant and the exposure's `ruleOverride`/`assigned`
-flags. A wire-model marker (an `Experiment.assignmentRules` field existing) is
-necessary but not sufficient — an SDK can carry and deserialize the field yet not
-implement rule resolution. The probe must fail closed (report `false`) on any
-exception. Scenarios 230-239 (`requires: ["assignmentRules"]`) are skipped by
-SDKs that report `false`.
+`assignmentRules` is `required` for every SDK in
+`orchestrator/expected-capabilities.json`, so the scenarios (230-239, 300-314,
+324-325, `requires: ["assignmentRules"]`) are what verify the behaviour: a
+wrapper that reports `false` is a policy violation, and the scenarios still run
+and fail. A wrapper may therefore advertise it as a constant `true`. If the
+capability ever becomes a reviewed exception for some SDK again, that wrapper
+must instead derive it from a BEHAVIORAL self-test (the same discipline as
+`holdouts`: build a real context with an `assignmentRules` experiment, drive
+`treatment()`/`variableValue()`, assert the variant and the exposure's
+`ruleOverride`/`assigned` flags, and fail closed on any exception), because a
+wire-model marker alone does not prove rule resolution.
 
 Exposure events gain one field for this capability: `ruleOverride` (boolean),
 `true` only on an exposure whose variant came from a matching assignment rule.
@@ -1282,9 +1288,30 @@ metadata is ignored, a missing version part is `0`, numeric identifiers are
 compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
 pre-release ranks below its release.
 
-Wrappers advertise `semverOperators` from a BEHAVIORAL self-test: a strict
-audience using `semver_gt` must assign the experiment's variant when the
-attribute version is greater (numeric comparison) and variant 0 with
-`audienceMismatch: true` when it is not. The probe fails closed on any
-exception. Scenarios 240-245 (`requires: ["semverOperators"]`) are skipped by
-SDKs that report `false`.
+`semverOperators` is likewise `required` for every SDK, so the scenarios
+(240-245, 314-319, `requires: ["semverOperators"]`) verify it and a constant
+`true` is allowed. A wrapper whose SDK lists it as a reviewed exception derives it
+from a BEHAVIORAL self-test instead: a strict audience using `semver_gt` must
+assign the experiment's variant when the attribute version is greater (numeric
+comparison) and variant 0 with `audienceMismatch: true` when it is not, failing
+closed on any exception.
+
+### Capability: `throwsOnMisuse`
+
+No new endpoint. `true` when the SDK surfaces misuse to the caller as an error,
+as the JS reference does: `setUnit` with a blank or already-set uid, a mutation
+(`track`, `attribute`, `setUnit`, `treatment`) after finalize, and a read before
+the context is ready. The wrapper maps that error to a 400 carrying the SDK's own
+message. An SDK that only logs misuse (an `error` event) and returns normally
+reports `false` and lists a reviewed exception; its wrapper returns the SDK's
+result and the logged event unchanged and must not synthesize a 400 from it.
+Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
+
+### Capability: `singleFinalizeEvent`
+
+No new endpoint. `true` when sealing the context logs exactly one lifecycle
+event, `finalize`, as the JS reference does. An SDK that logs more than one event
+for that transition (for example a legacy `close` followed by `finalize`) reports
+`false` and lists a reviewed exception; its wrapper returns every event unchanged.
+Every scenario with a `finalize` step requires it (19, 131, 147-149, 186,
+188-192, 228).

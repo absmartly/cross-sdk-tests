@@ -41,12 +41,11 @@ the feature on `main` or any open PR is skipped (a reviewed exception in
 | `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values | javascript + react/vue2/vue3/angular (behavioral self-test in `assignmentRulesSelfTest.js`), java (`AssignmentRulesSelfTest.java`) |
 | `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent | same wrappers, same self-tests |
 
-Only **javascript-sdk** (reference) and **java-sdk** implement either feature
-this round; every other SDK has no implementation on `main` or any open PR
-branch (verified across go/php/ruby/python/kotlin/rust/swift/flutter/dart/dotnet/
-scala/elixir/cpp/liquid), so each lists both capabilities as a reviewed
-exception. When an SDK ports the feature, move the capability from `unsupported`
-to `required` for that SDK.
+When this round started only **javascript-sdk** (reference) and **java-sdk**
+implemented either feature. The feature-parity round
+(`docs/feature-parity-conformance.md`) ported both to every SDK, so both
+capabilities are now `required` for every lane: a wrapper that reports `false`
+is a policy violation and the gated scenarios still run and fail.
 
 A third capability, `clientNoEnvironment`, gates only the System Attributes
 group's no-environment scenario (253):
@@ -80,36 +79,61 @@ are unchanged.
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
 
-The **swift** log-instead-of-throw behaviour (scenarios 34, 35, 147, 148, 149,
-188, 189, 201) is handled in the swift wrapper rather than as a capability
-exception: the swift-sdk public API is intentionally non-throwing (v1.4.0
-contract, kept by maintainer decision on swift-sdk#7) and reports misuse (blank
-or duplicate unit UID, mutation after finalize, read before ready) through an
-`.error` event instead of throwing. The wrapper's `callSurfacingLoggedError`
-helper surfaces that logged `.error` as the HTTP error the scenario expects —
-matching the JS reference, which throws without emitting an event — so the
-scenarios pass unchanged against the real SDK behaviour.
+Two more reviewed exceptions replace wrapper code that used to hide an SDK
+divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
 
-## Branch pins (sdk-branches.sh)
+| capability | meaning | gated scenarios | exempted SDK (reason) |
+| --- | --- | --- | --- |
+| `throwsOnMisuse` | misuse (blank or already-set unit uid, a mutation after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 148, 149, 188, 189, 201 | **swift** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `singleFinalizeEvent` | sealing the context logs exactly one lifecycle event, `finalize`, as in the JS reference | 19, 131, 147, 148, 149, 186, 188-192, 228 | **python** — python3-sdk logs `close` and then `finalize` for one transition (kept for v0.2.4 listeners). The wrapper returns both events unchanged. |
 
-Pinned to each SDK's open-PR head so the scenarios run against the code under
-review. For §5 (system attributes) every SDK that evaluates audiences locally is
-pinned to its `feat/sdk-system-attributes` branch:
+Scenario 35 (duplicate unit) lists the released v1 wordings of ruby-sdk
+(`Unit 'x' already set.`) and php-sdk (`Unit "x" UID is already set`) in
+`errorAnyOf` next to the reference wording, so the divergence is visible in the
+scenario rather than rewritten by the ruby, liquid and php wrappers.
 
-| SDK | branch | PR |
+## Branch pins and merge order (sdk-branches.sh)
+
+`sdk-branches.sh` is what CI builds, on this PR and on `main` after it merges, so
+it must only name refs that stay put. As of 2026-11-16:
+
+| SDK | pin | why |
 | --- | --- | --- |
-| javascript-sdk | `feat/sdk-system-attributes` | #68 (reference) |
-| java-sdk | `feat/sdk-system-attributes` | #22 (stacks §5 on #17's rules + semver, all run for real) |
-| python3-sdk, dotnet-sdk, go-sdk, kotlin-sdk, php-sdk, ruby-sdk, swift-sdk, flutter-sdk, scala-sdk, rust-sdk, elixir-sdk, cpp-sdk | `feat/sdk-system-attributes` | #13 / #11 / #13 / #3 / #9 / #40 / #8 / #9 / #3 / #8 / #2 / #2 |
+| cpp, dotnet, elixir, java, kotlin, python3, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same tree as the PR head CI tested |
+| javascript-sdk | `feat/sdk-system-attributes` | javascript-sdk#68 is open; it is the reference, and the generators pin its commit `9403b83` |
+| go-sdk, php-sdk, flutter-sdk | `feat/assignment-rules-semver-x-agent-publish` | go#14, php#10, flutter#10 are open |
+| angular, react, vue2, vue3, liquid | unchanged from `main` | not part of this round |
 
-Each `feat/sdk-system-attributes` branch is a descendant of that SDK's prior
-cross-SDK-passing pin, so this round's always-on application/environment behaviour
-and `app_version` removal are added on top of the behaviours earlier rounds
-pinned — **except php-sdk#9**, which branches off php-sdk `main` rather than the
-prior pin `fix/audit-operator-fixes`; see the "known failing lane" note in the PR.
+The older `feat/sdk-system-attributes` branches of the non-JS SDKs are no longer
+pinned; ignore them.
 
-The react/vue2/vue3/angular wrappers build `javascript-sdk` from the same pin, so
-they inherit the reference behaviour and run the gated groups too.
+Merge order:
+
+1. Re-run CI on this PR against the current heads of the four open SDK PRs
+   (push or re-run the workflow) right before merging it.
+2. Merge the open SDK PRs (javascript-sdk#68, go#14, php#10, flutter#10) with
+   delete-branch-on-merge **off** for those four branches until step 4, so `main`'s
+   CI here can still clone them.
+3. Merge this PR.
+4. Follow-up PR here: re-pin javascript-sdk, go-sdk, php-sdk and flutter-sdk to
+   `main` and confirm CI is green; then the four branches may be deleted. If
+   javascript-sdk#68 merges with a different commit, bump `PINNED_COMMIT` in
+   `generate_sdk_round_2026_11_scenarios.py` in the same PR and re-run both
+   `--check`s.
+
+A rebase of a pinned open branch changes what CI tests without a change here, so
+re-run CI after any force-push to those four branches.
+
+### Scenario numbering versus open PRs
+
+This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-325
+(`generate_parity_round_scenarios.py`); the group markers live in one place,
+`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
+fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
+then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
+free), below the parity range. Both generators fail rather than renumber when
+another scenario sits in their range, so a missed renumber shows up as a
+generator error, not a silent shift.
 
 ## Coverage matrix
 
@@ -196,7 +220,8 @@ wrapper API. They are listed so the matrix is complete.
 | Regex `/pattern/flags` slashes literal (not flags) | php#8, dotnet#8, ruby#39, python#11 | PHP-specific removal aligning to JS; not separately observable beyond existing match-operator behaviour. |
 | HTTP: only GET retried, publish never replayed; PHP connect-timeout | php#8, go#10, ruby#39, python#11 | Transport policy, not observable through the mock-endpoint wrapper API. |
 | System attributes: always-on application/environment in audience evaluation, user-override, no-environment | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
-| System attributes: `app_version` dropped from the evaluation map, and system names applied to assignment-rule conditions | §5, js#68, java#22 | Not re-exercised by this group black-box: the group pins application/environment injection through audiences only. `app_version` removal and rule-condition injection are covered by each SDK's own system-attributes unit tests (and, for rules, the Custom Assignment Rules group). Documented, not added here. |
+| System attributes applied to assignment-rule conditions | §5, js#68, java#22 | **Covered** by the feature-parity group: 324 (rule conditions on the configured `environment` and `application` match) and 325 (a user-set `environment` overrides the configured one in a rule condition). An SDK that evaluates rule conditions on user attributes only fails 324. |
+| System attributes: `app_version` dropped from the evaluation map | §5, js#68, java#22 | Not re-exercised black-box: no wrapper injects an `app_version`, so its absence is not observable. Covered by each SDK's own system-attributes unit tests. |
 | System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
 | `hash_unit` exposed as a public/diagnostic function | python#12, go#10, dotnet#8 | Covered by the existing `diagnostics` capability (`POST /diagnostic hashUnit`). |
