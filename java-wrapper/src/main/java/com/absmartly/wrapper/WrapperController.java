@@ -20,6 +20,15 @@ public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
     private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, List<Map<String, Object>>> capturedRequests = new ConcurrentHashMap<>();
+
+    private void captureRequest(String payloadId, String method, Map<String, String> headers) {
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("method", method);
+        entry.put("headers", new LinkedHashMap<>(headers));
+        capturedRequests.computeIfAbsent(payloadId, k -> Collections.synchronizedList(new ArrayList<>())).add(entry);
+    }
+
     private final SwitchbackFunctions switchback;
 
     public WrapperController() {
@@ -45,7 +54,7 @@ public class WrapperController {
     }
 
     /**
-     * Unwraps async wrapper exceptions (CompletionException or ExecutionException)
+     * Unwraps async wrapper exceptions (CompletionException, ExecutionException)
      * so the reported message is
      * the SDK/publisher's own error, not "java.lang.RuntimeException: ...".
      */
@@ -97,11 +106,15 @@ public class WrapperController {
         response.put("publishThrowsOnFailure", true);
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
+        response.put("clientNoEnvironment", true);
+        response.put("clientRejectsBlankApplication", true);
+        response.put("clientAcceptsBlankApplication", false);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("switchback", SwitchbackSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
+        response.put("xAgentHeader", true);
         return response;
     }
 
@@ -251,7 +264,8 @@ public class WrapperController {
     }
 
     @GetMapping("/context_payload/{payloadId}/context")
-    public ResponseEntity<?> mockApiContext(@PathVariable String payloadId) {
+    public ResponseEntity<?> mockApiContext(@PathVariable String payloadId, @RequestHeader Map<String, String> headers) {
+        captureRequest(payloadId, "GET", headers);
         // A never-stored payload id is a missing collector payload: answer 404
         // so the SDK's own fetch fails the context, instead of serving an
         // empty-but-valid payload that would make it silently ready.
@@ -261,6 +275,25 @@ public class WrapperController {
                 .body(Collections.singletonMap("error", "Payload not found"));
         }
         return ResponseEntity.ok(data);
+    }
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    @PutMapping("/context_payload/{payloadId}/context")
+    public Map<String, Object> mockApiPublish(@PathVariable String payloadId, @RequestHeader Map<String, String> headers) {
+        captureRequest(payloadId, "PUT", headers);
+        return Collections.emptyMap();
+    }
+
+    @GetMapping("/context_payload/{payloadId}/requests")
+    public Map<String, Object> capturedRequests(@PathVariable String payloadId) {
+        List<Map<String, Object>> requests = capturedRequests.get(payloadId);
+        List<Map<String, Object>> snapshot = new ArrayList<>();
+        if (requests != null) {
+            synchronized (requests) {
+                snapshot.addAll(requests);
+            }
+        }
+        return Collections.singletonMap("requests", snapshot);
     }
 
     @PostMapping("/context")
@@ -344,9 +377,34 @@ public class WrapperController {
             @SuppressWarnings("unchecked")
             Map<String, Object> options = (Map<String, Object>) request.getOrDefault("options", new HashMap<>());
 
+            // Optional client config (the 2026-11 system-attributes round): a scenario
+            // can set the application/environment names so audiences can target them.
+            // When the `client` field is omitted, the fixed test-app/test-env defaults
+            // keep every pre-2026-11 scenario unchanged. An explicitly supplied
+            // application is forwarded as-is so the SDK validates it; only an omitted
+            // one falls back to test-app. A blank/absent environment means
+            // "no environment configured": a null
+            // environment leaves it out of the SDK's evaluation map (buildAttributesMap
+            // calls putIfNotEmpty).
+            @SuppressWarnings("unchecked")
+            Map<String, Object> clientConfigRequest = (Map<String, Object>) request.get("client");
+            String clientApplication = "test-app";
+            String clientEnvironment = "test-env";
+            if (clientConfigRequest != null) {
+                if (clientConfigRequest.containsKey("application")) {
+                    Object app = clientConfigRequest.get("application");
+                    if (!(app instanceof String)) {
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(errorBody("Invalid 'application' in client argument", Collections.emptyList()));
+                    }
+                    clientApplication = (String) app;
+                }
+                Object env = clientConfigRequest.get("environment");
+                clientEnvironment = (env instanceof String && !((String) env).isEmpty()) ? (String) env : null;
+            }
+
             EventCollector eventCollector = new EventCollector();
             createCollector = eventCollector;
-            CustomPublisher publisher = new CustomPublisher(eventCollector);
 
             ContextConfig contextConfig = ContextConfig.create();
 
@@ -363,10 +421,45 @@ public class WrapperController {
             Context context;
             ABSmartly sdk;
             DummyContextDataProvider contextDataProvider = null;
+
+            // Build a client carrying the requested system names once, so every
+            // creation path (inline-data, delayed and immediate endpoint) seeds
+            // the evaluating context with the same application/environment. The
+            // SDK reads these from the config Client independently of the data
+            // provider, so a custom/deferred provider must not drop them.
+            ClientConfig namedClientConfig = ClientConfig.create()
+                .setEndpoint(endpoint != null ? translateEndpoint(endpoint) : "http://localhost")
+                .setAPIKey("test-api-key")
+                .setApplication(clientApplication)
+                .setEnvironment(clientEnvironment != null ? clientEnvironment : "placeholder");
+            // When no environment is configured, use a client that reports it as
+            // absent so Context leaves `environment` out of the evaluation map
+            // (Client.create would reject a null/empty environment outright).
+            Client namedClient;
+            try {
+                namedClient = clientEnvironment != null
+                    ? Client.create(namedClientConfig)
+                    : new com.absmartly.sdk.NoEnvironmentClient(
+                        namedClientConfig,
+                        com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(errorBody(e.getMessage(), Collections.emptyList()));
+            }
+
+            // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
+            // (its real HTTP client) to {endpoint}/context.
+            boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
+            CustomPublisher publisher = new CustomPublisher(eventCollector,
+                publishToEndpoint ? new DefaultContextEventHandler(namedClient) : null);
+
             if (contextData != null) {
-                // Sync: createContextWith - use dummy data provider
+                // Sync: createContextWith - use dummy data provider, but keep the
+                // configured client so the inline-data context still evaluates
+                // audiences against the requested application/environment.
                 contextDataProvider = new DummyContextDataProvider();
                 ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                    .setClient(namedClient)
                     .setContextDataProvider(contextDataProvider)
                     .setContextEventHandler(publisher)
                     .setContextEventLogger(eventCollector);
@@ -375,21 +468,19 @@ public class WrapperController {
             } else if (endpoint != null) {
                 // createContext with endpoint: a real SDK Client fetches and
                 // deserializes the payload from <endpoint>/context.
-                String translatedEndpoint = translateEndpoint(endpoint);
                 Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
 
-                ClientConfig clientConfig = ClientConfig.create()
-                    .setEndpoint(translatedEndpoint)
-                    .setAPIKey("test-api-key")
-                    .setApplication("test-app")
-                    .setEnvironment("test-env");
-                Client client = Client.create(clientConfig);
+                Client client = namedClient;
 
                 if (payloadThrottle > 0) {
                     // Delay the SDK's own fetch; the context stays not-ready until it lands.
+                    // Keep .setClient(client) so the delayed context still evaluates
+                    // against the configured names: the SDK reads them from the
+                    // config client, not from the custom data provider.
                     DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
                         new DefaultContextDataProvider(client), payloadThrottle);
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                        .setClient(client)
                         .setContextDataProvider(deferredProvider)
                         .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);

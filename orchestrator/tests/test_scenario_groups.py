@@ -9,17 +9,18 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import generate_parity_round_scenarios as parity
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
 from scenario_groups import place_group
 
 
-@pytest.fixture
-def recorded_oracle(monkeypatch):
+def recorded_responses(markers):
+    """The JS reference's recorded results for every checked-in scenario of these groups, by title."""
     canonical = json.loads(Path(sdk_round.CANONICAL).read_text(encoding="utf-8"))
     responses = {}
     for scenario in canonical:
-        for marker in sdk_round.GROUP_MARKERS:
+        for marker in markers:
             if marker in scenario["name"]:
                 ready, *steps = scenario["steps"]
                 responses[scenario["name"].split(marker, 1)[1]] = {
@@ -27,15 +28,32 @@ def recorded_oracle(monkeypatch):
                     "readyEvents": ready["expect"]["events"],
                     "steps": [step["expect"] for step in steps],
                 }
+    return responses
+
+
+@pytest.fixture
+def recorded_oracle(monkeypatch):
+    round_responses = recorded_responses(sdk_round.GROUP_MARKERS)
+    # Only the parity rules and semver groups come from the reference; X-Agent and Client
+    # Application are written by the generator itself.
+    parity_responses = recorded_responses((parity.RULES_MARKER, parity.SEMVER_MARKER))
 
     monkeypatch.setattr(sdk_round, "ensure_reference_build", lambda: None)
     monkeypatch.setattr(sdk_round, "run_reference", lambda specs: [
-        copy.deepcopy(responses[title]) for title, _, _, _ in specs
+        copy.deepcopy(round_responses[spec[0]]) for spec in specs
+    ])
+    monkeypatch.setattr(parity, "run_reference", lambda specs: [
+        copy.deepcopy(parity_responses[spec["title"]]) for spec in specs
     ])
 
 
-@pytest.mark.parametrize("order", [(sdk_round, switchback), (switchback, sdk_round)],
-                         ids=["sdk-then-switchback", "switchback-then-sdk"])
+GENERATORS = {"sdk-round": sdk_round, "parity": parity, "switchback": switchback}
+
+
+@pytest.mark.parametrize("order", [("sdk-round", "parity", "switchback"),
+                                   ("switchback", "parity", "sdk-round"),
+                                   ("parity", "switchback", "sdk-round")],
+                         ids=lambda order: "-then-".join(order))
 def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, monkeypatch):
     raw = Path(sdk_round.CANONICAL).read_bytes()
     path = tmp_path / "scenarios.json"
@@ -44,18 +62,18 @@ def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, m
 
     def run(module, check=False):
         argv = [module.__file__]
-        if module is sdk_round:
+        if module is not switchback:
             argv += ["--file", str(path)]
         if check:
             argv.append("--check")
         monkeypatch.setattr(sys, "argv", argv)
         assert module.main() == 0
 
-    for module in order:
-        run(module)
-        assert path.read_bytes() == raw
-    for module in order:
-        run(module, check=True)
+    for name in order:
+        run(GENERATORS[name])
+        assert path.read_bytes() == raw, name
+    for name in order:
+        run(GENERATORS[name], check=True)
 
 
 def scenario(number, marker="Retained", title="case"):

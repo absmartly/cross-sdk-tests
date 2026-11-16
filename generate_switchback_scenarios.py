@@ -1722,7 +1722,7 @@ def builders(fixtures: Fixtures) -> list:
         value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
         schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
         refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
-        # Added after the inertness scenario so the ids of 248-269 do not move.
+        # Added after the inertness scenario so the ids of the earlier scenarios do not move.
         read_once_scenarios, variable_scenarios,
     ]
 

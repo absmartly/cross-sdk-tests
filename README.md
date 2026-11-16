@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **264 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **294 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -53,9 +53,9 @@ across languages.
   `refresh()` on a context whose load failed is a successful no-op (no fetch,
   no event, still failed).
 
-  Scenarios 248-268 and 270-271 (Switchback) require the `switchback`
-  capability and scenario 269 (switchback wire-format inertness) is ungated.
-  270 and 271 follow 269 to preserve the group's original ordering. They test the
+  Scenarios 324-344 and 346-347 (Switchback) require the `switchback`
+  capability and scenario 345 (switchback wire-format inertness) is ungated.
+  346 and 347 follow 345 to preserve the group's original ordering. They test the
   R33 cluster-defined switchback contract: an experiment names, in an ordered
   `switchbackClusters` map, the unit types it is linked to and the attribute
   path holding each one's cluster value, and the first unit in declared order
@@ -67,25 +67,25 @@ across languages.
 
   | Rule | Scenarios |
   | --- | --- |
-  | golden vectors via `POST /switchback/assign` and `/permutation` (882 + 504) | 248-253 |
-  | single source, raw value is the key, period 0 and 1; an eligible draw of 0 is served and exposed (`assigned=true`, `eligible=true`) | 254 |
-  | lower-declared source serves whatever the context unit order | 255 |
-  | agreeing units serve | 256 |
-  | disagreeing units: control, no exposure | 257 |
-  | a unit without a value is skipped | 258 |
-  | strings and whole numbers (decimal text) only; floats, booleans, objects, arrays, `""`, null give no value | 259 |
-  | every `attribute-path-cases.json` case; `.` in any segment, misplaced indices, unterminated quotes are malformed | 260 |
-  | `switchbackClusterValues`: in, out, null, `[]` | 261 |
-  | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 262 |
-  | traffic miss on an eligible cluster recorded `eligible=false`; traffic hashes the serving unit | 263 |
-  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on, assignment rules and strict audiences never on an ineligible cluster; traffic miss before custom | 264 |
-  | holdouts never apply | 265 |
-  | missing or empty cluster map: legacy control; no linked unit: not applicable; Phase 1E fields ignored | 266 |
-  | refresh with a changed cluster map re-resolves | 267 |
-  | one exposure per period; payload has no switchback fields | 268 |
-  | ungated: unit experiments with switchback fields are served as unit experiments | 269 |
-  | serving unit and cluster key read once per period slot (eligible and ineligible) | 270 |
-  | `peek`, `peekVariableValue`, `variableValue` resolve the cluster draw; only exposing calls expose | 271 |
+  | golden vectors via `POST /switchback/assign` and `/permutation` (882 + 504) | 324-329 |
+  | single source, raw value is the key, period 0 and 1; an eligible draw of 0 is served and exposed (`assigned=true`, `eligible=true`) | 330 |
+  | lower-declared source serves whatever the context unit order | 331 |
+  | agreeing units serve | 332 |
+  | disagreeing units: control, no exposure | 333 |
+  | a unit without a value is skipped | 334 |
+  | strings and whole numbers (decimal text) only; floats, booleans, objects, arrays, `""`, null give no value | 335 |
+  | every `attribute-path-cases.json` case; `.` in any segment, misplaced indices, unterminated quotes are malformed | 336 |
+  | `switchbackClusterValues`: in, out, null, `[]` | 337 |
+  | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 338 |
+  | traffic miss on an eligible cluster recorded `eligible=false`; traffic hashes the serving unit | 339 |
+  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on, assignment rules and strict audiences never on an ineligible cluster; traffic miss before custom | 340 |
+  | holdouts never apply | 341 |
+  | missing or empty cluster map: legacy control; no linked unit: not applicable; Phase 1E fields ignored | 342 |
+  | refresh with a changed cluster map re-resolves | 343 |
+  | one exposure per period; payload has no switchback fields | 344 |
+  | ungated: unit experiments with switchback fields are served as unit experiments | 345 |
+  | serving unit and cluster key read once per period slot (eligible and ineligible) | 346 |
+  | `peek`, `peekVariableValue`, `variableValue` resolve the cluster draw; only exposing calls expose | 347 |
 
   Grids keep "now" inside one known period until 2069, so no clock control is
   needed. The group is generated by `generate_switchback_scenarios.py` from
@@ -100,16 +100,17 @@ across languages.
   scenarios. Run `python3 generate_switchback_scenarios.py --rules` to print
   this map and the mutant results.
 
-  The java lane pins `java-sdk` to `feat/switchback-phase1b` (the R33 head) in
-  `sdk-branches.sh`; it requires d5b1a6e5 or later (a strict audience mismatch
-  publishes `assigned=false`). Merge order: abs#5801, then java-sdk#15, then
-  this branch; after java-sdk#15 merges, revert the pin to `main` (now 1.8.0,
-  including java-sdk#17's custom assignment rules and semver operators).
+  The java lane pins `java-sdk` to `integration/switchback-sysattrs` in
+  `sdk-branches.sh`: switchback (java-sdk#15, which needs d5b1a6e5 or later so
+  a strict audience mismatch publishes `assigned=false`) combined with system
+  attributes (java-sdk#22). Merge order: abs#5801, then java-sdk#15 and
+  java-sdk#22, then this branch; once both merge, revert the pin to the
+  released version.
 
-  This branch includes cross-sdk-tests#17 and its known-good SDK pins; #17 is
-  expected to merge first. If it does not, this PR also carries its commits.
+  This branch sits on top of cross-sdk-tests#21 (the 2026-11 SDK round 230-253
+  and the feature-parity round 300-323), which is expected to merge first.
 
-  Scenarios 230-247 pin the
+  Scenarios 230-253 pin the
   2026-11 SDK round's reference-aligned behaviours (see
   [docs/sdk-round-2026-11-conformance.md](docs/sdk-round-2026-11-conformance.md)):
   230-239 (`requires: assignmentRules`) cover custom assignment rules — a
@@ -121,10 +122,34 @@ across languages.
   240-245 (`requires: semverOperators`) cover the `semver_*` audience operators
   (numeric, not lexicographic, comparison). 246-247 (ungated) pin audience
   re-evaluation after `setAttribute`: a flipped strict audience reassigns the
-  unit and queues a fresh exposure. Both gated groups are expected to run on the
-  JavaScript reference and its framework wrappers and on java-sdk#17; every
-  other SDK lists the two capabilities as reviewed exceptions until it ports
-  them.
+  unit and queues a fresh exposure. 248-253 (the §5 system-attributes group;
+  248-252 ungated, 253 `requires: clientNoEnvironment`) pin that every SDK
+  always evaluates audiences and rule conditions with the client's configured
+  `application` and `environment` names (no opt-in), user attributes overlay
+  the system values, an unconfigured name is left out of the map (the
+  no-environment case, 253), and a variable read goes through the matched
+  variant too. The SDKs also drop `app_version` from evaluation; these
+  scenarios do not exercise that, the SDKs' own unit tests do. The scenarios set
+  the client application/environment through the optional `client` field on
+  `POST /context` (see [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md)). With the
+  parity pins every SDK requires the rules and semver capabilities, the
+  ungated scenarios (246-252) run on every SDK, and 253 runs on the SDKs that
+  advertise `clientNoEnvironment`.
+
+  Scenarios 300-323 pin the 2026-11 feature-parity round, where every SDK
+  ports assignment rules, the `semver_*` operators and a versioned `X-Agent`
+  (see [docs/feature-parity-conformance.md](docs/feature-parity-conformance.md)):
+  300-314 (`requires: assignmentRules`) cover split rules hashed with the
+  experiment seed, environment scoping, first match, precedence over holdouts,
+  traffic and full-on, the missing-unit split, malformed/wrong-count splits and
+  the percentage tolerance; 315-319 (`requires: semverOperators`) cover each
+  operator, pre-release ordering and invalid versions; 320-321
+  (`requires: xAgentHeader`) check the SDK's own context fetch and publish
+  requests carry `absmartly-<lang>-sdk/<version>`; 322-323 check a wrapper
+  forwards an explicitly blank `client.application` instead of repairing it
+  (`clientRejectsBlankApplication` / `clientAcceptsBlankApplication`, one per
+  SDK). With the parity pins in `sdk-branches.sh` every SDK requires the rules
+  and semver capabilities.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -271,7 +296,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 264-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 294-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -295,9 +320,9 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 264 scenarios
+├── test_scenarios_complete.json  # 294 scenarios
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
-│                                 #   (248-271) in place; --check verifies
+│                                 #   (324-347) in place; --check verifies
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be

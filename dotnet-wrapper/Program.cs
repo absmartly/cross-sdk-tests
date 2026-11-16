@@ -42,6 +42,14 @@ app.Use(async (context, next) =>
 var contexts = new ConcurrentDictionary<string, ContextData>();
 var payloadStore = new ConcurrentDictionary<string, string>();
 const string EmptyPayload = "{\"experiments\":[]}";
+var capturedRequests = new ConcurrentDictionary<string, List<object>>();
+
+void CaptureRequest(string payloadId, HttpRequest request)
+{
+    var headers = request.Headers.ToDictionary(h => h.Key, h => h.Value.ToString());
+    var list = capturedRequests.GetOrAdd(payloadId, _ => new List<object>());
+    lock (list) list.Add(new { method = request.Method, headers });
+}
 
 string TranslateEndpoint(string endpoint)
 {
@@ -79,7 +87,12 @@ app.MapGet("/capabilities", () => Results.Ok(new
     numericUnitIds = false,
     publishThrowsOnFailure = true,
     trackRejectsNonObjectProperties = true,
-    refreshNoOpOnFailedContext = true
+    refreshNoOpOnFailedContext = true,
+    assignmentRules = true,
+    semverOperators = true,
+    xAgentHeader = true,
+    clientRejectsBlankApplication = true,
+    clientAcceptsBlankApplication = false
 }));
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
@@ -152,8 +165,28 @@ app.MapGet("/context_payload/{payloadId}", async (string payloadId, [FromQuery] 
     return Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json");
 });
 
-app.MapGet("/context_payload/{payloadId}/context", (string payloadId) =>
-    Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json"));
+app.MapGet("/context_payload/{payloadId}/context", (string payloadId, HttpContext httpContext) =>
+{
+    CaptureRequest(payloadId, httpContext.Request);
+    return Results.Content(payloadStore.GetValueOrDefault(payloadId, EmptyPayload), "application/json");
+});
+
+// Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+app.MapPut("/context_payload/{payloadId}/context", (string payloadId, HttpContext httpContext) =>
+{
+    CaptureRequest(payloadId, httpContext.Request);
+    return Results.Ok(new { });
+});
+
+app.MapGet("/context_payload/{payloadId}/requests", (string payloadId) =>
+{
+    List<object> snapshot = new();
+    if (capturedRequests.TryGetValue(payloadId, out var list))
+    {
+        lock (list) snapshot.AddRange(list);
+    }
+    return Results.Ok(new { requests = snapshot });
+});
 
 app.MapPost("/context", async (HttpContext httpContext) =>
 {
@@ -203,7 +236,7 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                     new ABSmartly.Services.DefaultContextDataDeserializer(),
                     new ABSmartly.Services.DefaultContextEventSerializer())));
 
-            var e2eSdk = new ABsmartly(
+            var e2eSdk = new ABsmartly.Sdk(
                 e2eHttpClientFactory,
                 e2eServiceConfig,
                 new ABsmartlyConfig
@@ -312,6 +345,34 @@ app.MapPost("/context", async (HttpContext httpContext) =>
         bool failLoad = requestJson.ContainsKey("failLoad") &&
             requestJson["failLoad"].ValueKind == JsonValueKind.True;
 
+        // Optional client config (the 2026-11 system-attributes round): a scenario can
+        // set the application/environment names so audiences can target them. When the
+        // `client` field is omitted, the fixed test/test defaults keep every pre-2026-11
+        // scenario unchanged. An explicitly supplied application is forwarded as-is so
+        // the SDK validates it; only an omitted one falls back to the default.
+        // dotnet-sdk requires a non-empty environment, so the no-environment case
+        // (clientNoEnvironment) is a reviewed exception and SKIPs.
+        var clientApplication = "test";
+        var clientEnvironment = "test";
+        if (requestJson.TryGetValue("client", out var clientJson) &&
+            clientJson.ValueKind == JsonValueKind.Object)
+        {
+            if (clientJson.TryGetProperty("application", out var appProp))
+            {
+                if (appProp.ValueKind != JsonValueKind.String)
+                {
+                    return Results.BadRequest(new { error = "Invalid 'application' in client argument", events = Array.Empty<object>() });
+                }
+                clientApplication = appProp.GetString()!;
+            }
+            if (clientJson.TryGetProperty("environment", out var envProp) &&
+                envProp.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrEmpty(envProp.GetString()))
+            {
+                clientEnvironment = envProp.GetString()!;
+            }
+        }
+
         if (failLoad)
         {
             // Genuinely failing fetch: nothing listens on this port, so the SDK's
@@ -321,24 +382,47 @@ app.MapPost("/context", async (HttpContext httpContext) =>
 
         var contextId = $"ctx-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Guid.NewGuid():N}";
         var publishFailFlag = new PublishFailFlag();
+        // payloadThrottle only delays the HTTP GET of context data (simulated
+        // network latency); everything else is the SDK's own fetch path.
+        var httpClientFactory = new DummyHttpClientFactory(payloadThrottle);
+        var serviceConfig = new ABSmartlyServiceConfiguration
+        {
+            Endpoint = endpoint,  // Use provided endpoint or dummy
+            ApiKey = "dummy",
+            Application = clientApplication,
+            Environment = clientEnvironment
+        };
 
-        var sdk = new ABsmartly(
-            // payloadThrottle only delays the HTTP GET of context data (simulated
-            // network latency); everything else is the SDK's own fetch path.
-            new DummyHttpClientFactory(payloadThrottle),
-            new ABSmartlyServiceConfiguration
+        // publishToEndpoint: publish through the SDK's own DefaultContextPublisher
+        // (its real service client) to {endpoint}/context, as e2e mode does.
+        IContextPublisher publishDelegate = null;
+        ABsmartly.Sdk sdk;
+        try
+        {
+            if (requestJson.TryGetValue("publishToEndpoint", out var publishToEndpoint) &&
+                publishToEndpoint.ValueKind == JsonValueKind.True && requestJson.ContainsKey("endpoint"))
             {
-                Endpoint = endpoint,  // Use provided endpoint or dummy
-                ApiKey = "dummy",
-                Application = "test",
-                Environment = "test"
-            },
-            new ABsmartlyConfig
-            {
-                ContextEventLogger = eventCollector,
-                ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag)
+                publishDelegate = new ABSmartly.Services.DefaultContextPublisher(new ABSmartlyService(
+                    serviceConfig,
+                    httpClientFactory,
+                    new ABSmartly.Services.DefaultContextDataDeserializer(),
+                    new ABSmartly.Services.DefaultContextEventSerializer()));
             }
-        );
+
+            sdk = new ABsmartly.Sdk(
+                httpClientFactory,
+                serviceConfig,
+                new ABsmartlyConfig
+                {
+                    ContextEventLogger = eventCollector,
+                    ContextPublisher = new CustomPublisher(eventCollector, publishFailFlag, publishDelegate)
+                }
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message, events = Array.Empty<object>() });
+        }
 
         var contextConfig = new ContextConfig
         {

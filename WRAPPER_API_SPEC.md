@@ -74,6 +74,60 @@ Content-Type: application/json
 }
 ```
 
+#### Client config (`application` / `environment`)
+
+Both create modes accept an optional `client` object that sets the SDK client's
+**application name** and **environment name** for this context. It lets a
+scenario target the always-on `application` / `environment` audience attributes
+(the 2026-11 system-attributes round: every SDK evaluates audiences and
+assignment-rule conditions with the configured application and environment, and
+no longer with `app_version`).
+
+```http
+POST /context
+Content-Type: application/json
+
+{
+  "data": { "experiments": [...] },
+  "units": { "session_id": "abc123" },
+  "options": { "publishDelay": -1, "refreshPeriod": 0 },
+  "client": { "application": "sysattr-app", "environment": "sysattr-env" }
+}
+```
+
+Rules:
+
+- `client.application`, when a non-empty string, is the application name the SDK
+  is configured with (so an audience `{"var": "application"}` sees it).
+- `client.environment`, when a non-empty string, is the environment name the SDK
+  is configured with (so an audience `{"var": "environment"}` sees it).
+- **Omitting `client.environment`** (absent, `null`, or empty) configures the SDK
+  with **no environment**, so `environment` is left out of the evaluation map
+  entirely — the "no environment configured" case. A wrapper whose SDK client
+  requires a non-empty environment at construction must still honour this (for
+  example by reporting the configured environment as absent), never by
+  substituting a placeholder the audience could match. A wrapper that cannot build
+  a no-environment client at all reports `clientNoEnvironment: false` (a reviewed
+  policy exception) and scenario 253, the only one that exercises this case, skips
+  for it.
+- When the whole `client` object is omitted, the wrapper uses its own default
+  application/environment, exactly as before — every pre-2026-11 scenario is
+  unaffected.
+- The names are the client configuration only. They are **not** user attributes:
+  the SDK must overlay user attributes on top (a `context.attribute("environment",
+  …)` set by a later step always wins), and `getAttributes()` must not report
+  them. The SDK does not publish them (the collector adds them server-side).
+- A wrapper must still reject input its own SDK rejects (e.g. a blank application
+  name the SDK forbids) with its documented 400; it must not silently coerce bad
+  input into a value the SDK would accept. Concretely: only an **omitted**
+  `client.application` falls back to the default; any supplied string, including
+  `""`, is passed to the SDK unchanged on every creation path, and an SDK
+  rejection is a 400 carrying the SDK's own message (and `events`). A non-string
+  `client.application` is a 400 (`Invalid 'application' in client argument`).
+  `/capabilities` advertises `clientRejectsBlankApplication` when the SDK rejects
+  `""` and `clientAcceptsBlankApplication` when it accepts it (the SDK then leaves
+  `application` out of the evaluation map); scenarios 322-323 check both.
+
 #### E2E Mode
 When `mode: "e2e"` is set, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
 
@@ -178,6 +232,55 @@ GET /context_payload/{payloadId}/context?application=...&environment=...
 2. Orchestrator creates context with `endpoint: http://wrapper:3000/context_payload/{payloadId}`
 3. SDK calls `GET {endpoint}/context?application=...&environment=...`
 4. Wrapper returns stored payload
+
+### 2b-i. Captured Requests and Publish To Endpoint (capability `xAgentHeader`)
+
+Scenarios 320-321 check the `X-Agent` header the SDK itself sends. Every
+wrapper that advertises `xAgentHeader` must:
+
+1. **Record every request its mock collector serves**, per payload id, in
+   arrival order: the method and every request header exactly as received.
+
+   ```http
+   GET /context_payload/{payloadId}/requests
+   ```
+
+   ```json
+   {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0", "x-api-key": "..."}}]}
+   ```
+
+   Header names may use any case (the orchestrator compares them
+   case-insensitively); a value may be a string or a one-element list. Unknown
+   payload ids return `{"requests": []}`.
+
+2. **Accept the SDK's publish** on the same mock collector path:
+
+   ```http
+   PUT /context_payload/{payloadId}/context
+   ```
+
+   records the request like the GET above and answers `200` with `{}`.
+
+3. **Honour `publishToEndpoint: true` on `POST /context`** (only together with
+   `endpoint`): `publish()` on that context goes through the SDK's own default
+   publisher/HTTP client to `PUT {endpoint}/context`, instead of the wrapper's
+   in-memory publisher. Publish events, `publishFail` and every other endpoint
+   behave as usual. Without the flag nothing changes.
+
+The headers must be the SDK's own: the wrapper must not set, rewrite or strip
+`X-Agent` (or any other header) on the SDK's requests, and must not fetch or
+publish on the SDK's behalf. The orchestrator reads the recorded requests with
+the `capturedRequests` step (`params.method` selects GET or PUT; `expect`
+carries `minRequests` and `headerPatterns`, header name to a regex that must
+match the whole value; `{lang}` in a regex is replaced with the language of
+the SDK under test: the lane name, except flutter → `dart`, liquid → `ruby`
+and the JS framework wrappers → `javascript`). For the parity round the
+contract is `absmartly-<lang>-sdk/<semver>`, with `<semver>` per the semver.org
+2.0.0 grammar (no leading zeroes, no empty pre-release or build identifiers).
+
+The javascript-family wrappers implement the endpoints but list `xAgentHeader`
+as a reviewed exception: javascript-sdk#68 (the reference) still sends the
+unversioned `absmartly-javascript-sdk`.
 
 ### 2c. Diagnostics Endpoint (utility/class verification)
 
@@ -822,6 +925,8 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
+| PUT | /context_payload/{id}/context | Mock collector publish endpoint (`xAgentHeader`) |
+| GET | /context_payload/{id}/requests | Requests the mock collector recorded (`xAgentHeader`) |
 | POST | /context | Create context |
 | POST | /context/{id}/setUnit | Set unit |
 | POST | /context/{id}/getUnit | Get unit |
@@ -1202,12 +1307,12 @@ field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
 
 The capability also needs the SDK's assignment-rule evaluation for
-switchbacks: scenario 264 serves an `assign` rule (also before the anchor) and
+switchbacks: scenario 340 serves an `assign` rule (also before the anchor) and
 expects the exposure to carry `ruleOverride: true` and `assigned: false`. A
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-Known limit for other languages: scenario 259 sends the attribute value `3.0`
+Known limit for other languages: scenario 335 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as

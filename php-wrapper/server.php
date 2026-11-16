@@ -86,14 +86,20 @@ class EventCollector implements ContextEventLogger
     }
 }
 
+// Test contexts publish nowhere: a publish succeeds without sending anything.
+// With publishToEndpoint the wrapper passes the SDK's own ContextPublisher as
+// $sdkPublisher, so the publish is the SDK's real PUT {endpoint}/context.
+// Either way /publishFail arms a one-shot failure of the next publish.
 class CustomPublisher extends ContextPublisher
 {
     private EventCollector $eventCollector;
+    private ?ContextPublisher $sdkPublisher;
     public bool $shouldFail = false;
 
-    public function __construct(EventCollector $eventCollector)
+    public function __construct(EventCollector $eventCollector, ?ContextPublisher $sdkPublisher = null)
     {
         $this->eventCollector = $eventCollector;
+        $this->sdkPublisher = $sdkPublisher;
     }
 
     public function publish(PublishEvent $event): void
@@ -101,6 +107,9 @@ class CustomPublisher extends ContextPublisher
         if ($this->shouldFail) {
             $this->shouldFail = false;
             throw new \RuntimeException('publish failed');
+        }
+        if ($this->sdkPublisher !== null) {
+            $this->sdkPublisher->publish($event);
         }
     }
 }
@@ -166,6 +175,7 @@ class DeferredContextDataProvider extends AsyncContextDataProvider
 
 $contexts = [];
 $payloadStore = [];
+$capturedRequests = [];
 
 function canonicalError(string $message): string
 {
@@ -214,7 +224,7 @@ function translateEndpoint(string $endpoint): string
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
 }
 
-$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore) {
+$server = new Server(function (ServerRequestInterface $request) use (&$contexts, &$payloadStore, &$capturedRequests) {
     $method = $request->getMethod();
     $path = $request->getUri()->getPath();
 
@@ -249,7 +259,13 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             //    of throwing; only close() surfaces the error (scenario 193).
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
-            'refreshNoOpOnFailedContext' => true
+            'refreshNoOpOnFailedContext' => true,
+            'clientNoEnvironment' => true,
+            'clientRejectsBlankApplication' => false,
+            'clientAcceptsBlankApplication' => true,
+            'assignmentRules' => true,
+            'semverOperators' => true,
+            'xAgentHeader' => true
         ]);
     }
 
@@ -283,10 +299,21 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         return jsonResponse(200, ['success' => true]);
     }
 
-    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
+    // Mock ABsmartly API. Every request the SDK sends here is recorded for the
+    // capturedRequests step (X-Agent scenarios); with publishToEndpoint the SDK
+    // also publishes PUT {endpoint}/context here.
+    if (($method === 'GET' || $method === 'PUT') && preg_match('#^/context_payload/([^/]+)/context$#', $path, $matches)) {
         $payloadId = $matches[1];
+        $capturedRequests[$payloadId][] = ['method' => $method, 'headers' => $request->getHeaders()];
+        if ($method === 'PUT') {
+            return jsonResponse(200, (object)[]);
+        }
         $data = $payloadStore[$payloadId] ?? (object)['experiments' => []];
         return jsonResponse(200, $data);
+    }
+
+    if ($method === 'GET' && preg_match('#^/context_payload/([^/]+)/requests$#', $path, $matches)) {
+        return jsonResponse(200, ['requests' => $capturedRequests[$matches[1]] ?? []]);
     }
 
     if ($method === 'GET' && preg_match('#^/context_payload/(.+)$#', $path, $matches)) {
@@ -390,21 +417,50 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextId = 'ctx-' . time() . '-' . mt_rand();
 
         $eventCollector = new EventCollector();
-        $publisher = new CustomPublisher($eventCollector);
 
         $endpoint = $body->endpoint ?? 'http://dummy';
         $endpoint = translateEndpoint($endpoint);
 
+        // Optional client config (the 2026-11 system-attributes round): a scenario
+        // can set the application/environment names so audiences can target them.
+        // When the `client` field is omitted, the fixed test/test defaults keep
+        // every pre-2026-11 scenario unchanged. When it is present, an explicitly
+        // supplied application is forwarded as-is so the SDK validates it; only an
+        // omitted one falls back to the default. A blank/absent environment means
+        // "no environment configured": the empty string leaves environment out of
+        // the SDK's evaluation map (Context adds it only when the name is non-empty). The php SDK's ClientConfig requires a string
+        // environment, so "" is the no-environment value.
+        $clientCfg = $body->client ?? null;
+        $application = 'test';
+        $environment = 'test';
+        if ($clientCfg !== null) {
+            if (is_object($clientCfg) && property_exists($clientCfg, 'application')) {
+                if (!is_string($clientCfg->application)) {
+                    return jsonResponse(400, ['error' => "Invalid 'application' in client argument", 'events' => []]);
+                }
+                $application = $clientCfg->application;
+            }
+            $environment = (isset($clientCfg->environment) && is_string($clientCfg->environment) && $clientCfg->environment !== '')
+                ? $clientCfg->environment
+                : '';
+        }
+
         $clientConfig = new ClientConfig(
             $endpoint,
             'dummy',
-            'test',
-            'test'
+            $application,
+            $environment
         );
 
         $reactHttpClient = new ReactHttpClient();
         $reactHttpClient->timeout = 10000;
         $client = new Client($clientConfig, $reactHttpClient);
+
+        // publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+        $sdkPublisher = (($body->publishToEndpoint ?? false) && isset($body->endpoint))
+            ? new ContextPublisher($client)
+            : null;
+        $publisher = new CustomPublisher($eventCollector, $sdkPublisher);
 
         $sdkConfig = new Config($client);
         $sdkConfig->setContextPublisher($publisher);
