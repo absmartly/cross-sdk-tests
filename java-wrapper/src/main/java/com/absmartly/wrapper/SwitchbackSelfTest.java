@@ -73,7 +73,6 @@ final class SwitchbackSelfTest {
 
     private static volatile Boolean cachedResult;
 
-    // Runs the probe lazily and exactly once so probe failures cannot prevent startup.
     static boolean run() {
         Boolean result = cachedResult;
         if (result == null) {
@@ -319,7 +318,7 @@ final class SwitchbackSelfTest {
     // the served values. Returns the baseline publish event, or null when a check fails.
     private static PublishEvent checkPayloadShape(Context context, List<Exposure> exposures,
             List<PublishEvent> published) throws Exception {
-        // Drain the exposures queued by the earlier checks so each publish below carries one.
+        // Drain the earlier checks' exposures so each publish below carries exactly one.
         context.publish();
 
         int before = exposures.size();
@@ -374,9 +373,7 @@ final class SwitchbackSelfTest {
     private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",
         "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch", "ruleOverride");
 
-    // The serialized bytes, not just the PublishEvent object, must carry the served values: one
-    // exposure equal to expected in every field but a positive integral exposedAt, published hashed
-    // with the serving unit. Null when they do.
+    // Null when the serialized bytes, not just the PublishEvent object, carry the served exposure.
     static String serializedMismatch(JsonNode event, Exposure expected, ObjectMapper mapper) {
         if (!event.path("hashed").asBoolean(false)) {
             return "publish.hashed is " + event.get("hashed");
@@ -411,8 +408,6 @@ final class SwitchbackSelfTest {
         return published.size() == before + 1 ? published.get(before) : null;
     }
 
-    // The publish event must carry exactly one exposure, equal to expected in every field but
-    // exposedAt, which must be set, and must publish the hashed serving unit.
     private static boolean publishedExactly(PublishEvent event, Exposure expected) {
         if (!event.hashed || event.exposures == null || event.exposures.length != 1 || event.units == null) {
             return false;
@@ -424,7 +419,6 @@ final class SwitchbackSelfTest {
         return servedAs(event.exposures[0], expected) && unitMatches;
     }
 
-    // Every Exposure field equals expected, except exposedAt, which must be set.
     static boolean servedAs(Exposure actual, Exposure expected) {
         return actual.id == expected.id && expected.name.equals(actual.name)
             && expected.unit.equals(actual.unit) && actual.variant == expected.variant
@@ -446,8 +440,6 @@ final class SwitchbackSelfTest {
         }
     }
 
-    // Object keys must match exactly and arrays must have equal length, recursively; scalar values
-    // are checked separately.
     private static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
         if (baseline.isObject() != actual.isObject() || baseline.isArray() != actual.isArray()) {
             return path + ": baseline is " + baseline.getNodeType() + ", got " + actual.getNodeType();
@@ -505,7 +497,6 @@ final class SwitchbackSelfTest {
         return experiment;
     }
 
-    // clusters is the switchbackClusters map in declared order; null omits it.
     private static ObjectNode switchback(ObjectMapper mapper, int id, String name, int seedHi, int seedLo, int arms,
             String[][] clusters) {
         ObjectNode experiment = base(mapper, id, name, seedHi, seedLo, arms);
@@ -529,7 +520,6 @@ final class SwitchbackSelfTest {
         return base(mapper, id, name, -559038737, 1234567890, 3);
     }
 
-    // One getTreatment call: the treatment and every exposure it emits must match exactly.
     private static boolean expect(Context context, List<Exposure> exposures, String check,
             String experimentName, int expectedTreatment, Exposure... expectedExposures) {
         int before = exposures.size();

@@ -555,9 +555,7 @@ def experiment(exp_id: int, name: str, unit_type: Optional[str], arm_count: int,
 
 def switchback_experiment(exp_id: int, name: str, clusters, arm_count: int = 3, anchor=ANCHOR_PERIOD_0,
                           values=None, unit_type: Optional[str] = None, **overrides) -> dict:
-    """clusters is a list of (unitTypeName, attributePath) in declared order, emitted as the ordered
-    switchbackClusters object; None omits the field. values is switchbackClusterValues (omitted when
-    None). unitType defaults to the first declared unit type, as the Collector serves it."""
+    """unitType defaults to the first declared cluster unit type, as the Collector serves it."""
     fields = OrderedDict(randomizationType="switchback")
     if clusters is not None:
         fields["switchbackClusters"] = OrderedDict(clusters)
@@ -760,9 +758,6 @@ def _identity(model, exp: Optional[dict]):
 
 
 class ContextModel:
-    """One context: its units (in the order the scenario lists them), attributes, overrides, custom
-    assignments, the per-experiment cached resolution and the pending exposures."""
-
     def __init__(self, context_data: dict, units: dict, mutant: Optional[str] = None):
         self.mutant = mutant
         self.experiments = {e["name"]: e for e in context_data["experiments"]}
@@ -1021,8 +1016,6 @@ def replay(scenario: dict, mutant: Optional[str] = None) -> tuple:
 
 
 class Scenario:
-    """Collects steps; expectations are filled in by the model when the scenario is built."""
-
     def __init__(self, name: str, description: str, experiments: list, units: dict, holdouts=None):
         self.name, self.description = name, description
         self.experiments, self.units, self.holdouts = experiments, units, holdouts
@@ -1602,8 +1595,6 @@ def variable_scenarios() -> list:
 # Rule map, discrimination checks and assembly
 # ---------------------------------------------------------------------------
 
-# Each R33 rule -> the scenario names (without number) that discriminate it. Reported in README and
-# checked: every name must exist in the group.
 RULES = OrderedDict([
     ("assignSwitchback / fisherYatesPermutation golden vectors", [
         "Golden Vectors - assignSwitchback - 2 Arms", "Golden Vectors - assignSwitchback - 3 Arms",
@@ -1646,8 +1637,6 @@ RULES = OrderedDict([
 ])
 
 
-# Each mutant -> the scenarios (names without number) that must fail under it: the scenario of the
-# rule it breaks. check_discrimination fails generation when a mutant stops failing one of them.
 _SINGLE = "Single Source - Raw Attribute Value Is The Cluster Key"
 _ORDER = "Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order"
 _PREC = "Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw"
@@ -1739,7 +1728,7 @@ def builders(fixtures: Fixtures) -> list:
         value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
         schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
         refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
-        # Added after the inertness scenario so the ids of the earlier scenarios do not move.
+        # Scenario ids are positional: new builders go last.
         read_once_scenarios, variable_scenarios,
     ]
 
@@ -1773,7 +1762,6 @@ def check_discrimination(scenarios: list, draws: dict) -> dict:
             variant = draw(key, exp)
             wrong_variants = wrong_key_variants(key, uid, exp)
             if exp["name"] in ELIGIBLE_ZERO_CASES:
-                # The deliberate eligible control: the draw is 0 and every wrong model draws nonzero.
                 zero = {m: v for m, v in wrong_variants.items() if v == 0}
                 if variant != 0 or zero:
                     raise SystemExit(f"{name}: eligible control {key!r} for {exp['name']} draws {variant}, "

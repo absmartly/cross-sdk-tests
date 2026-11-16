@@ -272,9 +272,7 @@ def values_match(actual: Any, expected: Any, unordered: bool = False, exact_obje
 
 
 def units_match_unordered(actual: Any, expected: Any) -> bool:
-    """A list of expected objects matched against a list of actual ones in any order: same
-    length, and a one-to-one assignment in which each expected object matches (values_match)
-    its actual partner. Used for publish `units` under `unorderedUnits: true`."""
+    """Publish `units` under `unorderedUnits: true`: a one-to-one match in any order."""
     if not isinstance(expected, list) or not isinstance(actual, list) or len(actual) != len(expected):
         return False
 
@@ -812,7 +810,6 @@ class TestOrchestrator:
         context_id = None
         payload_id = None
         failures: List[Dict[str, Any]] = []
-        # Successful step responses by index, for `sameShapeAs` references.
         responses: List[Any] = [None] * len(steps)
         pure_session: Optional[requests.Session] = None
         observations = self.step_observations.setdefault(scenario.get("name", ""), {}).setdefault(sdk_name, {})
@@ -1302,10 +1299,8 @@ class TestOrchestrator:
     def resolve_reference(
         prior_responses: List[Any], reference: Any, step_index: int, event_index: int
     ) -> Tuple[Any, Optional[str]]:
-        """Resolve `sameShapeAs: <step>` to the data of the same-index event of an earlier step.
-        Returns (data, None), or (None, reason) when there is no usable baseline: the reference
-        is not an integer in [0, step_index), that step has no response, or its event or data is
-        missing or null. Empty objects and arrays are valid baselines."""
+        """(data, None), or (None, reason) when there is no usable baseline. Empty objects and
+        arrays are valid baselines."""
         if isinstance(reference, bool) or not isinstance(reference, int):
             return None, f"reference must be an integer step index, got {reference!r}"
         if not 0 <= reference < step_index:
@@ -1322,12 +1317,8 @@ class TestOrchestrator:
         return data, None
 
     def shape_mismatch(self, actual: Any, reference: Any, path: str) -> Optional[Tuple[str, Any, Any]]:
-        """`sameShapeAs: <step>` compares an event's data with the same-index event the SDK
-        emitted at an earlier step: object key sets must be equal at every depth and arrays must
-        have equal length, element by element. Values are not compared (`data` does that), so a
-        payload is pinned to the SDK's own baseline shape and any added or dropped field fails
-        without hardcoding SDK-specific envelope fields. Returns (path, expected, actual) of the
-        first difference, or None."""
+        """Keys and array lengths only; values are compared by `data`. Pinning to the SDK's own
+        baseline catches an added or dropped field without hardcoding SDK-specific envelope fields."""
         if isinstance(reference, dict):
             if not isinstance(actual, dict):
                 return path, "object", type(actual).__name__

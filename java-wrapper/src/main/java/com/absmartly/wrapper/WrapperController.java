@@ -200,7 +200,6 @@ public class WrapperController {
         return value;
     }
 
-    // Long.parseLong is exact over the full signed 64-bit range and rejects anything else.
     private static long longParam(Map<String, Object> request, String name) {
         return Long.parseLong(stringParam(request, name));
     }

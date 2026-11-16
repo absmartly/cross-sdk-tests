@@ -25,7 +25,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class SwitchbackEndpointsTest {
 
-    // Always-wrong functions: variant 9 and a reversed permutation, so every golden sample fails.
     private static final class WrongFunctions implements SwitchbackFunctions {
         final AtomicInteger calls = new AtomicInteger();
 
@@ -51,7 +50,6 @@ class SwitchbackEndpointsTest {
         }
     }
 
-    // Fixed values; parameter validation under test happens in the controller before any call.
     private static class FixedFunctions implements SwitchbackFunctions {
         @Override
         public boolean isAvailable() {
@@ -123,8 +121,6 @@ class SwitchbackEndpointsTest {
             new Object[] {"armCount", 2.0});
     }
 
-    // The wrapper enforces armCount >= 2 itself: even functions that accept any arm count must
-    // never be called, and the response is 400.
     @ParameterizedTest
     @ValueSource(ints = {1, 0, -3})
     void rejectsTooFewArmsWith400WithoutCallingTheAssigner(int armCount) {
@@ -196,14 +192,13 @@ class SwitchbackEndpointsTest {
             controller.switchbackPermutation(permutationRequest()).getStatusCode());
     }
 
-    // The Phase 1E bucket endpoint was removed: a POST to it must be a 404 from the real routing.
+    // Checked through the real routing, not a direct controller call.
     @Test
     void bucketEndpointIsGone() throws Exception {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new WrapperController(new FixedFunctions())).build();
         mvc.perform(post("/switchback/bucket").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clusterKey\":\"market_1\",\"seedHi\":0,\"seedLo\":1,\"clusterCount\":10}"))
             .andExpect(status().isNotFound());
-        // The surviving endpoints are routed by the same setup.
         mvc.perform(post("/switchback/assign").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"clusterUnit\":\"market_1\",\"periodIndex\":\"0\",\"seed\":\"0\",\"armCount\":2}"))
             .andExpect(status().isOk());
