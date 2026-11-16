@@ -63,7 +63,7 @@ class SwitchbackR33PayloadTest {
         assertEquals(HttpStatus.OK, controller.storePayload("p", request).getStatusCode());
 
         // What the SDK's fetch receives back from /context_payload/{id}/context.
-        ResponseEntity<?> served = controller.mockApiContext("p");
+        ResponseEntity<?> served = controller.mockApiContext("p", Map.of());
         String json = MAPPER.writeValueAsString(served.getBody());
         JsonNode experiment = MAPPER.readTree(json).get("experiments").get(0);
         assertEquals(ORDER, keys(experiment.get("switchbackClusters")));
