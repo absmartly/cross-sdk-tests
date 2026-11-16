@@ -59,6 +59,8 @@ import os
 import subprocess
 import sys
 
+import scenario_groups
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 TOOL_DIR = os.path.join(HERE, "tools", "sdk-round-2026-11")
@@ -73,15 +75,14 @@ SDK_PATH = os.environ.get("SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "
 PINNED_COMMIT = "9403b837cf5fe224c82035b5c67bd7a4969421d0"
 JS_SDK_VERSION = "1.14.0"
 
-RULES_MARKER = " - Custom Assignment Rules - "
-SEMVER_MARKER = " - Semver Operators - "
-REEVAL_MARKER = " - Audience Re-Evaluation - "
-SYSATTR_MARKER = " - System Attributes - "
-GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
+RULES_MARKER = scenario_groups.ROUND_RULES
+SEMVER_MARKER = scenario_groups.ROUND_SEMVER
+REEVAL_MARKER = scenario_groups.ROUND_REEVAL
+SYSATTR_MARKER = scenario_groups.ROUND_SYSATTR
+GROUP_MARKERS = scenario_groups.ROUND_MARKERS
 # Groups owned by generate_parity_round_scenarios.py (300+). They stay after this round's groups and
 # are left out of the numbering, so regenerating either file never renumbers or moves the other's.
-LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ",
-                       " - Client Application - ")
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"

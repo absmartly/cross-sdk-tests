@@ -1934,6 +1934,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -4001,11 +4004,14 @@
           "error": "UID must not be blank"
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
     "name": "35 - Error Handling - Duplicate Unit Different Value",
-    "description": "Should throw error when setting same unit type twice with different values",
+    "description": "Should throw error when setting same unit type twice with different values. ruby-sdk and php-sdk keep their released v1 wording for this error (\"Unit 'x' already set.\" and 'Unit \"x\" UID is already set'), listed here so the divergence is visible in the scenario rather than rewritten by the wrapper.",
     "contextData": {
       "experiments": []
     },
@@ -4043,9 +4049,16 @@
           "uid": "different_value"
         },
         "expect": {
-          "error": "Unit 'session_id' UID already set."
+          "errorAnyOf": [
+            "Unit 'session_id' UID already set.",
+            "Unit 'session_id' already set.",
+            "Unit \"session_id\" UID is already set"
+          ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
@@ -14059,6 +14072,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15576,6 +15592,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15631,6 +15651,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15686,6 +15710,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -18828,6 +18856,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -18943,6 +18974,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19043,6 +19078,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19142,6 +19181,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19202,6 +19244,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19262,6 +19307,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -20104,6 +20152,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
@@ -25750,7 +25801,8 @@
     "name": "228 - Publish Failure - Failed Final Publish Keeps Context Open",
     "description": "When the publish made by finalize() fails, the error is surfaced and an error event logged, the events stay queued and the context is not finalized; a second finalize() publishes them and finalizes",
     "requires": [
-      "publishFail"
+      "publishFail",
+      "singleFinalizeEvent"
     ],
     "contextData": {
       "experiments": [
@@ -31323,7 +31375,7 @@
   },
   {
     "name": "309 - Assignment Rules - Split Rule Exposed Without Its Unit Stays Pinned After The Unit Is Set",
-    "description": "The split rule matches without its unit and treatment() exposes the no-unit result (variant 0). Setting the unit afterwards does not move the user: treatment still returns 0 and no second exposure is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "description": "The split rule matches without its unit and treatment() exposes the no-unit result (variant 0). Setting the unit and then an attribute (which re-evaluates the assignment) does not move the user: treatment still returns 0 and no second exposure is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
     "contextData": {
       "experiments": [
         {
@@ -31431,6 +31483,17 @@
         "params": {
           "unitType": "session_id",
           "uid": "late-unit-1"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "x",
+          "value": "y"
         },
         "expect": {
           "result": null,
@@ -36040,6 +36103,399 @@
     ],
     "requires": [
       "clientAcceptsBlankApplication"
+    ]
+  },
+  {
+    "name": "324 - Assignment Rules - Rule Conditions Read The Configured Application And Environment",
+    "description": "With client application 'sysattr-app' and environment 'sysattr-env' and no user attributes, a rule conditioned on environment and a rule conditioned on application both match (variant 0, ruleOverride:true); an SDK that evaluates rule conditions on user attributes only gives the normal variant 1. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 480,
+          "name": "exp_rules_sys_env",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-sysattr-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}}]}"
+        },
+        {
+          "id": 481,
+          "name": "exp_rules_sys_app",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"application-sysattr-app\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"application\"},{\"value\":\"sysattr-app\"}]}}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 480,
+                    "name": "exp_rules_sys_env"
+                  },
+                  {
+                    "id": 481,
+                    "name": "exp_rules_sys_app"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 480,
+                "name": "exp_rules_sys_env",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_app"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 481,
+                "name": "exp_rules_sys_app",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "325 - Assignment Rules - A User-Set Environment Overrides The Configured One In Rule Conditions",
+    "description": "With client environment 'sysattr-env', the user sets attribute environment 'user-env': a rule conditioned on the configured name no longer matches (normal variant 1, ruleOverride:false) and a rule conditioned on the user value matches (variant 0, ruleOverride:true). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 482,
+          "name": "exp_rules_sys_env_cfg",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-sysattr-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}}]}"
+        },
+        {
+          "id": 483,
+          "name": "exp_rules_sys_env_user",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-user-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"user-env\"}]}}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 482,
+                    "name": "exp_rules_sys_env_cfg"
+                  },
+                  {
+                    "id": 483,
+                    "name": "exp_rules_sys_env_user"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "environment",
+          "value": "user-env"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env_cfg"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 482,
+                "name": "exp_rules_sys_env_cfg",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env_user"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 483,
+                "name": "exp_rules_sys_env_user",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
     ]
   }
 ]

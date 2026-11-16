@@ -16,7 +16,9 @@ from unittest import mock
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "orchestrator"))
 
+sys.path.insert(0, REPO_ROOT)
 import results_aggregator  # noqa: E402
+import scenario_groups  # noqa: E402
 import test_runner  # noqa: E402
 from test_runner import MISSING, TestOrchestrator, values_match, result_matches  # noqa: E402
 
@@ -232,6 +234,12 @@ class ValidateStepTests(unittest.TestCase):
     def test_expected_error_but_success(self):
         failures = self.orch.validate_step(0, "setUnit", {"result": None, "events": []}, {"error": "UID must not be blank"})
         self.assertEqual(self.fields(failures), ["error"])
+
+    def test_expected_status_but_success(self):
+        # A step that pins only an HTTP status still expects the call to fail.
+        failures = self.orch.validate_step(0, "createContextWith", {"result": {"ready": True}, "events": []},
+                                           {"status": 400, "events": []})
+        self.assertEqual(self.fields(failures), ["status"])
 
     def test_numeric_float_result_equal_int(self):
         self.assertEqual(self.orch.validate_step(0, "getUnit", {"result": 99.0, "events": []}, {"result": 99, "events": []}), [])
@@ -933,6 +941,35 @@ class StaticRepoChecks(unittest.TestCase):
             counts = {int(n) for n in re.findall(r"(\d+)-scenario", src.read())}
         self.assertEqual(counts, {self.scenario_count()})
 
+    def test_finalize_scenarios_require_single_finalize_event(self):
+        """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on
+        singleFinalizeEvent: an SDK that logs a second lifecycle event is a reviewed exception, never
+        hidden by its wrapper."""
+        with open(SCENARIOS_PATH) as src:
+            for s in json.load(src):
+                if any(st["action"] == "finalize" for st in s["steps"]):
+                    self.assertIn("singleFinalizeEvent", s.get("requires", []), s["name"])
+
+    def test_misuse_error_scenarios_require_throws_on_misuse(self):
+        """An ungated scenario that expects a context call to fail relies on the SDK throwing on misuse;
+        it is gated on throwsOnMisuse so a non-throwing SDK skips it instead of its wrapper inventing the
+        error."""
+        gated_elsewhere = {"trackRejectsNonObjectProperties", "publishThrowsOnFailure", "publishFail",
+                           "clientRejectsBlankApplication"}
+        error_keys = ("error", "errorContains", "errorAnyOf")
+        misuse = re.compile(r"already set|blank|finalized|closed|not yet ready")
+        with open(SCENARIOS_PATH) as src:
+            for s in json.load(src):
+                requires = set(s.get("requires", []))
+                if requires & gated_elsewhere:
+                    continue
+                for st in s["steps"]:
+                    expect = st["expect"]
+                    messages = [expect[k] for k in error_keys if k in expect]
+                    flat = " ".join(m if isinstance(m, str) else " ".join(m) for m in messages).lower()
+                    if misuse.search(flat):
+                        self.assertIn("throwsOnMisuse", requires, s["name"])
+
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:
             names = [s["name"] for s in json.load(src)]
@@ -1033,6 +1070,36 @@ class CapturedRequestsTest(unittest.TestCase):
                              {"method": "GET", "headers": {}}]}
         self.assertEqual([f["field"] for f in self.check(body)], ["requests[1].headers.X-Agent"])
 
+    def test_scenario_method_is_case_insensitive(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
+        self.assertEqual(self.check(body, method="get"), [])
+
+    def test_create_context_failed_forwards_client(self):
+        posted = []
+
+        class Response:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"result": {"contextId": "c1", "ready": False, "failed": True, "finalized": False},
+                        "events": []}
+
+        def post(url, json=None, timeout=None):
+            posted.append(json)
+            return Response()
+
+        client = {"application": "a", "environment": "e"}
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContextFailed", "params": {"units": {}, "client": client},
+             "expect": {"result": {"failed": True}}}]}
+        orch = TestOrchestrator({"go": "http://go"}, capability_policy=make_policy())
+        with mock.patch.object(test_runner.requests, "post", post), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("go", "http://go", scenario)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(posted[0]["client"], client)
+
     def test_no_request_of_the_method_fails(self):
         body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
         failures = self.check(body, method="PUT")
@@ -1089,12 +1156,11 @@ class CapturedRequestsTest(unittest.TestCase):
 
 
 class ScenarioGeneratorsCoexistTest(unittest.TestCase):
-    """The 2026-11 round generator (230-253) and the parity generator (300+) share one canonical file;
+    """The 2026-11 round generator (230-253) and the parity generator (300-325) share one canonical file;
     each must leave the other's groups where they are, numbered as they are."""
 
-    ROUND = (" - Custom Assignment Rules - ", " - Semver Operators - ", " - Audience Re-Evaluation - ",
-             " - System Attributes - ")
-    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ", " - Client Application - ")
+    ROUND = scenario_groups.ROUND_MARKERS
+    PARITY = scenario_groups.PARITY_MARKERS
 
     def test_groups_keep_their_ranges_and_order(self):
         with open(SCENARIOS_PATH) as src:
@@ -1103,7 +1169,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
         parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
         self.assertEqual(round_ids, list(range(230, 254)))
-        self.assertEqual(parity_ids, list(range(300, 324)))
+        self.assertEqual(parity_ids, list(range(300, 326)))
         self.assertEqual(numbers, sorted(numbers))
 
     @staticmethod

@@ -39,8 +39,9 @@ import subprocess
 import sys
 
 import generate_sdk_round_2026_11_scenarios as round2611
+import scenario_groups
 from generate_sdk_round_2026_11_scenarios import (
-    PENDING, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
+    PENDING, SYSATTR_APP, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
     rules, treatment, variable_value,
 )
 
@@ -51,11 +52,11 @@ CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 # #19 up to 253, #20 up to 232, #13 up to 271 and unopened branches up to 286, so 300+ is free.
 FIRST_NUMBER = 300
 
-RULES_MARKER = " - Assignment Rules - "
-SEMVER_MARKER = " - Semver Comparison - "
-XAGENT_MARKER = " - X-Agent - "
-CLIENT_APP_MARKER = " - Client Application - "
-PARITY_MARKERS = (RULES_MARKER, SEMVER_MARKER, XAGENT_MARKER, CLIENT_APP_MARKER)
+RULES_MARKER = scenario_groups.PARITY_RULES
+SEMVER_MARKER = scenario_groups.PARITY_SEMVER
+XAGENT_MARKER = scenario_groups.PARITY_XAGENT
+CLIENT_APP_MARKER = scenario_groups.PARITY_CLIENT_APP
+PARITY_MARKERS = scenario_groups.PARITY_MARKERS
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
@@ -257,11 +258,11 @@ def rules_specs():
     specs.append(spec(
         "Split Rule Exposed Without Its Unit Stays Pinned After The Unit Is Set",
         "The split rule matches without its unit and treatment() exposes the no-unit result "
-        "(variant 0). Setting the unit afterwards does not move the user: treatment still returns "
-        "0 and no second exposure is queued.",
+        "(variant 0). Setting the unit and then an attribute (which re-evaluates the assignment) "
+        "does not move the user: treatment still returns 0 and no second exposure is queued.",
         [seeded(experiment(441, "exp_rules_late_pinned", assignment_rules=late_split, split=[1, 0]))],
         [treatment("exp_rules_late_pinned"), set_unit("session_id", LATE_UNIT),
-         treatment("exp_rules_late_pinned"), PENDING],
+         attribute("x", "y"), treatment("exp_rules_late_pinned"), PENDING],
         units=no_unit, requires=[RULES_CAPABILITY]))
 
     specs.append(spec(
@@ -329,6 +330,41 @@ def rules_specs():
         requires=[RULES_CAPABILITY, SEMVER_CAPABILITY]))
 
     return specs
+
+
+def rules_system_attributes_specs():
+    """Rule conditions over the configured application/environment (javascript-sdk#68): the same
+    evaluation map as audiences, with a user-set attribute of the same name winning. Appended after
+    the other parity groups so 300-323 keep their numbers."""
+    client = {"application": SYSATTR_APP, "environment": SYSATTR_ENV}
+
+    def on(var, value):
+        return rules({"name": f"{var}-{value}", "type": "assign", "variant": 0,
+                      "conditions": {"eq": [{"var": var}, {"value": value}]}})
+
+    return [
+        spec(
+            "Rule Conditions Read The Configured Application And Environment",
+            f"With client application '{SYSATTR_APP}' and environment '{SYSATTR_ENV}' and no user "
+            "attributes, a rule conditioned on environment and a rule conditioned on application "
+            "both match (variant 0, ruleOverride:true); an SDK that evaluates rule conditions on "
+            "user attributes only gives the normal variant 1.",
+            [experiment(480, "exp_rules_sys_env", assignment_rules=on("environment", SYSATTR_ENV)),
+             experiment(481, "exp_rules_sys_app", assignment_rules=on("application", SYSATTR_APP))],
+            [treatment("exp_rules_sys_env"), treatment("exp_rules_sys_app"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
+        spec(
+            "A User-Set Environment Overrides The Configured One In Rule Conditions",
+            f"With client environment '{SYSATTR_ENV}', the user sets attribute environment "
+            "'user-env': a rule conditioned on the configured name no longer matches (normal variant "
+            "1, ruleOverride:false) and a rule conditioned on the user value matches (variant 0, "
+            "ruleOverride:true).",
+            [experiment(482, "exp_rules_sys_env_cfg", assignment_rules=on("environment", SYSATTR_ENV)),
+             experiment(483, "exp_rules_sys_env_user", assignment_rules=on("environment", "user-env"))],
+            [attribute("environment", "user-env"), treatment("exp_rules_sys_env_cfg"),
+             treatment("exp_rules_sys_env_user"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -603,6 +639,13 @@ def build_groups():
             n += 1
     groups.extend(xagent_scenarios(n))
     groups.extend(client_application_scenarios(FIRST_NUMBER + len(groups)))
+    n = FIRST_NUMBER + len(groups)
+    specs = rules_system_attributes_specs()
+    for s, ran in zip(specs, run_reference(specs)):
+        if len(ran["steps"]) != len(s["steps"]):
+            raise SystemExit(f"{s['title']}: JS reference returned an incomplete step list")
+        groups.append(build_scenario(s, ran, n, RULES_MARKER, strip_rule_override=False))
+        n += 1
     return groups
 
 

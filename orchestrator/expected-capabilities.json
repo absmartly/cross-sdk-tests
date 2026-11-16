@@ -30,7 +30,9 @@
     "clientNoEnvironment": "the wrapper can build a context whose client reports no environment (the optional client field on POST /context with environment omitted), so the SDK leaves environment out of the audience/rule evaluation map (the 2026-11 system-attributes 'no environment configured' case, scenario 253). SDKs whose public client API mandates a non-empty environment cannot express this black-box; their own unit tests cover it, so they list a reviewed exception",
     "xAgentHeader": "the SDK's own requests carry X-Agent: absmartly-<lang>-sdk/<version> (the feature-parity round); the wrapper records the requests its mock collector serves (GET /context_payload/{id}/requests) and, with publishToEndpoint on POST /context, publishes through the SDK's own publisher to PUT {endpoint}/context",
     "clientRejectsBlankApplication": "the SDK's client rejects an explicitly blank application at construction, and the wrapper forwards client.application unchanged on POST /context, so a blank name returns the SDK's own validation error as a 400 instead of being repaired into the wrapper's default (WRAPPER_API_SPEC.md, POST /context client)",
-    "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)"
+    "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
+    "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
+    "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated"
   },
   "sdks": {
     "javascript": {
@@ -52,7 +54,9 @@
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -75,14 +79,16 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientAcceptsBlankApplication"
+        "clientAcceptsBlankApplication",
+        "throwsOnMisuse"
       ],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
-        "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip"
       }
     },
     "ruby": {
@@ -103,7 +109,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -129,7 +137,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
@@ -152,7 +162,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientAcceptsBlankApplication"
+        "clientAcceptsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
@@ -180,7 +192,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientAcceptsBlankApplication"
+        "clientAcceptsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
@@ -206,7 +220,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -235,7 +251,9 @@
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
@@ -258,7 +276,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -284,7 +304,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -310,13 +332,15 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
       }
     },
     "dart": {
@@ -336,7 +360,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
@@ -362,7 +388,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -387,7 +415,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -413,7 +443,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
@@ -440,7 +472,9 @@
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
-        "clientAcceptsBlankApplication"
+        "clientAcceptsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -468,7 +502,9 @@
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -494,7 +530,9 @@
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -520,7 +558,9 @@
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -546,7 +586,9 @@
         "trackRejectsNonObjectProperties",
         "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
-        "clientRejectsBlankApplication"
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
