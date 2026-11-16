@@ -36699,5 +36699,123 @@
     "requires": [
       "assignmentRules"
     ]
+  },
+  {
+    "name": "327 - Assignment Rules - Split Percentages Parse A Numeric Prefix Like parseFloat",
+    "description": "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it and the fallback rule assigns variant 0. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 486,
+          "name": "exp_rules_parse_prefix",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"prefix\",\"type\":\"split\",\"percentages\":\"0abc/100\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 486,
+                    "name": "exp_rules_parse_prefix"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_parse_prefix"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 486,
+                "name": "exp_rules_parse_prefix",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
   }
 ]

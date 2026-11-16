@@ -380,6 +380,21 @@ def rules_system_attributes_specs():
     ]
 
 
+def rules_split_parsing_specs():
+    """Split percentages are parsed like JS parseFloat: a numeric prefix counts and trailing text is
+    ignored. Appended after the other parity groups so earlier numbers stay put."""
+    fallback = {"name": "fallback", "type": "assign", "variant": 0}
+    return [spec(
+        "Split Percentages Parse A Numeric Prefix Like parseFloat",
+        "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid "
+        "and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it "
+        "and the fallback rule assigns variant 0.",
+        [experiment(486, "exp_rules_parse_prefix", assignment_rules=rules(
+            {"name": "prefix", "type": "split", "percentages": "0abc/100"}, fallback))],
+        [treatment("exp_rules_parse_prefix"), PENDING],
+        requires=[RULES_CAPABILITY])]
+
+
 # ---------------------------------------------------------------------------
 # Semver operators
 # ---------------------------------------------------------------------------
@@ -653,7 +668,7 @@ def build_groups():
     groups.extend(xagent_scenarios(n))
     groups.extend(client_application_scenarios(FIRST_NUMBER + len(groups)))
     n = FIRST_NUMBER + len(groups)
-    specs = rules_system_attributes_specs()
+    specs = rules_system_attributes_specs() + rules_split_parsing_specs()
     for s, ran in zip(specs, run_reference(specs)):
         if len(ran["steps"]) != len(s["steps"]):
             raise SystemExit(f"{s['title']}: JS reference returned an incomplete step list")

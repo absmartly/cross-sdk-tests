@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **273 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **274 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -79,7 +79,7 @@ across languages.
   ungated scenarios (246-252) run on every SDK, and 253 runs on the SDKs that
   advertise `clientNoEnvironment`.
 
-  Scenarios 300-326 pin the 2026-11 feature-parity round, where every SDK
+  Scenarios 300-327 pin the 2026-11 feature-parity round, where every SDK
   ports assignment rules, the `semver_*` operators and a versioned `X-Agent`
   (see [docs/feature-parity-conformance.md](docs/feature-parity-conformance.md)):
   300-314 (`requires: assignmentRules`) cover split rules hashed with the
@@ -93,7 +93,8 @@ across languages.
   (`clientRejectsBlankApplication` / `clientAcceptsBlankApplication`, one per
   SDK); 324-326 (`requires: assignmentRules`) check rule conditions read the
   configured application/environment, with a user-set value winning, while a
-  rule's environment scope always uses the configured environment. With the parity pins in `sdk-branches.sh` every SDK requires the rules
+  rule's environment scope always uses the configured environment; 327 checks
+  split percentages parse a numeric prefix like JS `parseFloat`. With the parity pins in `sdk-branches.sh` every SDK requires the rules
   and semver capabilities.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
@@ -229,7 +230,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 273-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 274-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -253,7 +254,7 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 273 scenarios
+├── test_scenarios_complete.json  # 274 scenarios
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be
 │                                 #   diffed against the canonical file above

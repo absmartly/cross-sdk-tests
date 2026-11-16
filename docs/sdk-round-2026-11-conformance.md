@@ -126,7 +126,7 @@ re-run CI after any force-push to those four branches.
 
 ### Scenario numbering versus open PRs
 
-This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-326
+This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-327
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
 `scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
 fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
@@ -223,6 +223,7 @@ wrapper API. They are listed so the matrix is complete.
 | System attributes applied to assignment-rule conditions | §5, js#68, java#22 | **Covered** by the feature-parity group: 324 (rule conditions on the configured `environment` and `application` match) 325 (a user-set `environment` overrides the configured one in a rule condition) and 326 (a rule's `environments` scope uses the configured environment, not a user-set one). An SDK that evaluates rule conditions on user attributes only fails 324; one that reads the scope from the user-overlaid map fails 326. |
 | System attributes: `app_version` dropped from the evaluation map | §5, js#68, java#22 | Not re-exercised black-box: no wrapper injects an `app_version`, so its absence is not observable. Covered by each SDK's own system-attributes unit tests. |
 | System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
+| Assignment-rule condition that THROWS = rule skipped, traversal continues | js#67, java#17 | Not portably triggerable through the wrapper: in the reference no stock JSON operator throws during rule evaluation (unknown operators return null, regex errors are caught). Documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
 | `hash_unit` exposed as a public/diagnostic function | python#12, go#10, dotnet#8 | Covered by the existing `diagnostics` capability (`POST /diagnostic hashUnit`). |
 
