@@ -437,6 +437,38 @@ def test_inertness_carries_r33_and_legacy_fields_on_unit_experiments():
     assert generator.failing_steps(inert, "unit_experiment_as_switchback") != []
 
 
+def _exposure_data(scenario):
+    """Every exposure object (exposure events and published exposures) a scenario expects."""
+    for step in scenario["steps"]:
+        for event in step["expect"].get("events", []):
+            if event["type"] == "exposure":
+                yield event["data"]
+            elif event["type"] == "publish":
+                yield from event["data"]["exposures"]
+
+
+def test_switchback_exposures_pin_rule_override_and_unit_exposures_omit_it():
+    """A switchback exposure pins ruleOverride (true only when an assign rule won), so an ordinary
+    draw published with ruleOverride=true fails. Unit-experiment exposures omit it: the ungated
+    inertness scenario must not require the field from SDKs without assignment rules."""
+    rule_won = 0
+    for scenario in group():
+        switchbacks = {e["name"] for e in scenario.get("contextData", {}).get("experiments", [])
+                       if e.get("randomizationType") == "switchback"}
+        for data in _exposure_data(scenario):
+            if data["name"] not in switchbacks:
+                assert "ruleOverride" not in data, (scenario["name"], data)
+                continue
+            assert isinstance(data.get("ruleOverride"), bool), (scenario["name"], data)
+            if data["ruleOverride"]:
+                rule_won += 1
+                assert "Precedence" in scenario["name"] and data["assigned"] is False, (scenario["name"], data)
+    assert rule_won == 4
+    (inert,) = [s for s in group() if "Inertness" in s["name"]]
+    assert all("ruleOverride" not in d for d in _exposure_data(inert))
+    assert generator.failing_steps(inert, "rule_override_true_on_ordinary") == []
+
+
 # ---------------------------------------------------------------------------
 # Discrimination: replay the canonical context scenarios against the R33 model and its mutants
 # ---------------------------------------------------------------------------
@@ -487,7 +519,7 @@ def test_eligible_control_is_served_exposed_and_published():
     steps = scenario["steps"]
     (i,) = [i for i, st in enumerate(steps) if st["action"] == "treatment"
             and st["params"]["experimentName"] == control["name"]]
-    exposed = generator.exposure(control, 0, "store_id")
+    exposed = generator.sb_exposure(control, 0, "store_id")
     assert steps[i]["expect"] == {"result": 0, "events": [{"type": "exposure", "data": exposed}]}
     (publish,) = [st for st in steps if st["action"] == "publish"]
     data = publish["expect"]["events"][0]["data"]

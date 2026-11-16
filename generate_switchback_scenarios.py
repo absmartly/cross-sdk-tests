@@ -580,8 +580,10 @@ def switchback_experiment(exp_id: int, name: str, clusters, arm_count: int = 3, 
 
 
 def exposure(exp: dict, variant: int, unit: Optional[str] = None, assigned=True, eligible=True, overridden=False,
-             full_on=False, custom=False, audience_mismatch=False) -> dict:
-    return {
+             full_on=False, custom=False, audience_mismatch=False, rule_override=None) -> dict:
+    """rule_override None omits ruleOverride: unit-experiment exposures leave it out because the
+    ungated inertness scenario must not require the field from SDKs without assignment rules."""
+    out = {
         "id": exp["id"],
         "name": exp["name"],
         "unit": unit if unit is not None else exp["unitType"],
@@ -593,6 +595,15 @@ def exposure(exp: dict, variant: int, unit: Optional[str] = None, assigned=True,
         "custom": custom,
         "audienceMismatch": audience_mismatch,
     }
+    if rule_override is not None:
+        out["ruleOverride"] = rule_override
+    return out
+
+
+def sb_exposure(exp: dict, variant: int, unit: Optional[str] = None, **flags) -> dict:
+    """A switchback exposure: ruleOverride is always pinned, false unless an assign rule won."""
+    flags.setdefault("rule_override", False)
+    return exposure(exp, variant, unit, **flags)
 
 
 def ready_events(experiments: list) -> list:
@@ -691,6 +702,7 @@ SERVING_MUTANTS = (
     "peek_exposes",            # peek / peekVariableValue queue the exposure like treatment
     "variable_value_silent",   # variableValue resolves the variant but never exposes
     "zero_maps_to_one",        # an eligible draw of 0 is served as variant 1
+    "rule_override_true_on_ordinary",  # every switchback exposure flagged ruleOverride, not only rule-won ones
 )
 ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
 ARITHMETIC_MUTANTS = ("period_zero", "period_plus_one", "unmasked_seed_lo", "swapped_seed")
@@ -837,6 +849,11 @@ class ContextModel:
                 return "ineligible", first[0], first[1], None
         return "eligible", serving[0], serving[1], serving[2]
 
+    def _sb_exposure(self, exp: dict, variant: int, unit: Optional[str], **flags) -> dict:
+        if self.mutant == "rule_override_true_on_ordinary":
+            flags["rule_override"] = True
+        return sb_exposure(exp, variant, unit, **flags)
+
     def resolve(self, exp: dict):
         """(variant, exposure or None) for one experiment, as getTreatment resolves it."""
         m = self.mutant
@@ -858,20 +875,20 @@ class ContextModel:
         if name in self.overrides and m != "ignore_override" and not (
                 m == "override_requires_cluster" and status != "eligible"):
             unit = unit_type or (next(iter(exp.get("switchbackClusters") or {}), None) or exp["unitType"])
-            return self.overrides[name], exposure(exp, self.overrides[name], unit, assigned=False, overridden=True)
+            return self.overrides[name], self._sb_exposure(exp, self.overrides[name], unit, assigned=False,
+                                                           overridden=True)
         if status == "absent":
             return 0, None
         if status == "ineligible":
             if m == "ineligible_exposes":
-                return 0, exposure(exp, 0, unit_type, eligible=False)
+                return 0, self._sb_exposure(exp, 0, unit_type, eligible=False)
             if m == "precedence_on_ineligible":
                 rule = _assign_rule_variant(exp.get("assignmentRules"))
                 if rule is not None:
-                    out = exposure(exp, rule, unit_type, assigned=False)
-                    out["ruleOverride"] = True
-                    return rule, out
+                    return rule, self._sb_exposure(exp, rule, unit_type, assigned=False, rule_override=True)
                 if exp["fullOnVariant"]:
-                    return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True)
+                    return exp["fullOnVariant"], self._sb_exposure(exp, exp["fullOnVariant"], unit_type,
+                                                                   full_on=True)
             return 0, None
 
         rule = _assign_rule_variant(exp.get("assignmentRules"))
@@ -880,33 +897,32 @@ class ContextModel:
         before_anchor = servable and NOW < anchor
         if rule is not None and m != "ignore_rules" and not (
                 m == "rules_skipped_unless_servable" and (not servable or before_anchor)):
-            out = exposure(exp, rule, unit_type, assigned=False)
-            out["ruleOverride"] = True
-            return rule, out
+            return rule, self._sb_exposure(exp, rule, unit_type, assigned=False, rule_override=True)
         mismatch = _audience_matches(exp.get("audience"), self.attributes) is False
         if exp.get("audienceStrict") and mismatch:
             # As for unit experiments: a strict mismatch is not an assignment (assigned=false).
-            return 0, exposure(exp, 0, unit_type, assigned=m == "strict_mismatch_assigned", audience_mismatch=True)
+            return 0, self._sb_exposure(exp, 0, unit_type, assigned=m == "strict_mismatch_assigned",
+                                        audience_mismatch=True)
         if exp["fullOnVariant"] and m != "ignore_full_on":
-            return exp["fullOnVariant"], exposure(exp, exp["fullOnVariant"], unit_type, full_on=True,
-                                                  audience_mismatch=mismatch)
+            return exp["fullOnVariant"], self._sb_exposure(exp, exp["fullOnVariant"], unit_type, full_on=True,
+                                                            audience_mismatch=mismatch)
         if not servable or before_anchor:
             if m == "pre_anchor_exposes":
-                return 0, exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
+                return 0, self._sb_exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
             return 0, None
         if exp.get("holdoutIds") and m == "holdout_applies":
             return 0, None
         if name in self.customs and m == "custom_before_traffic":
-            return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
-                                                audience_mismatch=mismatch)
+            return self.customs[name], self._sb_exposure(exp, self.customs[name], unit_type, custom=True,
+                                                          audience_mismatch=mismatch)
         traffic_uid = self.unit_map.get(exp["unitType"], uid) if m == "traffic_on_unit_type" else uid
         if unit_variant(traffic_uid, exp["trafficSplit"], exp["trafficSeedHi"], exp["trafficSeedLo"]) != 1:
             if m == "traffic_miss_silent":
                 return 0, None
-            return 0, exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
+            return 0, self._sb_exposure(exp, 0, unit_type, eligible=False, audience_mismatch=mismatch)
         if name in self.customs and m != "ignore_custom":
-            return self.customs[name], exposure(exp, self.customs[name], unit_type, custom=True,
-                                                audience_mismatch=mismatch)
+            return self.customs[name], self._sb_exposure(exp, self.customs[name], unit_type, custom=True,
+                                                          audience_mismatch=mismatch)
         if m in KEY_MUTANTS:
             variant = draw(KEY_MUTANTS[m](key, uid, exp), exp, start=anchor)
         else:
@@ -915,7 +931,7 @@ class ContextModel:
                 variant = 1
             if m is None:
                 self.draws.append((key, uid, exp))
-        return variant, exposure(exp, variant, unit_type, audience_mismatch=mismatch)
+        return variant, self._sb_exposure(exp, variant, unit_type, audience_mismatch=mismatch)
 
     def _resolve_unit(self, exp: dict):
         """Ordinary unit assignment (no rules, audiences or holdouts in these scenarios' unit experiments)."""
@@ -1459,11 +1475,11 @@ def dedup_and_payload_scenarios() -> list:
                 "hashed": True, "units": units_published, "exposures": [exposure(baseline, baseline_variant)]}}]}},
             {"action": "treatment", "params": {"experimentName": payload["name"]},
              "expect": {"result": variant, "events": [
-                 {"type": "exposure", "sameShapeAs": 2, "data": exposure(payload, variant)}]}},
+                 {"type": "exposure", "sameShapeAs": 2, "data": sb_exposure(payload, variant)}]}},
             treatment_step(payload, variant),
             {"action": "publish", "params": {}, "expect": {"result": None, "events": [
                 {"type": "publish", "sameShapeAs": 3, "data": {
-                    "hashed": True, "units": units_published, "exposures": [exposure(payload, variant)]}}]}},
+                    "hashed": True, "units": units_published, "exposures": [sb_exposure(payload, variant)]}}]}},
         ])
     sc["_draws"] = [(city, uid, payload)]
     return [sc]
@@ -1680,6 +1696,7 @@ MUTANT_SCENARIOS = {
     "peek_exposes": ["Peek And Variable Values Resolve The Cluster Draw"],
     "variable_value_silent": ["Peek And Variable Values Resolve The Cluster Draw"],
     "zero_maps_to_one": [_SINGLE],
+    "rule_override_true_on_ordinary": [_SINGLE],
 }
 
 
