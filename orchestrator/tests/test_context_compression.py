@@ -132,10 +132,10 @@ def test_required_where_observed_or_read_from_code():
     assert policy["measuredCapabilities"] == [CAP]
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
     assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
-                        "scala", "vue2", "vue3"]
+                        "scala", "swift", "vue2", "vue3"]
     excepted = {sdk: e["unsupported"][CAP] for sdk, e in policy["sdks"].items() if CAP in e["unsupported"]}
-    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "kotlin", "php", "rust", "swift"]
-    assert "fails on main CI" in excepted["swift"]
+    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "kotlin", "php", "rust"]
+    assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 
 
 def test_measured_capability_needs_a_probe():

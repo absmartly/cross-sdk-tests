@@ -2,8 +2,11 @@
 
 Survey of the SDK's own HTTP fetch of `GET {endpoint}/context`, the request the
 SDKs make on context creation and refresh. Written 2026-11-12 against
-`absmartly/cross-sdk-tests` 30d23e9 and the SDK branches pinned in
-`sdk-branches.sh` (checked out at the commits listed per SDK).
+`absmartly/cross-sdk-tests` 30d23e9 and re-measured 2026-11-17 on main ada8952
+with the SDK pins in `sdk-branches.sh` there (every SDK on `main` except react,
+vue2 and vue3; the commits are listed per SDK). Nothing changed on the wire with
+the new pins except swift, whose lane now builds and passes: it is observed and
+`required`.
 
 Why it matters: Cloudflare in front of the Collector serves `/v1/context` as
 zstd > br > gzip, picked from the request's `Accept-Encoding`. On a large tenant
@@ -30,15 +33,15 @@ User-Agent and is indistinguishable by it. As in `WRAPPER_API_SPEC.md`, the only
 guarantee that the SDK's own client made the request is code review of the wrapper.
 "Observed" below means seen on the wire from that SDK's lane in this sandbox.
 "From code" means read from source with no lane run, because the image could not
-be built here (no network access to nuget.org, hex.pm, repo.scala-sbt.org,
-pub.dev or registry.yarnpkg.com; the swift image fails its own build-time test).
+be built here (no network access to api.nuget.org, hex.pm, repo.scala-sbt.org,
+pub.dev or registry.yarnpkg.com: dotnet, elixir, scala, dart, flutter, react).
 CI runs the full matrix.
 
 The wrapper must use the SDK's default client for the observation to say
 anything about the SDK default. Where a wrapper injects its own transport, this is
 stated.
 
-## java (java-sdk `feat/d1-reads-throw-before-ready` 77e1f4f)
+## java (java-sdk `main` 07807b5)
 
 - Client: Apache httpclient5 **async** (`HttpAsyncClientBuilder`),
   `core-api/src/main/java/com/absmartly/sdk/DefaultHTTPClient.java:51`. The SDK
@@ -68,7 +71,7 @@ stated.
   a `getContentEncoding` on the SDK's `HTTPClient.Response`.
 - br/zstd: not without new native dependencies (brotli4j, zstd-jni). gzip only.
 
-## kotlin (kotlin-sdk `feat/public-hashing-object-take2` 8f68ec5)
+## kotlin (kotlin-sdk `main` bb7181f)
 
 - Client: `java.net.HttpURLConnection`, `src/main/kotlin/com/absmartly/sdk/DefaultHTTPClient.kt:64`.
   The wrapper uses the SDK's `Client` (`kotlin-wrapper/.../Application.kt:234-239`).
@@ -81,7 +84,7 @@ stated.
   Or move to `java.net.http.HttpClient` (also no transparent decompression).
 - br/zstd: not in the JDK. gzip only.
 
-## scala (scala-sdk `chore/review-follow-ups` 63fe0af) — lane not built here
+## scala (scala-sdk `main` 4d38c20) — lane not built here
 
 - Client: sttp client3 3.9.2 with `HttpURLConnectionBackend`
   (`src/main/scala/com/absmartly/sdk/SDK.scala:34`, fetch at `:121-126` via `basicRequest`).
@@ -93,7 +96,7 @@ stated.
 - Fix: none needed for gzip. Policy: `required` from this reading; the CI lane proves it.
 - br/zstd: not without extra codecs. gzip is enough.
 
-## dotnet (dotnet-sdk `fix/audit-operator-fixes` ea172a6) — lane not built here
+## dotnet (dotnet-sdk `main` fd564d2) — lane not built here
 
 - Client: `HttpClient` from `IHttpClientFactory`. With DI
   (`DependencyInjection/ServiceCollectionExtensions.cs:46-73`) the primary handler is
@@ -114,7 +117,7 @@ stated.
   `DecompressionMethods.GZip | DecompressionMethods.Deflate` on the netstandard2.0 `HttpClientHandler`.
 - br/zstd: br built into .NET Core 3.0+ (no dependency). zstd is not built into .NET.
 
-## php (php-sdk `fix/audit-operator-fixes` a59b1e4)
+## php (php-sdk `main` 80a5ec6)
 
 - Default client: curl, `src/Http/HTTPClient.php` (options at `:212-219`, per-request at `:92-95`).
   **The wrapper injects `ReactHttpClient`** (ReactPHP `Browser`, `src/Http/ReactHttpClient.php:38`)
@@ -134,7 +137,7 @@ stated.
   (ReactPHP `Browser` does not decode by itself).
 - br/zstd: through curl when built with them. gzip via ext-zlib otherwise.
 
-## python (python3-sdk — pinned `fix/python-sdk-all-tests-passing` no longer exists; ran `main` 2fe0206)
+## python (python3-sdk `main` 80daada)
 
 - Client: `requests.Session` (`sdk/default_http_client.py:12`; `requests >= 2.28.1`;
   the lane ran requests 2.34.2). The wrapper uses the SDK's `DefaultHTTPClient`
@@ -144,9 +147,8 @@ stated.
 - Fix: none for gzip. The lane image has urllib3 2.8.0, whose `ACCEPT_ENCODING` is
   `gzip,deflate`. urllib3 adds `br` when `brotli`/`brotlicffi` is importable and
   `zstd` when its zstd support is available (optional packages, not installed here).
-- Note: the pinned branch is gone, so CI's `git clone --branch` fails for this lane. Unrelated to this change.
 
-## go (go-sdk `fix/all-tests-passing` d6541a2)
+## go (go-sdk `main` 54b4e8a)
 
 - Client: resty v2.16.5 over a custom `http.Transport` (`sdk/DefaultHttpClient.go:43-53`).
   The wrapper uses `sdk.CreateDefaultClient` (`go-wrapper/server.go:413`).
@@ -160,7 +162,7 @@ stated.
   hand: that turns off Go's transparent decoding (resty would still gunzip).
 - br/zstd: not in the Go standard library. gzip only.
 
-## ruby (ruby-sdk `feat/ruby-3.3-compatibility` 7be6b04) and liquid (wraps ruby-sdk)
+## ruby (ruby-sdk `main` c3a0e08) and liquid (liquid-sdk `main` e38f9c6, wraps ruby-sdk)
 
 - Client: Faraday 2.8.1 with `net_http_persistent` (`lib/default_http_client.rb:24-31`).
   Both wrappers use the SDK's `Client.create` (`ruby-wrapper/server.rb:164-170`,
@@ -169,7 +171,7 @@ stated.
 - Decodes: gzip, deflate (Net::HTTP). Forced gzip (requested), **observed**: decoded and loaded.
 - Fix: none. br/zstd: not in Net::HTTP.
 
-## rust (rust-sdk `fix/all-tests-passing` be740a2)
+## rust (rust-sdk `main` 7c26910)
 
 - Client: reqwest 0.12 with only the `json` feature (`Cargo.toml:23`); fetch at
   `src/sdk.rs:309-317`. The wrapper uses the SDK's own fetch (`rust-wrapper/src/main.rs:57`).
@@ -182,7 +184,7 @@ stated.
   source by cargo with no system package).
 - br/zstd: br is light (pure Rust). zstd is a vendored C build.
 
-## cpp (cpp-sdk `feat/initial-sdk` af5cd17)
+## cpp (cpp-sdk `main` 9ea8669)
 
 - Client: libcurl easy handle, `src/default_http_client.cpp:21-45`. The wrapper
   passes `std::make_shared<absmartly::DefaultHTTPClient>()` (`cpp-wrapper/server.cpp:458,554`).
@@ -195,7 +197,7 @@ stated.
   libcurl links zlib, brotli and zstd. Also in `async_http_client.cpp` if it fetches context.
 - br/zstd: whatever the system libcurl was built with. No SDK dependency added.
 
-## elixir (elixir-sdk `feat/initial-implementation` 33dd569) — lane not built here
+## elixir (elixir-sdk `main` ea4fecb) — lane not built here
 
 - Client: HTTPoison over hackney (`lib/absmartly/http/client.ex:38`, options `:90-92`).
   The SDK's mix.lock has httpoison 3.0.0/hackney 4.9.1. The wrapper's mix.lock pins
@@ -211,21 +213,21 @@ stated.
   every hackney version. On hackney >= 4, `hackney: [auto_decompress: true]` alone also works.
 - br/zstd: not in OTP's long-standing stdlib (recent OTP releases add a `zstd` module; whether the image's OTP has it was not checked). gzip via `:zlib`, built in.
 
-## swift (swift-sdk `feat/cross-sdk-tests-and-fixes` c728ed9) — lane not built here
+## swift (swift-sdk `main` b67a2a9)
 
 - Client: `URLSession` with `URLSessionConfiguration.ephemeral`
   (`Sources/ABSmartly/DefaultHTTPClient.swift:29-33`).
-- Accept-Encoding, **from code**: on Apple platforms `URLSession` sends
-  `gzip, deflate, br` and decodes them. On Linux, swift-corelibs-foundation 5.10 sets
-  libcurl `CURLOPT_ACCEPT_ENCODING ""` (`EasyHandle.swift:254-259`, enabled at
-  `HTTPURLProtocol.swift:439`), so it advertises and decodes every coding the system
-  libcurl supports.
-- Fix: none expected. The image build fails here at `swift test --filter EventCollectorTests` (`fatalError`),
-  and the swift lane already fails on main CI (cross-sdk run 43008024985 on
-  `chore/drop-js-helper-scenarios`), so no lane can provide evidence. Policy: a
-  reviewed exception saying exactly that, until the lane passes.
+- Accept-Encoding: **observed `deflate, gzip, br, zstd`** (create and refresh), served gzip.
+  User-Agent `Run (unknown version) curl/7.81.0`: on Linux swift-corelibs-foundation sets
+  libcurl `CURLOPT_ACCEPT_ENCODING ""` (`EasyHandle.swift`), so it advertises and decodes
+  every coding the system libcurl supports. On Apple platforms `URLSession` sends
+  `gzip, deflate, br` and decodes them.
+- Decodes: forced gzip (requested), **observed**: decoded and loaded.
+- Fix: none. Policy: `required`. (On the earlier pins the swift image failed its own
+  build-time test and the lane failed on main CI, so it was a reviewed exception; with
+  main's pins the lane builds and passes here.)
 
-## dart and flutter (flutter-sdk `fix/audit-operator-fixes` 7aec273) — lanes not built here
+## dart and flutter (flutter-sdk `main` 86b7911) — lanes not built here
 
 - Client: `package:http` `IOClient(HttpClient())` (`packages/dart_sdk/lib/src/default_http_client.dart:24-31`).
   Both wrappers use the SDK's `DefaultHTTPClient` for endpoint contexts
@@ -235,7 +237,7 @@ stated.
 - Decodes, from code: gzip only (`http_impl.dart:615-621`).
 - Fix: none for gzip. br/zstd: not in dart:io. Policy: `required` (dart and flutter) from this reading; CI proves it.
 
-## javascript (javascript-sdk `main` 96aa665) — the reference; react, vue2, vue3, angular wrap it
+## javascript (javascript-sdk `main` 311cfca) — the reference; react, vue2, vue3, angular wrap it
 
 - Client: global `fetch` (Node's undici in the node:24 image), else `node-fetch`
   (`src/fetch.ts:22-27`). Fetch at `src/client.ts:98-107`/`:194`.
@@ -253,12 +255,11 @@ stated.
 ## Summary of the gate (`contextFetchCompression`)
 
 Required, observed or from code; CI proves it. Observed on a lane here:
-javascript, python, ruby, liquid, vue2, vue3, angular. From code: scala, dart,
-flutter, react. Every other SDK is a reviewed exception with its reason in
+javascript, python, ruby, liquid, swift, vue2, vue3, angular. From code: scala,
+dart, flutter, react. Every other SDK is a reviewed exception with its reason in
 `orchestrator/expected-capabilities.json`: java, kotlin, php, go, rust, cpp
 (observed, fix pending), dotnet and elixir (code sends no Accept-Encoding, fix
-pending), and swift (its lane already fails on main CI, so it cannot provide
-evidence). The capability is measured by the orchestrator, not reported by the
+pending). The capability is measured by the orchestrator, not reported by the
 wrappers. An exception that starts measuring true fails the run until the policy
 moves it to `required`; a required SDK that measures false fails with the
 observed `Accept-Encoding` header(s) and the probe check that failed (no gzip
