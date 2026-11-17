@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 308-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 310-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -134,7 +134,8 @@ jobs:
           mkdir -p test-results
           rm -f test-results/report.json
           # context-server: the negotiating GET /context server the SDK fetches
-          # from in the Context Fetch Compression scenarios (270-272).
+          # from in the Context Fetch Compression scenarios (270-274: gzip 270-272,
+          # br 273-274).
           docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \

@@ -49,7 +49,7 @@ import scenario_groups  # noqa: E402
 
 GROUP_MARKER = scenario_groups.ROUND_SYSATTR
 # Groups after this one: the Context Fetch Compression group (generate_context_compression_scenarios.py,
-# 270-272), then generate_parity_round_scenarios.py (300+), then the Switchback group from
+# 270-274), then generate_parity_round_scenarios.py (300+), then the Switchback group from
 # generate_switchback_scenarios.py (400+). They are neither "kept" scenarios for the digest nor part
 # of this group; this group must directly precede them.
 LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK, scenario_groups.CONTEXT_FETCH)

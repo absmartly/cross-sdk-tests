@@ -32,17 +32,18 @@ def group_indices(scenarios):
     return [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
 
 
-def test_group_owns_270_between_the_round_and_parity_groups():
+def test_group_owns_270_to_274_between_the_round_and_parity_groups():
     """The group is rebuilt at scenario_groups.CONTEXT_FETCH_FIRST_NUMBER (270), the free slot after
     the 2026-11 round groups (230-253) and before the parity groups (300+); every other scenario
-    keeps its number and position."""
+    keeps its number and position. The br scenarios continue it contiguously from 273."""
     scenarios = canonical()
     indices = group_indices(scenarios)
     group = [scenarios[i] for i in indices]
     assert scenario_groups.CONTEXT_FETCH_FIRST_NUMBER == 270
     assert group == generator.build_group(270)
-    assert [scenario_groups.number(s) for s in group] == [270, 271, 272]
-    assert indices == list(range(indices[0], indices[0] + 3))
+    assert [scenario_groups.number(s) for s in group] == [270, 271, 272, 273, 274]
+    assert scenario_groups.CONTEXT_FETCH_LAST_NUMBER == 274
+    assert indices == list(range(indices[0], indices[0] + 5))
     before, after = scenarios[indices[0] - 1], scenarios[indices[-1] + 1]
     assert scenario_groups.number(before) == 253 and scenario_groups.ROUND_SYSATTR in before["name"]
     assert scenario_groups.number(after) == 300 and scenario_groups.PARITY_RULES in after["name"]
@@ -63,16 +64,41 @@ def test_place_group_rejects_a_scenario_inside_the_270_range():
 
 
 def test_only_the_wire_check_is_gated():
-    ungated, twin, gated = generator.build_group(270)
-    assert "requires" not in ungated and "requires" not in twin
+    ungated, twin, gated, br_ungated, br_gated = generator.build_group(270)
+    assert "requires" not in ungated and "requires" not in twin and "requires" not in br_ungated
     assert gated["requires"] == [CAP]
+    assert br_gated["requires"] == ["contextFetchBrotli"]
     assert ungated["contextServer"] == {"encodings": ["gzip", "identity"]}
     assert gated["contextServer"]["requireAdvertised"] == ["gzip"]
     assert twin["directData"] is True and "contextServer" not in twin
+    assert br_ungated["contextServer"] == {"encodings": ["br", "gzip", "identity"]}
+    assert br_gated["contextServer"] == {"encodings": ["br", "gzip", "identity"], "requireAdvertised": ["br"]}
+
+
+def test_gzip_scenarios_never_allow_br_and_br_scenarios_use_the_shared_preferences():
+    """270-272 keep the gzip preference (br is never served to them); 273-274 use BR_PREFERENCE."""
+    negotiation = test_runner.negotiation
+    assert generator.GZIP_ENCODINGS == negotiation.DEFAULT_PREFERENCE
+    assert generator.BR_ENCODINGS == negotiation.BR_PREFERENCE
+    group = generator.build_group(270)
+    for scenario in group[:3]:
+        assert "br" not in scenario.get("contextServer", {}).get("encodings", []), scenario["name"]
+    for scenario in group[3:]:
+        assert scenario["contextServer"]["encodings"] == negotiation.BR_PREFERENCE, scenario["name"]
+
+
+def test_br_scenarios_mirror_their_gzip_counterparts():
+    """273 is 270 with a br payload (271 is its twin too); 274 is 272 with br required."""
+    ungated, twin, gated, br_ungated, br_gated = generator.build_group(270)
+    for gzip_one, br_one in ((ungated, br_ungated), (gated, br_gated)):
+        assert br_one["steps"] == gzip_one["steps"]
+        assert br_one["contextData"] == gzip_one["contextData"]
+    actions = [s["action"] for s in br_ungated["steps"]]
+    assert [s["expect"] for s in br_ungated["steps"][:actions.index("refresh")]] == [s["expect"] for s in twin["steps"]]
 
 
 def test_twin_shares_every_pre_refresh_expectation():
-    ungated, twin, _ = generator.build_group(270)
+    ungated, twin = generator.build_group(270)[:2]
     assert ungated["contextData"] == twin["contextData"]
     actions = [s["action"] for s in ungated["steps"]]
     before_refresh = ungated["steps"][:actions.index("refresh")]
@@ -81,7 +107,8 @@ def test_twin_shares_every_pre_refresh_expectation():
 
 
 def test_refresh_data_differs_and_the_next_step_proves_it_was_used():
-    for scenario in (generator.build_group(270)[0], generator.build_group(270)[2]):
+    group = generator.build_group(270)
+    for scenario in (group[0], group[2], group[3], group[4]):
         steps = scenario["steps"]
         i = [s["action"] for s in steps].index("refresh")
         new_data = steps[i]["params"]["newData"]
@@ -111,10 +138,12 @@ def test_payload_is_only_the_tested_experiment():
     assert [e["name"] for e in generator.context_data()["experiments"]] == ["exp_test_ab"]
 
 
-@pytest.mark.parametrize("mutation", [None, "expectation", "missing", "renumbered", "spec"])
+@pytest.mark.parametrize("mutation", [None, "expectation", "missing", "renumbered", "spec",
+                                      "br-in-gzip-group", "br-gate-dropped"])
 def test_check_detects_drift(tmp_path, monkeypatch, mutation):
     scenarios = copy.deepcopy(canonical())
-    first, _, last = group_indices(scenarios)
+    indices = group_indices(scenarios)
+    first, last = indices[0], indices[-1]
     if mutation == "expectation":
         scenarios[first]["steps"][1]["expect"]["result"] = 0
     elif mutation == "missing":
@@ -128,6 +157,11 @@ def test_check_detects_drift(tmp_path, monkeypatch, mutation):
         scenarios.extend(group)
     elif mutation == "spec":
         scenarios[last]["contextServer"]["requireAdvertised"] = []
+    elif mutation == "br-in-gzip-group":
+        # A br payload served to a 270-272 scenario.
+        scenarios[first]["contextServer"]["encodings"] = ["br", "gzip", "identity"]
+    elif mutation == "br-gate-dropped":
+        scenarios[last]["contextServer"]["encodings"] = ["gzip", "identity"]
     path = tmp_path / "scenarios.json"
     path.write_text(generator.render(scenarios), encoding="utf-8")
     monkeypatch.setattr(generator, "CANONICAL", str(path))
@@ -140,6 +174,36 @@ def test_place_group_rejects_a_split_group():
     with pytest.raises(ValueError, match="contiguous"):
         scenario_groups.place_group([{"name": n} for n in names], (generator.GROUP_MARKER,),
                                     generator.build_group, first_number=270)
+
+
+# sha256 of test_scenarios_complete.json at ae86279 (#20): main's 305 scenarios plus 270-272. The
+# file with the br scenarios (273 up to, not including, 300) removed must render to exactly those
+# bytes: the only change the br follow-up may make is that insertion after 272.
+BEFORE_BR_SHA256 = "80dcd7b66b8a0a53d82a1ec66e8beef18566bf5faba5f7469154ad1d49e1d8a0"
+BEFORE_BR_COUNT = 308
+
+
+def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():
+    import hashlib
+    scenarios = canonical()
+    numbers = [scenario_groups.number(s) for s in scenarios]
+    inserted = [i for i, n in enumerate(numbers) if 273 <= n < 300]
+    # Contiguous from 273, right after 272 and before 300, all in the Context Fetch group.
+    assert [numbers[i] for i in inserted] == list(range(273, 273 + len(inserted)))
+    assert inserted == list(range(inserted[0], inserted[0] + len(inserted)))
+    assert numbers[inserted[0] - 1] == 272 and numbers[inserted[-1] + 1] == 300
+    assert all(generator.GROUP_MARKER in scenarios[i]["name"] for i in inserted)
+    assert inserted[-1] + 1 - inserted[0] >= 2
+    kept = [s for i, s in enumerate(scenarios) if i not in set(inserted)]
+    assert len(kept) == BEFORE_BR_COUNT
+    rendered = generator.render(kept).encode("utf-8")
+    assert hashlib.sha256(rendered).hexdigest() == BEFORE_BR_SHA256
+    with open(generator.CANONICAL, "rb") as src:
+        text = src.read()
+    # Byte-level too: the file is the old bytes with one block inserted.
+    head = rendered[:rendered.index(b'\n  {\n    "name": "300 - ')]
+    tail = rendered[len(head):]
+    assert text.startswith(head) and text.endswith(tail)
 
 
 # -- policy ------------------------------------------------------------------

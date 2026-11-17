@@ -115,10 +115,12 @@ This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
 `scenario_groups.py`. Open #16 (shared variable keys, 230-245) numbers from 230
 too; it merges `main` and renumbers its group to 254-269, the free slot after
-253 and below the parity range. #20 (context fetch compression) has landed at
-270-272: `generate_context_compression_scenarios.py` owns the group from the
-fixed `CONTEXT_FETCH_FIRST_NUMBER` (270) in `scenario_groups.py`, between the
-round groups and the parity range. The generators own fixed ranges (230, 270
+253 and below the parity range. The Context Fetch group owns 270-274:
+#20 (context fetch compression, gzip) landed 270-272 and its Brotli follow-up
+adds 273-274 contiguously after it. `generate_context_compression_scenarios.py`
+owns the group from the fixed `CONTEXT_FETCH_FIRST_NUMBER` (270) to
+`CONTEXT_FETCH_LAST_NUMBER` (274) in `scenario_groups.py`, between the round
+groups and the parity range; #16 keeps 254-269. The generators own fixed ranges (230, 270
 and 300 are constants, not derived from other scenarios): each keeps scenarios
 numbered outside its range where they are, and fails rather than renumbers when
 another scenario sits inside it. So #16 only needs to renumber its own group to
@@ -128,7 +130,7 @@ with a generator, give it a fixed first number the same way. The three
 generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
 and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
 `SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
-outside all three, as #20 did with 270-272.
+outside all three, as #20 did with 270-272 (extended to 270-274 for br).
 
 ## Coverage matrix
 
