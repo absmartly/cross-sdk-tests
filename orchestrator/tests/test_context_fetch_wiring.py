@@ -233,7 +233,7 @@ def br_orchestrator_for(wrapper, required=True):
     return TestOrchestrator({"fake": wrapper.url}, capability_policy=policy)
 
 
-def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory):
+def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory, tmp_path):
     wrapper = wrapper_factory("br")
     orch = br_orchestrator_for(wrapper)
     with mock.patch("builtins.print"):
@@ -245,6 +245,12 @@ def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory):
     assert probe["decoded"] is True and probe["refreshDecoded"] is True
     # The gzip probe never serves br, even to a br-advertising SDK.
     assert orch.context_fetch_probe["fake"]["served"] == ["gzip", "gzip"]
+    # CI consumers read the br probe from report.json.
+    report_path = tmp_path / "report.json"
+    with mock.patch("builtins.print"):
+        orch.generate_report(str(report_path), [])
+    report = json.loads(report_path.read_text())
+    assert report["context_fetch_brotli_probe"]["fake"]["contextFetchBrotli"] is True
 
 
 @pytest.mark.parametrize("mode, failed", [
