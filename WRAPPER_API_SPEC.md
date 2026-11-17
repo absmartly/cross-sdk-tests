@@ -1311,12 +1311,12 @@ field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
 
 The capability also needs the SDK's assignment-rule evaluation for
-switchbacks: scenario 340 serves an `assign` rule (also before the anchor) and
-expects the exposure to carry `ruleOverride: true` and `assigned: false`. A
+switchbacks: scenarios 416 and 424 serve an `assign` rule (416 also before
+the anchor, 424 next to a covering holdout) and expect the exposure to carry `ruleOverride: true` and `assigned: false`. A
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-Known limit for other languages: scenario 335 sends the attribute value `3.0`
+Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
