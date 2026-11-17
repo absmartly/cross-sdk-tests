@@ -134,7 +134,7 @@ jobs:
           mkdir -p test-results
           rm -f test-results/report.json
           # context-server: the negotiating GET /context server the SDK fetches
-          # from in the Context Fetch Compression scenarios (500-502).
+          # from in the Context Fetch Compression scenarios (270-272).
           docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \

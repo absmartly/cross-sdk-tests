@@ -18,7 +18,7 @@ the `Accept-Encoding` and `User-Agent` of every `GET /context` per payload and
 serves gzip when the request advertised it, identity otherwise (it never serves
 br or zstd; whether an SDK lists them is only reported). The orchestrator probes
 each SDK once at startup (create, then a refresh after the server's data
-changed, both negotiated) and scenarios 500 and 502 check every fetch. A second,
+changed, both negotiated) and scenarios 270 and 272 check every fetch. A second,
 REPORT-ONLY "forced gzip" probe makes the server send gzip whatever the request
 said, without changing the SDK's `Accept-Encoding` (5 s timeout, gates nothing;
 `forcedGzip` in `report.json`, with `requested` saying whether the header
@@ -267,7 +267,7 @@ advertised, refresh not fetched, not decoded, or refresh data not used). A
 probe that cannot measure (context server unreachable, no GET /context
 recorded, a create or refresh that timed out, or the context server serving an
 encoding the negotiation would not choose) fails the run and skips only the
-scenarios that require the capability. Inside scenarios 500-502, a failing context-server control call or a served
+scenarios that require the capability. Inside scenarios 270-272, a failing context-server control call or a served
 encoding the negotiation would not choose is a harness error: the run fails,
 but the scenario is not counted as an SDK failure (an SDK failure already
 found earlier in that scenario is still counted, and shown next to it).

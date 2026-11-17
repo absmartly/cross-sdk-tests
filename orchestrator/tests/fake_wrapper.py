@@ -1,7 +1,7 @@
 """In-process fake wrapper for Docker-free tests of the context-fetch wiring.
 
 It behaves like a wrapper whose "SDK" fetches `{endpoint}/context` with
-urllib, for exactly the experiment shape of scenarios 500-502 (exp_test_ab:
+urllib, for exactly the experiment shape of scenarios 270-272 (exp_test_ab:
 variant 1 while trafficSplit is [0, 1], else out of traffic: variant 0,
 ineligible). `mode` selects the SDK behaviour:
 

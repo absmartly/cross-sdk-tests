@@ -266,7 +266,7 @@ fi
 
 SDK_CSV=$(IFS=,; echo "${TARGET_SDKS[*]}")
 # context-server: the negotiating GET /context server the SDKs fetch from in the
-# Context Fetch Compression scenarios (500-502).
+# Context Fetch Compression scenarios (270-272).
 TARGET_SERVICES="context-server $(get_service_names "$SDK_CSV")"
 
 BATCH_SIZE=${COMPOSE_SERVICE_BATCH:-5}

@@ -28,27 +28,42 @@ def canonical():
 # -- generator ---------------------------------------------------------------
 
 
-def test_group_owns_500_and_follows_every_other_group():
-    """The group is rebuilt at scenario_groups.CONTEXT_FETCH_FIRST_NUMBER (500), after the Switchback
-    group (400+); every other scenario keeps its number and position before it."""
+def group_indices(scenarios):
+    return [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
+
+
+def test_group_owns_270_between_the_round_and_parity_groups():
+    """The group is rebuilt at scenario_groups.CONTEXT_FETCH_FIRST_NUMBER (270), the free slot after
+    the 2026-11 round groups (230-253) and before the parity groups (300+); every other scenario
+    keeps its number and position."""
     scenarios = canonical()
-    group = [s for s in scenarios if generator.GROUP_MARKER in s["name"]]
-    kept_max = max(scenario_groups.number(s) for s in scenarios if s not in group)
-    assert kept_max < scenario_groups.CONTEXT_FETCH_FIRST_NUMBER == 500
-    assert scenarios[-3:] == group == generator.build_group(500)
-    assert [scenario_groups.number(s) for s in group] == [500, 501, 502]
+    indices = group_indices(scenarios)
+    group = [scenarios[i] for i in indices]
+    assert scenario_groups.CONTEXT_FETCH_FIRST_NUMBER == 270
+    assert group == generator.build_group(270)
+    assert [scenario_groups.number(s) for s in group] == [270, 271, 272]
+    assert indices == list(range(indices[0], indices[0] + 3))
+    before, after = scenarios[indices[0] - 1], scenarios[indices[-1] + 1]
+    assert scenario_groups.number(before) == 253 and scenario_groups.ROUND_SYSATTR in before["name"]
+    assert scenario_groups.number(after) == 300 and scenario_groups.PARITY_RULES in after["name"]
+    rest = [s for s in scenarios if s not in group]
+    assert scenario_groups.place_group(rest, (generator.GROUP_MARKER,), generator.build_group,
+                                       first_number=270)[0] == scenarios
 
 
-def test_place_group_rejects_a_scenario_inside_the_500_range():
-    stray = {"name": "501 - Stray - Collides", "steps": []}
+def test_place_group_rejects_a_scenario_inside_the_270_range():
+    """A stray scenario numbered 271 is a generator error, never silently renumbered."""
+    stray = {"name": "271 - Stray - Collides", "steps": []}
     rest = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    at = next(i for i, s in enumerate(rest) if scenario_groups.number(s) > 271)
     with pytest.raises(ValueError, match="collide"):
-        scenario_groups.place_group(rest + [stray], (generator.GROUP_MARKER,), generator.build_group,
+        scenario_groups.place_group(rest[:at] + [stray] + rest[at:], (generator.GROUP_MARKER,),
+                                    generator.build_group,
                                     first_number=scenario_groups.CONTEXT_FETCH_FIRST_NUMBER)
 
 
 def test_only_the_wire_check_is_gated():
-    ungated, twin, gated = generator.build_group(500)
+    ungated, twin, gated = generator.build_group(270)
     assert "requires" not in ungated and "requires" not in twin
     assert gated["requires"] == [CAP]
     assert ungated["contextServer"] == {"encodings": ["gzip", "identity"]}
@@ -57,7 +72,7 @@ def test_only_the_wire_check_is_gated():
 
 
 def test_twin_shares_every_pre_refresh_expectation():
-    ungated, twin, _ = generator.build_group(500)
+    ungated, twin, _ = generator.build_group(270)
     assert ungated["contextData"] == twin["contextData"]
     actions = [s["action"] for s in ungated["steps"]]
     before_refresh = ungated["steps"][:actions.index("refresh")]
@@ -66,7 +81,7 @@ def test_twin_shares_every_pre_refresh_expectation():
 
 
 def test_refresh_data_differs_and_the_next_step_proves_it_was_used():
-    for scenario in (generator.build_group(500)[0], generator.build_group(500)[2]):
+    for scenario in (generator.build_group(270)[0], generator.build_group(270)[2]):
         steps = scenario["steps"]
         i = [s["action"] for s in steps].index("refresh")
         new_data = steps[i]["params"]["newData"]
@@ -83,7 +98,7 @@ def test_refresh_expectation_matches_the_pinned_traffic_split_scenario():
     """The refreshed data is scenario 29's; so is the treatment after its refresh."""
     by_number = {scenario_groups.number(s): s for s in canonical()}
     pinned = by_number[29]["steps"]
-    ungated = generator.build_group(500)[0]["steps"]
+    ungated = generator.build_group(270)[0]["steps"]
     refresh = [s["action"] for s in ungated].index("refresh")
     [ours] = ungated[refresh]["params"]["newData"]["experiments"]
     [theirs] = pinned[2]["params"]["newData"]["experiments"]
@@ -99,16 +114,20 @@ def test_payload_is_only_the_tested_experiment():
 @pytest.mark.parametrize("mutation", [None, "expectation", "missing", "renumbered", "spec"])
 def test_check_detects_drift(tmp_path, monkeypatch, mutation):
     scenarios = copy.deepcopy(canonical())
+    first, _, last = group_indices(scenarios)
     if mutation == "expectation":
-        scenarios[-3]["steps"][1]["expect"]["result"] = 0
+        scenarios[first]["steps"][1]["expect"]["result"] = 0
     elif mutation == "missing":
-        scenarios.pop()
+        scenarios.pop(last)
     elif mutation == "renumbered":
-        # The old 230-232 numbering (before the group moved to its own 500 block).
-        for offset, scenario in enumerate(scenarios[-3:]):
-            scenario["name"] = f"{230 + offset}{generator.GROUP_MARKER}{scenario['name'].split(generator.GROUP_MARKER, 1)[1]}"
+        # The previous 500-502 numbering, appended after the Switchback group.
+        group = scenarios[first:last + 1]
+        del scenarios[first:last + 1]
+        for offset, scenario in enumerate(group):
+            scenario["name"] = f"{500 + offset}{generator.GROUP_MARKER}{scenario['name'].split(generator.GROUP_MARKER, 1)[1]}"
+        scenarios.extend(group)
     elif mutation == "spec":
-        scenarios[-1]["contextServer"]["requireAdvertised"] = []
+        scenarios[last]["contextServer"]["requireAdvertised"] = []
     path = tmp_path / "scenarios.json"
     path.write_text(generator.render(scenarios), encoding="utf-8")
     monkeypatch.setattr(generator, "CANONICAL", str(path))
@@ -117,10 +136,10 @@ def test_check_detects_drift(tmp_path, monkeypatch, mutation):
 
 
 def test_place_group_rejects_a_split_group():
-    names = ["1 - A - x", f"500{generator.GROUP_MARKER}a", "501 - B - y", f"502{generator.GROUP_MARKER}b"]
+    names = ["1 - A - x", f"270{generator.GROUP_MARKER}a", "271 - B - y", f"272{generator.GROUP_MARKER}b"]
     with pytest.raises(ValueError, match="contiguous"):
         scenario_groups.place_group([{"name": n} for n in names], (generator.GROUP_MARKER,),
-                                    generator.build_group, first_number=500)
+                                    generator.build_group, first_number=270)
 
 
 # -- policy ------------------------------------------------------------------

@@ -46,10 +46,9 @@ class ParityGroupsPinnedTest(unittest.TestCase):
     def test_numbering(self):
         numbers = [int(re.match(r"^(\d+) - ", s["name"]).group(1)) for s in self.parity]
         self.assertEqual(numbers, list(range(FIRST, LAST + 1)))
-        later = (scenario_groups.SWITCHBACK, scenario_groups.CONTEXT_FETCH)
-        rest = [s for s in self.everything if not any(m in s["name"] for m in later)]
+        rest = [s for s in self.everything if scenario_groups.SWITCHBACK not in s["name"]]
         self.assertEqual(rest[-len(self.parity):], self.parity,
-                         "the parity groups are the tail of the file, before the Switchback and Context Fetch groups")
+                         "the parity groups are the tail of the file, before the Switchback group")
 
     def test_parity_scenarios_unchanged(self):
         self.assertEqual(digest(self.parity), PARITY_DIGEST,

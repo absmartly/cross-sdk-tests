@@ -265,13 +265,14 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 
 
 def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
-    # Only the later Context Fetch group (500+) may follow it.
-    scenarios = [s for s in canonical() if scenario_groups.CONTEXT_FETCH not in s["name"]]
+    scenarios = canonical()
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
     assert numbers == sorted(set(numbers))
 
+    # The file's tail. It follows main's KEPT_COUNT scenarios (pinned by test_main_scenarios_are_untouched)
+    # and the Context Fetch Compression group (270-272), which sits between the round and parity groups.
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(KEPT_COUNT, len(scenarios)))
+    assert group == list(range(len(scenarios) - GROUP_SIZE, len(scenarios)))
     assert len(group) == GROUP_SIZE
     assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + GROUP_SIZE))
 
@@ -545,7 +546,8 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 
 # The 279 scenarios of main this group follows (the 2026-11 SDK round 230-253 and the feature-parity
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
-# legitimately changes them.
+# legitimately changes them. The Context Fetch Compression group (270-272) is not one of main's
+# scenarios, so it is excluded from the kept set alongside this group.
 MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
 
 

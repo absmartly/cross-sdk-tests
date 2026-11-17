@@ -29,9 +29,10 @@ pins for exp_test_ab and this uid (scenarios 29, 32 and 138). The payload holds
 only the tested experiment: the server compresses any size, so a larger body
 proves nothing more.
 
-The group owns 500+ (scenario_groups.CONTEXT_FETCH_FIRST_NUMBER), a block for transport and
-context-fetch scenarios after the Switchback group (400+). It is rebuilt there in place; any other
-scenario numbered inside its range is a collision, never silently renumbered.
+The group owns 270-272 (scenario_groups.CONTEXT_FETCH_FIRST_NUMBER), the free slot between the
+2026-11 round groups (230-253) and the parity groups (300+) that
+docs/sdk-round-2026-11-conformance.md reserves for it. It is rebuilt there in place, by number;
+any other scenario numbered inside its range is a collision, never silently renumbered.
 
 Usage:
     python3 generate_context_compression_scenarios.py          # rewrite the group in place

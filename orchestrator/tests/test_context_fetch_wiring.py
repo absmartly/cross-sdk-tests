@@ -3,7 +3,7 @@
 A real context server (context-server/server.py, in process) and a fake
 wrapper (fake_wrapper.py) whose "SDK" fetches from it. Covers the probe
 (`_probe_context_fetch` / `measure_context_fetch_compression`), scenarios
-500-502 as generated, the empty-body refresh of contextServer scenarios and
+270-272 as generated, the empty-body refresh of contextServer scenarios and
 the directData path.
 """
 
@@ -193,12 +193,12 @@ def test_probe_handles_a_non_object_wrapper_body(server_url, wrapper_factory):
     assert outcome["requests"] == []
 
 
-# -- scenarios 500-502 as generated --------------------------------------------
+# -- scenarios 270-272 as generated --------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def group():
-    return generator.build_group(500)
+    return generator.build_group(270)
 
 
 def test_conforming_sdk_passes_the_group(server_url, wrapper_factory, group):

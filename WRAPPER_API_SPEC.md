@@ -285,7 +285,7 @@ unversioned `absmartly-javascript-sdk`.
 ### 2b-ii. Context Server Endpoints (context-fetch compression)
 
 **Endpoints on the context server.** Scenarios that carry a `contextServer`
-object (500-502) store their payload on the negotiating context server
+object (270-272) store their payload on the negotiating context server
 (`context-server/`, compose service `context-server:8080`) instead, and the
 `endpoint` in `POST /context` is `http://context-server:8080/negotiate/{payloadId}`.
 Wrappers need nothing new for this, but they must:
