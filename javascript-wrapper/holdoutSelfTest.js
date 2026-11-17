@@ -649,8 +649,72 @@ async function runHoldoutArmsBattery() {
   return true;
 }
 
+
+// Behavioral self-test for `holdoutIdsDedup` (mirrors the Holdout Conformance duplicate-ids
+// scenario): a holdoutIds list naming one holdout twice is one holdout. treatment fires one holdout
+// exposure, and a refresh that drops the duplicate is not a coverage change, so the covered
+// experiment keeps its exposure state and re-exposes nothing. Gated on the base battery.
+async function runHoldoutIdsDedupBattery() {
+  const prefix = '[holdoutIdsDedup probe]';
+  const UID = 'svk-unit-1';
+  const experiment = (holdoutIds) => ({
+    ...buildExperiment({
+      id: 801,
+      name: 'dedup_covered',
+      unitType: 'session_id',
+      seedHi: 0,
+      seedLo: 0,
+      split: [0, 1],
+      fullOnVariant: 0,
+      variantNames: ['A', 'B'],
+      holdoutIds,
+    }),
+  });
+  // seedHi=1/seedLo=1 over [0.5, 0.5] puts svk-unit-1 in arm 1 (not held out).
+  const holdouts = [{ id: 901, name: 'dedup_holdout', unitType: 'session_id', iteration: 1, seedHi: 1, seedLo: 1, split: [0.5, 0.5] }];
+  let next = null;
+  class Provider extends absmartly.ContextDataProvider {
+    getContextData() {
+      return Promise.resolve(next);
+    }
+  }
+  const exposureLog = [];
+  const sdk = new absmartly.SDK({
+    endpoint: 'http://dummy',
+    apiKey: 'dummy',
+    application: 'test',
+    environment: 'test',
+    provider: new Provider(),
+    eventLogger: (ctx, eventName, eventData) => {
+      if (eventName === 'exposure' && eventData) {
+        exposureLog.push({ id: eventData.id, name: eventData.name, variant: eventData.variant });
+      }
+    },
+  });
+  const context = sdk.createContextWith(
+    { units: { session_id: UID } },
+    { experiments: [experiment([901, 901])], holdouts },
+    { publishDelay: -1, refreshPeriod: 0 }
+  );
+  await context.ready();
+  if (
+    !verifyTreatmentAndExposures(prefix, 'duplicate ids', context, exposureLog, 'dedup_covered', 1, [
+      { id: 801, name: 'dedup_covered', variant: 1 },
+      { id: 901, name: 'dedup_holdout', variant: 1 },
+    ])
+  )
+    return false;
+  next = { experiments: [experiment([901])], holdouts };
+  await context.refresh();
+  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the duplicate', context, exposureLog, 'dedup_covered', 1, []))
+    return false;
+  console.log(`${prefix} behavioral self-test PASSED`);
+  return true;
+}
+
 let holdoutsPromise = null;
 let holdoutArmsPromise = null;
+let holdoutIdsDedupPromise = null;
 
 async function runHoldoutsSafely() {
   try {
@@ -690,6 +754,26 @@ function runHoldouts() {
   return holdoutsPromise;
 }
 
+async function runHoldoutIdsDedupSafely() {
+  try {
+    if (!(await runHoldouts())) {
+      console.log('[holdoutIdsDedup probe] skipped: base holdouts battery did not pass');
+      return false;
+    }
+    return await runHoldoutIdsDedupBattery();
+  } catch (err) {
+    console.log('[holdoutIdsDedup probe] behavioral self-test FAILED with error: ' + (err && err.stack ? err.stack : err));
+    return false;
+  }
+}
+
+function runHoldoutIdsDedup() {
+  if (!holdoutIdsDedupPromise) {
+    holdoutIdsDedupPromise = runHoldoutIdsDedupSafely();
+  }
+  return holdoutIdsDedupPromise;
+}
+
 function runHoldoutArms() {
   if (!holdoutArmsPromise) {
     holdoutArmsPromise = runHoldoutArmsSafely();
@@ -697,4 +781,4 @@ function runHoldoutArms() {
   return holdoutArmsPromise;
 }
 
-module.exports = { runHoldouts, runHoldoutArms };
+module.exports = { runHoldouts, runHoldoutArms, runHoldoutIdsDedup };

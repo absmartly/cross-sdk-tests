@@ -115,6 +115,7 @@ public class WrapperController {
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("switchback", SwitchbackSelfTest.run());
+        response.put("holdoutIdsDedup", HoldoutIdsDedupSelfTest.run());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
         response.put("xAgentHeader", true);

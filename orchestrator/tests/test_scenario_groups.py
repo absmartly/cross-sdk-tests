@@ -9,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import generate_holdout_conformance_scenarios as holdout_conformance
 import generate_parity_round_scenarios as parity
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
@@ -46,14 +47,19 @@ def recorded_oracle(monkeypatch):
     monkeypatch.setattr(parity, "run_reference", lambda specs: [
         copy.deepcopy(parity_responses[spec["title"]]) for spec in specs
     ])
+    holdout_responses = recorded_responses((holdout_conformance.MARKER,))
+    monkeypatch.setattr(holdout_conformance, "run_reference", lambda specs: [
+        copy.deepcopy(holdout_responses[spec["title"]]) for spec in specs
+    ])
 
 
-GENERATORS = {"sdk-round": sdk_round, "parity": parity, "switchback": switchback}
+GENERATORS = {"sdk-round": sdk_round, "parity": parity, "switchback": switchback,
+              "holdout-conformance": holdout_conformance}
 
 
-@pytest.mark.parametrize("order", [("sdk-round", "parity", "switchback"),
-                                   ("switchback", "parity", "sdk-round"),
-                                   ("parity", "switchback", "sdk-round")],
+@pytest.mark.parametrize("order", [("sdk-round", "parity", "switchback", "holdout-conformance"),
+                                   ("holdout-conformance", "switchback", "parity", "sdk-round"),
+                                   ("parity", "holdout-conformance", "switchback", "sdk-round")],
                          ids=lambda order: "-then-".join(order))
 def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, monkeypatch):
     raw = Path(sdk_round.CANONICAL).read_bytes()
