@@ -235,6 +235,27 @@ class ValidateStepTests(unittest.TestCase):
         failures = self.orch.validate_step(0, "setUnit", {"result": None, "events": []}, {"error": "UID must not be blank"})
         self.assertEqual(self.fields(failures), ["error"])
 
+    def test_matching_status_only_error_passes(self):
+        """A step that pins only an error status passes on that status, with no message expectation."""
+        import requests
+        resp = requests.Response()
+        resp.status_code = 400
+        resp._content = b'{"error": "anything", "events": []}'
+        resp.url = "http://alpha/context"
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContextWith", "params": {"units": {}}, "expect": {"status": 400, "events": []}}]}
+        with mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "post", lambda *a, **k: resp), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = self.orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertTrue(result["passed"], result)
+        resp.status_code = 500
+        with mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "post", lambda *a, **k: resp), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            wrong = self.orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertEqual([f.get("field") for f in wrong["failures"]], ["status"])
+
     def test_expected_status_but_success(self):
         # A step that pins only an HTTP status still expects the call to fail.
         failures = self.orch.validate_step(0, "createContextWith", {"result": {"ready": True}, "events": []},
@@ -1230,12 +1251,34 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
         self.assertEqual(updated, existing)
 
-    def test_round_generator_rejects_numbers_reaching_the_parity_range(self):
+    def test_round_generator_numbers_do_not_depend_on_other_scenarios(self):
+        """The round groups always start at 230: a stray high-numbered scenario elsewhere in the file
+        is kept after them and never shifts them toward the parity range."""
         import generate_sdk_round_2026_11_scenarios as round2611
         existing = self.load()
-        intruder = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        stray = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        updated, groups = round2611.assemble([stray] + existing, self.rebuilt(existing, self.ROUND))
+        self.assertEqual([g["name"].split(" - ", 1)[0] for g in groups][:1], ["230"])
+        self.assertLess(updated.index(groups[-1]), updated.index(stray))
+
+    def test_round_generator_keeps_its_numbers_when_a_later_group_follows_it(self):
+        """A group another generator appends after 253 (e.g. #16/#20 renumbered to 254+) must not push
+        the round groups off 230-253 on regeneration."""
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        follower = dict(existing[0], name="254 - Somebody Else - Appended After The Round Groups")
+        position = next(i for i, s in enumerate(existing) if any(m in s["name"] for m in self.PARITY))
+        with_follower = existing[:position] + [follower] + existing[position:]
+        updated, groups = round2611.assemble(with_follower, self.rebuilt(existing, self.ROUND))
+        self.assertEqual(groups[0]["name"].split(" - ", 1)[0], "230")
+        self.assertEqual(updated, with_follower)
+
+    def test_round_generator_rejects_a_scenario_inside_its_range(self):
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        intruder = dict(existing[0], name="240 - Somebody Else - Numbered Inside The Round Range")
         with self.assertRaises(SystemExit):
-            round2611.assemble([intruder] + existing, self.rebuilt(existing, self.ROUND))
+            round2611.assemble(existing + [intruder], self.rebuilt(existing, self.ROUND))
 
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity

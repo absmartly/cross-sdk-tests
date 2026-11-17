@@ -664,6 +664,7 @@ int main() {
                      absmartly::SDKConfig sdk_config;
                      sdk_config.client = client;
                      sdk_config.context_event_handler = collector;
+                     sdk_config.context_event_publisher = publisher;
 
                      if (live_fetch) {
                          // Live fetch: the SDK's Client GETs `{endpoint}/context`
@@ -680,6 +681,7 @@ int main() {
                              body["publishToEndpoint"].get<bool>()) {
                              publisher = std::make_shared<FailablePublisher>(
                                  std::make_shared<absmartly::DefaultContextPublisher>(client));
+                             sdk_config.context_event_publisher = publisher;
                          }
                          if (payload_throttle > 0) {
                              // Return before the data arrives: the context stays
@@ -688,7 +690,6 @@ int main() {
                              provider = std::make_shared<DeferredContextDataProvider>(provider, payload_throttle);
                          }
                          sdk_config.context_data_provider = provider;
-                         sdk_config.context_event_publisher = publisher;
                          auto sdk = absmartly::SDK::create(std::move(sdk_config));
                          ctx = sdk->create_context(config);
                          if (payload_throttle <= 0) {
@@ -697,7 +698,6 @@ int main() {
                      } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
                          sdk_config.context_data_provider =
                              std::make_shared<FailingContextDataProvider>("Context load failed");
-                         sdk_config.context_event_publisher = publisher;
                          auto sdk = absmartly::SDK::create(std::move(sdk_config));
                          ctx = sdk->create_context(config);
                          // Resolve the load now, so the failed state, ready_error
@@ -710,7 +710,6 @@ int main() {
                          }
                          sdk_config.context_data_provider = std::make_shared<FailingContextDataProvider>(
                              "Cannot refresh: no data provider configured");
-                         sdk_config.context_event_publisher = publisher;
                          auto sdk = absmartly::SDK::create(std::move(sdk_config));
                          ctx = sdk->create_context_with(config, std::move(context_data));
                      }

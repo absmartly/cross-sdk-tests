@@ -80,9 +80,9 @@ SEMVER_MARKER = scenario_groups.ROUND_SEMVER
 REEVAL_MARKER = scenario_groups.ROUND_REEVAL
 SYSATTR_MARKER = scenario_groups.ROUND_SYSATTR
 GROUP_MARKERS = scenario_groups.ROUND_MARKERS
-# Groups owned by generate_parity_round_scenarios.py (300+). They stay after this round's groups and
-# are left out of the numbering, so regenerating either file never renumbers or moves the other's.
-LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS
+
+# First id of this round's groups (230-253); main ended at 229 when they were added.
+FIRST_NUMBER = 230
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
@@ -648,20 +648,23 @@ def build_all_groups(first_number):
 
 def assemble(existing, build_groups):
     """The canonical file with this round's groups rebuilt: `build_groups(first_number)` returns the
-    groups numbered from first_number. Returns (updated scenarios, the rebuilt groups)."""
-    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
-    kept = [s for s in existing
-            if not any(m in s["name"] for m in GROUP_MARKERS) and s not in later]
-    # Number after the highest retained ID, not the count: earlier scenarios may
-    # have been deleted without renumbering (e.g. #18), leaving gaps.
-    groups = build_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    if later:
-        last = int(groups[-1]["name"].split(" - ", 1)[0])
-        first_later = min(int(s["name"].split(" - ", 1)[0]) for s in later)
-        if last >= first_later:
-            raise SystemExit(f"rebuilt scenarios end at {last}, colliding with the later groups "
-                             f"starting at {first_later}")
-    return kept + groups + later, groups
+    groups numbered from first_number. Returns (updated scenarios, the rebuilt groups).
+
+    The groups own FIRST_NUMBER.. and stay there: scenarios numbered below stay before them, and every
+    scenario numbered after them (the parity groups, or a later group such as #16/#20 renumbered to
+    254+) stays after them, in file order. A scenario inside the rebuilt range is a collision."""
+    def number(s):
+        return int(s["name"].split(" - ", 1)[0])
+
+    rest = [s for s in existing if not any(m in s["name"] for m in GROUP_MARKERS)]
+    before = [s for s in rest if number(s) < FIRST_NUMBER]
+    after = [s for s in rest if number(s) >= FIRST_NUMBER]
+    groups = build_groups(FIRST_NUMBER)
+    last = number(groups[-1])
+    clashes = sorted(number(s) for s in after if number(s) <= last)
+    if clashes:
+        raise SystemExit(f"scenarios {clashes} collide with the rebuilt range {FIRST_NUMBER}-{last}")
+    return before + groups + after, groups
 
 
 def main():

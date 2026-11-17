@@ -131,9 +131,13 @@ This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 `scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
 fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
 then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
-free), below the parity range. Both generators fail rather than renumber when
-another scenario sits in their range, so a missed renumber shows up as a
-generator error, not a silent shift.
+free), below the parity range. Both generators own fixed ranges (230 and 300
+are constants, not derived from other scenarios): each keeps scenarios numbered
+outside its range where they are, and fails rather than renumbers when another
+scenario sits inside it. So #16/#20 only need to renumber their own groups to
+254+; a missed renumber shows up as a generator error, not a silent shift
+(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
+groups with a generator, give it a fixed first number the same way.
 
 ## Coverage matrix
 
