@@ -390,7 +390,7 @@ def rules_robustness_specs():
     malformed = (("unknown-type", {"name": "future", "type": "pin", "variant": 1}),
                  ("fractional-variant", {"name": "fraction", "type": "assign", "variant": 1.5}),
                  ("string-environments", {"name": "scoped", "type": "assign", "variant": 1,
-                                          "environments": "production"}))
+                                          "environments": "parity-env"}))
     exps, steps = [], []
     for i, (label, bad) in enumerate(malformed):
         name = f"exp_rules_skip_{label.replace('-', '_')}"
@@ -401,8 +401,9 @@ def rules_robustness_specs():
         "Unknown Rule Types And Malformed Rule Fields Are Skipped For The Next Rule",
         "A rule of an unknown type ('pin', carrying a variant), an assign rule with a fractional "
         "variant (1.5), and a rule whose environments is a string rather than a list are each "
-        "skipped, and the next rule (assign variant 0) wins with ruleOverride:true. A future rule "
-        "type must never be served as an assign rule.",
+        "skipped, and the next rule (assign variant 0) wins with ruleOverride:true. The string scope "
+        "names the configured environment, so an SDK that accepted it as a one-item list would match "
+        "it. A future rule type must never be served as an assign rule.",
         exps, steps, client={"application": "parity-app", "environment": "parity-env"},
         requires=[RULES_CAPABILITY]))
 

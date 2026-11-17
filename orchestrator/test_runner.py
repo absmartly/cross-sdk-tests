@@ -1058,7 +1058,7 @@ class TestOrchestrator:
                             }
                         )
                 elif "status" in expected:
-                    pass  # an expected error status, already checked above, with no message to match
+                    pass
                 else:
                     failures.append(
                         {

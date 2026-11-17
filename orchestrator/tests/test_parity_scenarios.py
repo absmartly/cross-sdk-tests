@@ -24,7 +24,7 @@ import scenario_groups  # noqa: E402
 
 FIRST, LAST = 300, 332
 # sha256 of json.dumps([parity scenarios in file order], sort_keys=True).
-PARITY_DIGEST = "cc74037e0b3c37ac4c27b8f1a254d6e199b914a0924ec0552515be3098f13bfa"
+PARITY_DIGEST = "490204624e9f328fd34e87791440819586df9cdf0ded7fd75cb947d52f388bbb"
 
 
 def parity_scenarios(scenarios):

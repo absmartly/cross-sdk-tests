@@ -81,7 +81,7 @@ REEVAL_MARKER = scenario_groups.ROUND_REEVAL
 SYSATTR_MARKER = scenario_groups.ROUND_SYSATTR
 GROUP_MARKERS = scenario_groups.ROUND_MARKERS
 
-# First id of this round's groups (230-253); main ended at 229 when they were added.
+# First id of this round's groups (230-253).
 FIRST_NUMBER = 230
 
 RULES_CAPABILITY = "assignmentRules"
