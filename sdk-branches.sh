@@ -21,7 +21,12 @@ declare -A SDK_BRANCHES=(
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"
   ["go-sdk"]="main"
-  ["java-sdk"]="main"
+  # java-sdk 2.0 (absmartly/java-sdk#<2.0 PR>): the `java` lane runs the 2.x wrapper on next/major until it
+  # merges, then on main.
+  ["java-sdk"]="next/major"
+  # The 1.x line, for the `java-v1` lane (java-v1-wrapper): release/1.x once the owner cuts it, until then the
+  # last 1.x tag. v1.9.0 predates switchback (on main since java-sdk#15), so java-v1 lists it as unsupported.
+  ["java-sdk-v1"]="v1.9.0"
   ["javascript-sdk"]="main"
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"
@@ -34,4 +39,10 @@ declare -A SDK_BRANCHES=(
   ["swift-sdk"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
+)
+
+# Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
+# absmartly/<repo> it is cloned from. Directories not listed are cloned from the repo of the same name.
+declare -A SDK_REPO_SOURCES=(
+  ["java-sdk-v1"]="java-sdk"
 )

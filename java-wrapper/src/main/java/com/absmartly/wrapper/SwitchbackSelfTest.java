@@ -1,21 +1,19 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.ABSmartly;
-import com.absmartly.sdk.ABSmartlyConfig;
+import com.absmartly.sdk.ABsmartlyClient;
 import com.absmartly.sdk.Context;
-import com.absmartly.sdk.ContextConfig;
-import com.absmartly.sdk.ContextEventLogger;
-import com.absmartly.sdk.DefaultContextEventSerializer;
-import com.absmartly.sdk.json.ContextData;
-import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.Exposure;
-import com.absmartly.sdk.json.PublishEvent;
-import com.absmartly.sdk.json.Unit;
+import com.absmartly.sdk.ContextData;
+import com.absmartly.sdk.ContextState;
+import com.absmartly.sdk.event.ContextEvent;
+import com.absmartly.sdk.event.ExposureEvent;
+import com.absmartly.sdk.event.PublishEvent;
+import com.absmartly.sdk.internal.json.ContextPayload;
+import com.absmartly.sdk.internal.json.Experiment;
+import com.absmartly.sdk.internal.json.ExposurePayload;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.util.concurrent.CompletableFuture;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -44,7 +42,7 @@ final class SwitchbackSelfTest {
     private static final long PERIOD_MS = 400_000L * 3_600_000L;
     private static final long ANCHOR_PERIOD_0 = 1_704_067_200_000L;
 
-    // hashUnit("serving-9"): base64url-no-pad MD5, as published in PublishEvent.units.
+    // hashUnit("serving-9"): base64url-no-pad MD5, as published in the publish payload's units.
     private static final String SERVING_UNIT_HASH = "r5uxZRoi-JuM5yYJa0kmSQ";
 
     // {clusterUnit, periodIndex, seed, armCount, expectedVariant}, taken from the platform
@@ -201,40 +199,41 @@ final class SwitchbackSelfTest {
         }
 
         ObjectMapper mapper = new ObjectMapper();
-        ContextData contextData = mapper.readValue(probePayload(), ContextData.class);
+        // The SDK's own decoder: its model's annotations are relocated with its shaded Jackson.
+        ContextPayload contextData = com.absmartly.sdk.internal.Json.decodeContext(
+            probePayload().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         if (!clusterKeys(contextData, "sb_declared_order").equals(Arrays.asList("unit_user", "unit_serving"))) {
             System.out.println(PREFIX + " FAILED: switchbackClusters lost its declared order: "
                 + clusterKeys(contextData, "sb_declared_order"));
             return false;
         }
 
-        List<Exposure> exposures = new CopyOnWriteArrayList<>();
-        ContextEventLogger logger = (context, type, data) -> {
-            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure exposure) {
-                exposures.add(exposure);
+        // Exposures and publishes as the SDK reports them; the publish is the exact JSON it sent.
+        List<ExposurePayload> exposures = new CopyOnWriteArrayList<>();
+        List<JsonNode> published = new CopyOnWriteArrayList<>();
+        ObjectMapper eventMapper = new ObjectMapper();
+        com.absmartly.sdk.event.EventListener listener = event -> {
+            if (event.type() == ContextEvent.Type.EXPOSURE) {
+                exposures.add(payload(((ExposureEvent) event).exposure()));
+            } else if (event.type() == ContextEvent.Type.PUBLISH) {
+                try {
+                    published.add(eventMapper.readTree(((PublishEvent) event).toJson()));
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
             }
         };
 
         // unit_user is set first, so declared order, not context order, must pick the serving unit.
-        ContextConfig contextConfig = ContextConfig.create()
-            .setUnit("unit_user", "probe-user")
-            .setUnit("unit_serving", "serving-9")
-            .setPublishDelay(-1)
-            .setRefreshInterval(0);
+        Map<String, Object> units = new java.util.LinkedHashMap<>();
+        units.put("unit_user", "probe-user");
+        units.put("unit_serving", "serving-9");
 
-        List<PublishEvent> published = new CopyOnWriteArrayList<>();
-        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-            .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) -> {
-                published.add(event);
-                return CompletableFuture.completedFuture(null);
-            })
-            .setContextEventLogger(logger);
-
-        Context context = ABSmartly.create(sdkConfig).createContextWith(contextConfig, contextData);
-        context.waitUntilReady();
-        if (!context.isReady() || context.isFailed()) {
-            System.out.println(PREFIX + " FAILED: context not ready (failed=" + context.isFailed() + ")");
+        ABsmartlyClient client = SdkSupport.inMemoryClient();
+        Context context = SdkSupport.context(client, ContextData.fromJson(probePayload()), units, listener);
+        if (context.state() != ContextState.READY) {
+            System.out.println(PREFIX + " FAILED: context not ready (state=" + context.state() + ")");
+            client.close();
             return false;
         }
         context.setAttribute("city", "market_1");
@@ -243,29 +242,37 @@ final class SwitchbackSelfTest {
 
         try {
             boolean served = expect(context, exposures, "agreement", "sb_agree", 3,
-                    new Exposure(521, "sb_agree", "unit_serving", 3, 0, true, true, false, false, false, false))
+                    new ExposurePayload(521, "sb_agree", "unit_serving", 3, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "agreement repeat", "sb_agree", 3)
                 && expect(context, exposures, "declared order", "sb_declared_order", 3,
-                    new Exposure(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
+                    new ExposurePayload(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "disagreement", "sb_disagree", 0)
                 && expect(context, exposures, "whole number", "sb_whole_number", 6,
-                    new Exposure(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
+                    new ExposurePayload(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "value filtered out", "sb_value_filtered", 0)
                 && expect(context, exposures, "empty allow-list admits all", "sb_allow_empty", 3,
-                    new Exposure(528, "sb_allow_empty", "unit_serving", 3, 0, true, true, false, false, false, false))
+                    new ExposurePayload(528, "sb_allow_empty", "unit_serving", 3, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0);
             if (!served) {
                 return false;
             }
-            PublishEvent baselineEvent = checkPayloadShape(context, exposures, published);
+            JsonNode baselineEvent = checkPayloadShape(context, exposures, published);
             return baselineEvent != null
                 && checkUnitExperimentInert(context, exposures, published, mapper, baselineEvent);
         } finally {
             context.close();
+            client.close();
         }
     }
 
-    private static List<String> clusterKeys(ContextData data, String experimentName) throws Exception {
+    // The SDK's Exposure in the wire model, so expected and actual compare and serialize alike.
+    static ExposurePayload payload(com.absmartly.sdk.Exposure exposure) {
+        return new ExposurePayload(exposure.id(), exposure.name(), exposure.unit().isEmpty() ? null : exposure.unit(),
+            exposure.variant(), exposure.exposedAt(), exposure.assigned(), exposure.eligible(), exposure.overridden(),
+            exposure.fullOn(), exposure.custom(), exposure.audienceMismatch(), exposure.ruleOverride());
+    }
+
+    private static List<String> clusterKeys(ContextPayload data, String experimentName) throws Exception {
         Field field = HoldoutProbeSupport.findField(Experiment.class, "switchbackClusters");
         for (Experiment experiment : data.experiments) {
             if (experimentName.equals(experiment.name)) {
@@ -280,23 +287,22 @@ final class SwitchbackSelfTest {
     // A unit experiment carrying every R33 field (randomizationType "unit") must be served, exposed
     // and published exactly like the plain baseline on the same unit and seeds: the serialized
     // publish bytes are identical once id, name and exposedAt are aligned.
-    private static boolean checkUnitExperimentInert(Context context, List<Exposure> exposures,
-            List<PublishEvent> published, ObjectMapper mapper, PublishEvent baseline) throws Exception {
+    private static boolean checkUnitExperimentInert(Context context, List<ExposurePayload> exposures,
+            List<JsonNode> published, ObjectMapper mapper, JsonNode baseline) throws Exception {
         int before = exposures.size();
-        if (context.getTreatment("sb_unit_with_fields") != 1) {
+        if (context.treatment("sb_unit_with_fields") != 1) {
             System.out.println(PREFIX + " check unit inertness FAILED: sb_unit_with_fields did not serve 1");
             return false;
         }
-        PublishEvent event = publishOne(context, published);
+        JsonNode event = publishOne(context, published);
         if (event == null || exposures.size() != before + 1 || !servedAs(exposures.get(before),
-                new Exposure(527, "sb_unit_with_fields", "unit_serving", 1, 0, true, true, false, false, false, false))) {
+                new ExposurePayload(527, "sb_unit_with_fields", "unit_serving", 1, 0, true, true, false, false, false, false))) {
             System.out.println(PREFIX + " check unit inertness FAILED: exposures " + exposures.subList(before,
                 exposures.size()) + ", publish " + event);
             return false;
         }
-        DefaultContextEventSerializer serializer = new DefaultContextEventSerializer();
-        ObjectNode baselineJson = (ObjectNode) mapper.readTree(serializer.serialize(baseline));
-        ObjectNode actualJson = (ObjectNode) mapper.readTree(serializer.serialize(event));
+        ObjectNode baselineJson = baseline.deepCopy();
+        ObjectNode actualJson = event.deepCopy();
         for (ObjectNode json : new ObjectNode[] {baselineJson, actualJson}) {
             json.remove("publishedAt");
             ObjectNode exposure = (ObjectNode) json.path("exposures").path(0);
@@ -313,16 +319,16 @@ final class SwitchbackSelfTest {
     }
 
     // Mirrors the payload scenario. Returns the baseline publish event, or null when a check fails.
-    private static PublishEvent checkPayloadShape(Context context, List<Exposure> exposures,
-            List<PublishEvent> published) throws Exception {
+    private static JsonNode checkPayloadShape(Context context, List<ExposurePayload> exposures,
+            List<JsonNode> published) throws Exception {
         context.publish();
 
         int before = exposures.size();
-        context.getTreatment("sb_unit_baseline");
-        PublishEvent baselineEvent = publishOne(context, published);
-        context.getTreatment("sb_payload");
-        PublishEvent switchbackEvent = publishOne(context, published);
-        List<Exposure> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
+        context.treatment("sb_unit_baseline");
+        JsonNode baselineEvent = publishOne(context, published);
+        context.treatment("sb_payload");
+        JsonNode switchbackEvent = publishOne(context, published);
+        List<ExposurePayload> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
         if (emitted.size() != 2 || baselineEvent == null || switchbackEvent == null) {
             System.out.println(PREFIX + " check payload shape FAILED: expected 2 exposures and 2 publish events, got "
                 + emitted + " and " + baselineEvent + ", " + switchbackEvent);
@@ -337,10 +343,10 @@ final class SwitchbackSelfTest {
             return null;
         }
 
-        Exposure unitServed = new Exposure(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
+        ExposurePayload unitServed = new ExposurePayload(514, "sb_unit_baseline", "unit_serving", 1, 0, true, true, false, false,
             false, false);
         // assignSwitchback("market_1", 0, 1, 3) = 1; bucket 1 too (caught by sb_agree).
-        Exposure switchbackServed = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
+        ExposurePayload switchbackServed = new ExposurePayload(513, "sb_payload", "unit_serving", 1, 0, true, true, false, false,
             false, false);
         if (!publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {
             System.out.println(PREFIX + " check published exposures FAILED: baseline " + baselineEvent
@@ -348,10 +354,9 @@ final class SwitchbackSelfTest {
             return null;
         }
 
-        // Compare the bytes the SDK's own serializer would send, not the Java objects.
-        DefaultContextEventSerializer serializer = new DefaultContextEventSerializer();
-        JsonNode baselineJson = mapper.readTree(serializer.serialize(baselineEvent));
-        JsonNode switchbackJson = mapper.readTree(serializer.serialize(switchbackEvent));
+        // Compare the bytes the SDK sent (PublishEvent.toJson()), not Java objects.
+        JsonNode baselineJson = baselineEvent;
+        JsonNode switchbackJson = switchbackEvent;
         String publishMismatch = shapeMismatch(baselineJson, switchbackJson, "publish");
         if (publishMismatch == null) {
             publishMismatch = serializedMismatch(baselineJson, unitServed, mapper);
@@ -369,7 +374,7 @@ final class SwitchbackSelfTest {
     private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",
         "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch", "ruleOverride");
 
-    static String serializedMismatch(JsonNode event, Exposure expected, ObjectMapper mapper) {
+    static String serializedMismatch(JsonNode event, ExposurePayload expected, ObjectMapper mapper) {
         if (!event.path("hashed").asBoolean(false)) {
             return "publish.hashed is " + event.get("hashed");
         }
@@ -397,24 +402,38 @@ final class SwitchbackSelfTest {
         return "publish.units lacks the hashed serving unit: " + event.get("units");
     }
 
-    private static PublishEvent publishOne(Context context, List<PublishEvent> published) {
+    // The PUBLISH event is dispatched just after publish() returns (as in 1.x), so wait for it briefly.
+    private static JsonNode publishOne(Context context, List<JsonNode> published) {
         int before = published.size();
         context.publish();
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (published.size() <= before && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
         return published.size() == before + 1 ? published.get(before) : null;
     }
 
-    private static boolean publishedExactly(PublishEvent event, Exposure expected) {
-        if (!event.hashed || event.exposures == null || event.exposures.length != 1 || event.units == null) {
+    private static boolean publishedExactly(JsonNode event, ExposurePayload expected) {
+        JsonNode exposures = event.path("exposures");
+        if (!event.path("hashed").asBoolean(false) || !exposures.isArray() || exposures.size() != 1
+                || !event.path("units").isArray()) {
             return false;
         }
         boolean unitMatches = false;
-        for (Unit unit : event.units) {
-            unitMatches |= "unit_serving".equals(unit.type) && SERVING_UNIT_HASH.equals(unit.uid);
+        for (JsonNode unit : event.path("units")) {
+            unitMatches |= "unit_serving".equals(unit.path("type").asText(null))
+                && SERVING_UNIT_HASH.equals(unit.path("uid").asText(null));
         }
-        return servedAs(event.exposures[0], expected) && unitMatches;
+        JsonNode e = exposures.get(0);
+        ExposurePayload actual = new ExposurePayload(e.path("id").asInt(), e.path("name").asText(null),
+            e.path("unit").asText(null), e.path("variant").asInt(), e.path("exposedAt").asLong(),
+            e.path("assigned").asBoolean(), e.path("eligible").asBoolean(), e.path("overridden").asBoolean(),
+            e.path("fullOn").asBoolean(), e.path("custom").asBoolean(), e.path("audienceMismatch").asBoolean(),
+            e.path("ruleOverride").asBoolean());
+        return servedAs(actual, expected) && unitMatches;
     }
 
-    static boolean servedAs(Exposure actual, Exposure expected) {
+    static boolean servedAs(ExposurePayload actual, ExposurePayload expected) {
         return actual.id == expected.id && expected.name.equals(actual.name)
             && expected.unit.equals(actual.unit) && actual.variant == expected.variant
             && actual.assigned == expected.assigned && actual.eligible == expected.eligible
@@ -423,16 +442,8 @@ final class SwitchbackSelfTest {
             && ruleOverride(actual) == ruleOverride(expected) && actual.exposedAt > 0;
     }
 
-    private static final Field RULE_OVERRIDE = HoldoutProbeSupport.findField(Exposure.class, "ruleOverride");
-
-    // Read reflectively so the wrapper still compiles against a core-api without assignment rules,
-    // whose exposures cannot be rule-won.
-    private static boolean ruleOverride(Exposure exposure) {
-        try {
-            return RULE_OVERRIDE != null && RULE_OVERRIDE.getBoolean(exposure);
-        } catch (IllegalAccessException e) {
-            throw new IllegalStateException("Exposure.ruleOverride is not readable", e);
-        }
+    private static boolean ruleOverride(ExposurePayload exposure) {
+        return exposure.ruleOverride;
     }
 
     private static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
@@ -515,11 +526,11 @@ final class SwitchbackSelfTest {
         return base(mapper, id, name, -559038737, 1234567890, 3);
     }
 
-    private static boolean expect(Context context, List<Exposure> exposures, String check,
-            String experimentName, int expectedTreatment, Exposure... expectedExposures) {
+    private static boolean expect(Context context, List<ExposurePayload> exposures, String check,
+            String experimentName, int expectedTreatment, ExposurePayload... expectedExposures) {
         int before = exposures.size();
-        int treatment = context.getTreatment(experimentName);
-        List<Exposure> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
+        int treatment = context.treatment(experimentName);
+        List<ExposurePayload> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
 
         boolean matches = treatment == expectedTreatment && emitted.size() == expectedExposures.length;
         for (int i = 0; matches && i < expectedExposures.length; i++) {

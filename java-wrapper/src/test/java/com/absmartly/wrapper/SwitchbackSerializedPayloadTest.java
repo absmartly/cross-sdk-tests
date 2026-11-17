@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.absmartly.sdk.json.Exposure;
+import com.absmartly.sdk.internal.json.ExposurePayload;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -13,10 +13,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 // The self-test must reject serialized publish bytes whose values differ from what was served,
-// even when the captured PublishEvent object and the serialized key structure are both correct.
+// even when the captured publish event and the serialized key structure are both correct.
 class SwitchbackSerializedPayloadTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Exposure SERVED = new Exposure(513, "sb_payload", "unit_serving", 1, 0, true, true, false,
+    private static final ExposurePayload SERVED = new ExposurePayload(513, "sb_payload", "unit_serving", 1, 0, true, true, false,
         false, false, false);
 
     private static ObjectNode correctEvent() throws Exception {
@@ -62,9 +62,9 @@ class SwitchbackSerializedPayloadTest {
 
     @Test
     void rejectsAnOrdinaryExposureFlaggedAsRuleWon() {
-        Exposure flagged = new Exposure(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
+        ExposurePayload flagged = new ExposurePayload(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
             false, false, false, true);
-        Exposure ordinary = new Exposure(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
+        ExposurePayload ordinary = new ExposurePayload(513, "sb_payload", "unit_serving", 1, 1700000000000L, true, true, false,
             false, false, false, false);
         assertTrue(SwitchbackSelfTest.servedAs(ordinary, SERVED));
         assertFalse(SwitchbackSelfTest.servedAs(flagged, SERVED));

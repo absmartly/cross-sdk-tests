@@ -241,7 +241,11 @@ def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
     assert "switchback" in runner.policy["capabilities"]
     assert "switchback" in sdks["java"]["required"]
     for sdk, entry in sdks.items():
-        if sdk != "java":
+        if sdk == "java-v1":
+            # The 1.x lane is pinned to v1.9.0, which predates switchback; see expected-capabilities.json.
+            assert "switchback" not in entry["required"]
+            assert "predates switchback" in entry["unsupported"]["switchback"]
+        elif sdk != "java":
             assert "switchback" not in entry["required"], sdk
             assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]

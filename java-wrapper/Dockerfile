@@ -1,4 +1,4 @@
-FROM gradle:8.5-jdk11 AS sdk-builder
+FROM gradle:8.5-jdk17 AS sdk-builder
 
 WORKDIR /build
 
@@ -9,11 +9,12 @@ WORKDIR /build
 ARG SDK_SOURCE_DIR=java-sdk
 
 COPY ${SDK_SOURCE_DIR} /build/java-sdk
-# Install the jar into the local Maven repo under the version the SDK's own pom
+# Install the published (shaded) jar into the local Maven repo under the version the SDK's own pom
 # declares (java-sdk VERSION), and record it for the wrapper build. A mismatch
 # between the path version and the pom version makes Gradle ignore mavenLocal
 # and silently resolve the released core-api from Maven Central instead.
-RUN cd /build/java-sdk && ./gradlew :core-api:jar :core-api:generatePomFileForReleasePublication -x test && \
+# core-api 2.x publishes the shaded jar (Jackson relocated) as core-api.jar; core-api-plain.jar is the unshaded one.
+RUN cd /build/java-sdk && ./gradlew :core-api:shadowJar :core-api:generatePomFileForReleasePublication -x test && \
     POM=/build/java-sdk/core-api/build/publications/release/pom-default.xml && \
     CORE_API_VERSION=$(sed -n 's:^  <version>\(.*\)</version>$:\1:p' "$POM" | head -1) && \
     test -n "$CORE_API_VERSION" && \
@@ -31,11 +32,11 @@ COPY --from=sdk-builder /root/.m2 /root/.m2
 COPY cross-sdk-tests/java-wrapper /build/java-wrapper
 RUN cd /build/java-wrapper && gradle test bootJar --no-daemon
 
-# core-api's own tests run on the JDK that can build it, not the wrapper's.
+# core-api's own tests (the JDK 25 lane is skipped: the image has no JDK 25 and the SDK's CI covers it).
 FROM sdk-builder AS tester
 WORKDIR /build/java-sdk
 RUN ./gradlew :core-api:compileTestJava -x test
-CMD ["./gradlew", ":core-api:test", "--rerun-tasks"]
+CMD ["./gradlew", ":core-api:test", "-PskipJdk25", "--rerun-tasks"]
 
 FROM amazoncorretto:17
 

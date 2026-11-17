@@ -1,8 +1,8 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.ExperimentApplication;
-import com.absmartly.sdk.json.ExperimentVariant;
+import com.absmartly.sdk.internal.json.Experiment;
+import com.absmartly.sdk.internal.json.ExperimentApplication;
+import com.absmartly.sdk.internal.json.ExperimentVariant;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -50,7 +50,7 @@ final class HoldoutProbeSupport {
     }
 
     /**
-     * Constructs one holdout entry of whatever type ContextData.holdouts actually holds on the
+     * Constructs one holdout entry of whatever type ContextPayload.holdouts actually holds on the
      * linked core-api. Every holdout wire shape this SDK has ever shipped carries at minimum
      * id/seedHi/seedLo/split (the fields the variant assigner needs); anything else (name,
      * iteration, unitType, trafficSeedHi/Lo/Split, fullOnVariant, applications, variants, a
@@ -109,7 +109,7 @@ final class HoldoutProbeSupport {
     }
 
     /**
-     * Calls getTreatment(experimentName) exactly once, then requires BOTH the returned treatment
+     * Calls treatment(experimentName) exactly once, then requires BOTH the returned treatment
      * AND the exact ordered id/name/variant sequence of exposure events appended by that single
      * call to match the expected sequence byte-for-byte. Order and every variant matter (see
      * HoldoutSelfTest's original javadoc for why) - a check that only compared id/name/count could
@@ -119,7 +119,7 @@ final class HoldoutProbeSupport {
             com.absmartly.sdk.Context context, List<ProbeExposure> exposures, String experimentName,
             int expectedTreatment, ProbeExposure... expectedSequence) {
         int before = exposures.size();
-        int treatment = context.getTreatment(experimentName);
+        int treatment = context.treatment(experimentName);
         List<ProbeExposure> newExposures = exposures.subList(before, exposures.size());
 
         if (treatment != expectedTreatment || !matchesSequence(newExposures, expectedSequence)) {
