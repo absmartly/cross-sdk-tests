@@ -990,14 +990,13 @@ class TestOrchestrator:
         negotiated, fetches = self._measured_fetches(base_url, negotiation.DEFAULT_PREFERENCE)
         headers = [r.get("acceptEncoding") for r in fetches]
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
-        decoded = negotiated.get("decoded") is True and negotiated.get("refreshDecoded") is True
-        value = bool(all(negotiation.advertises(h, "gzip") for h in headers) and refreshed and decoded)
         failed_checks = [name for name, failed in (
             ("no gzip advertised", not all(negotiation.advertises(h, "gzip") for h in headers)),
             ("refresh not fetched", not refreshed),
             ("not decoded", negotiated.get("decoded") is not True),
             ("refresh data not used", negotiated.get("refreshDecoded") is not True),
         ) if failed]
+        value = not failed_checks
         self.measured_evidence.setdefault(sdk_name, {})["contextFetchCompression"] = (
             f"observed Accept-Encoding {headers!r}; failed: {', '.join(failed_checks) or 'none'}"
         )
