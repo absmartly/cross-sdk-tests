@@ -32,9 +32,9 @@ across languages.
   `requires` name the policy does not declare all fail closed. A wrapper that
   starts advertising an excepted capability also fails the run until the
   policy moves it to `required`. Scenarios 203-208 require the `holdouts`
-  capability. Only javascript is currently required to support it (its wrapper
-  reports it from a behavioral self-test, so a failing self-test fails the
-  javascript lane). The other SDKs list it as a reviewed exception. Scenario
+  capability. javascript (with its wrappers), java and dotnet are required to
+  support it (each wrapper reports it from a behavioral self-test, so a failing
+  self-test fails that lane). The other SDKs list it as a reviewed exception. Scenario
   209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 214-220
   require the `holdout_arms` capability and are skipped by SDKs that have not
