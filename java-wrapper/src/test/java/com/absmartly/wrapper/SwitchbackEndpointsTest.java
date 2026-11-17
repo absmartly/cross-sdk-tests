@@ -192,7 +192,6 @@ class SwitchbackEndpointsTest {
             controller.switchbackPermutation(permutationRequest()).getStatusCode());
     }
 
-    // Checked through the real routing, not a direct controller call.
     @Test
     void bucketEndpointIsGone() throws Exception {
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new WrapperController(new FixedFunctions())).build();

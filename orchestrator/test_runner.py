@@ -1311,8 +1311,7 @@ class TestOrchestrator:
     def resolve_reference(
         prior_responses: List[Any], reference: Any, step_index: int, event_index: int
     ) -> Tuple[Any, Optional[str]]:
-        """(data, None), or (None, reason) when there is no usable baseline. Empty objects and
-        arrays are valid baselines."""
+        """Empty objects and arrays are valid baselines."""
         if isinstance(reference, bool) or not isinstance(reference, int):
             return None, f"reference must be an integer step index, got {reference!r}"
         if not 0 <= reference < step_index:

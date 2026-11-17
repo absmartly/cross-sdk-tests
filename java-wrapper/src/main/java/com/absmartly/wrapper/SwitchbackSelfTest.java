@@ -318,7 +318,6 @@ final class SwitchbackSelfTest {
     // the served values. Returns the baseline publish event, or null when a check fails.
     private static PublishEvent checkPayloadShape(Context context, List<Exposure> exposures,
             List<PublishEvent> published) throws Exception {
-        // Drain the earlier checks' exposures so each publish below carries exactly one.
         context.publish();
 
         int before = exposures.size();
@@ -373,7 +372,6 @@ final class SwitchbackSelfTest {
     private static final List<String> SERIALIZED_EXPOSURE_FIELDS = Arrays.asList("id", "name", "unit", "variant",
         "assigned", "eligible", "overridden", "fullOn", "custom", "audienceMismatch", "ruleOverride");
 
-    // Null when the serialized bytes, not just the PublishEvent object, carry the served exposure.
     static String serializedMismatch(JsonNode event, Exposure expected, ObjectMapper mapper) {
         if (!event.path("hashed").asBoolean(false)) {
             return "publish.hashed is " + event.get("hashed");

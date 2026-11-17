@@ -192,7 +192,6 @@ def test_reference_step_without_events_fails(runner):
 
 
 def test_reference_step_without_response_fails(runner):
-    # A failed earlier step leaves no stored response.
     prior = [None, response("publish", publish([]))]
     assert "has no response" in reference_failure(validate(runner, prior, publish([]), 0))
 
@@ -268,7 +267,6 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
     scenarios = canonical()
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
-    # Main removed seven JS-only scenarios without renumbering the remaining IDs.
     assert numbers == sorted(set(numbers))
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
@@ -596,9 +594,6 @@ def test_override_without_a_cluster_value_is_exposed_under_the_declared_unit_not
 
 
 def test_unit_variant_matches_the_main_suite_vectors():
-    # Each vector is read back from its main-suite scenario: the uid from the first create step's
-    # units, the split and seeds from the experiment (the traffic fields for 13), and the expected
-    # variant from the scenario's first treatment.
     by_number = {int(s["name"].split(" - ", 1)[0]): s for s in canonical()}
     numbers = (4, 52, 13)
     assert len(numbers) == len(generator.UNIT_VARIANT_VECTORS)
