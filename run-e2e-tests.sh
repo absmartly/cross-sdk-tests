@@ -220,7 +220,7 @@ TARGET_SERVICES=$(get_service_names "$TARGET_SDKS_CSV")
 if [ "$SKIP_BUILD" = false ]; then
   export COMPOSE_PARALLEL_LIMIT=${COMPOSE_PARALLEL_LIMIT:-3}
 
-  HEAVY_SDKS="scala-sdk java-sdk kotlin-sdk swift-sdk cpp-sdk dotnet-sdk elixir-sdk rust-sdk"
+  HEAVY_SDKS="scala-sdk java-sdk java-v1-sdk kotlin-sdk swift-sdk cpp-sdk dotnet-sdk elixir-sdk rust-sdk"
 
   if [ -n "$SDK_NAMES" ]; then
     echo "Building containers for:$TARGET_SERVICES (parallel limit: $COMPOSE_PARALLEL_LIMIT)"

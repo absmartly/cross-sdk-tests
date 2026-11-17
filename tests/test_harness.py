@@ -454,7 +454,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "java", "java-v1", "javascript", "react", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
@@ -851,8 +851,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 20)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 20)
+        self.assertEqual(len(matrix["include"]), 21)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 21)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -1005,6 +1005,7 @@ class StaticRepoChecks(unittest.TestCase):
         "ruby": "ruby-wrapper/server.rb", "liquid": "liquid-wrapper/server.rb",
         "php": "php-wrapper/server.php", "go": "go-wrapper/server.go", "rust": "rust-wrapper/src/main.rs",
         "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
+        "java-v1": "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
         "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
         "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
         "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
@@ -1015,7 +1016,7 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes."""
+        the wrappers fails here rather than in all 21 lanes."""
         policy = test_runner.load_capability_policy()
         self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
         for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():

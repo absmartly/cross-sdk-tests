@@ -445,10 +445,11 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
 
 
 # The SDK language each lane's requests name (the <lang> of an X-Agent such as absmartly-<lang>-sdk/1.0.0)
-# where it is not the lane name: flutter uses the dart_sdk client, liquid wraps ruby-sdk, and the
+# where it is not the lane name: flutter uses the dart_sdk client, java-v1 is java-sdk 1.x, liquid wraps ruby-sdk, and the
 # framework wrappers wrap javascript-sdk.
 SDK_AGENT_LANGUAGE = {
     "flutter": "dart",
+    "java-v1": "java",
     "liquid": "ruby",
     "react": "javascript",
     "vue2": "javascript",

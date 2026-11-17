@@ -277,6 +277,36 @@
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
+    "java-v1": {
+      "required": [
+        "diagnostics",
+        "publishFail",
+        "variableKeysMap",
+        "globalCustomFieldKeys",
+        "getUnits",
+        "getAttributes",
+        "readyError",
+        "holdouts",
+        "holdout_arms",
+        "diagnosticsUtf8",
+        "assignmentRules",
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment",
+        "xAgentHeader",
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent",
+        "semverNumericOperands"
+      ],
+      "unsupported": {
+        "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "switchback": "v1.9.0, the last 1.x tag, predates switchback; re-require once release/1.x is cut from main"
+      }
+    },
     "kotlin": {
       "required": [
         "diagnostics",

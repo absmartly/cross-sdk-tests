@@ -28,6 +28,13 @@ services:
       dockerfile: cross-sdk-tests/java-wrapper/Dockerfile
       target: tester
 
+  java-v1-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-v1-wrapper/Dockerfile
+      target: tester
+
   php-unit:
     init: true
     build:
@@ -188,6 +195,20 @@ services:
       - "3000"
     environment:
       - SDK_NAME=java
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
+
+  java-v1-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-v1-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=java-v1
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
       - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
@@ -410,6 +431,7 @@ services:
       - python-sdk
       - ruby-sdk
       - java-sdk
+      - java-v1-sdk
       - php-sdk
       - go-sdk
       - liquid-sdk
