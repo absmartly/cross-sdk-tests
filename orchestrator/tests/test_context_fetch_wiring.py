@@ -634,6 +634,8 @@ def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
     assert "context server reset" in result["harness_error"]
     errors = [f for f in result["failures"] if f["step"] == step_index]
     assert any("cannot decode gzip" in str(f.get("error")) for f in errors), result["failures"]
+    # ... and then the harness error stops the scenario: no later step ran.
+    assert all(f["step"] <= step_index for f in result["failures"]), result["failures"]
     assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
     assert wrapper.contexts == {}
 
