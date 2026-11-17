@@ -72,8 +72,9 @@ rebuild.
 ## Reviewed exception found by this group
 
 `semverNumericOperands` gates 332. dotnet-sdk formats a numeric operand with
-`G16` (`1e-7` becomes `1E-07`), so the comparison is null where the reference
-compares `0.0000001`. That is a dotnet-sdk divergence, listed as a reviewed
+`G16`: `1e-7` becomes `1E-07`, which parses as version core `1E` with pre-release
+`07` and compares greater than `0.0000001`, so `semver_eq` misses and `semver_gt`
+wrongly matches, where the reference compares `0.0000001`. That is a dotnet-sdk divergence, listed as a reviewed
 exception until dotnet-sdk adopts the reference conversion; every other SDK
 passes it.
 
