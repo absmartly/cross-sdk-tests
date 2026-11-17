@@ -76,6 +76,7 @@ module HoldoutSelfTest
   end
 
   # Mirrors scenarios 203-208 and 221 (see javascript-wrapper/holdoutSelfTest.js for the fixture notes).
+  # Check C lists its holdoutIds high id first, so it also checks that holdouts expose in id order.
   def run_holdouts_battery
     held_out = 'session_id'
     held_out_uid = 'e791e240fcd3df7d238cfc285f475e8152fcc0ec'
@@ -88,7 +89,7 @@ module HoldoutSelfTest
       experiments: [
         experiment(301, 'probe_a_covered', held_out, 0, %w[A B], [401]),
         experiment(302, 'probe_b_covered', not_held_out, 0, %w[A B], [402]),
-        experiment(304, 'probe_c_union', held_out, 0, %w[A B], [404, 405]),
+        experiment(304, 'probe_c_union', held_out, 0, %w[A B], [405, 404]),
         experiment(305, 'probe_d_covered', held_out, 0, %w[A B], [406]),
         experiment(306, 'probe_d_uncovered_sibling', held_out, 0, %w[A B], nil),
         experiment(307, 'probe_e_dangling_plus_valid', held_out, 0, %w[A B], [999, 407]),
