@@ -941,10 +941,11 @@ class TestOrchestrator:
         return negotiated, fetches
 
     def measure_context_fetch_brotli(self, sdk_name: str, base_url: str) -> bool:
-        """contextFetchBrotli: br advertised on create and refresh, br served, and both bodies used.
+        """contextFetchBrotli: br advertised on create and refresh, and both bodies used.
 
         The probe payload allows br > gzip > identity (negotiation.BR_PREFERENCE),
-        so an SDK that advertises br is served br. Raises MeasurementError when
+        so an SDK that advertises br is served br (_measured_fetches raises if
+        the server served anything else). Raises MeasurementError when
         the probe could not measure anything (see _measured_fetches).
         """
         negotiated, fetches = self._measured_fetches(base_url, negotiation.BR_PREFERENCE)
@@ -952,9 +953,11 @@ class TestOrchestrator:
         served = [r.get("served") for r in fetches]
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
         advertised = all(negotiation.advertises(h, "br") for h in headers)
+        # No "br not served" check: a header that advertises br (q > 0) makes br
+        # acceptable, br is first in BR_PREFERENCE, so the negotiation chooses br;
+        # anything else served already raised in _measured_fetches.
         failed_checks = [name for name, failed in (
             ("no br advertised", not advertised),
-            ("br not served", any(c != "br" for c in served)),
             ("refresh not fetched", not refreshed),
             ("not decoded", negotiated.get("decoded") is not True),
             ("refresh data not used", negotiated.get("refreshDecoded") is not True),
