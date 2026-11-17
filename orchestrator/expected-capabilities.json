@@ -507,12 +507,12 @@
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms"
       ],
       "unsupported": {
-        "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
         "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
       }
