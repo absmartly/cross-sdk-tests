@@ -9,6 +9,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:absmartly_dart/absmartly_dart.dart';
 import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
+import 'holdout_self_test.dart' as holdout_self_test;
 
 String translateEndpoint(String endpoint) {
   final uri = Uri.parse(endpoint);
@@ -278,9 +279,14 @@ void main() async {
     );
   });
 
-  router.get('/capabilities', (shelf.Request request) {
+  router.get('/capabilities', (shelf.Request request) async {
+    // Advertised only when the behavioural self-test passes against the SDK.
+    final holdouts = await holdout_self_test.runHoldouts();
+    final holdoutArms = await holdout_self_test.runHoldoutArms();
     return shelf.Response.ok(
       jsonEncode({
+        'holdouts': holdouts,
+        'holdout_arms': holdoutArms,
         'diagnostics': true,
         'diagnosticsUtf8': true,
         'attrsSeq': false,
