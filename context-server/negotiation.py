@@ -6,16 +6,12 @@ its image copies this file next to test_runner.py), so the server's choice and
 the orchestrator's reading of a recorded request cannot drift apart.
 
 Each payload declares the codings the server may serve, in preference order
-(`encodings`). The gzip group (scenarios 270-272, and the contextFetchCompression
-probe) declares DEFAULT_PREFERENCE, gzip or identity, so br is never served to
-it. The br payloads (273+, and the contextFetchBrotli probe) declare
-BR_PREFERENCE: br > gzip > identity, Cloudflare's order among the codings this
-server can produce (Cloudflare puts zstd first; zstd is never served here). zstd
-is report-only: the orchestrator records whether an SDK's Accept-Encoding lists it.
+(`encodings`): DEFAULT_PREFERENCE for the gzip group (270-272 and the
+contextFetchCompression probe, never br), BR_PREFERENCE for the br payloads
+(273+ and the contextFetchBrotli probe). zstd is never served, only reported.
 
-Only the negotiation lives here, so this module stays stdlib only and the
-orchestrator can import it without the `brotli` package; the server's br
-encoder is the pinned `brotli` wheel (context-server/requirements.txt).
+This module stays stdlib only so the orchestrator can import it without the
+`brotli` package; only the server encodes br (context-server/requirements.txt).
 
 Parsing choices (RFC 9110 section 12.5.3 leaves some of these open):
   * codings are case-insensitive and surrounding whitespace is ignored;
@@ -33,7 +29,8 @@ CODINGS = ("br", "gzip", "identity")
 # The gzip group's payloads (270-272) and a payload stored without `encodings`:
 # never br, so every SDK sees what it saw before br existed.
 DEFAULT_PREFERENCE = ["gzip", "identity"]
-# The br group's payloads: Cloudflare's preference among br and gzip.
+# The br group's payloads: Cloudflare's order among the codings served here
+# (Cloudflare puts zstd first).
 BR_PREFERENCE = ["br", "gzip", "identity"]
 ALIASES = {"x-gzip": "gzip"}
 

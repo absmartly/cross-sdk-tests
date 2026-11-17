@@ -16,21 +16,16 @@ Every scenario in the group serves the same context through a different path:
   * Request Advertises Gzip (gated on contextFetchCompression): the recorded
     Accept-Encoding of the create AND the refresh fetch must advertise gzip and
     each gzip body must decode (the refreshed one is checked by its new value).
-  * Brotli Offered (ungated, every SDK; 273): the same fetch against a payload that
-    allows br > gzip > identity (negotiation.BR_PREFERENCE, Cloudflare's order among
-    them). Whatever the SDK negotiates (br, gzip or identity) it must produce exactly
-    the Direct Data Twin's (271) treatment, variable, exposure and publish, then
-    refresh through its own fetch and serve the refreshed data: offering br never
-    breaks an SDK. It shares 271 as its twin (same builder, same expectations).
-  * Request Advertises Brotli (gated on contextFetchBrotli; 274): the recorded
-    Accept-Encoding of the create AND the refresh fetch must advertise br. The
-    server then serves br (every fetch is re-checked against the shared
-    negotiation, so br advertised on a br payload means br served) and both bodies
-    must decode, the refreshed one checked by its new value.
+  * Brotli Offered (ungated, every SDK; 273): 270's steps on a payload that allows
+    br > gzip > identity (negotiation.BR_PREFERENCE). Whatever the SDK negotiates it
+    must match the Direct Data Twin (271) and serve the refreshed data: offering br
+    never breaks an SDK.
+  * Request Advertises Brotli (gated on contextFetchBrotli; 274): 272 with br in
+    place of gzip; br advertised on a br payload means br served (every fetch is
+    re-checked against the shared negotiation).
 
-The gzip scenarios (270-272) keep negotiation.DEFAULT_PREFERENCE (gzip or identity):
-br is never served to them, so an SDK that advertises br (swift) sees exactly what
-it saw before the br scenarios existed.
+The gzip scenarios (270-272) keep negotiation.DEFAULT_PREFERENCE: br is never
+served to them, so an SDK that advertises br (swift) sees what it saw before.
 
 The refreshed data differs from the created data: exp_test_ab's traffic split
 changes to [0.5, 0.5], so this uid falls out of traffic and the next treatment
