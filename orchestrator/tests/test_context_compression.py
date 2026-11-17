@@ -221,6 +221,18 @@ def test_required_where_observed_or_read_from_code():
     assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 
 
+def test_brotli_required_where_observed_or_read_from_code():
+    """contextFetchBrotli: only swift is required; the other 19 are reviewed exceptions with provenance."""
+    policy = test_runner.load_capability_policy()
+    br = "contextFetchBrotli"
+    required = sorted(sdk for sdk, e in policy["sdks"].items() if br in e["required"])
+    assert required == ["swift"]
+    excepted = {sdk: e["unsupported"][br] for sdk, e in policy["sdks"].items() if br in e["unsupported"]}
+    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift"})
+    assert len(excepted) == 19
+    assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
+
+
 def test_measured_capability_needs_a_probe():
     policy = test_runner.load_capability_policy()
     policy["measuredCapabilities"] = ["holdouts"]
