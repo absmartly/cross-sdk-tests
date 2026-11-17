@@ -53,14 +53,14 @@ import unicodedata
 from collections import OrderedDict
 from typing import NamedTuple, Optional
 
-from scenario_groups import place_group
+import scenario_groups
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 GOLDEN = os.path.join(HERE, "fixtures", "switchback", "golden-vectors.json")
 PATH_CASES = os.path.join(HERE, "fixtures", "switchback", "attribute-path-cases.json")
 
-GROUP_MARKER = " - Switchback "
+GROUP_MARKER = scenario_groups.SWITCHBACK
 CAPABILITY = "switchback"
 
 ASSIGN_CASES = 882
@@ -701,6 +701,10 @@ SERVING_MUTANTS = (
     "variable_value_silent",   # variableValue resolves the variant but never exposes
     "zero_maps_to_one",        # an eligible draw of 0 is served as variant 1
     "rule_override_true_on_ordinary",  # every switchback exposure flagged ruleOverride, not only rule-won ones
+    "holdout_beats_rule",      # a covering holdout holds the switchback out before its assign rule is evaluated
+    "holdout_exposure_fires",  # exposing a covered switchback also queues the holdout's own exposure
+    "sorted_clusters",         # switchbackClusters decoded into a sorted map (declared order lost)
+    "reverse_sorted_clusters", # the same, in reverse key order (another unordered-map iteration order)
 )
 ALL_MUTANTS = tuple(KEY_MUTANTS) + ("sticky",) + SERVING_MUTANTS
 ARITHMETIC_MUTANTS = ("period_zero", "period_plus_one", "unmasked_seed_lo", "swapped_seed")
@@ -761,6 +765,8 @@ class ContextModel:
     def __init__(self, context_data: dict, units: dict, mutant: Optional[str] = None):
         self.mutant = mutant
         self.experiments = {e["name"]: e for e in context_data["experiments"]}
+        self.holdouts = {h["id"]: h for h in context_data.get("holdouts") or []}
+        self.fired_holdouts = set()
         self.units = list(units.items())
         if mutant == "units_outer_reversed":
             self.units.reverse()
@@ -794,8 +800,11 @@ class ContextModel:
             clusters = {exp["switchbackClusterUnitType"]: exp.get("switchbackClusterAttribute") or "-"}
         if not isinstance(clusters, dict) or not clusters:
             return None
+        items = list(clusters.items())
+        if m in ("sorted_clusters", "reverse_sorted_clusters"):
+            items.sort(reverse=m == "reverse_sorted_clusters")
         sources = []
-        for unit_type, path in clusters.items():
+        for unit_type, path in items:
             segments = supported_attribute_path(path)
             if segments is None and m in ("dotted_nesting", "lax_index_position", "lax_values") and isinstance(path, str):
                 dotted = "." in path
@@ -886,6 +895,8 @@ class ContextModel:
                                                                    full_on=True)
             return 0, None
 
+        if exp.get("holdoutIds") and m == "holdout_beats_rule":
+            return 0, None
         rule = _assign_rule_variant(exp.get("assignmentRules"))
         anchor = _servable(exp, m)
         servable = anchor is not None
@@ -961,7 +972,16 @@ class ContextModel:
             return cached[1], []
         exposed, cached[2] = cached[2], None
         self.pending.append(exposed)
-        return cached[1], [{"type": "exposure", "data": exposed}]
+        events = [{"type": "exposure", "data": exposed}]
+        if self.mutant == "holdout_exposure_fires":
+            for holdout_id in exp.get("holdoutIds") or []:
+                if holdout_id in self.holdouts and holdout_id not in self.fired_holdouts:
+                    self.fired_holdouts.add(holdout_id)
+                    holdout = self.holdouts[holdout_id]
+                    held = exposure(holdout, 0)
+                    self.pending.append(held)
+                    events.append({"type": "exposure", "data": held})
+        return cached[1], events
 
     def run(self, step: dict) -> dict:
         """The expect block of one step after the create step."""
@@ -1383,20 +1403,23 @@ def holdout_scenarios() -> list:
     uid = pick_uid("holdout", QUIET3)
     exp = switchback_experiment(410, "exp_sb_holdout_ignored", [("store_id", "city")], 3, holdoutIds=[1])
     city = pick_value(lambda k: f"held-{k}", uid, exp)
-    # The full holdout shape of scenarios 203-227, so a holdout-applying SDK holds out rather than
-    # failing to parse a truncated holdout.
-    holdouts = [{"id": 1, "name": "holdout_sb_everyone", "iteration": 1, "unitType": "store_id", "seedHi": 13,
-                 "seedLo": 111, "split": [1.0, 0.0], "trafficSeedHi": 0, "trafficSeedLo": 0, "trafficSplit": [0, 1],
-                 "fullOnVariant": 0, "applications": [],
-                 "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
-                 "audience": None, "audienceStrict": False, "customFieldValues": None, "holdoutType": "full"}]
     return [Scenario(
         "Holdouts Never Apply To A Switchback",
         ("The switchback is covered by a holdout whose split [1, 0] holds every unit out (variant 0). Holdouts "
          "never apply to a switchback: the cluster's draw is served, exactly one exposure (the switchback's own) "
          "is recorded and the holdout records none."),
-        [exp], {"store_id": uid}, holdouts=holdouts,
+        [exp], {"store_id": uid}, holdouts=[everyone_holdout(1, "holdout_sb_everyone")],
     ).attr("city", city).treat(exp).publish().build()]
+
+
+def everyone_holdout(holdout_id: int, name: str) -> dict:
+    """A store_id holdout whose split [1, 0] holds every unit out, in the full holdout shape of
+    scenarios 203-227, so a holdout-applying SDK holds out rather than failing to parse it."""
+    return {"id": holdout_id, "name": name, "iteration": 1, "unitType": "store_id", "seedHi": 13,
+            "seedLo": 111, "split": [1.0, 0.0], "trafficSeedHi": 0, "trafficSeedLo": 0, "trafficSplit": [0, 1],
+            "fullOnVariant": 0, "applications": [],
+            "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
+            "audience": None, "audienceStrict": False, "customFieldValues": None, "holdoutType": "full"}
 
 
 def legacy_scenarios() -> list:
@@ -1591,6 +1614,69 @@ def variable_scenarios() -> list:
     return [sc.treat(exp).pending().publish().build()]
 
 
+def holdout_and_rule_scenarios() -> list:
+    """S2: a switchback, a covering holdout and an assignment rule in one payload (java-sdk main:
+    an eligible cluster's assign rule wins and holdouts are never consulted for a switchback)."""
+    uid = pick_uid("holdrule", QUIET3)
+    probe = switchback_experiment(470, "probe", [("store_id", "city")], 3, holdoutIds=[2])
+    city = pick_value(lambda k: f"hr-{k}", uid, probe)
+    drawn = draw(city, probe)
+    other = _other(drawn)
+    assign_rule = json.dumps({"rules": [{"type": "assign", "environments": [], "variant": other}]},
+                             separators=(",", ":"))
+    ruled = switchback_experiment(470, "exp_sb_holdout_rule", [("store_id", "city")], 3, holdoutIds=[2],
+                                  assignmentRules=assign_rule)
+    drawn_exp = switchback_experiment(471, "exp_sb_holdout_no_rule", [("store_id", "city")], 3, holdoutIds=[2])
+    return [Scenario(
+        "Holdout And Assignment Rule - The Rule Wins And The Holdout Is Never Consulted",
+        ("One payload: a holdout whose split [1, 0] holds every store_id unit out covers two switchbacks served "
+         f"from the same cluster (period-0 draw {drawn}). exp_sb_holdout_rule also has an assign rule to {other}: "
+         f"the rule wins (variant {other}, assigned=false, ruleOverride=true), never the holdout's control. "
+         f"exp_sb_holdout_no_rule serves the draw {drawn} (ruleOverride=false). The holdout never applies to a "
+         "switchback, so exactly the two switchback exposures are queued and published and the holdout records "
+         "none: an SDK that evaluates the holdout before the rule serves 0, and one that fires the covering "
+         "holdout's exposure as for a unit experiment publishes a third exposure."),
+        [ruled, drawn_exp], {"store_id": uid}, holdouts=[everyone_holdout(2, "holdout_sb_rule")],
+    ).attr("city", city).treat(ruled, drawn_exp).pending().publish().build()]
+
+
+def many_sources_scenarios() -> list:
+    """S4: three or more cluster sources declared in an order that is neither alphabetical nor
+    reverse alphabetical, so an SDK decoding switchbackClusters into a sorted or otherwise unordered
+    map serves another unit. Every source carries the same value (agreement), and each experiment's
+    traffic is in for its declared-first unit's uid only, so any other serving unit misses traffic."""
+    uids = {"store_id": pick_uid("many-store", QUIET3), "device_id": pick_uid("many-device", QUIET3),
+            "user_id": pick_uid("many-user", QUIET3)}
+    paths = {"store_id": "store_city", "device_id": "device/city", "user_id": "profile/city"}
+    orders = [("exp_sb_many_user_first", ["user_id", "device_id", "store_id"]),
+              ("exp_sb_many_store_first", ["store_id", "user_id", "device_id"])]
+    split = [0.5, 0.5]
+    experiments = []
+    for offset, (name, order) in enumerate(orders):
+        first = order[0]
+        traffic = next((1, k) for k in range(1, 10_000)
+                       if all((unit_variant(uids[t], split, 1, k) == 1) == (t == first) for t in uids))
+        experiments.append(switchback_experiment(480 + offset, name, [(t, paths[t]) for t in order], 3,
+                                                 trafficSplit=split, trafficSeedHi=traffic[0],
+                                                 trafficSeedLo=traffic[1]))
+    city = next(f"many-{k}" for k in range(10_000)
+                if all(discriminates(f"many-{k}", uids[e["unitType"]], e) for e in experiments))
+    units = {t: uids[t] for t in ("store_id", "device_id", "user_id")}
+    return [Scenario(
+        "Many Sources - Declared Cluster Order Is Kept, Not Sorted",
+        ("switchbackClusters has three entries whose JSON key order is the declared order and is neither "
+         "alphabetical nor reverse alphabetical: exp_sb_many_user_first declares user_id, device_id, store_id and "
+         "exp_sb_many_store_first declares store_id, user_id, device_id. Every source path holds the same value "
+         f"({city!r}), so the units agree and the first declared unit serves. Each experiment's trafficSplit "
+         "[0.5, 0.5] is in for its first declared unit's uid and out for the other two, so the cluster's draw is "
+         "served under the first declared unit; an SDK that decodes the cluster map into a sorted or other "
+         "unordered map serves another unit, which misses traffic (variant 0, eligible=false, exposed under the "
+         "wrong unit)."),
+        experiments, units,
+    ).attr("store_city", city).attr("device", {"city": city}).attr("profile", {"city": city})
+        .treat(*experiments).publish().build()]
+
+
 # ---------------------------------------------------------------------------
 # Rule map, discrimination checks and assembly
 # ---------------------------------------------------------------------------
@@ -1634,6 +1720,10 @@ RULES = OrderedDict([
         "Read Once Per Period - A Later setAttribute Does Not Move The Slot"]),
     ("peek / peekVariableValue / variableValue resolve the cluster draw; only exposing calls expose", [
         "Peek And Variable Values Resolve The Cluster Draw"]),
+    ("a switchback with a covering holdout and an assign rule: the rule wins, no holdout exposure", [
+        "Holdout And Assignment Rule - The Rule Wins And The Holdout Is Never Consulted"]),
+    ("three or more sources: the declared (JSON) cluster order serves, not a sorted or unordered map", [
+        "Many Sources - Declared Cluster Order Is Kept, Not Sorted"]),
 ])
 
 
@@ -1645,6 +1735,8 @@ _LEGACY = "Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E 
 _PATHS = "Attribute Paths - Platform Path Cases And Malformed Paths"
 _ALLOW = "Allow-List - In, Out, Null And Empty"
 _SCHEDULE = "Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls"
+_HOLDOUT_RULE = "Holdout And Assignment Rule - The Rule Wins And The Holdout Is Never Consulted"
+_MANY = "Many Sources - Declared Cluster Order Is Kept, Not Sorted"
 MUTANT_SCENARIOS = {
     **{m: [_SINGLE, "Peek And Variable Values Resolve The Cluster Draw"] for m in KEY_MUTANTS},
     "sticky": [_SINGLE],
@@ -1659,7 +1751,11 @@ MUTANT_SCENARIOS = {
     "pre_anchor_exposes": [_SCHEDULE],
     "traffic_miss_silent": [_TRAFFIC, _PREC],
     "traffic_on_unit_type": [_TRAFFIC],
-    "holdout_applies": ["Holdouts Never Apply To A Switchback"],
+    "holdout_applies": ["Holdouts Never Apply To A Switchback", _HOLDOUT_RULE],
+    "holdout_beats_rule": [_HOLDOUT_RULE],
+    "holdout_exposure_fires": ["Holdouts Never Apply To A Switchback", _HOLDOUT_RULE],
+    "sorted_clusters": [_MANY],
+    "reverse_sorted_clusters": [_MANY],
     "ignore_override": [_PREC],
     "ignore_full_on": [_PREC],
     "ignore_rules": [_PREC],
@@ -1721,15 +1817,16 @@ def load_fixtures() -> Fixtures:
     return Fixtures(golden, paths)
 
 
-def builders(fixtures: Fixtures) -> list:
+def group_scenarios(fixtures: Fixtures) -> list:
+    """Every scenario of the group, unnumbered. Scenario ids are positional: new scenarios go last."""
     return [
-        lambda: golden_scenarios(fixtures.golden),
-        single_source_scenarios, declared_order_scenarios, agreement_disagreement_scenarios,
-        value_normalisation_scenarios, lambda: path_scenarios(fixtures.paths), allow_list_scenarios,
-        schedule_scenarios, traffic_scenarios, precedence_scenarios, holdout_scenarios, legacy_scenarios,
-        refresh_scenarios, dedup_and_payload_scenarios, inertness_scenarios,
-        # Scenario ids are positional: new builders go last.
-        read_once_scenarios, variable_scenarios,
+        *golden_scenarios(fixtures.golden),
+        *single_source_scenarios(), *declared_order_scenarios(), *agreement_disagreement_scenarios(),
+        *value_normalisation_scenarios(), *path_scenarios(fixtures.paths), *allow_list_scenarios(),
+        *schedule_scenarios(), *traffic_scenarios(), *precedence_scenarios(), *holdout_scenarios(),
+        *legacy_scenarios(), *refresh_scenarios(), *dedup_and_payload_scenarios(), *inertness_scenarios(),
+        *read_once_scenarios(), *variable_scenarios(), *holdout_and_rule_scenarios(),
+        *many_sources_scenarios(),
     ]
 
 
@@ -1795,19 +1892,18 @@ def check_discrimination(scenarios: list, draws: dict) -> dict:
     return caught
 
 
-def build_group(fixtures: Fixtures, first_number: int, with_report: bool = False):
+def build_group(fixtures: Fixtures, first_number: int) -> tuple:
+    """(the group numbered from first_number, mutant -> names of the scenarios it fails)."""
     scenarios, draws = [], {}
-    for builder in builders(fixtures):
-        for scenario in builder():
-            scenario["name"] = f"{first_number + len(scenarios)} - Switchback - {scenario['name']}"
-            draws[scenario["name"]] = scenario.pop("_draws", [])
-            scenarios.append(scenario)
+    for scenario in group_scenarios(fixtures):
+        scenario["name"] = f"{first_number + len(scenarios)} - Switchback - {scenario['name']}"
+        draws[scenario["name"]] = scenario.pop("_draws", [])
+        scenarios.append(scenario)
     names = [s["name"].split(" - Switchback - ", 1)[1] for s in scenarios]
     missing = [n for ns in RULES.values() for n in ns if n not in names]
     if missing:
         raise SystemExit(f"RULES names no scenario: {missing}")
-    caught = check_discrimination(scenarios, draws)
-    return (scenarios, caught) if with_report else scenarios
+    return scenarios, check_discrimination(scenarios, draws)
 
 
 def rule_map(scenarios: list) -> list:
@@ -1835,10 +1931,11 @@ def main() -> int:
 
     def build(first_number):
         nonlocal caught
-        group, caught = build_group(fixtures, first_number, with_report=True)
+        group, caught = build_group(fixtures, first_number)
         return group
 
-    updated, group = place_group(existing, (GROUP_MARKER,), build)
+    updated, group = scenario_groups.place_group(existing, (GROUP_MARKER,), build,
+                                                 first_number=scenario_groups.SWITCHBACK_FIRST_NUMBER)
 
     if args.rules:
         for rule, numbers in rule_map(group):

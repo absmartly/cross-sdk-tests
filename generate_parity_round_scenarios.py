@@ -39,9 +39,10 @@ import subprocess
 import sys
 
 import generate_sdk_round_2026_11_scenarios as round2611
+import scenario_groups
 from generate_sdk_round_2026_11_scenarios import (
-    PENDING, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
-    rules, treatment, variable_value,
+    PENDING, SYSATTR_APP, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
+    refresh, rules, treatment, variable_value,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,18 +52,16 @@ CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 # #19 up to 253, #20 up to 232, #13 up to 271 and unopened branches up to 286, so 300+ is free.
 FIRST_NUMBER = 300
 
-RULES_MARKER = " - Assignment Rules - "
-SEMVER_MARKER = " - Semver Comparison - "
-XAGENT_MARKER = " - X-Agent - "
-CLIENT_APP_MARKER = " - Client Application - "
-PARITY_MARKERS = (RULES_MARKER, SEMVER_MARKER, XAGENT_MARKER, CLIENT_APP_MARKER)
-# The Switchback group (generate_switchback_scenarios.py) is appended after the parity groups. It
-# stays after them with its own numbers, so regenerating either file never moves the other's group.
-LATER_GROUP_MARKERS = (" - Switchback ",)
+RULES_MARKER = scenario_groups.PARITY_RULES
+SEMVER_MARKER = scenario_groups.PARITY_SEMVER
+XAGENT_MARKER = scenario_groups.PARITY_XAGENT
+CLIENT_APP_MARKER = scenario_groups.PARITY_CLIENT_APP
+PARITY_MARKERS = scenario_groups.PARITY_MARKERS
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
 HOLDOUTS_CAPABILITY = "holdouts"
+SEMVER_NUMERIC_CAPABILITY = "semverNumericOperands"
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 XAGENT_CAPABILITY = "xAgentHeader"
 REJECTS_BLANK_APP_CAPABILITY = "clientRejectsBlankApplication"
@@ -260,11 +259,11 @@ def rules_specs():
     specs.append(spec(
         "Split Rule Exposed Without Its Unit Stays Pinned After The Unit Is Set",
         "The split rule matches without its unit and treatment() exposes the no-unit result "
-        "(variant 0). Setting the unit afterwards does not move the user: treatment still returns "
-        "0 and no second exposure is queued.",
+        "(variant 0). Setting the unit and then an attribute (which re-evaluates the assignment) "
+        "does not move the user: treatment still returns 0 and no second exposure is queued.",
         [seeded(experiment(441, "exp_rules_late_pinned", assignment_rules=late_split, split=[1, 0]))],
         [treatment("exp_rules_late_pinned"), set_unit("session_id", LATE_UNIT),
-         treatment("exp_rules_late_pinned"), PENDING],
+         attribute("x", "y"), treatment("exp_rules_late_pinned"), PENDING],
         units=no_unit, requires=[RULES_CAPABILITY]))
 
     specs.append(spec(
@@ -332,6 +331,132 @@ def rules_specs():
         requires=[RULES_CAPABILITY, SEMVER_CAPABILITY]))
 
     return specs
+
+
+def rules_system_attributes_specs():
+    """Rule conditions over the configured application/environment (javascript-sdk#68): the same
+    evaluation map as audiences, with a user-set attribute of the same name winning. Appended after
+    the other parity groups so 300-323 keep their numbers."""
+    client = {"application": SYSATTR_APP, "environment": SYSATTR_ENV}
+
+    def on(var, value):
+        return rules({"name": f"{var}-{value}", "type": "assign", "variant": 0,
+                      "conditions": {"eq": [{"var": var}, {"value": value}]}})
+
+    return [
+        spec(
+            "Rule Conditions Read The Configured Application And Environment",
+            f"With client application '{SYSATTR_APP}' and environment '{SYSATTR_ENV}' and no user "
+            "attributes, a rule conditioned on environment and a rule conditioned on application "
+            "both match (variant 0, ruleOverride:true); an SDK that evaluates rule conditions on "
+            "user attributes only gives the normal variant 1.",
+            [experiment(480, "exp_rules_sys_env", assignment_rules=on("environment", SYSATTR_ENV)),
+             experiment(481, "exp_rules_sys_app", assignment_rules=on("application", SYSATTR_APP))],
+            [treatment("exp_rules_sys_env"), treatment("exp_rules_sys_app"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
+        spec(
+            "A User-Set Environment Overrides The Configured One In Rule Conditions",
+            f"With client environment '{SYSATTR_ENV}', the user sets attribute environment "
+            "'user-env': a rule conditioned on the configured name no longer matches (normal variant "
+            "1, ruleOverride:false) and a rule conditioned on the user value matches (variant 0, "
+            "ruleOverride:true).",
+            [experiment(482, "exp_rules_sys_env_cfg", assignment_rules=on("environment", SYSATTR_ENV)),
+             experiment(483, "exp_rules_sys_env_user", assignment_rules=on("environment", "user-env"))],
+            [attribute("environment", "user-env"), treatment("exp_rules_sys_env_cfg"),
+             treatment("exp_rules_sys_env_user"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
+        spec(
+            "Rule Environment Scope Uses The Configured Environment, Not A User-Set One",
+            f"With client environment '{SYSATTR_ENV}', the user sets attribute environment "
+            "'user-env'. A rule scoped to environments ['user-env'] is skipped (normal variant 1, "
+            "ruleOverride:false) and a rule scoped to the configured environment still matches "
+            "(variant 0, ruleOverride:true): a user attribute overrides conditions, never the scope.",
+            [experiment(484, "exp_rules_scope_user", assignment_rules=rules(
+                {"name": "user-scope", "type": "assign", "variant": 0, "environments": ["user-env"]})),
+             experiment(485, "exp_rules_scope_cfg", assignment_rules=rules(
+                 {"name": "cfg-scope", "type": "assign", "variant": 0, "environments": [SYSATTR_ENV]}))],
+            [attribute("environment", "user-env"), treatment("exp_rules_scope_user"),
+             treatment("exp_rules_scope_cfg"), PENDING],
+            client=client, requires=[RULES_CAPABILITY]),
+    ]
+
+
+def rules_robustness_specs():
+    """Rule data the backend may change or extend: unknown rule types and malformed rule fields are
+    skipped for the next rule, invalid rules JSON stays isolated to its experiment, and a rule change
+    on refresh re-resolves the assignment. Appended after the other parity groups."""
+    fallback = {"name": "fallback", "type": "assign", "variant": 0}
+    specs = []
+    malformed = (("unknown-type", {"name": "future", "type": "pin", "variant": 1}),
+                 ("fractional-variant", {"name": "fraction", "type": "assign", "variant": 1.5}),
+                 ("string-environments", {"name": "scoped", "type": "assign", "variant": 1,
+                                          "environments": "parity-env"}))
+    exps, steps = [], []
+    for i, (label, bad) in enumerate(malformed):
+        name = f"exp_rules_skip_{label.replace('-', '_')}"
+        exps.append(experiment(487 + i, name, assignment_rules=rules(bad, fallback)))
+        steps.append(treatment(name))
+    steps.append(PENDING)
+    specs.append(spec(
+        "Unknown Rule Types And Malformed Rule Fields Are Skipped For The Next Rule",
+        "A rule of an unknown type ('pin', carrying a variant), an assign rule with a fractional "
+        "variant (1.5), and a rule whose environments is a string rather than a list are each "
+        "skipped, and the next rule (assign variant 0) wins with ruleOverride:true. The string scope "
+        "names the configured environment, so an SDK that accepted it as a one-item list would match "
+        "it. A future rule type must never be served as an assign rule.",
+        exps, steps, client={"application": "parity-app", "environment": "parity-env"},
+        requires=[RULES_CAPABILITY]))
+
+    matching = rules({"name": "a", "type": "assign", "variant": 0})
+    not_matching = rules({"name": "a", "type": "assign", "variant": 0,
+                          "conditions": {"eq": [{"var": "country"}, {"value": "US"}]}})
+    changed = experiment(492, "exp_rules_refresh_changed", assignment_rules=matching)
+    dropped = experiment(493, "exp_rules_refresh_dropped", assignment_rules=matching)
+    after_changed = experiment(492, "exp_rules_refresh_changed", assignment_rules=not_matching)
+    after_dropped = dict(experiment(493, "exp_rules_refresh_dropped"))
+    after_dropped.pop("assignmentRules", None)
+    specs.append(spec(
+        "A Rule Changed Or Removed On Refresh Re-Resolves The Assignment",
+        "Both experiments start with a matching assign-0 rule (variant 0, ruleOverride:true). A "
+        "refresh changes the first experiment's rule to one whose condition no longer matches and "
+        "removes the second experiment's rules: each now gets its normal variant 1 with a fresh "
+        "exposure (ruleOverride:false) instead of the stale rule variant.",
+        [changed, dropped],
+        [treatment("exp_rules_refresh_changed"), treatment("exp_rules_refresh_dropped"),
+         refresh({"experiments": [after_changed, after_dropped]}),
+         treatment("exp_rules_refresh_changed"), treatment("exp_rules_refresh_dropped"), PENDING],
+        requires=[RULES_CAPABILITY]))
+
+    bad = experiment(494, "exp_rules_invalid_json")
+    bad["assignmentRules"] = "{not json"
+    specs.append(spec(
+        "Invalid Assignment Rules JSON Stays Isolated To Its Experiment",
+        "An experiment whose assignmentRules is not valid JSON gets its normal assignment (variant 1, "
+        "ruleOverride:false), and the next experiment's valid assign-0 rule still applies: one bad "
+        "rules string never fails the context or other experiments.",
+        [bad, experiment(495, "exp_rules_after_invalid", assignment_rules=matching)],
+        [treatment("exp_rules_invalid_json"), treatment("exp_rules_after_invalid"), PENDING],
+        requires=[RULES_CAPABILITY]))
+    return specs
+
+
+def rules_split_parsing_specs():
+    """Split percentages are parsed like JS parseFloat: a numeric prefix counts and trailing text is
+    ignored. Appended after the other parity groups so earlier numbers stay put."""
+    fallback = {"name": "fallback", "type": "assign", "variant": 0}
+    return [spec(
+        "Split Percentages Parse A Numeric Prefix Like parseFloat",
+        "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid "
+        "and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it "
+        "and the fallback rule assigns variant 0. 'abc/100' has no numeric prefix, so it is invalid "
+        "(NaN) and the fallback assigns variant 0; a parser that maps garbage to 0 (atof, to_f) "
+        "accepts it as 0/100 and assigns variant 1.",
+        [experiment(486, "exp_rules_parse_prefix", assignment_rules=rules(
+            {"name": "prefix", "type": "split", "percentages": "0abc/100"}, fallback)),
+         experiment(496, "exp_rules_parse_nan", assignment_rules=rules(
+             {"name": "nan", "type": "split", "percentages": "abc/100"}, fallback))],
+        [treatment("exp_rules_parse_prefix"), treatment("exp_rules_parse_nan"), PENDING],
+        requires=[RULES_CAPABILITY])]
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +533,22 @@ def semver_specs():
              ("semver_lte", "1.0.0", ""), ("semver_gt", 2, "1.9.9"),
              ("semver_gt", "abc", "1.0.0"), ("semver_lt", "abc", "1.0.0")], 540),
     ]
+
+
+def semver_coercion_specs():
+    """Operand coercion the reference pins: numbers are converted like JS toFixed(15) with trailing
+    zeros trimmed (so 1e-7 is 0.0000001, not '1e-7'), and leading zeros in a numeric identifier are
+    stripped. Appended after the other parity groups."""
+    numeric = semver_case_spec(
+        "A Numeric Operand Compares As Its Fixed-Point String",
+        "A numeric attribute is converted like JS toFixed(15) with trailing zeros trimmed, so 1e-7 "
+        "equals 0.0000001 (not '1E-07').",
+        [("semver_eq", 1e-7, "0.0000001")], 551)
+    numeric["requires"] = [SEMVER_CAPABILITY, SEMVER_NUMERIC_CAPABILITY]
+    return [semver_case_spec(
+        "Leading Zeros In Numeric Identifiers Are Ignored",
+        "Leading zeros in a numeric identifier are ignored, so 01.0.0 equals 1.0.0.",
+        [("semver_eq", "01.0.0", "1.0.0")], 550), numeric]
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +706,11 @@ def build_scenario(s, ran, number, marker, strip_rule_override):
                   "expect": {"result": ran["ready"],
                              "events": round2611.ready_events(ran["readyEvents"])}}]
     for (action, params), got in zip(s["steps"], ran["steps"]):
+        if action == "refresh":
+            out_steps.append({"action": action, "params": params,
+                              "expect": {"result": got["result"],
+                                         "events": round2611.refresh_events(got["events"])}})
+            continue
         events = got["events"]
         for event in events:
             if event["type"] != "exposure":
@@ -606,31 +752,33 @@ def build_groups():
             n += 1
     groups.extend(xagent_scenarios(n))
     groups.extend(client_application_scenarios(FIRST_NUMBER + len(groups)))
+    n = FIRST_NUMBER + len(groups)
+    later = [(s, RULES_MARKER) for s in
+             rules_system_attributes_specs() + rules_split_parsing_specs() + rules_robustness_specs()]
+    later += [(s, SEMVER_MARKER) for s in semver_coercion_specs()]
+    for (s, marker), ran in zip(later, run_reference([s for s, _ in later])):
+        if len(ran["steps"]) != len(s["steps"]):
+            raise SystemExit(f"{s['title']}: JS reference returned an incomplete step list")
+        groups.append(build_scenario(s, ran, n, marker, strip_rule_override=marker != RULES_MARKER))
+        n += 1
     return groups
 
 
 def assemble(existing, build_groups):
-    """The canonical file with the parity groups (from `build_groups()`) rebuilt after every other
-    scenario except the later groups (LATER_GROUP_MARKERS), which stay after them unchanged.
-    Returns (updated scenarios, the rebuilt groups)."""
-    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
-    kept = [s for s in existing
-            if not any(m in s["name"] for m in PARITY_MARKERS) and s not in later]
+    """The canonical file with the parity groups (from `build_groups()`) rebuilt at FIRST_NUMBER..:
+    scenarios numbered below stay before them and the Switchback group (400+) stays after them, in file order. Returns (updated scenarios, the rebuilt groups)."""
+    rest = [s for s in existing if not any(m in s["name"] for m in PARITY_MARKERS)]
+    before = [s for s in rest if scenario_groups.number(s) < FIRST_NUMBER]
+    after = [s for s in rest if scenario_groups.number(s) >= FIRST_NUMBER]
     groups = build_groups()
-    # The parity groups own FIRST_NUMBER..; any other scenario numbered in that range (e.g. a later
-    # generator appending without knowing it) is a collision, not something to renumber silently.
-    taken = {int(s["name"].split(" - ", 1)[0]) for s in kept}
-    clashes = sorted(taken & {int(g["name"].split(" - ", 1)[0]) for g in groups})
-    if clashes or max(taken) >= FIRST_NUMBER:
-        raise SystemExit(f"scenarios {clashes or [max(taken)]} collide with the parity range "
-                         f"starting at {FIRST_NUMBER}")
-    if later and groups:
-        last = int(groups[-1]["name"].split(" - ", 1)[0])
-        first_later = min(int(s["name"].split(" - ", 1)[0]) for s in later)
-        if last >= first_later:
-            raise SystemExit(f"rebuilt parity scenarios end at {last}, colliding with the later "
-                             f"groups starting at {first_later}")
-    return kept + groups + later, groups
+    # The parity groups own FIRST_NUMBER up to the Switchback group's first id; any other scenario
+    # numbered in that range (e.g. a later generator appending without knowing it) is a collision,
+    # not something to renumber silently.
+    end = scenario_groups.SWITCHBACK_FIRST_NUMBER
+    clashes = sorted(scenario_groups.number(s) for s in after if scenario_groups.number(s) < end)
+    if clashes or (groups and scenario_groups.number(groups[-1]) >= end):
+        raise SystemExit(f"scenarios {clashes} collide with the parity range {FIRST_NUMBER}-{end - 1}")
+    return before + groups + after, groups
 
 
 def main():

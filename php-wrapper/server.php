@@ -177,23 +177,8 @@ $contexts = [];
 $payloadStore = [];
 $capturedRequests = [];
 
-function canonicalError(string $message): string
-{
-    // The php-sdk deliberately keeps its v1 error text
-    // ('Unit "x" UID is already set'); the cross-SDK contract (and the JS
-    // reference) word this "Unit 'x' UID already set.". Map the wording rather
-    // than masking it.
-    if (preg_match('/^Unit "([^"]+)" UID is already set\.?$/', $message, $m)) {
-        return "Unit '{$m[1]}' UID already set.";
-    }
-    return $message;
-}
-
 function jsonResponse(int $status, $data): Response
 {
-    if (is_array($data) && isset($data['error']) && is_string($data['error'])) {
-        $data['error'] = canonicalError($data['error']);
-    }
     return new Response(
         $status,
         ['Content-Type' => 'application/json'],
@@ -260,6 +245,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
             'refreshNoOpOnFailedContext' => true,
+            'throwsOnMisuse' => true,
+            'singleFinalizeEvent' => true,
+            'semverNumericOperands' => true,
             'clientNoEnvironment' => true,
             'clientRejectsBlankApplication' => false,
             'clientAcceptsBlankApplication' => true,

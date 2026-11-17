@@ -483,6 +483,7 @@ def validate_captured_requests(
     if not isinstance(captured, list) or not all(isinstance(r, dict) for r in captured):
         return [failure("requests", "a JSON object with a list of request objects", body)]
     method = params.get("method")
+    method = method.upper() if method else None
     matching = [r for r in captured if method is None or str(r.get("method", "")).upper() == method]
     minimum = expected.get("minRequests", 1)
     if len(matching) < minimum:
@@ -920,6 +921,7 @@ class TestOrchestrator:
                             "failLoad": True,
                             "units": params["units"],
                             "options": params.get("options", {}),
+                            **({"client": params["client"]} if "client" in params else {}),
                         },
                         timeout=5,
                     )
@@ -1088,6 +1090,8 @@ class TestOrchestrator:
                                 "actual": error_msg,
                             }
                         )
+                elif "status" in expected:
+                    pass
                 else:
                     failures.append(
                         {
@@ -1144,6 +1148,14 @@ class TestOrchestrator:
         # raise), so if the scenario expected an error, the call succeeding is
         # itself a failure. Without this, error scenarios pass vacuously whenever
         # the SDK returns HTTP 200 instead of the expected failure.
+        # The same holds for a step that pins only an error HTTP status.
+        if expected.get("status", 200) >= 400 and not (
+            "errorContains" in expected or "error" in expected or "errorAnyOf" in expected
+        ):
+            http_status = actual.get("status", 200) if isinstance(actual, dict) else 200
+            fail("status", expected["status"], f"expected HTTP {expected['status']} but call succeeded (got HTTP {http_status})")
+            return failures
+
         if "errorContains" in expected or "error" in expected or "errorAnyOf" in expected:
             if "errorAnyOf" in expected:
                 expected_error = " | ".join(expected["errorAnyOf"])

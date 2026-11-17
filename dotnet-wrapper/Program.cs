@@ -88,6 +88,9 @@ app.MapGet("/capabilities", () => Results.Ok(new
     publishThrowsOnFailure = true,
     trackRejectsNonObjectProperties = true,
     refreshNoOpOnFailedContext = true,
+    throwsOnMisuse = true,
+    singleFinalizeEvent = true,
+    semverNumericOperands = false,
     assignmentRules = true,
     semverOperators = true,
     xAgentHeader = true,
@@ -370,6 +373,10 @@ app.MapPost("/context", async (HttpContext httpContext) =>
                 !string.IsNullOrEmpty(envProp.GetString()))
             {
                 clientEnvironment = envProp.GetString()!;
+            }
+            else
+            {
+                return Results.BadRequest(new { error = "client.environment is required by dotnet-sdk; no-environment contexts are not supported", events = Array.Empty<object>() });
             }
         }
 

@@ -76,12 +76,13 @@ fn client_names(client: &Option<ClientConfigRequest>) -> Result<(String, String)
         Some(Value::String(s)) => s.clone(),
         Some(_) => return Err("Invalid 'application' in client argument"),
     };
-    let environment = client
-        .as_ref()
-        .and_then(|c| c.environment.as_ref())
-        .filter(|s| !s.is_empty())
-        .cloned()
-        .unwrap_or_else(|| "test-env".to_string());
+    let environment = match client {
+        None => "test-env".to_string(),
+        Some(c) => match c.environment.as_ref().filter(|s| !s.is_empty()) {
+            Some(env) => env.clone(),
+            None => return Err("client.environment is required by rust-sdk; no-environment contexts are not supported"),
+        },
+    };
     Ok((application, environment))
 }
 
@@ -355,6 +356,9 @@ async fn capabilities_handler() -> impl IntoResponse {
         "publishThrowsOnFailure": true,
         "trackRejectsNonObjectProperties": true,
         "refreshNoOpOnFailedContext": true,
+        "throwsOnMisuse": true,
+        "singleFinalizeEvent": true,
+        "semverNumericOperands": true,
         "assignmentRules": true,
         "semverOperators": true,
         "xAgentHeader": true,

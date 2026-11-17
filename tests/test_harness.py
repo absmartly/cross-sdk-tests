@@ -16,7 +16,9 @@ from unittest import mock
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO_ROOT, "orchestrator"))
 
+sys.path.insert(0, REPO_ROOT)
 import results_aggregator  # noqa: E402
+import scenario_groups  # noqa: E402
 import test_runner  # noqa: E402
 from test_runner import MISSING, TestOrchestrator, values_match, result_matches  # noqa: E402
 
@@ -254,6 +256,33 @@ class ValidateStepTests(unittest.TestCase):
     def test_expected_error_but_success(self):
         failures = self.orch.validate_step(0, "setUnit", {"result": None, "events": []}, {"error": "UID must not be blank"})
         self.assertEqual(self.fields(failures), ["error"])
+
+    def test_matching_status_only_error_passes(self):
+        """A step that pins only an error status passes on that status, with no message expectation."""
+        import requests
+        resp = requests.Response()
+        resp.status_code = 400
+        resp._content = b'{"error": "anything", "events": []}'
+        resp.url = "http://alpha/context"
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContextWith", "params": {"units": {}}, "expect": {"status": 400, "events": []}}]}
+        with mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "post", lambda *a, **k: resp), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = self.orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertTrue(result["passed"], result)
+        resp.status_code = 500
+        with mock.patch.object(test_runner.requests, "put", lambda *a, **k: mock.Mock()), \
+                mock.patch.object(test_runner.requests, "post", lambda *a, **k: resp), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            wrong = self.orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        self.assertEqual([f.get("field") for f in wrong["failures"]], ["status"])
+
+    def test_expected_status_but_success(self):
+        # A step that pins only an HTTP status still expects the call to fail.
+        failures = self.orch.validate_step(0, "createContextWith", {"result": {"ready": True}, "events": []},
+                                           {"status": 400, "events": []})
+        self.assertEqual(self.fields(failures), ["status"])
 
     def test_numeric_float_result_equal_int(self):
         self.assertEqual(self.orch.validate_step(0, "getUnit", {"result": 99.0, "events": []}, {"result": 99, "events": []}), [])
@@ -969,6 +998,62 @@ class StaticRepoChecks(unittest.TestCase):
             counts = {int(n) for n in re.findall(r"(\d+)-scenario", src.read())}
         self.assertEqual(counts, {self.scenario_count()})
 
+    WRAPPER_CAPABILITY_FILES = {
+        "javascript": "javascript-wrapper/server.js", "react": "react-wrapper/server.js",
+        "vue2": "vue2-wrapper/server.js", "vue3": "vue3-wrapper/server.js",
+        "angular": "angular-wrapper/server.js", "python": "python-wrapper/server.py",
+        "ruby": "ruby-wrapper/server.rb", "liquid": "liquid-wrapper/server.rb",
+        "php": "php-wrapper/server.php", "go": "go-wrapper/server.go", "rust": "rust-wrapper/src/main.rs",
+        "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
+        "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
+        "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
+        "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
+    }
+
+    def test_every_wrapper_names_its_required_capabilities(self):
+        """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
+        capability the policy requires of it, so adding a required capability to the policy without
+        the wrappers fails here rather than in all 20 lanes."""
+        policy = test_runner.load_capability_policy()
+        self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
+        for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                source = src.read()
+            for cap in policy["sdks"][sdk]["required"]:
+                with self.subTest(sdk=sdk, capability=cap):
+                    self.assertRegex(source, rf"\b{re.escape(cap)}\b", f"{path} never names {cap}")
+
+    def test_finalize_scenarios_require_single_finalize_event(self):
+        """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on
+        singleFinalizeEvent: an SDK that logs a second lifecycle event is a reviewed exception, never
+        hidden by its wrapper."""
+        with open(SCENARIOS_PATH) as src:
+            for s in json.load(src):
+                if any(st["action"] == "finalize" for st in s["steps"]):
+                    self.assertIn("singleFinalizeEvent", s.get("requires", []), s["name"])
+
+    def test_misuse_error_scenarios_require_throws_on_misuse(self):
+        """An ungated scenario that expects a context call to fail relies on the SDK throwing on misuse;
+        it is gated on throwsOnMisuse so a non-throwing SDK skips it instead of its wrapper inventing the
+        error."""
+        gated_elsewhere = {"trackRejectsNonObjectProperties", "publishThrowsOnFailure", "publishFail",
+                           "clientRejectsBlankApplication"}
+        error_keys = ("error", "errorContains", "errorAnyOf")
+        misuse = re.compile(r"already set|blank|finalized|closed|not yet ready")
+        with open(SCENARIOS_PATH) as src:
+            for s in json.load(src):
+                requires = set(s.get("requires", []))
+                if requires & gated_elsewhere:
+                    continue
+                for st in s["steps"]:
+                    expect = st["expect"]
+                    messages = [expect[k] for k in error_keys if k in expect]
+                    flat = " ".join(m if isinstance(m, str) else " ".join(m) for m in messages).lower()
+                    if misuse.search(flat):
+                        self.assertIn("throwsOnMisuse", requires, s["name"])
+
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:
             names = [s["name"] for s in json.load(src)]
@@ -1069,6 +1154,36 @@ class CapturedRequestsTest(unittest.TestCase):
                              {"method": "GET", "headers": {}}]}
         self.assertEqual([f["field"] for f in self.check(body)], ["requests[1].headers.X-Agent"])
 
+    def test_scenario_method_is_case_insensitive(self):
+        body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
+        self.assertEqual(self.check(body, method="get"), [])
+
+    def test_create_context_failed_forwards_client(self):
+        posted = []
+
+        class Response:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"result": {"contextId": "c1", "ready": False, "failed": True, "finalized": False},
+                        "events": []}
+
+        def post(url, json=None, timeout=None):
+            posted.append(json)
+            return Response()
+
+        client = {"application": "a", "environment": "e"}
+        scenario = {"name": "x", "contextData": {"experiments": []}, "steps": [
+            {"action": "createContextFailed", "params": {"units": {}, "client": client},
+             "expect": {"result": {"failed": True}}}]}
+        orch = TestOrchestrator({"go": "http://go"}, capability_policy=make_policy())
+        with mock.patch.object(test_runner.requests, "post", post), \
+                mock.patch.object(test_runner.requests, "delete", lambda *a, **k: None):
+            result = orch.run_and_validate_sdk("go", "http://go", scenario)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(posted[0]["client"], client)
+
     def test_no_request_of_the_method_fails(self):
         body = {"requests": [{"method": "GET", "headers": {"X-Agent": "absmartly-go-sdk/1.2.0"}}]}
         failures = self.check(body, method="PUT")
@@ -1125,12 +1240,11 @@ class CapturedRequestsTest(unittest.TestCase):
 
 
 class ScenarioGeneratorsCoexistTest(unittest.TestCase):
-    """The 2026-11 round generator (230-253) and the parity generator (300+) share one canonical file;
+    """The 2026-11 round generator (230-253) and the parity generator (300-332) share one canonical file;
     each must leave the other's groups where they are, numbered as they are."""
 
-    ROUND = (" - Custom Assignment Rules - ", " - Semver Operators - ", " - Audience Re-Evaluation - ",
-             " - System Attributes - ")
-    PARITY = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ", " - Client Application - ")
+    ROUND = scenario_groups.ROUND_MARKERS
+    PARITY = scenario_groups.PARITY_MARKERS
 
     def test_groups_keep_their_ranges_and_order(self):
         with open(SCENARIOS_PATH) as src:
@@ -1139,7 +1253,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
         parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
         self.assertEqual(round_ids, list(range(230, 254)))
-        self.assertEqual(parity_ids, list(range(300, 324)))
+        self.assertEqual(parity_ids, list(range(300, 333)))
         self.assertEqual(numbers, sorted(numbers))
 
     @staticmethod
@@ -1173,12 +1287,34 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
         self.assertEqual(updated, existing)
 
-    def test_round_generator_rejects_numbers_reaching_the_parity_range(self):
+    def test_round_generator_numbers_do_not_depend_on_other_scenarios(self):
+        """The round groups always start at 230: a stray high-numbered scenario elsewhere in the file
+        is kept after them and never shifts them toward the parity range."""
         import generate_sdk_round_2026_11_scenarios as round2611
         existing = self.load()
-        intruder = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        stray = dict(existing[0], name="286 - Somebody Else - Numbered Just Below The Parity Range")
+        updated, groups = round2611.assemble([stray] + existing, self.rebuilt(existing, self.ROUND))
+        self.assertEqual([g["name"].split(" - ", 1)[0] for g in groups][:1], ["230"])
+        self.assertLess(updated.index(groups[-1]), updated.index(stray))
+
+    def test_round_generator_keeps_its_numbers_when_a_later_group_follows_it(self):
+        """A group another generator appends after 253 (e.g. #16/#20 renumbered to 254+) must not push
+        the round groups off 230-253 on regeneration."""
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        follower = dict(existing[0], name="254 - Somebody Else - Appended After The Round Groups")
+        position = next(i for i, s in enumerate(existing) if any(m in s["name"] for m in self.PARITY))
+        with_follower = existing[:position] + [follower] + existing[position:]
+        updated, groups = round2611.assemble(with_follower, self.rebuilt(existing, self.ROUND))
+        self.assertEqual(groups[0]["name"].split(" - ", 1)[0], "230")
+        self.assertEqual(updated, with_follower)
+
+    def test_round_generator_rejects_a_scenario_inside_its_range(self):
+        import generate_sdk_round_2026_11_scenarios as round2611
+        existing = self.load()
+        intruder = dict(existing[0], name="240 - Somebody Else - Numbered Inside The Round Range")
         with self.assertRaises(SystemExit):
-            round2611.assemble([intruder] + existing, self.rebuilt(existing, self.ROUND))
+            round2611.assemble(existing + [intruder], self.rebuilt(existing, self.ROUND))
 
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity

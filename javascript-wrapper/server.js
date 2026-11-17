@@ -42,6 +42,9 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
       // Explicitly provided: do not silently repair a rejected name. An empty
       // or otherwise invalid value is forwarded so the real SDK rejects it,
       // instead of masking the error behind the default application.
+      if (typeof clientConfig.application !== 'string') {
+        throw new Error("Invalid 'application' in client argument");
+      }
       application = clientConfig.application;
     }
     hasEnvironment =
@@ -58,12 +61,16 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
       publisher,
     });
   }
-  const client = new NoEnvironmentClient({
+  // Build the options through the SDK itself so its client option extraction
+  // (agent included) applies, then re-create that client reporting no environment.
+  const options = {
     endpoint: endpoint || 'http://dummy',
     apiKey: 'dummy',
     application,
     environment: 'placeholder',
-  });
+  };
+  const agent = new absmartly.SDK(options).getClient().getAgent();
+  const client = new NoEnvironmentClient({ ...options, agent });
   return new absmartly.SDK({ client, eventLogger, publisher });
 }
 
@@ -73,7 +80,7 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
 // client configuration that the SDK legitimately refuses.
 function isSdkOptionsValidationError(error) {
   return typeof error?.message === 'string' &&
-    /^(Invalid|Missing) '.*' in options argument$/.test(error.message);
+    /^(Invalid|Missing) '.*' in (options|client) argument$/.test(error.message);
 }
 
 process.on('uncaughtException', (err) => {
@@ -187,6 +194,9 @@ app.get('/capabilities', async (req, res) => {
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
+    throwsOnMisuse: true,
+    singleFinalizeEvent: true,
+    semverNumericOperands: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,

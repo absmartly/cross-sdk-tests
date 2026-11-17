@@ -27,6 +27,9 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
     // validates it (e.g. rejects an empty string); only an omitted application
     // falls back to the default, instead of silently repairing a rejected name.
     if (clientConfig.application !== undefined) {
+      if (typeof clientConfig.application !== 'string') {
+        throw new Error("Invalid 'application' in client argument");
+      }
       application = clientConfig.application;
     }
     hasEnvironment =
@@ -43,12 +46,16 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
       publisher,
     });
   }
-  const client = new NoEnvironmentClient({
+  // Build the options through the SDK itself so its client option extraction
+  // (agent included) applies, then re-create that client reporting no environment.
+  const options = {
     endpoint: endpoint || 'http://dummy',
     apiKey: 'dummy',
     application,
     environment: 'placeholder',
-  });
+  };
+  const agent = new absmartly.SDK(options).getClient().getAgent();
+  const client = new NoEnvironmentClient({ ...options, agent });
   return new absmartly.SDK({ client, eventLogger, publisher });
 }
 
@@ -57,7 +64,7 @@ function buildSdk(clientConfig, eventCollector, publisher, endpoint) {
 // Such a rejection is a 400 (bad request), not a 500.
 function isSdkOptionsValidationError(error) {
   return typeof error?.message === 'string' &&
-    /^(Invalid|Missing) '.*' in options argument$/.test(error.message);
+    /^(Invalid|Missing) '.*' in (options|client) argument$/.test(error.message);
 }
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
@@ -201,6 +208,9 @@ app.get('/capabilities', async (req, res) => {
     publishThrowsOnFailure: true,
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
+    throwsOnMisuse: true,
+    singleFinalizeEvent: true,
+    semverNumericOperands: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,

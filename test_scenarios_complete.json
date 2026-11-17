@@ -1934,6 +1934,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -4001,11 +4004,14 @@
           "error": "UID must not be blank"
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
     "name": "35 - Error Handling - Duplicate Unit Different Value",
-    "description": "Should throw error when setting same unit type twice with different values",
+    "description": "Should throw error when setting same unit type twice with different values. ruby-sdk and php-sdk keep their released v1 wording for this error (\"Unit 'x' already set.\" and 'Unit \"x\" UID is already set'), listed here so the divergence is visible in the scenario rather than rewritten by the wrapper.",
     "contextData": {
       "experiments": []
     },
@@ -4043,9 +4049,16 @@
           "uid": "different_value"
         },
         "expect": {
-          "error": "Unit 'session_id' UID already set."
+          "errorAnyOf": [
+            "Unit 'session_id' UID already set.",
+            "Unit 'session_id' already set.",
+            "Unit \"session_id\" UID is already set"
+          ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
@@ -14059,6 +14072,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15576,6 +15592,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15631,6 +15651,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -15686,6 +15710,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -18828,6 +18856,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -18943,6 +18974,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19043,6 +19078,10 @@
           ]
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse",
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19142,6 +19181,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19202,6 +19244,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -19262,6 +19307,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "singleFinalizeEvent"
     ]
   },
   {
@@ -20104,6 +20152,9 @@
           "events": []
         }
       }
+    ],
+    "requires": [
+      "throwsOnMisuse"
     ]
   },
   {
@@ -25750,7 +25801,8 @@
     "name": "228 - Publish Failure - Failed Final Publish Keeps Context Open",
     "description": "When the publish made by finalize() fails, the error is surfaced and an error event logged, the events stay queued and the context is not finalized; a second finalize() publishes them and finalizes",
     "requires": [
-      "publishFail"
+      "publishFail",
+      "singleFinalizeEvent"
     ],
     "contextData": {
       "experiments": [
@@ -31323,7 +31375,7 @@
   },
   {
     "name": "309 - Assignment Rules - Split Rule Exposed Without Its Unit Stays Pinned After The Unit Is Set",
-    "description": "The split rule matches without its unit and treatment() exposes the no-unit result (variant 0). Setting the unit afterwards does not move the user: treatment still returns 0 and no second exposure is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "description": "The split rule matches without its unit and treatment() exposes the no-unit result (variant 0). Setting the unit and then an attribute (which re-evaluates the assignment) does not move the user: treatment still returns 0 and no second exposure is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
     "contextData": {
       "experiments": [
         {
@@ -31431,6 +31483,17 @@
         "params": {
           "unitType": "session_id",
           "uid": "late-unit-1"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "x",
+          "value": "y"
         },
         "expect": {
           "result": null,
@@ -36043,7 +36106,1838 @@
     ]
   },
   {
-    "name": "324 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
+    "name": "324 - Assignment Rules - Rule Conditions Read The Configured Application And Environment",
+    "description": "With client application 'sysattr-app' and environment 'sysattr-env' and no user attributes, a rule conditioned on environment and a rule conditioned on application both match (variant 0, ruleOverride:true); an SDK that evaluates rule conditions on user attributes only gives the normal variant 1. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 480,
+          "name": "exp_rules_sys_env",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-sysattr-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}}]}"
+        },
+        {
+          "id": 481,
+          "name": "exp_rules_sys_app",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"application-sysattr-app\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"application\"},{\"value\":\"sysattr-app\"}]}}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 480,
+                    "name": "exp_rules_sys_env"
+                  },
+                  {
+                    "id": 481,
+                    "name": "exp_rules_sys_app"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 480,
+                "name": "exp_rules_sys_env",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_app"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 481,
+                "name": "exp_rules_sys_app",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "325 - Assignment Rules - A User-Set Environment Overrides The Configured One In Rule Conditions",
+    "description": "With client environment 'sysattr-env', the user sets attribute environment 'user-env': a rule conditioned on the configured name no longer matches (normal variant 1, ruleOverride:false) and a rule conditioned on the user value matches (variant 0, ruleOverride:true). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 482,
+          "name": "exp_rules_sys_env_cfg",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-sysattr-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"sysattr-env\"}]}}]}"
+        },
+        {
+          "id": 483,
+          "name": "exp_rules_sys_env_user",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"environment-user-env\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"environment\"},{\"value\":\"user-env\"}]}}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 482,
+                    "name": "exp_rules_sys_env_cfg"
+                  },
+                  {
+                    "id": 483,
+                    "name": "exp_rules_sys_env_user"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "environment",
+          "value": "user-env"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env_cfg"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 482,
+                "name": "exp_rules_sys_env_cfg",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_sys_env_user"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 483,
+                "name": "exp_rules_sys_env_user",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "326 - Assignment Rules - Rule Environment Scope Uses The Configured Environment, Not A User-Set One",
+    "description": "With client environment 'sysattr-env', the user sets attribute environment 'user-env'. A rule scoped to environments ['user-env'] is skipped (normal variant 1, ruleOverride:false) and a rule scoped to the configured environment still matches (variant 0, ruleOverride:true): a user attribute overrides conditions, never the scope. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 484,
+          "name": "exp_rules_scope_user",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"user-scope\",\"type\":\"assign\",\"variant\":0,\"environments\":[\"user-env\"]}]}"
+        },
+        {
+          "id": 485,
+          "name": "exp_rules_scope_cfg",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"cfg-scope\",\"type\":\"assign\",\"variant\":0,\"environments\":[\"sysattr-env\"]}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "sysattr-app",
+            "environment": "sysattr-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 484,
+                    "name": "exp_rules_scope_user"
+                  },
+                  {
+                    "id": 485,
+                    "name": "exp_rules_scope_cfg"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "environment",
+          "value": "user-env"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_scope_user"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 484,
+                "name": "exp_rules_scope_user",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_scope_cfg"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 485,
+                "name": "exp_rules_scope_cfg",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "327 - Assignment Rules - Split Percentages Parse A Numeric Prefix Like parseFloat",
+    "description": "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it and the fallback rule assigns variant 0. 'abc/100' has no numeric prefix, so it is invalid (NaN) and the fallback assigns variant 0; a parser that maps garbage to 0 (atof, to_f) accepts it as 0/100 and assigns variant 1. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 486,
+          "name": "exp_rules_parse_prefix",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"prefix\",\"type\":\"split\",\"percentages\":\"0abc/100\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        },
+        {
+          "id": 496,
+          "name": "exp_rules_parse_nan",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"nan\",\"type\":\"split\",\"percentages\":\"abc/100\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 486,
+                    "name": "exp_rules_parse_prefix"
+                  },
+                  {
+                    "id": 496,
+                    "name": "exp_rules_parse_nan"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_parse_prefix"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 486,
+                "name": "exp_rules_parse_prefix",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_parse_nan"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 496,
+                "name": "exp_rules_parse_nan",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "328 - Assignment Rules - Unknown Rule Types And Malformed Rule Fields Are Skipped For The Next Rule",
+    "description": "A rule of an unknown type ('pin', carrying a variant), an assign rule with a fractional variant (1.5), and a rule whose environments is a string rather than a list are each skipped, and the next rule (assign variant 0) wins with ruleOverride:true. The string scope names the configured environment, so an SDK that accepted it as a one-item list would match it. A future rule type must never be served as an assign rule. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 487,
+          "name": "exp_rules_skip_unknown_type",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"future\",\"type\":\"pin\",\"variant\":1},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        },
+        {
+          "id": 488,
+          "name": "exp_rules_skip_fractional_variant",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"fraction\",\"type\":\"assign\",\"variant\":1.5},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        },
+        {
+          "id": 489,
+          "name": "exp_rules_skip_string_environments",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"scoped\",\"type\":\"assign\",\"variant\":1,\"environments\":\"parity-env\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          },
+          "client": {
+            "application": "parity-app",
+            "environment": "parity-env"
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 487,
+                    "name": "exp_rules_skip_unknown_type"
+                  },
+                  {
+                    "id": 488,
+                    "name": "exp_rules_skip_fractional_variant"
+                  },
+                  {
+                    "id": 489,
+                    "name": "exp_rules_skip_string_environments"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_skip_unknown_type"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 487,
+                "name": "exp_rules_skip_unknown_type",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_skip_fractional_variant"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 488,
+                "name": "exp_rules_skip_fractional_variant",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_skip_string_environments"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 489,
+                "name": "exp_rules_skip_string_environments",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 3,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "329 - Assignment Rules - A Rule Changed Or Removed On Refresh Re-Resolves The Assignment",
+    "description": "Both experiments start with a matching assign-0 rule (variant 0, ruleOverride:true). A refresh changes the first experiment's rule to one whose condition no longer matches and removes the second experiment's rules: each now gets its normal variant 1 with a fresh exposure (ruleOverride:false) instead of the stale rule variant. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 492,
+          "name": "exp_rules_refresh_changed",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"a\",\"type\":\"assign\",\"variant\":0}]}"
+        },
+        {
+          "id": 493,
+          "name": "exp_rules_refresh_dropped",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"a\",\"type\":\"assign\",\"variant\":0}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 492,
+                    "name": "exp_rules_refresh_changed"
+                  },
+                  {
+                    "id": 493,
+                    "name": "exp_rules_refresh_dropped"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_refresh_changed"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 492,
+                "name": "exp_rules_refresh_changed",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_refresh_dropped"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 493,
+                "name": "exp_rules_refresh_dropped",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 492,
+                "name": "exp_rules_refresh_changed",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 0,
+                "seedLo": 0,
+                "split": [
+                  0.0,
+                  1.0
+                ],
+                "trafficSeedHi": 0,
+                "trafficSeedLo": 0,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": "{\"rules\":[{\"name\":\"a\",\"type\":\"assign\",\"variant\":0,\"conditions\":{\"eq\":[{\"var\":\"country\"},{\"value\":\"US\"}]}}]}"
+              },
+              {
+                "id": 493,
+                "name": "exp_rules_refresh_dropped",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 0,
+                "seedLo": 0,
+                "split": [
+                  0.0,
+                  1.0
+                ],
+                "trafficSeedHi": 0,
+                "trafficSeedLo": 0,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 492,
+                    "name": "exp_rules_refresh_changed"
+                  },
+                  {
+                    "id": 493,
+                    "name": "exp_rules_refresh_dropped"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_refresh_changed"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 492,
+                "name": "exp_rules_refresh_changed",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_refresh_dropped"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 493,
+                "name": "exp_rules_refresh_dropped",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 4,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "330 - Assignment Rules - Invalid Assignment Rules JSON Stays Isolated To Its Experiment",
+    "description": "An experiment whose assignmentRules is not valid JSON gets its normal assignment (variant 1, ruleOverride:false), and the next experiment's valid assign-0 rule still applies: one bad rules string never fails the context or other experiments. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 494,
+          "name": "exp_rules_invalid_json",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{not json"
+        },
+        {
+          "id": 495,
+          "name": "exp_rules_after_invalid",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"a\",\"type\":\"assign\",\"variant\":0}]}"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 494,
+                    "name": "exp_rules_invalid_json"
+                  },
+                  {
+                    "id": 495,
+                    "name": "exp_rules_after_invalid"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_invalid_json"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 494,
+                "name": "exp_rules_invalid_json",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_after_invalid"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 495,
+                "name": "exp_rules_after_invalid",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "assignmentRules"
+    ]
+  },
+  {
+    "name": "331 - Semver Comparison - Leading Zeros In Numeric Identifiers Are Ignored",
+    "description": "Leading zeros in a numeric identifier are ignored, so 01.0.0 equals 1.0.0. Cases, in order: semver_eq(\"01.0.0\", \"1.0.0\"). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 550,
+          "name": "exp_semver_550",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v0\"},{\"value\":\"1.0.0\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 550,
+                    "name": "exp_semver_550"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v0",
+          "value": "01.0.0"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_semver_550"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 550,
+                "name": "exp_semver_550",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "semverOperators"
+    ]
+  },
+  {
+    "name": "332 - Semver Comparison - A Numeric Operand Compares As Its Fixed-Point String",
+    "description": "A numeric attribute is converted like JS toFixed(15) with trailing zeros trimmed, so 1e-7 equals 0.0000001 (not '1E-07'). Cases, in order: semver_eq(1e-07, \"0.0000001\"). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 551,
+          "name": "exp_semver_551",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v0\"},{\"value\":\"0.0000001\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 551,
+                    "name": "exp_semver_551"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v0",
+          "value": 1e-07
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_semver_551"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 551,
+                "name": "exp_semver_551",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "semverOperators",
+      "semverNumericOperands"
+    ]
+  },
+  {
+    "name": "400 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
     "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {
       "experiments": []
@@ -39877,7 +41771,7 @@
     ]
   },
   {
-    "name": "325 - Switchback - Golden Vectors - assignSwitchback - 3 Arms",
+    "name": "401 - Switchback - Golden Vectors - assignSwitchback - 3 Arms",
     "description": "Every 3-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {
       "experiments": []
@@ -43711,7 +45605,7 @@
     ]
   },
   {
-    "name": "326 - Switchback - Golden Vectors - assignSwitchback - 10 Arms",
+    "name": "402 - Switchback - Golden Vectors - assignSwitchback - 10 Arms",
     "description": "Every 10-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {
       "experiments": []
@@ -47545,7 +49439,7 @@
     ]
   },
   {
-    "name": "327 - Switchback - Golden Vectors - fisherYatesPermutation - 2 Arms",
+    "name": "403 - Switchback - Golden Vectors - fisherYatesPermutation - 2 Arms",
     "description": "Every 2-arm fisherYatesPermutation case (168) of the platform golden vectors, driven through POST /switchback/permutation. The permutation is compared positionally.",
     "contextData": {
       "experiments": []
@@ -50413,7 +52307,7 @@
     ]
   },
   {
-    "name": "328 - Switchback - Golden Vectors - fisherYatesPermutation - 3 Arms",
+    "name": "404 - Switchback - Golden Vectors - fisherYatesPermutation - 3 Arms",
     "description": "Every 3-arm fisherYatesPermutation case (168) of the platform golden vectors, driven through POST /switchback/permutation. The permutation is compared positionally.",
     "contextData": {
       "experiments": []
@@ -53449,7 +55343,7 @@
     ]
   },
   {
-    "name": "329 - Switchback - Golden Vectors - fisherYatesPermutation - 10 Arms",
+    "name": "405 - Switchback - Golden Vectors - fisherYatesPermutation - 10 Arms",
     "description": "Every 10-arm fisherYatesPermutation case (168) of the platform golden vectors, driven through POST /switchback/permutation. The permutation is compared positionally.",
     "contextData": {
       "experiments": []
@@ -57661,7 +59555,7 @@
     ]
   },
   {
-    "name": "330 - Switchback - Single Source - Raw Attribute Value Is The Cluster Key",
+    "name": "406 - Switchback - Single Source - Raw Attribute Value Is The Cluster Key",
     "description": "switchbackClusters {store_id: <path>} with one store_id unit. The cluster key is the raw attribute value: variant = assignSwitchback(value, periodIndex, seed, arms) with periodIndex = floorDiv(now - switchbackStartAt, switchbackPeriodMs) (period 0 for the 3- and 10-arm experiments, period 1 for the 2-arm one). Each value is chosen so the draw is nonzero and differs from a hashed key, the uid as key, the hashed uid as key, a Phase 1E bucket and the sticky unit assignment. Each exposure is under the serving unit store_id. exp_sb_eligible_control (3 arms, period 0) is the eligible control: city0='control-8' draws 0, so it serves variant 0 with assigned=true, eligible=true and the exposure is recorded and published; a hashed key, the uid as key, the hashed uid as key, a Phase 1E bucket and the sticky unit assignment all draw nonzero there, and so does a model that maps a 0 draw to 1.",
     "contextData": {
       "experiments": [
@@ -58197,7 +60091,7 @@
     ]
   },
   {
-    "name": "331 - Switchback - Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order",
+    "name": "407 - Switchback - Declared Order - Lower-Declared Source Serves Whatever The Context Unit Order",
     "description": "Both units carry the same cluster value (agreement), so both experiments are eligible. The context sets user_id before session_id. exp_sb_order_session_first declares session_id first and must serve and expose under session_id; exp_sb_order_user_first declares user_id first and must serve under user_id. A units-outer iteration (context order) or a last-unit-serves model exposes the wrong unit in at least one of them, whatever order the SDK keeps its units in.",
     "contextData": {
       "experiments": [
@@ -58487,7 +60381,7 @@
     ]
   },
   {
-    "name": "332 - Switchback - Agreement - Equal Values From Two Units Serve The Cluster",
+    "name": "408 - Switchback - Agreement - Equal Values From Two Units Serve The Cluster",
     "description": "session_store and profile/store hold the same value: the units agree and the first declared (session_id) serves with that raw value as the cluster key.",
     "contextData": {
       "experiments": [
@@ -58679,7 +60573,7 @@
     ]
   },
   {
-    "name": "333 - Switchback - Disagreement - Different Values Are An Ineligible Control With No Exposure",
+    "name": "409 - Switchback - Disagreement - Different Values Are An Ineligible Control With No Exposure",
     "description": "session_store='left-1' and profile/store_d='right-1' disagree: variant 0 and no exposure (pending stays 0). Either value alone would draw a nonzero variant, so a first-value-wins or last-value-wins SDK fails, and an SDK that records the ineligible control (eligible=false) fails the exposure check.",
     "contextData": {
       "experiments": [
@@ -58831,7 +60725,7 @@
     ]
   },
   {
-    "name": "334 - Switchback - Unit Without A Value Is Skipped - The Next Unit Serves",
+    "name": "410 - Switchback - Unit Without A Value Is Skipped - The Next Unit Serves",
     "description": "session_id is declared first but session_zone is unset; user_id's profile/zone has a value, so user_id serves and the exposure is under user_id.",
     "contextData": {
       "experiments": [
@@ -59012,7 +60906,7 @@
     ]
   },
   {
-    "name": "335 - Switchback - Values - Strings And Whole Numbers Only",
+    "name": "411 - Switchback - Values - Strings And Whole Numbers Only",
     "description": "A non-empty string is the key as-is and a whole number is keyed by its decimal text: store_number=4000000002 draws assignSwitchback(\"4000000002\", ...), unlike its int32 wrap or double renderings, and agrees with the string \"4000000002\" from another unit type. 1.5, 3.0, true, an object, an array, \"\" and null give no value: each such experiment is an ineligible control with no exposure, although its lax text rendering would draw nonzero.",
     "contextData": {
       "experiments": [
@@ -59859,7 +61753,7 @@
     ]
   },
   {
-    "name": "336 - Switchback - Attribute Paths - Platform Path Cases And Malformed Paths",
+    "name": "412 - Switchback - Attribute Paths - Platform Path Cases And Malformed Paths",
     "description": "One experiment per case of the platform's attribute-path-cases.json (fixture attributes set as top-level attributes): a supported path that resolves to a value serves that value as the cluster key; a supported path that resolves to nothing (\"+0\" and \"\\u0660\" are keys, not indices) is an ineligible control with no exposure; an unsupported path (a negative or misplaced index) makes the cluster map unreadable, which takes the legacy path (ineligible control under unitType, no exposure). Added cases: \"tags/0\" and \"m/0/0/city\" (index at the tail, two indices in a row), \"geo.city\", \"'geo.city'\", \"\\\"geo.city\\\"\" and \"dot.city\" (any '.' in a segment key is malformed, quoted or not, even though dot/city resolves) and \"'geo\" (unterminated quote). Where a lax reader would find a value, the seeds make that draw nonzero.",
     "contextData": {
       "experiments": [
@@ -61039,7 +62933,7 @@
     ]
   },
   {
-    "name": "337 - Switchback - Allow-List - In, Out, Null And Empty",
+    "name": "413 - Switchback - Allow-List - In, Out, Null And Empty",
     "description": "switchbackClusterValues filters the cluster key: a value in the list serves; a value outside it is an ineligible control with no exposure (its draw would be nonzero); null and [] both admit every value (the Collector builds its filter only for a non-empty list).",
     "contextData": {
       "experiments": [
@@ -61523,7 +63417,7 @@
     ]
   },
   {
-    "name": "338 - Switchback - Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls",
+    "name": "414 - Switchback - Schedule - Pre-Anchor And Unservable Schedules Are Silent Controls",
     "description": "The cluster is eligible (city is set) but the draw cannot run: now is before switchbackStartAt (2100-01-01), the anchor is not hour aligned (anchor+1 ms; never rounded, though the hour-ceiled anchor would draw nonzero), the anchor is absent, the period is 0, or the split has one arm. Each is variant 0 and records no exposure (the SDK's documented pre-anchor choice), and never falls back to sticky unit assignment (the uid's unit draw is nonzero).",
     "contextData": {
       "experiments": [
@@ -61907,7 +63801,7 @@
     ]
   },
   {
-    "name": "339 - Switchback - Traffic - Miss On An Eligible Cluster Is Recorded Eligible=False Under The Serving Unit",
+    "name": "415 - Switchback - Traffic - Miss On An Eligible Cluster Is Recorded Eligible=False Under The Serving Unit",
     "description": "trafficSplit 50/50, hashed on the serving unit's uid. Both units agree on the cluster value. In exp_sb_traffic_session_serves session_id (declared first) serves and its uid misses traffic: variant 0 and an exposure under session_id with eligible=false is recorded. In exp_sb_traffic_user_serves user_id serves and its uid is in traffic, so the cluster's draw is served. Each experiment's unitType names the other unit, so hashing traffic on unitType flips both outcomes.",
     "contextData": {
       "experiments": [
@@ -62197,7 +64091,7 @@
     ]
   },
   {
-    "name": "340 - Switchback - Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
+    "name": "416 - Switchback - Precedence - Override, Assignment Rule, Strict Audience, Full-On And Custom Over The Draw",
     "description": "The cluster's period-0 draw is 1. An override to 2 wins (assigned=false, overridden=true); an assign rule to 2 wins (assigned=false, ruleOverride=true), also before the anchor; a strict audience mismatch (tier silver, audience tier gold) serves 0 with assigned=false and audienceMismatch=true, recorded, as for unit experiments; fullOnVariant=2 wins (fullOn=true), also before the anchor; a custom assignment to 2 is served after traffic (custom=true). Every exposure is under the serving unit store_id. exp_sb_override_no_value has no cluster value (unset_zone is never set) and its override to 2 still applies (overridden=true, under the first declared unit type store_id, not its unitType user_id); exp_sb_full_on_ineligible has fullOnVariant=2 but a value outside switchbackClusterValues, so it is an ineligible control (0, no exposure: full-on is never evaluated for an ineligible cluster); exp_sb_custom_traffic_miss has trafficSplit [0.5, 0.5] that the serving uid misses and a custom assignment to 2: the traffic miss wins (0, recorded eligible=false, custom=false). exp_sb_rule_ineligible has an assign rule to 2 but a value outside switchbackClusterValues, and exp_sb_strict_ineligible has a strict audience the context mismatches but no cluster value (unset_zone): both are ineligible controls (0, no exposure; neither the rule nor the audience is evaluated for an ineligible cluster).",
     "contextData": {
       "experiments": [
@@ -63410,7 +65304,7 @@
     ]
   },
   {
-    "name": "341 - Switchback - Holdouts Never Apply To A Switchback",
+    "name": "417 - Switchback - Holdouts Never Apply To A Switchback",
     "description": "The switchback is covered by a holdout whose split [1, 0] holds every unit out (variant 0). Holdouts never apply to a switchback: the cluster's draw is served, exactly one exposure (the switchback's own) is recorded and the holdout records none.",
     "contextData": {
       "experiments": [
@@ -63621,7 +65515,7 @@
     ]
   },
   {
-    "name": "342 - Switchback - Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E Fields Ignored",
+    "name": "418 - Switchback - Legacy Path - Missing Or Empty Cluster Map, No Linked Unit, Phase 1E Fields Ignored",
     "description": "switchbackClusters absent or {} (also when only the abandoned switchbackClusterUnitType/Count/Attribute fields are present) takes the Collector's legacy path: a store_id unit (the declared unitType) gets an ineligible control, variant 0 and no exposure, never sticky unit assignment (the uid's unit draw is nonzero). A cluster map whose only unit type the context lacks does not apply: variant 0, no exposure. An experiment with switchbackClusters {store_id: city} that also carries the Phase 1E fields pointing at user_id/zone is served from city under store_id; reading the legacy fields would draw differently.",
     "contextData": {
       "experiments": [
@@ -64119,7 +66013,7 @@
     ]
   },
   {
-    "name": "343 - Switchback - Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes",
+    "name": "419 - Switchback - Refresh - A Changed Cluster Map Re-Resolves And Re-Exposes",
     "description": "city='rcity-0' draws 2. A refresh changes the cluster path to zone ('rzone-4' draws 1): a new epoch, so the next treatment re-resolves and records a new exposure even though the period is unchanged. An unchanged switchback keeps its cached assignment and exposes once.",
     "contextData": {
       "experiments": [
@@ -64607,7 +66501,7 @@
     ]
   },
   {
-    "name": "344 - Switchback - Exposure And Publish Payload Carry No New Fields",
+    "name": "420 - Switchback - Exposure And Publish Payload Carry No New Fields",
     "description": "A unit experiment on the same unit is exposed and published first as the baseline. The switchback exposure and its publish event must then have exactly the baseline's fields at every depth (sameShapeAs), with every exposure field value pinned, so a switchback-only field such as a period index or cluster key fails the scenario. A second treatment in the same period exposes nothing.",
     "contextData": {
       "experiments": [
@@ -64898,7 +66792,7 @@
     ]
   },
   {
-    "name": "345 - Switchback - Inertness - Unit Experiments Unaffected By Switchback Data",
+    "name": "421 - Switchback - Inertness - Unit Experiments Unaffected By Switchback Data",
     "description": "INERTNESS BASELINE (must pass on every SDK, switchback-aware or not): the payload carries a switchback experiment and unit experiments, two of which also carry every R33 switchback wire field (an ordered switchbackClusters over both context units, switchbackClusterValues admitting the city that is set) and the abandoned Phase 1E fields (one with randomizationType \"unit\", one with it absent). Each unit experiment's treatment, exposure and published exposure equal plain unit assignment in every field; the uid's unit variant is 1 while the city's cluster draw is 0, so serving a unit experiment as a switchback fails. Each exposure and publish event has exactly the fields of the plain unit experiment's at every depth. The switchback experiment is never queried: an SDK without switchback serves it a sticky unit assignment that is documented and SDK-specific.",
     "contextData": {
       "experiments": [
@@ -65469,7 +67363,7 @@
     ]
   },
   {
-    "name": "346 - Switchback - Read Once Per Period - A Later setAttribute Does Not Move The Slot",
+    "name": "422 - Switchback - Read Once Per Period - A Later setAttribute Does Not Move The Slot",
     "description": "city='once-a-2' draws 2; city is then set to 'once-b-18', which alone would draw 1. The second treatment in the same period keeps the first variant and records no second exposure (one exposure in total). exp_sb_read_once_ineligible is read while zone is unset (ineligible: 0, no exposure); zone is then set to 'once-z-1' (which would draw 1), and the next treatment in the same period is still 0 with no exposure.",
     "contextData": {
       "experiments": [
@@ -65758,7 +67652,7 @@
     ]
   },
   {
-    "name": "347 - Switchback - Peek And Variable Values Resolve The Cluster Draw",
+    "name": "423 - Switchback - Peek And Variable Values Resolve The Cluster Draw",
     "description": "Every arm has a different sb_banner value. The cluster's draw is 2: peekVariableValue and peek return banner-2 / 2 with no exposure; variableValue returns banner-2 and records the one exposure; a later treatment returns the same variant and records nothing.",
     "contextData": {
       "experiments": [
@@ -65968,6 +67862,636 @@
                   }
                 ]
               }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "424 - Switchback - Holdout And Assignment Rule - The Rule Wins And The Holdout Is Never Consulted",
+    "description": "One payload: a holdout whose split [1, 0] holds every store_id unit out covers two switchbacks served from the same cluster (period-0 draw 2). exp_sb_holdout_rule also has an assign rule to 1: the rule wins (variant 1, assigned=false, ruleOverride=true), never the holdout's control. exp_sb_holdout_no_rule serves the draw 2 (ruleOverride=false). The holdout never applies to a switchback, so exactly the two switchback exposures are queued and published and the holdout records none: an SDK that evaluates the holdout before the rule serves 0, and one that fires the covering holdout's exposure as for a unit experiment publishes a third exposure.",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 470,
+          "name": "exp_sb_holdout_rule",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "holdoutIds": [
+            2
+          ],
+          "assignmentRules": "{\"rules\":[{\"type\":\"assign\",\"environments\":[],\"variant\":1}]}"
+        },
+        {
+          "id": 471,
+          "name": "exp_sb_holdout_no_rule",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect",
+          "holdoutIds": [
+            2
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 2,
+          "name": "holdout_sb_rule",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": 13,
+          "seedLo": 111,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "holdrule-20"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 470,
+                    "name": "exp_sb_holdout_rule"
+                  },
+                  {
+                    "id": 471,
+                    "name": "exp_sb_holdout_no_rule"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "city",
+          "value": "hr-0"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_holdout_rule"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 470,
+                "name": "exp_sb_holdout_rule",
+                "unit": "store_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_holdout_no_rule"
+        },
+        "expect": {
+          "result": 2,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 471,
+                "name": "exp_sb_holdout_no_rule",
+                "unit": "store_id",
+                "variant": 2,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "XvmzCbyuTaOUc2y1gCPLrQ"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 470,
+                    "name": "exp_sb_holdout_rule",
+                    "unit": "store_id",
+                    "variant": 1,
+                    "assigned": false,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false,
+                    "ruleOverride": true
+                  },
+                  {
+                    "id": 471,
+                    "name": "exp_sb_holdout_no_rule",
+                    "unit": "store_id",
+                    "variant": 2,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false,
+                    "ruleOverride": false
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "requires": [
+      "switchback"
+    ]
+  },
+  {
+    "name": "425 - Switchback - Many Sources - Declared Cluster Order Is Kept, Not Sorted",
+    "description": "switchbackClusters has three entries whose JSON key order is the declared order and is neither alphabetical nor reverse alphabetical: exp_sb_many_user_first declares user_id, device_id, store_id and exp_sb_many_store_first declares store_id, user_id, device_id. Every source path holds the same value ('many-3'), so the units agree and the first declared unit serves. Each experiment's trafficSplit [0.5, 0.5] is in for its first declared unit's uid and out for the other two, so the cluster's draw is served under the first declared unit; an SDK that decodes the cluster map into a sorted or other unordered map serves another unit, which misses traffic (variant 0, eligible=false, exposed under the wrong unit).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 480,
+          "name": "exp_sb_many_user_first",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 1,
+          "trafficSplit": [
+            0.5,
+            0.5
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "user_id": "profile/city",
+            "device_id": "device/city",
+            "store_id": "store_city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 481,
+          "name": "exp_sb_many_store_first",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": -559038737,
+          "seedLo": 1234567890,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 3,
+          "trafficSplit": [
+            0.5,
+            0.5
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "store_city",
+            "user_id": "profile/city",
+            "device_id": "device/city"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "many-store-15",
+            "device_id": "many-device-14",
+            "user_id": "many-user-26"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 480,
+                    "name": "exp_sb_many_user_first"
+                  },
+                  {
+                    "id": 481,
+                    "name": "exp_sb_many_store_first"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "store_city",
+          "value": "many-3"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "device",
+          "value": {
+            "city": "many-3"
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "profile",
+          "value": {
+            "city": "many-3"
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_many_user_first"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 480,
+                "name": "exp_sb_many_user_first",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_many_store_first"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 481,
+                "name": "exp_sb_many_store_first",
+                "unit": "store_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "publish",
+        "params": {},
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "publish",
+              "data": {
+                "hashed": true,
+                "units": [
+                  {
+                    "type": "store_id",
+                    "uid": "HeasSEbQEgcHswdCmcagEw"
+                  },
+                  {
+                    "type": "device_id",
+                    "uid": "I6yv0BRTvxNgvlRvoUp_Kw"
+                  },
+                  {
+                    "type": "user_id",
+                    "uid": "73-y3xLzZqS4XagplxJHZA"
+                  }
+                ],
+                "exposures": [
+                  {
+                    "id": 480,
+                    "name": "exp_sb_many_user_first",
+                    "unit": "user_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false,
+                    "ruleOverride": false
+                  },
+                  {
+                    "id": 481,
+                    "name": "exp_sb_many_store_first",
+                    "unit": "store_id",
+                    "variant": 1,
+                    "assigned": true,
+                    "eligible": true,
+                    "overridden": false,
+                    "fullOn": false,
+                    "custom": false,
+                    "audienceMismatch": false,
+                    "ruleOverride": false
+                  }
+                ]
+              },
+              "unorderedUnits": true
             }
           ]
         }

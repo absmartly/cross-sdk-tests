@@ -17,7 +17,7 @@ wrapper API can observe black-box:
   * Audience re-evaluation after setAttribute: setting an attribute that flips a strict audience
     reassigns the unit and queues a fresh exposure (go-sdk#10, php-sdk#8, ruby-sdk#39,
     python3-sdk#11 all adopt the JS attribute-sequence behaviour).
-  * System attributes (§5 of Márcio's 2026-11 brief, every SDK's feat/sdk-system-attributes branch):
+  * System attributes (§5 of Márcio's 2026-11 brief, javascript-sdk#68 and every SDK's parity PR):
     audiences and assignment-rule conditions always evaluate with the client's configured
     `application` and `environment` names (no opt-in), user attributes always overlay the system
     values, a name that is not configured is left out of the map, and `app_version` is gone. The
@@ -31,9 +31,9 @@ wrapper API can observe black-box:
     scenario SKIPs there.
 
 The reference is @absmartly/javascript-sdk built from the sibling ../javascript-sdk checkout on the
-branch sdk-branches.sh pins for javascript-sdk: feat/sdk-system-attributes (javascript-sdk PR #68).
-That is main (already the TypeScript rewrite, custom assignment rules from #66, the semver operators,
-and #67's four edge-case fixes) plus §5's always-on application/environment attributes and
+branch sdk-branches.sh pins for javascript-sdk: main, at the merge of javascript-sdk PR #68.
+That carries the TypeScript rewrite, custom assignment rules from #66, the semver operators,
+#67's four edge-case fixes and §5's always-on application/environment attributes and
 app_version removal. The expected results are NOT written by hand: every scenario's steps run through
 that build via tools/sdk-round-2026-11/compute.js and each step's `result` and `events` are recorded
 verbatim (exposedAt/achievedAt/publishedAt dropped, the ready event projected to experiment id/name
@@ -59,31 +59,31 @@ import os
 import subprocess
 import sys
 
+import scenario_groups
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
 TOOL_DIR = os.path.join(HERE, "tools", "sdk-round-2026-11")
 COMPUTE = os.path.join(TOOL_DIR, "compute.js")
 SDK_PATH = os.environ.get("SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "javascript-sdk")))
 
-# javascript-sdk PR #68 (feat/sdk-system-attributes) head. The reference build must be this
-# exact commit so the recorded expectations are reproducible; the build carries version 1.14.0.
+# javascript-sdk main at the merge of PR #68 (same tree as the PR head 9403b837 the expectations were
+# recorded from). The reference build must be this exact commit so the recorded expectations are
+# reproducible; the build carries version 1.14.0.
 # This branch is main (the TypeScript rewrite, custom assignment rules from #66, the semver_*
 # operators, and the four #67 edge-case fixes, all already merged to main) plus §5 of Márcio's
 # 2026-11 brief: always-on application/environment audience attributes and app_version removal.
-PINNED_COMMIT = "9403b837cf5fe224c82035b5c67bd7a4969421d0"
+PINNED_COMMIT = "311cfca6fbefafb23ea26684ec64a72d4509a8a8"
 JS_SDK_VERSION = "1.14.0"
 
-RULES_MARKER = " - Custom Assignment Rules - "
-SEMVER_MARKER = " - Semver Operators - "
-REEVAL_MARKER = " - Audience Re-Evaluation - "
-SYSATTR_MARKER = " - System Attributes - "
-GROUP_MARKERS = (RULES_MARKER, SEMVER_MARKER, REEVAL_MARKER, SYSATTR_MARKER)
-# Groups owned by generate_parity_round_scenarios.py (300+) and generate_switchback_scenarios.py
-# (appended after the parity groups). They stay after this round's groups and are left out of the
-# numbering, so regenerating any of these files never renumbers or moves another's groups.
-SWITCHBACK_MARKER = " - Switchback "
-LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ",
-                       " - Client Application - ", SWITCHBACK_MARKER)
+RULES_MARKER = scenario_groups.ROUND_RULES
+SEMVER_MARKER = scenario_groups.ROUND_SEMVER
+REEVAL_MARKER = scenario_groups.ROUND_REEVAL
+SYSATTR_MARKER = scenario_groups.ROUND_SYSATTR
+GROUP_MARKERS = scenario_groups.ROUND_MARKERS
+
+# First id of this round's groups (230-253).
+FIRST_NUMBER = 230
 
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
@@ -483,7 +483,7 @@ def ensure_reference_build():
     if head != PINNED_COMMIT:
         raise SystemExit(
             f"javascript-sdk checkout is at {head}, not the pinned reference {PINNED_COMMIT} "
-            f"(javascript-sdk#68 head). Check it out (sdk-branches.sh pins this branch for CI)."
+            f"(javascript-sdk main at the #68 merge). Check it out (sdk-branches.sh pins this branch for CI)."
         )
     # A modified working tree (including a hand-edited or stale lib/) means the
     # build no longer corresponds to the pin, so refuse rather than record
@@ -649,20 +649,23 @@ def build_all_groups(first_number):
 
 def assemble(existing, build_groups):
     """The canonical file with this round's groups rebuilt: `build_groups(first_number)` returns the
-    groups numbered from first_number. Returns (updated scenarios, the rebuilt groups)."""
-    later = [s for s in existing if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
-    kept = [s for s in existing
-            if not any(m in s["name"] for m in GROUP_MARKERS) and s not in later]
-    # Number after the highest retained ID, not the count: earlier scenarios may
-    # have been deleted without renumbering (e.g. #18), leaving gaps.
-    groups = build_groups(max(int(s["name"].split(" - ", 1)[0]) for s in kept) + 1)
-    if later:
-        last = int(groups[-1]["name"].split(" - ", 1)[0])
-        first_later = min(int(s["name"].split(" - ", 1)[0]) for s in later)
-        if last >= first_later:
-            raise SystemExit(f"rebuilt scenarios end at {last}, colliding with the later groups "
-                             f"starting at {first_later}")
-    return kept + groups + later, groups
+    groups numbered from first_number. Returns (updated scenarios, the rebuilt groups).
+
+    The groups own FIRST_NUMBER.. and stay there: scenarios numbered below stay before them, and every
+    scenario numbered after them (the parity groups, or a later group such as #16/#20 renumbered to
+    254+) stays after them, in file order. A scenario inside the rebuilt range is a collision."""
+    def number(s):
+        return int(s["name"].split(" - ", 1)[0])
+
+    rest = [s for s in existing if not any(m in s["name"] for m in GROUP_MARKERS)]
+    before = [s for s in rest if number(s) < FIRST_NUMBER]
+    after = [s for s in rest if number(s) >= FIRST_NUMBER]
+    groups = build_groups(FIRST_NUMBER)
+    last = number(groups[-1])
+    clashes = sorted(number(s) for s in after if number(s) <= last)
+    if clashes:
+        raise SystemExit(f"scenarios {clashes} collide with the rebuilt range {FIRST_NUMBER}-{last}")
+    return before + groups + after, groups
 
 
 def main():

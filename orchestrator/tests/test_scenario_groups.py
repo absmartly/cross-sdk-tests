@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import generate_parity_round_scenarios as parity
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
+import scenario_groups
 from scenario_groups import place_group
 
 
@@ -149,3 +150,25 @@ def test_last_group_can_grow_at_end_of_file():
     updated, _ = place_group(existing, (" - A - ",),
                              lambda n: [scenario(n, "A"), scenario(n + 1, "A")])
     assert updated == [scenario(1), scenario(2, "A"), scenario(3, "A")]
+
+
+def test_fixed_first_number_inserts_before_higher_ids_and_leaves_lower_ones():
+    existing = [scenario(3), scenario(10, "A"), scenario(11, "A"), scenario(20), scenario(50)]
+    updated, group = place_group(existing, (" - A - ",), lambda n: [scenario(n, "A")], first_number=30)
+    assert group == [scenario(30, "A")]
+    assert updated == [scenario(3), scenario(20), scenario(30, "A"), scenario(50)]
+
+
+def test_fixed_first_number_rejects_a_retained_scenario_inside_the_range():
+    existing = [scenario(1), scenario(31)]
+    with pytest.raises(ValueError, match="31 - Retained - case"):
+        place_group(existing, (" - A - ",), lambda n: [scenario(n, "A"), scenario(n + 1, "A")], first_number=30)
+
+
+def test_switchback_group_owns_its_fixed_range_after_the_parity_groups():
+    canonical = json.loads(Path(sdk_round.CANONICAL).read_text(encoding="utf-8"))
+    numbers = [int(s["name"].split(" - ", 1)[0]) for s in canonical if switchback.GROUP_MARKER in s["name"]]
+    parity_numbers = [int(s["name"].split(" - ", 1)[0]) for s in canonical
+                      if any(m in s["name"] for m in parity.PARITY_MARKERS)]
+    assert numbers[0] == scenario_groups.SWITCHBACK_FIRST_NUMBER
+    assert max(parity_numbers) < numbers[0]

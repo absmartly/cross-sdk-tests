@@ -11,8 +11,8 @@ covered it, and the scenario id(s) that pin it now. Scenarios live in
 ## Reference / oracle
 
 The JavaScript SDK is the canonical reference. For this round the reference is
-**javascript-sdk#68** (`feat/sdk-system-attributes`), which `sdk-branches.sh`
-pins for `javascript-sdk`. That branch is:
+**javascript-sdk#68**, now merged: `sdk-branches.sh` pins `javascript-sdk` to
+`main`, whose tree is the #68 head the expectations were recorded from. It is:
 
 * `main`, which is already the TypeScript rewrite, already carries custom
   assignment rules (merged from #66), already registers the `semver_*`
@@ -26,27 +26,29 @@ pins for `javascript-sdk`. That branch is:
 
 The expected results are recorded by `tools/sdk-round-2026-11/compute.js`, which
 builds the sibling `../javascript-sdk` checkout and runs every scenario's steps
-through it (the generator verifies the checkout is at the pinned #68 commit before
+through it (the generator verifies the checkout is at the pinned commit before
 recording anything). The expected `result` and `events` of every step are the
 SDK's real output, not hand-written.
 
 ## New capabilities
 
-Two `requires` capabilities gate the groups so an SDK that has not implemented
-the feature on `main` or any open PR is skipped (a reviewed exception in
-`orchestrator/expected-capabilities.json`) rather than failed:
+Two `requires` capabilities gate the groups. Both are `required` for every SDK in
+`orchestrator/expected-capabilities.json`, so the gated scenarios run on every
+lane and a wrapper reporting `false` is a policy violation. A wrapper may
+advertise them as a constant `true`; javascript, the JS family and java still
+derive them from a behavioural self-test (`assignmentRulesSelfTest.js`,
+`AssignmentRulesSelfTest.java`), which `WRAPPER_API_SPEC.md` requires only of an
+SDK that lists one as a reviewed exception.
 
-| capability | meaning | advertised by |
-| --- | --- | --- |
-| `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values | javascript + react/vue2/vue3/angular (behavioral self-test in `assignmentRulesSelfTest.js`), java (`AssignmentRulesSelfTest.java`) |
-| `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent | same wrappers, same self-tests |
+| capability | meaning |
+| --- | --- |
+| `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values |
+| `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent |
 
-Only **javascript-sdk** (reference) and **java-sdk** implement either feature
-this round; every other SDK has no implementation on `main` or any open PR
-branch (verified across go/php/ruby/python/kotlin/rust/swift/flutter/dart/dotnet/
-scala/elixir/cpp/liquid), so each lists both capabilities as a reviewed
-exception. When an SDK ports the feature, move the capability from `unsupported`
-to `required` for that SDK.
+When this round started only **javascript-sdk** (reference) and **java-sdk**
+implemented either feature. The feature-parity round
+(`docs/feature-parity-conformance.md`) ported both to every SDK, so both
+capabilities are now `required` for every lane.
 
 A third capability, `clientNoEnvironment`, gates only the System Attributes
 group's no-environment scenario (253):
@@ -80,36 +82,47 @@ are unchanged.
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
 
-The **swift** log-instead-of-throw behaviour (scenarios 34, 35, 147, 148, 149,
-188, 189, 201) is handled in the swift wrapper rather than as a capability
-exception: the swift-sdk public API is intentionally non-throwing (v1.4.0
-contract, kept by maintainer decision on swift-sdk#7) and reports misuse (blank
-or duplicate unit UID, mutation after finalize, read before ready) through an
-`.error` event instead of throwing. The wrapper's `callSurfacingLoggedError`
-helper surfaces that logged `.error` as the HTTP error the scenario expects —
-matching the JS reference, which throws without emitting an event — so the
-scenarios pass unchanged against the real SDK behaviour.
+Two more reviewed exceptions replace wrapper code that used to hide an SDK
+divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
+
+| capability | meaning | gated scenarios | exempted SDK (reason) |
+| --- | --- | --- | --- |
+| `throwsOnMisuse` | misuse (blank or already-set unit uid, a mutation after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 148, 149, 188, 189, 201 | **swift** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `singleFinalizeEvent` | sealing the context logs exactly one lifecycle event, `finalize`, as in the JS reference | 19, 131, 147, 148, 149, 186, 188-192, 228 | **python** — python3-sdk logs `close` and then `finalize` for one transition (kept for v0.2.4 listeners). The wrapper returns both events unchanged. |
+
+Scenario 35 (duplicate unit) lists the released v1 wordings of ruby-sdk
+(`Unit 'x' already set.`) and php-sdk (`Unit "x" UID is already set`) in
+`errorAnyOf` next to the reference wording, so the divergence is visible in the
+scenario rather than rewritten by the ruby, liquid and php wrappers.
 
 ## Branch pins (sdk-branches.sh)
 
-Pinned to each SDK's open-PR head so the scenarios run against the code under
-review. For §5 (system attributes) every SDK that evaluates audiences locally is
-pinned to its `feat/sdk-system-attributes` branch:
+`sdk-branches.sh` is what CI builds, so it must only name refs that stay put.
+Every SDK PR of this round has merged, so every SDK of the round is pinned to
+`main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
+kotlin#4, php#10, python3#14, ruby#41, rust#9, scala#4, swift#10); java-sdk `main`
+also carries switchback (java-sdk#15). `PINNED_COMMIT` in
+`generate_sdk_round_2026_11_scenarios.py` is javascript-sdk `main` at the #68
+merge (311cfca), whose tree is identical to the #68 head (9403b83) the
+expectations were recorded from. angular and liquid are pinned to `main` too
+(their pinned branches merged); react, vue2 and vue3 stay on their open PR
+branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
+round.
 
-| SDK | branch | PR |
-| --- | --- | --- |
-| javascript-sdk | `feat/sdk-system-attributes` | #68 (reference) |
-| java-sdk | `feat/sdk-system-attributes` | #22 (stacks §5 on #17's rules + semver, all run for real) |
-| python3-sdk, dotnet-sdk, go-sdk, kotlin-sdk, php-sdk, ruby-sdk, swift-sdk, flutter-sdk, scala-sdk, rust-sdk, elixir-sdk, cpp-sdk | `feat/sdk-system-attributes` | #13 / #11 / #13 / #3 / #9 / #40 / #8 / #9 / #3 / #8 / #2 / #2 |
+### Scenario numbering versus open PRs
 
-Each `feat/sdk-system-attributes` branch is a descendant of that SDK's prior
-cross-SDK-passing pin, so this round's always-on application/environment behaviour
-and `app_version` removal are added on top of the behaviours earlier rounds
-pinned — **except php-sdk#9**, which branches off php-sdk `main` rather than the
-prior pin `fix/audit-operator-fixes`; see the "known failing lane" note in the PR.
-
-The react/vue2/vue3/angular wrappers build `javascript-sdk` from the same pin, so
-they inherit the reference behaviour and run the gated groups too.
+This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
+(`generate_parity_round_scenarios.py`); the group markers live in one place,
+`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
+fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
+then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
+free), below the parity range. Both generators own fixed ranges (230 and 300
+are constants, not derived from other scenarios): each keeps scenarios numbered
+outside its range where they are, and fails rather than renumbers when another
+scenario sits inside it. So #16/#20 only need to renumber their own groups to
+254+; a missed renumber shows up as a generator error, not a silent shift
+(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
+groups with a generator, give it a fixed first number the same way.
 
 ## Coverage matrix
 
@@ -153,7 +166,7 @@ The re-evaluation group is **ungated**: `attribute` + `treatment` are core
 actions every wrapper exposes, and every SDK in this round adopts the JS
 attribute-sequence behaviour, so the scenarios run on all SDKs.
 
-### System attributes — always-on application/environment (§5, every SDK's feat/sdk-system-attributes)
+### System attributes — always-on application/environment (§5, javascript-sdk#68 and every SDK's parity PR)
 
 Mirrors §4 tests 1, 3, 4 and 6 plus a variable read through the matched variant.
 The scenarios set the client application/environment through the optional `client`
@@ -196,8 +209,10 @@ wrapper API. They are listed so the matrix is complete.
 | Regex `/pattern/flags` slashes literal (not flags) | php#8, dotnet#8, ruby#39, python#11 | PHP-specific removal aligning to JS; not separately observable beyond existing match-operator behaviour. |
 | HTTP: only GET retried, publish never replayed; PHP connect-timeout | php#8, go#10, ruby#39, python#11 | Transport policy, not observable through the mock-endpoint wrapper API. |
 | System attributes: always-on application/environment in audience evaluation, user-override, no-environment | §5, js#68, java#22 | **Now covered** by the System Attributes group (248-253) via the optional `client` field on `POST /context`. |
-| System attributes: `app_version` dropped from the evaluation map, and system names applied to assignment-rule conditions | §5, js#68, java#22 | Not re-exercised by this group black-box: the group pins application/environment injection through audiences only. `app_version` removal and rule-condition injection are covered by each SDK's own system-attributes unit tests (and, for rules, the Custom Assignment Rules group). Documented, not added here. |
+| System attributes applied to assignment-rule conditions | §5, js#68, java#22 | **Covered** by the feature-parity group: 324 (rule conditions on the configured `environment` and `application` match) 325 (a user-set `environment` overrides the configured one in a rule condition) and 326 (a rule's `environments` scope uses the configured environment, not a user-set one). An SDK that evaluates rule conditions on user attributes only fails 324; one that reads the scope from the user-overlaid map fails 326. |
+| System attributes: `app_version` dropped from the evaluation map | §5, js#68, java#22 | Not re-exercised black-box: no wrapper injects an `app_version`, so its absence is not observable. Covered by each SDK's own system-attributes unit tests. |
 | System attributes: earliest-event stamp, publish-only `sdk_name`/`sdk_version` under `includeSystemAttributes` | js#67/#68, java | Not wrapper-observable: the wrapper does not set `includeSystemAttributes`, and the orchestrator strips system attributes from publish comparison. Would require a further wrapper/spec extension; documented, not added. |
+| Assignment-rule condition that THROWS = rule skipped, traversal continues | js#67, java#17 | Not portably triggerable through the wrapper: in the reference no stock JSON operator throws during rule evaluation (unknown operators return null, regex errors are caught). Documented, not added. |
 | Audience filter that THROWS = mismatch (strict fails closed) | js#67, java#17 | Not portably triggerable through the wrapper (needs a filter that throws/overflows during evaluation, which no stock operator does across SDKs). Documented, not added. |
 | `hash_unit` exposed as a public/diagnostic function | python#12, go#10, dotnet#8 | Covered by the existing `diagnostics` capability (`POST /diagnostic hashUnit`). |
 

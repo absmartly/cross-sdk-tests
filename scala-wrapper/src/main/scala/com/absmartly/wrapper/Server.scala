@@ -84,15 +84,23 @@ object Server extends IOApp {
   // the fixed test-app/test defaults keep every pre-2026-11 scenario unchanged. An explicitly supplied
   // application is forwarded as-is so the SDK validates it; only an omitted one falls back to test-app.
   // scala-sdk's SDKConfig mandates a non-empty environment, so the no-environment case
-  // (clientNoEnvironment) is a reviewed exception and SKIPs. Left carries the 400 error message.
+  // (clientNoEnvironment) is a reviewed exception and SKIPs; a supplied `client` without an environment
+  // fails closed rather than evaluating with a placeholder an audience could match. Left carries the 400
+  // error message.
   private def clientNames(cursor: io.circe.ACursor): Either[String, (String, String)] = {
     val client = cursor.downField("client")
+    val clientSupplied = client.focus.exists(!_.isNull)
     val applicationField = client.downField("application")
-    val environment = client.downField("environment").as[String].toOption.filter(_.nonEmpty).getOrElse("test")
+    val environment = client.downField("environment").as[String].toOption.filter(_.nonEmpty) match {
+      case Some(env) => Right(env)
+      case None if clientSupplied =>
+        Left("client.environment is required by scala-sdk; no-environment contexts are not supported")
+      case None => Right("test")
+    }
     val application =
       if (applicationField.succeeded) applicationField.as[String].left.map(_ => "Invalid 'application' in client argument")
       else Right("test-app")
-    application.flatMap { app =>
+    application.flatMap(app => environment.map(env => (app, env))).flatMap { case (app, environment) =>
       try {
         SDKConfig(endpoint = "http://localhost:3000", apiKey = "test-key", application = app, environment = environment)
         Right((app, environment))
@@ -143,6 +151,9 @@ object Server extends IOApp {
         "publishThrowsOnFailure" -> Json.fromBoolean(true),
         "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
         "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
+        "throwsOnMisuse" -> Json.fromBoolean(true),
+        "singleFinalizeEvent" -> Json.fromBoolean(true),
+        "semverNumericOperands" -> Json.fromBoolean(true),
         "assignmentRules" -> Json.fromBoolean(true),
         "semverOperators" -> Json.fromBoolean(true),
         "xAgentHeader" -> Json.fromBoolean(true),
@@ -290,8 +301,8 @@ object Server extends IOApp {
           IO.fromFuture(IO {
             val collector = new WrapperEventCollector()
             val sdk = new SDK(SDKConfig(
-              endpoint = "http://127.0.0.1:1", apiKey = "test-key", application = "test-app",
-              environment = "test", retries = 0, timeout = 1000,
+              endpoint = "http://127.0.0.1:1", apiKey = "test-key", application = clientApp,
+              environment = clientEnv, retries = 0, timeout = 1000,
               eventLogger = collector, publisher = Some(publisher)))
             sdk.createContext(units, options).map(context => (context, collector, None))
           })

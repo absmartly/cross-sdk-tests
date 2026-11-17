@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.join(REPO, "orchestrator"))
 sys.path.insert(0, REPO)
 
 import generate_switchback_scenarios as generator  # noqa: E402
+import scenario_groups  # noqa: E402
 from test_runner import SWITCHBACK_ACTIONS  # noqa: E402
 from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
 
@@ -45,15 +46,16 @@ def canonical():
     return copy.deepcopy(_canonical_parsed())
 
 
-# The group is appended after the highest retained id (the feature-parity round ends at 323).
-KEPT_COUNT = 270
-FIRST_ID = 324
+# The group owns 400+, after main's scenarios (the feature-parity round ends at 332).
+KEPT_COUNT = 279
+FIRST_ID = scenario_groups.SWITCHBACK_FIRST_NUMBER
+GROUP_SIZE = 26
 
 
 @pytest.fixture(scope="module")
 def built_group():
     """One full generation (golden verification, builders, mutant replay) for the module."""
-    return generator.build_group(generator.load_fixtures(), FIRST_ID)
+    return generator.build_group(generator.load_fixtures(), FIRST_ID)[0]
 
 
 def exposure(**extra):
@@ -224,7 +226,7 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     monkeypatch.setattr(requests.sessions.Session, "request", record)
 
     gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
-    assert len(gated) == len(built_group) - 1 == 23
+    assert len(gated) == len(built_group) - 1 == GROUP_SIZE - 1
 
     # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
     reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
@@ -271,8 +273,8 @@ def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_ta
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(KEPT_COUNT, len(scenarios)))
-    assert len(group) == 24
-    assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + 24))
+    assert len(group) == GROUP_SIZE
+    assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + GROUP_SIZE))
 
 
 # ---------------------------------------------------------------------------
@@ -462,8 +464,9 @@ def test_switchback_exposures_pin_rule_override_and_unit_exposures_omit_it():
             assert isinstance(data.get("ruleOverride"), bool), (scenario["name"], data)
             if data["ruleOverride"]:
                 rule_won += 1
-                assert "Precedence" in scenario["name"] and data["assigned"] is False, (scenario["name"], data)
-    assert rule_won == 4
+                assert ("Precedence" in scenario["name"] or "Assignment Rule" in scenario["name"]) and \
+                    data["assigned"] is False, (scenario["name"], data)
+    assert rule_won == 6
     (inert,) = [s for s in group() if "Inertness" in s["name"]]
     assert all("ruleOverride" not in d for d in _exposure_data(inert))
     assert generator.failing_steps(inert, "rule_override_true_on_ordinary") == []
@@ -480,7 +483,7 @@ def context_scenarios(scenarios):
 
 def test_the_model_reproduces_every_checked_in_context_scenario():
     scenarios = context_scenarios(canonical())
-    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(FIRST_ID + 6, FIRST_ID + 24))
+    assert [int(s["name"].split(" - ", 1)[0]) for s in scenarios] == list(range(FIRST_ID + 6, FIRST_ID + GROUP_SIZE))
     assert [s["name"] for s in scenarios if generator.failing_steps(s, None)] == []
 
 
@@ -541,10 +544,10 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
     assert generator.main() == 1
 
 
-# The 270 scenarios this group was appended to (the 2026-11 SDK round 230-253 and the feature-parity
-# round 300-323 included), serialized with sort_keys=True. Update only when another group
+# The 279 scenarios of main this group follows (the 2026-11 SDK round 230-253 and the feature-parity
+# round 300-332 included), serialized with sort_keys=True. Update only when another group
 # legitimately changes them.
-MAIN_SHA256 = "164afc4e280e8297f6c738a31f68b18bf32c511328a2a5b572b5a033a22bb423"
+MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
 
 
 def test_main_scenarios_are_untouched():

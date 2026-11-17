@@ -294,6 +294,9 @@ void main() async {
         'publishThrowsOnFailure': true,
         'trackRejectsNonObjectProperties': true,
         'refreshNoOpOnFailedContext': true,
+        'throwsOnMisuse': true,
+        'singleFinalizeEvent': true,
+        'semverNumericOperands': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
@@ -518,8 +521,13 @@ void main() async {
       }
       final clientApplication = clientApplicationRaw is String ? clientApplicationRaw : 'test';
       final clientEnvironmentRaw = clientCfg?['environment'];
-      final clientEnvironment =
-          (clientEnvironmentRaw is String && clientEnvironmentRaw.isNotEmpty) ? clientEnvironmentRaw : 'test';
+      if (clientCfg != null && (clientEnvironmentRaw is! String || clientEnvironmentRaw.isEmpty)) {
+        return shelf.Response(400,
+          body: jsonEncode({'error': "client.environment is required by dart-sdk; no-environment contexts are not supported", 'events': []}),
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      final clientEnvironment = clientEnvironmentRaw is String ? clientEnvironmentRaw : 'test';
 
       // publishToEndpoint: publish through the SDK's own DefaultContextPublisher to
       // PUT {endpoint}/context (the mock collector below), as the e2e path does.

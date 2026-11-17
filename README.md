@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **294 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **305 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -53,9 +53,9 @@ across languages.
   `refresh()` on a context whose load failed is a successful no-op (no fetch,
   no event, still failed).
 
-  Scenarios 324-344 and 346-347 (Switchback) require the `switchback`
-  capability and scenario 345 (switchback wire-format inertness) is ungated.
-  346 and 347 follow 345 to preserve the group's original ordering. They test the
+  Scenarios 400-420 and 422-425 (Switchback) require the `switchback`
+  capability and scenario 421 (switchback wire-format inertness) is ungated, so
+  it runs on every SDK. They test the
   R33 cluster-defined switchback contract: an experiment names, in an ordered
   `switchbackClusters` map, the unit types it is linked to and the attribute
   path holding each one's cluster value, and the first unit in declared order
@@ -64,28 +64,32 @@ across languages.
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
   implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java is the only
   capable SDK, and every other SDK lists `switchback` as a reviewed exception.
+  The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
+  the feature-parity range.
 
   | Rule | Scenarios |
   | --- | --- |
-  | golden vectors via `POST /switchback/assign` and `/permutation` (882 + 504) | 324-329 |
-  | single source, raw value is the key, period 0 and 1; an eligible draw of 0 is served and exposed (`assigned=true`, `eligible=true`) | 330 |
-  | lower-declared source serves whatever the context unit order | 331 |
-  | agreeing units serve | 332 |
-  | disagreeing units: control, no exposure | 333 |
-  | a unit without a value is skipped | 334 |
-  | strings and whole numbers (decimal text) only; floats, booleans, objects, arrays, `""`, null give no value | 335 |
-  | every `attribute-path-cases.json` case; `.` in any segment, misplaced indices, unterminated quotes are malformed | 336 |
-  | `switchbackClusterValues`: in, out, null, `[]` | 337 |
-  | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 338 |
-  | traffic miss on an eligible cluster recorded `eligible=false`; traffic hashes the serving unit | 339 |
-  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on, assignment rules and strict audiences never on an ineligible cluster; traffic miss before custom | 340 |
-  | holdouts never apply | 341 |
-  | missing or empty cluster map: legacy control; no linked unit: not applicable; Phase 1E fields ignored | 342 |
-  | refresh with a changed cluster map re-resolves | 343 |
-  | one exposure per period; payload has no switchback fields | 344 |
-  | ungated: unit experiments with switchback fields are served as unit experiments | 345 |
-  | serving unit and cluster key read once per period slot (eligible and ineligible) | 346 |
-  | `peek`, `peekVariableValue`, `variableValue` resolve the cluster draw; only exposing calls expose | 347 |
+  | golden vectors via `POST /switchback/assign` and `/permutation` (882 + 504) | 400-405 |
+  | single source, raw value is the key, period 0 and 1; an eligible draw of 0 is served and exposed (`assigned=true`, `eligible=true`) | 406 |
+  | lower-declared source serves whatever the context unit order | 407 |
+  | agreeing units serve | 408 |
+  | disagreeing units: control, no exposure | 409 |
+  | a unit without a value is skipped | 410 |
+  | strings and whole numbers (decimal text) only; floats, booleans, objects, arrays, `""`, null give no value | 411 |
+  | every `attribute-path-cases.json` case; `.` in any segment, misplaced indices, unterminated quotes are malformed | 412 |
+  | `switchbackClusterValues`: in, out, null, `[]` | 413 |
+  | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 414 |
+  | traffic miss on an eligible cluster recorded `eligible=false`; traffic hashes the serving unit | 415 |
+  | override (also without a cluster value), assignment rule, strict audience (`assigned=false`), full-on, custom over the draw; full-on, assignment rules and strict audiences never on an ineligible cluster; traffic miss before custom | 416 |
+  | holdouts never apply | 417 |
+  | missing or empty cluster map: legacy control; no linked unit: not applicable; Phase 1E fields ignored | 418 |
+  | refresh with a changed cluster map re-resolves | 419 |
+  | one exposure per period; payload has no switchback fields | 420 |
+  | ungated: unit experiments with switchback fields are served as unit experiments | 421 |
+  | serving unit and cluster key read once per period slot (eligible and ineligible) | 422 |
+  | `peek`, `peekVariableValue`, `variableValue` resolve the cluster draw; only exposing calls expose | 423 |
+  | a switchback with a covering holdout and an assign rule: the rule wins (`ruleOverride=true`), the holdout is never consulted and records no exposure | 424 |
+  | three sources declared in non-alphabetical JSON order: the declared order serves, not a sorted or unordered map | 425 |
 
   Grids keep "now" inside one known period until 2069, so no clock control is
   needed. The group is generated by `generate_switchback_scenarios.py` from
@@ -93,22 +97,16 @@ across languages.
   (byte-identical platform copies); its expectations come from an in-generator
   model of the R33 rules, and generation fails unless every wrong model
   (hashed key, uid as key, Phase 1E bucket, last unit serves, units iterated
-  outer, period and seed arithmetic, ...) fails the scenario of the rule it
-  breaks (`MUTANT_SCENARIOS`). Multi-unit publishes pin every hashed unit
+  outer, a sorted cluster map, a holdout applied or fired, period and seed
+  arithmetic, ...) fails the scenario of the rule it breaks
+  (`MUTANT_SCENARIOS`). Multi-unit publishes pin every hashed unit
   with `unorderedUnits: true` (matched as a set, since unit order is the
   SDK's map order). Edit the generator, not the
   scenarios. Run `python3 generate_switchback_scenarios.py --rules` to print
   this map and the mutant results.
 
-  The java lane pins `java-sdk` to `integration/switchback-sysattrs` in
-  `sdk-branches.sh`: switchback (java-sdk#15, which needs d5b1a6e5 or later so
-  a strict audience mismatch publishes `assigned=false`) combined with system
-  attributes (java-sdk#22). Merge order: abs#5801, then java-sdk#15 and
-  java-sdk#22, then this branch; once both merge, revert the pin to the
-  released version.
-
-  This branch sits on top of cross-sdk-tests#21 (the 2026-11 SDK round 230-253
-  and the feature-parity round 300-323), which is expected to merge first.
+  The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
+  switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
 
   Scenarios 230-253 pin the
   2026-11 SDK round's reference-aligned behaviours (see
@@ -136,7 +134,7 @@ across languages.
   ungated scenarios (246-252) run on every SDK, and 253 runs on the SDKs that
   advertise `clientNoEnvironment`.
 
-  Scenarios 300-323 pin the 2026-11 feature-parity round, where every SDK
+  Scenarios 300-332 pin the 2026-11 feature-parity round, where every SDK
   ports assignment rules, the `semver_*` operators and a versioned `X-Agent`
   (see [docs/feature-parity-conformance.md](docs/feature-parity-conformance.md)):
   300-314 (`requires: assignmentRules`) cover split rules hashed with the
@@ -148,7 +146,12 @@ across languages.
   requests carry `absmartly-<lang>-sdk/<version>`; 322-323 check a wrapper
   forwards an explicitly blank `client.application` instead of repairing it
   (`clientRejectsBlankApplication` / `clientAcceptsBlankApplication`, one per
-  SDK). With the parity pins in `sdk-branches.sh` every SDK requires the rules
+  SDK); 324-326 (`requires: assignmentRules`) check rule conditions read the
+  configured application/environment, with a user-set value winning, while a
+  rule's environment scope always uses the configured environment; 327-330 check
+  split-percentage parsing, unknown or malformed rules, rule changes on refresh
+  and invalid rules JSON; 331-332 check semver operand normalisation
+  (332 also `requires: semverNumericOperands`). With the parity pins in `sdk-branches.sh` every SDK requires the rules
   and semver capabilities.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
@@ -157,7 +160,7 @@ across languages.
 
   Switchback harness tests (`sameShapeAs`, capability gating, the switchback
   generator's `--check`, a replay of every switchback context scenario against
-  mutant SDK models, and a digest of the 240 non-switchback scenarios) run in
+  mutant SDK models, and a digest of the 279 non-switchback scenarios) run in
   a few seconds with `python3 -m pytest orchestrator/tests -q` (needs `pytest`
   and `requests`); CI runs them in `harness-unit-tests` next to `tests/`.
   The java wrapper's switchback endpoint tests run inside the wrapper's
@@ -296,7 +299,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 294-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 305-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -320,9 +323,9 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 294 scenarios
+├── test_scenarios_complete.json  # 305 scenarios
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
-│                                 #   (324-347) in place; --check verifies
+│                                 #   (400-425) in place; --check verifies
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be

@@ -3,9 +3,8 @@
 The group pins that every SDK evaluates audiences with the client's configured ``application`` and
 ``environment`` names, always on, with user attributes overlaid on top (a user-set value wins), and
 an unconfigured name left out of the map. It mirrors §4 tests 1, 3, 4 and 6 plus a variable read
-through the matched variant. (The SDK applies the same names to assignment-rule conditions and drops
-``app_version`` too; those two are covered by the SDKs' own unit tests and the rule/semver groups,
-not re-exercised black-box here.)
+through the matched variant. (The SDK applies the same names to assignment-rule conditions, pinned by
+parity scenarios 324-326, and drops ``app_version``, covered by the SDKs' own unit tests.)
 
 Like the other SDK-round groups, this module is a black-box check of the *scenarios themselves*,
 independent of the generator and of any wrapper. It reads only the JSON and:
@@ -37,6 +36,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,18 +44,22 @@ SCENARIOS_PATH = os.environ.get(
     "SYSATTR_SCENARIOS_PATH", os.path.join(REPO_ROOT, "test_scenarios_complete.json")
 )
 
-GROUP_MARKER = " - System Attributes - "
+sys.path.insert(0, REPO_ROOT)
+import scenario_groups  # noqa: E402
+
+GROUP_MARKER = scenario_groups.ROUND_SYSATTR
 # Groups appended after this one (generate_parity_round_scenarios.py, 300+, then the Switchback
-# group from generate_switchback_scenarios.py). They are neither "kept" scenarios for the digest
-# nor part of this group; this group must directly precede them.
-LATER_GROUP_MARKERS = (" - Assignment Rules - ", " - Semver Comparison - ", " - X-Agent - ",
-                       " - Client Application - ", " - Switchback ")
+# group from generate_switchback_scenarios.py, 400+). They are neither "kept" scenarios for the
+# digest nor part of this group; this group must directly precede them.
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK,)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
 # this group was appended. Update ONLY when another group legitimately changes the non-group
-# scenarios (e.g. a group lands before this one and this one is renumbered).
-KEPT_DIGEST = "71a710e4a2b7f6bdb055f5a009079b373663ade43514bb2d8751e5e43e1dad7d"
+# scenarios (e.g. a group lands before this one and this one is renumbered). Last changed when the
+# finalize and misuse scenarios were gated on singleFinalizeEvent/throwsOnMisuse and scenario 35 listed
+# the ruby-sdk/php-sdk wordings (PR #21 review).
+KEPT_DIGEST = "9963fb6a8d9f9d05e9bb0efd5cc3a690e8507f61bcc81652ae723e62df2f7412"
 KEPT_COUNT = 240
 GROUP_SIZE = 6
 
@@ -321,7 +325,7 @@ class SystemAttributesGroupTest(unittest.TestCase):
         self.assertEqual(tail, self.group, "the group must be the contiguous tail of the file")
         # Only the later parity groups may follow it, all numbered above it.
         self.assertEqual(self.everything[:len(self.scenarios)], self.scenarios,
-                         "only the later parity groups may follow this group")
+                         "only the later parity and Switchback groups may follow this group")
         if self.later:
             last = int(self.group[-1]["name"].split(" - ", 1)[0])
             first_later = int(self.later[0]["name"].split(" - ", 1)[0])
