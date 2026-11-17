@@ -9,8 +9,6 @@ import PromiseKit
 // getTreatment() and requires BOTH the returned variant and the exact ordered id/name/variant
 // sequence of exposures that call fires. A pre-holdout swift-sdk decodes the payload but ignores
 // `holdouts`/`holdoutIds`, so check A fails and the capability reports false (fails closed).
-//
-// Each battery runs once per wrapper process; the result is cached.
 enum HoldoutSelfTest {
     private static let lock = NSLock()
     private static var holdoutsResult: Bool?
@@ -167,7 +165,6 @@ enum HoldoutSelfTest {
 
         do {
             let log = ExposureLog()
-            // lateType is deliberately absent: see check G.
             let context = try makeContext(
                 experiments: experiments, holdouts: holdouts,
                 units: [heldOutType: heldOutUid, notHeldOutType: notHeldOutUid], log: log)
