@@ -292,7 +292,7 @@ def test_failing_control_call_is_a_harness_error_not_an_sdk_failure(
         assert results_aggregator.print_results_table({}, {"fake": row}, ["fake"], False, True) is True
 
 
-def test_wire_failure_carried_by_a_harness_error_is_an_sdk_failure(wrapper_factory, group):
+def test_wire_failure_carried_by_a_harness_error_is_an_sdk_failure(server_url, wrapper_factory, group):
     """The scenario handler merges SDK failures carried by a HarnessError: still an SDK FAIL."""
     wrapper = wrapper_factory("gzip")
     orch = orchestrator_for(wrapper)
