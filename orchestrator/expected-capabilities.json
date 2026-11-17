@@ -283,7 +283,7 @@
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "java-sdk keeps duplicate holdoutIds in the applicable-holdout set, so a refresh that drops the duplicate re-exposes the covered experiment; the java-sdk branch fix/dedup-duplicate-holdout-ids dedups like javascript-sdk; move this to required when it merges and the lane is repinned"
+        "holdoutIdsDedup": "java-sdk keeps duplicate holdoutIds in the applicable-holdout set, so a refresh that drops the duplicate re-exposes the covered experiment; java-sdk#25 dedups like javascript-sdk; move this to required when it merges and the lane is repinned"
       }
     },
     "kotlin": {

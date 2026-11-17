@@ -137,7 +137,7 @@ across languages.
   500 is gated on `holdoutIdsDedup` because the javascript-sdk dedup is not
   yet a confirmed contract (the owner must confirm it) and java-sdk keeps
   duplicates: its refresh re-exposes. java is a reviewed exception until
-  the java-sdk dedup fix (branch `fix/dedup-duplicate-holdout-ids`) merges;
+  the java-sdk dedup fix (absmartly/java-sdk#25) merges;
   the JS family requires it.
 
   Scenarios 230-253 pin the
