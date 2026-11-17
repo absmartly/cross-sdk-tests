@@ -1,4 +1,4 @@
-"""Feature-parity groups of test_scenarios_complete.json (300-331, generate_parity_round_scenarios.py).
+"""Feature-parity groups of test_scenarios_complete.json (300-332, generate_parity_round_scenarios.py).
 
 Their expectations are recorded from the pinned javascript-sdk reference, and only
 `generate_parity_round_scenarios.py --check` (which needs that build) re-derives them. This test pins
@@ -22,9 +22,9 @@ SCENARIOS_PATH = os.path.join(REPO_ROOT, "test_scenarios_complete.json")
 sys.path.insert(0, REPO_ROOT)
 import scenario_groups  # noqa: E402
 
-FIRST, LAST = 300, 331
+FIRST, LAST = 300, 332
 # sha256 of json.dumps([parity scenarios in file order], sort_keys=True).
-PARITY_DIGEST = "92facd5389cc9c13662017673123d346eca4f22325ba1501fb430d4fa21f32c7"
+PARITY_DIGEST = "cc74037e0b3c37ac4c27b8f1a254d6e199b914a0924ec0552515be3098f13bfa"
 
 
 def parity_scenarios(scenarios):
@@ -50,7 +50,7 @@ class ParityGroupsPinnedTest(unittest.TestCase):
 
     def test_parity_scenarios_unchanged(self):
         self.assertEqual(digest(self.parity), PARITY_DIGEST,
-                         "a parity scenario (300-331) changed without regenerating it from the reference")
+                         "a parity scenario (300-332) changed without regenerating it from the reference")
 
     def test_digest_catches_hand_edits(self):
         """The edits that used to pass every CI check change the digest."""

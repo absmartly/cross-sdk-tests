@@ -61,6 +61,7 @@ PARITY_MARKERS = scenario_groups.PARITY_MARKERS
 RULES_CAPABILITY = "assignmentRules"
 SEMVER_CAPABILITY = "semverOperators"
 HOLDOUTS_CAPABILITY = "holdouts"
+SEMVER_NUMERIC_CAPABILITY = "semverNumericOperands"
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 XAGENT_CAPABILITY = "xAgentHeader"
 REJECTS_BLANK_APP_CAPABILITY = "clientRejectsBlankApplication"
@@ -533,11 +534,16 @@ def semver_coercion_specs():
     """Operand coercion the reference pins: numbers are converted like JS toFixed(15) with trailing
     zeros trimmed (so 1e-7 is 0.0000001, not '1e-7'), and leading zeros in a numeric identifier are
     stripped. Appended after the other parity groups."""
+    numeric = semver_case_spec(
+        "A Numeric Operand Compares As Its Fixed-Point String",
+        "A numeric attribute is converted like JS toFixed(15) with trailing zeros trimmed, so 1e-7 "
+        "equals 0.0000001 (not '1E-07').",
+        [("semver_eq", 1e-7, "0.0000001")], 551)
+    numeric["requires"] = [SEMVER_CAPABILITY, SEMVER_NUMERIC_CAPABILITY]
     return [semver_case_spec(
-        "Numeric Operands And Leading Zeros Normalize Like The Reference",
-        "A numeric attribute is compared as its fixed-point string (1e-7 equals 0.0000001), and "
-        "leading zeros in numeric identifiers are ignored (01.0.0 equals 1.0.0).",
-        [("semver_eq", 1e-7, "0.0000001"), ("semver_eq", "01.0.0", "1.0.0")], 550)]
+        "Leading Zeros In Numeric Identifiers Are Ignored",
+        "Leading zeros in a numeric identifier are ignored, so 01.0.0 equals 1.0.0.",
+        [("semver_eq", "01.0.0", "1.0.0")], 550), numeric]
 
 
 # ---------------------------------------------------------------------------

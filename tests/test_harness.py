@@ -1156,7 +1156,7 @@ class CapturedRequestsTest(unittest.TestCase):
 
 
 class ScenarioGeneratorsCoexistTest(unittest.TestCase):
-    """The 2026-11 round generator (230-253) and the parity generator (300-331) share one canonical file;
+    """The 2026-11 round generator (230-253) and the parity generator (300-332) share one canonical file;
     each must leave the other's groups where they are, numbered as they are."""
 
     ROUND = scenario_groups.ROUND_MARKERS
@@ -1169,7 +1169,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         round_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.ROUND)]
         parity_ids = [n for n, name in zip(numbers, names) if any(m in name for m in self.PARITY)]
         self.assertEqual(round_ids, list(range(230, 254)))
-        self.assertEqual(parity_ids, list(range(300, 332)))
+        self.assertEqual(parity_ids, list(range(300, 333)))
         self.assertEqual(numbers, sorted(numbers))
 
     @staticmethod

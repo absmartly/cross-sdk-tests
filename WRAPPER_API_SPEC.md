@@ -1289,7 +1289,7 @@ compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
 pre-release ranks below its release.
 
 `semverOperators` is likewise `required` for every SDK, so the scenarios
-(240-245, 314-319, 331, `requires: ["semverOperators"]`) verify it and a constant
+(240-245, 314-319, 331-332, `requires: ["semverOperators"]`) verify it and a constant
 `true` is allowed. A wrapper whose SDK lists it as a reviewed exception derives it
 from a BEHAVIORAL self-test instead: a strict audience using `semver_gt` must
 assign the experiment's variant when the attribute version is greater (numeric

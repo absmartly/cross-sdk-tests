@@ -37611,8 +37611,8 @@
     ]
   },
   {
-    "name": "331 - Semver Comparison - Numeric Operands And Leading Zeros Normalize Like The Reference",
-    "description": "A numeric attribute is compared as its fixed-point string (1e-7 equals 0.0000001), and leading zeros in numeric identifiers are ignored (01.0.0 equals 1.0.0). Cases, in order: semver_eq(1e-07, \"0.0000001\"); semver_eq(\"01.0.0\", \"1.0.0\"). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "name": "331 - Semver Comparison - Leading Zeros In Numeric Identifiers Are Ignored",
+    "description": "Leading zeros in a numeric identifier are ignored, so 01.0.0 equals 1.0.0. Cases, in order: semver_eq(\"01.0.0\", \"1.0.0\"). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
     "contextData": {
       "experiments": [
         {
@@ -37648,45 +37648,7 @@
               "config": null
             }
           ],
-          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v0\"},{\"value\":\"0.0000001\"}]}]}",
-          "audienceStrict": true,
-          "customFieldValues": null,
-          "assignmentRules": null
-        },
-        {
-          "id": 551,
-          "name": "exp_semver_551",
-          "iteration": 1,
-          "unitType": "session_id",
-          "seedHi": 0,
-          "seedLo": 0,
-          "split": [
-            0.0,
-            1.0
-          ],
-          "trafficSeedHi": 0,
-          "trafficSeedLo": 0,
-          "trafficSplit": [
-            0,
-            1
-          ],
-          "fullOnVariant": 0,
-          "applications": [
-            {
-              "name": "website"
-            }
-          ],
-          "variants": [
-            {
-              "name": "A",
-              "config": null
-            },
-            {
-              "name": "B",
-              "config": null
-            }
-          ],
-          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v1\"},{\"value\":\"1.0.0\"}]}]}",
+          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v0\"},{\"value\":\"1.0.0\"}]}]}",
           "audienceStrict": true,
           "customFieldValues": null,
           "assignmentRules": null
@@ -37719,10 +37681,6 @@
                   {
                     "id": 550,
                     "name": "exp_semver_550"
-                  },
-                  {
-                    "id": 551,
-                    "name": "exp_semver_551"
                   }
                 ]
               }
@@ -37734,17 +37692,6 @@
         "action": "attribute",
         "params": {
           "name": "v0",
-          "value": 1e-07
-        },
-        "expect": {
-          "result": null,
-          "events": []
-        }
-      },
-      {
-        "action": "attribute",
-        "params": {
-          "name": "v1",
           "value": "01.0.0"
         },
         "expect": {
@@ -37779,6 +37726,108 @@
         }
       },
       {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "semverOperators"
+    ]
+  },
+  {
+    "name": "332 - Semver Comparison - A Numeric Operand Compares As Its Fixed-Point String",
+    "description": "A numeric attribute is converted like JS toFixed(15) with trailing zeros trimmed, so 1e-7 equals 0.0000001 (not '1E-07'). Cases, in order: semver_eq(1e-07, \"0.0000001\"). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 551,
+          "name": "exp_semver_551",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": "{\"filter\":[{\"semver_eq\":[{\"var\":\"v0\"},{\"value\":\"0.0000001\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "svk-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 551,
+                    "name": "exp_semver_551"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v0",
+          "value": 1e-07
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
         "action": "treatment",
         "params": {
           "experimentName": "exp_semver_551"
@@ -37808,13 +37857,14 @@
         "action": "pending",
         "params": {},
         "expect": {
-          "result": 2,
+          "result": 1,
           "events": []
         }
       }
     ],
     "requires": [
-      "semverOperators"
+      "semverOperators",
+      "semverNumericOperands"
     ]
   }
 ]

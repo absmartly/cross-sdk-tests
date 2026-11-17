@@ -32,7 +32,8 @@
     "clientRejectsBlankApplication": "the SDK's client rejects an explicitly blank application at construction, and the wrapper forwards client.application unchanged on POST /context, so a blank name returns the SDK's own validation error as a 400 instead of being repaired into the wrapper's default (WRAPPER_API_SPEC.md, POST /context client)",
     "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
-    "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated"
+    "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
+    "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)"
   },
   "sdks": {
     "javascript": {
@@ -56,7 +57,8 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -80,7 +82,8 @@
         "semverOperators",
         "xAgentHeader",
         "clientAcceptsBlankApplication",
-        "throwsOnMisuse"
+        "throwsOnMisuse",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -111,7 +114,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -139,7 +143,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
@@ -164,7 +169,8 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
@@ -194,7 +200,8 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
@@ -222,7 +229,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -253,7 +261,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
@@ -278,7 +287,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -306,7 +316,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -333,7 +344,8 @@
         "semverOperators",
         "xAgentHeader",
         "clientRejectsBlankApplication",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -362,7 +374,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
@@ -390,7 +403,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -424,7 +438,8 @@
         "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
         "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07' rather than the reference's '0.0000001' and the comparison is null; a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk (scenario 332 skips until then)"
       }
     },
     "cpp": {
@@ -445,7 +460,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
@@ -474,7 +490,8 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -504,7 +521,8 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -532,7 +550,8 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -560,7 +579,8 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
@@ -588,7 +608,8 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "semverNumericOperands"
       ],
       "unsupported": {
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
