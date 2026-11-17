@@ -173,10 +173,9 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, holdoutIdsDedup, assignmentRules, semverOperators] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
-    holdoutSelfTest.runHoldoutIdsDedup(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
   ]);
@@ -205,7 +204,6 @@ app.get('/capabilities', async (req, res) => {
     xAgentHeader: false,
     holdouts,
     holdout_arms: holdoutArms,
-    holdoutIdsDedup,
     assignmentRules,
     semverOperators
   });

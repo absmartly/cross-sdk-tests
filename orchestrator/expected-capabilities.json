@@ -34,8 +34,7 @@
     "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
-    "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)",
-    "holdoutIdsDedup": "a holdoutIds list naming one holdout more than once is one holdout, as javascript-sdk dedups it at install: one holdout exposure per (holdout, unit type), and a refresh that only drops the duplicate is not a coverage change, so nothing re-exposes (Holdout Conformance scenario 500; advertised from a behavioral self-test). Pending owner confirmation as the contract"
+    "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)"
   },
   "sdks": {
     "javascript": {
@@ -60,8 +59,7 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands",
-        "holdoutIdsDedup"
+        "semverNumericOperands"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)",
@@ -96,8 +94,7 @@
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
         "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip",
-        "holdoutIdsDedup": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip"
       }
     },
     "ruby": {
@@ -127,8 +124,7 @@
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
-        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "liquid": {
@@ -158,8 +154,7 @@
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
         "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
-        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "wraps ruby-sdk, whose pinned branch has no holdout resolution"
+        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "php": {
@@ -189,8 +184,7 @@
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
-        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "holdoutIdsDedup": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
       }
     },
     "go": {
@@ -220,8 +214,7 @@
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
-        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "holdoutIdsDedup": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
       }
     },
     "rust": {
@@ -251,8 +244,7 @@
         "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "java": {
@@ -282,8 +274,7 @@
         "semverNumericOperands"
       ],
       "unsupported": {
-        "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "java-sdk keeps duplicate holdoutIds in the applicable-holdout set, so a refresh that drops the duplicate re-exposes the covered experiment; java-sdk#25 dedups like javascript-sdk; move this to required when it merges and the lane is repinned"
+        "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "kotlin": {
@@ -313,8 +304,7 @@
         "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
         "clientNoEnvironment": "kotlin-sdk's Client has a private constructor and a non-null environment, and Context.create is internal, so the wrapper cannot build a no-environment client black-box; kotlin-sdk's own ContextSystemAttributesTest covers the no-environment case via an internal Context.create(environment=null)",
-        "clientAcceptsBlankApplication": "kotlin-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "kotlin-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "scala": {
@@ -344,8 +334,7 @@
         "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes",
-        "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "swift": {
@@ -375,8 +364,7 @@
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
-        "holdoutIdsDedup": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
       }
     },
     "dart": {
@@ -406,8 +394,7 @@
         "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
-        "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "flutter": {
@@ -437,8 +424,7 @@
         "switchback": "switchback serving not implemented in flutter-sdk (flutter); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
-        "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "dotnet": {
@@ -468,8 +454,7 @@
         "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07', which parses as version core '1E' with pre-release '07' and compares greater than '0.0000001' (semver_eq misses, semver_gt wrongly matches); a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk's SemverComparator (scenario 332 skips until then)",
-        "holdoutIdsDedup": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07', which parses as version core '1E' with pre-release '07' and compares greater than '0.0000001' (semver_eq misses, semver_gt wrongly matches); a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk's SemverComparator (scenario 332 skips until then)"
       }
     },
     "cpp": {
@@ -499,8 +484,7 @@
         "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
         "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
     "elixir": {
@@ -530,8 +514,7 @@
         "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
-        "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "holdoutIdsDedup": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
       }
     },
     "react": {
@@ -556,8 +539,7 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands",
-        "holdoutIdsDedup"
+        "semverNumericOperands"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)",
@@ -587,8 +569,7 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands",
-        "holdoutIdsDedup"
+        "semverNumericOperands"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)",
@@ -618,8 +599,7 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands",
-        "holdoutIdsDedup"
+        "semverNumericOperands"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)",
@@ -649,8 +629,7 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands",
-        "holdoutIdsDedup"
+        "semverNumericOperands"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)",

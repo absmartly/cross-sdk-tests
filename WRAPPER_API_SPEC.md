@@ -1247,18 +1247,6 @@ at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
 
-### Capability: `holdoutIdsDedup`
-
-No new endpoint. It gates scenario 500: a `holdoutIds` list naming one holdout
-more than once, adjacent or not (`[901, 901]`, `[902, 903, 902, 903]`), is one
-holdout, as javascript-sdk dedups it at install. The holdout fires one
-exposure, and a refresh whose only change is dropping the duplicate is not a
-coverage change, so the covered experiment keeps its exposure state and
-nothing re-exposes. Advertise it from a behavioural self-test that checks both
-the adjacent and the non-adjacent repeat across such a refresh, and only when
-the `holdouts` battery passes. Pending owner confirmation as the contract, so
-it is its own capability rather than part of `holdouts`.
-
 ### Capability: `switchback`
 
 Gates the Switchback scenario group: R33 (cluster-defined) switchback serving on

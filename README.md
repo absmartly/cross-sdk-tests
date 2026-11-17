@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **313 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **312 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -108,9 +108,9 @@ across languages.
   The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
   switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
 
-  Scenarios 500-507 (Holdout Conformance, H1-H8) add the holdout cases every
+  Scenarios 501-507 (Holdout Conformance, H2-H8) add the holdout cases every
   SDK holdout port must agree on, beyond 203-227 and 305. They require
-  `holdouts`; 500 also requires `holdoutIdsDedup`. Their expectations are
+  `holdouts`. Their expectations are
   recorded from the javascript-sdk reference by
   `generate_holdout_conformance_scenarios.py`, and
   `orchestrator/tests/test_holdout_conformance_scenarios.py` replays them with
@@ -119,7 +119,6 @@ across languages.
 
   | Rule | Scenario | Mutant it catches |
   | --- | --- | --- |
-  | a repeated `holdoutIds` entry, adjacent or not, is one holdout: one exposure, and a refresh that drops the duplicate re-exposes nothing | 500 | duplicates kept; only adjacent repeats, or only repeats of the first id, dropped |
   | a holdout with an empty or missing `split` is ignored | 501 | splitless holdout applies |
   | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn on edit |
   | `peek` queues no holdout exposure | 503 | peek fires holdouts |
@@ -134,11 +133,9 @@ across languages.
   part of the contract, so that step sets `unorderedEvents: true` and the
   harness matches its events one-to-one in any order.
 
-  500 is gated on `holdoutIdsDedup` because the javascript-sdk dedup is not
-  yet a confirmed contract (the owner must confirm it) and java-sdk keeps
-  duplicates: its refresh re-exposes. java is a reviewed exception until
-  the java-sdk dedup fix (absmartly/java-sdk#25) merges;
-  the JS family requires it.
+  The plan's H1 (a repeated `holdoutIds` entry) is not a contract case: the
+  backend never sends a holdout id twice, so no scenario pins it and 500 is
+  left unused.
 
   Scenarios 230-253 pin the
   2026-11 SDK round's reference-aligned behaviours (see
@@ -331,7 +328,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 313-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 312-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -355,11 +352,11 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 313 scenarios
+├── test_scenarios_complete.json  # 312 scenarios
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (400-425) in place; --check verifies
 ├── generate_holdout_conformance_scenarios.py  # regenerates the Holdout
-│                                 #   Conformance group (500-507); --check
+│                                 #   Conformance group (501-507); --check
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be

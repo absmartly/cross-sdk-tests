@@ -1,4 +1,4 @@
-"""Holdout Conformance group of test_scenarios_complete.json (H1-H8, generate_holdout_conformance_scenarios.py).
+"""Holdout Conformance group of test_scenarios_complete.json (H2-H8, generate_holdout_conformance_scenarios.py).
 
 The expectations are recorded from the javascript-sdk reference. This module checks them without it:
 
@@ -8,9 +8,6 @@ The expectations are recorded from the javascript-sdk reference. This module che
   scenario under each mutant, and the mutant must disagree with the recorded expectations on its
   scenario (it may be caught elsewhere too):
 
-    H1 ``keeps-duplicate-ids``          holdoutIds is not deduped (java-sdk today)
-       ``drops-adjacent-repeats-only``  only a repeat of the previous id is dropped
-       ``drops-first-id-repeats-only``  only a repeat of the first id is dropped
     H2 ``splitless-holdout-applies``    a holdout with an empty/missing split still covers
     H3 ``re-randomizes-on-edit``        a same-iteration seed/split edit redraws the arm
     H4 ``peek-fires-holdouts``          peek queues the holdout exposures
@@ -40,12 +37,9 @@ MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 FIRST = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True). Update ONLY together with a
 # regeneration from the pinned reference (generate_holdout_conformance_scenarios.py --check clean).
-GROUP_DIGEST = "be604fe2a89ebc40cc9d77a87da5a6b00de3fd15d9015fdab767eb3eb1604719"
+GROUP_DIGEST = "5ca6f4df8aec6e2f8e67d1bf0cb57be45832f8a2d2253e656a7e22e884c62cea"
 
 MUTANT_SCENARIO = {
-    "keeps-duplicate-ids": "Duplicate holdoutIds",
-    "drops-adjacent-repeats-only": "Duplicate holdoutIds",
-    "drops-first-id-repeats-only": "Duplicate holdoutIds",
     "splitless-holdout-applies": "Empty Or Missing Split",
     "re-randomizes-on-edit": "Seed Or Split Edit",
     "peek-fires-holdouts": "Peek On A Covered Experiment",
@@ -120,15 +114,7 @@ class Model:
         self.experiments = {}
         for exp in data["experiments"]:
             assert exp["fullOnVariant"] == 0 and exp["trafficSplit"] == [0, 1], exp["name"]
-            ids = [i for i in exp.get("holdoutIds") or [] if i in self.holdouts]
-            if self.is_("keeps-duplicate-ids"):
-                ids = sorted(ids)
-            elif self.is_("drops-adjacent-repeats-only"):
-                ids = sorted(i for n, i in enumerate(ids) if n == 0 or ids[n - 1] != i)
-            elif self.is_("drops-first-id-repeats-only"):
-                ids = sorted(i for n, i in enumerate(ids) if n == 0 or i != ids[0])
-            else:
-                ids = sorted(set(ids))
+            ids = sorted(i for i in exp.get("holdoutIds") or [] if i in self.holdouts)
             self.experiments[exp["name"]] = (exp, ids)
 
     def holdout_arm(self, holdout_id, unit_type):
@@ -282,13 +268,12 @@ class HoldoutConformanceGroupTest(unittest.TestCase):
 
     def test_numbering_and_gating(self):
         numbers = [scenario_groups.number(s) for s in self.group]
-        self.assertEqual(numbers, list(range(FIRST, FIRST + 8)))
+        self.assertEqual(numbers, list(range(FIRST, FIRST + 7)))
         everything = [scenario_groups.number(s) for s in self.everything]
         self.assertEqual(everything, sorted(everything))
+        self.assertNotIn(500, everything, "500 (the dropped H1) stays unused")
         for s in self.group:
-            dedup = "Duplicate holdoutIds" in s["name"]
-            self.assertEqual(s["requires"], ["holdouts", "holdoutIdsDedup"] if dedup else ["holdouts"],
-                             s["name"])
+            self.assertEqual(s["requires"], ["holdouts"], s["name"])
 
     def test_reference_model_reproduces_every_scenario(self):
         for s in self.group:

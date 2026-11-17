@@ -265,7 +265,7 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 
 
 def without_later_groups(scenarios):
-    """The Holdout Conformance group (500+) follows the Switchback group; it is neither kept nor
+    """The Holdout Conformance group (501+) follows the Switchback group; it is neither kept nor
     part of this group."""
     return [s for s in scenarios if scenario_groups.HOLDOUT_CONFORMANCE not in s["name"]]
 
