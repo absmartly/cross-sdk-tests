@@ -988,6 +988,20 @@ class StaticRepoChecks(unittest.TestCase):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
 
+    def test_flutter_holdout_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's holdout
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                return [line for line in src.read().splitlines() if not any(line.startswith(s) for s in skip)]
+
+        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/"])
+        flutter = body(
+            "flutter-wrapper/lib/holdout_self_test.dart",
+            ["import 'package:absmartly_sdk/", "// Copy of dart-wrapper/holdout_self_test.dart"],
+        )
+        self.assertEqual(flutter, dart)
+
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
             counts = {int(n) for n in re.findall(r"\*\*(\d+) scenarios\*\*", src.read())}
