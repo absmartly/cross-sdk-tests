@@ -252,6 +252,8 @@ def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory):
     ("br-q0", "no br advertised"),          # br;q=0 is a refusal, served gzip
     ("br-strip", "no br advertised"),       # the wrapper strips the header on refresh
     ("br-stale", "refresh data not used"),  # refetches br but keeps the old data
+    ("br-skip-fetch", "refresh not fetched"),  # refresh never refetches
+    ("br-undecodable", "not decoded"),         # advertises br, cannot decode the br body
 ])
 def test_br_probe_rejects_an_sdk_without_br(server_url, wrapper_factory, mode, failed):
     wrapper = wrapper_factory(mode)

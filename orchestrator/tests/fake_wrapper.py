@@ -15,6 +15,8 @@ ineligible). `mode` selects the SDK behaviour:
   br-stale     like br, but keeps its old data after a refresh fetch
   br-strip     like br, but the wrapper strips Accept-Encoding on refresh (sends identity)
   br-q0        sends Accept-Encoding: gzip, br;q=0 (refuses br); decodes gzip, cannot decode br
+  br-skip-fetch   like br, but refresh never fetches
+  br-undecodable  sends Accept-Encoding: br, gzip but cannot decode br (every load fails)
 """
 
 import gzip
@@ -47,7 +49,7 @@ class FakeSDKContext:
             headers["Accept-Encoding"] = "gzip"
         elif mode == "br-strip" and self.fetches:
             headers["Accept-Encoding"] = "identity"
-        elif mode in ("br", "br-stale", "br-strip"):
+        elif mode in ("br", "br-stale", "br-strip", "br-skip-fetch", "br-undecodable"):
             headers["Accept-Encoding"] = "br, gzip"
         elif mode == "br-q0":
             headers["Accept-Encoding"] = "gzip, br;q=0"
@@ -64,7 +66,7 @@ class FakeSDKContext:
                         raise ValueError("cannot decode gzip")
                     body = gzip.decompress(body)
                 elif response.headers.get("Content-Encoding") == "br":
-                    if not self.wrapper.mode.startswith("br") or self.wrapper.mode == "br-q0":
+                    if not self.wrapper.mode.startswith("br") or self.wrapper.mode in ("br-q0", "br-undecodable"):
                         raise ValueError("cannot decode br")
                     body = brotli.decompress(body)
                 self.last_fetch_failed = False
@@ -76,7 +78,7 @@ class FakeSDKContext:
             return {"experiments": []}
 
     def refresh(self):
-        if self.wrapper.mode == "skip-fetch":
+        if self.wrapper.mode in ("skip-fetch", "br-skip-fetch"):
             return
         data = self.fetch()
         if self.wrapper.mode not in ("stale", "br-stale"):
