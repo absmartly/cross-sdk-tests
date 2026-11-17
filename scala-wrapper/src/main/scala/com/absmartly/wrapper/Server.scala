@@ -153,6 +153,7 @@ object Server extends IOApp {
         "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
         "throwsOnMisuse" -> Json.fromBoolean(true),
         "singleFinalizeEvent" -> Json.fromBoolean(true),
+        "semverNumericOperands" -> Json.fromBoolean(true),
         "assignmentRules" -> Json.fromBoolean(true),
         "semverOperators" -> Json.fromBoolean(true),
         "xAgentHeader" -> Json.fromBoolean(true),

@@ -196,6 +196,7 @@ app.get('/capabilities', async (req, res) => {
     refreshNoOpOnFailedContext: true,
     throwsOnMisuse: true,
     singleFinalizeEvent: true,
+    semverNumericOperands: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,

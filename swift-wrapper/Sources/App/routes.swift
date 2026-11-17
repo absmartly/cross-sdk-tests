@@ -478,6 +478,7 @@ func routes(_ app: VaporApplication) throws {
             "refreshNoOpOnFailedContext": true,
             "throwsOnMisuse": false,
             "singleFinalizeEvent": true,
+            "semverNumericOperands": true,
             "assignmentRules": true,
             "semverOperators": true,
             "xAgentHeader": true,

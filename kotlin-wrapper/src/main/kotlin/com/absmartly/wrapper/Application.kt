@@ -89,6 +89,7 @@ fun Application.configureRouting() {
                 "refreshNoOpOnFailedContext" to true,
                 "throwsOnMisuse" to true,
                 "singleFinalizeEvent" to true,
+                "semverNumericOperands" to true,
                 "assignmentRules" to true,
                 "semverOperators" to true,
                 "xAgentHeader" to true,

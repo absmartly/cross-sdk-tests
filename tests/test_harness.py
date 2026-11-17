@@ -941,6 +941,33 @@ class StaticRepoChecks(unittest.TestCase):
             counts = {int(n) for n in re.findall(r"(\d+)-scenario", src.read())}
         self.assertEqual(counts, {self.scenario_count()})
 
+    WRAPPER_CAPABILITY_FILES = {
+        "javascript": "javascript-wrapper/server.js", "react": "react-wrapper/server.js",
+        "vue2": "vue2-wrapper/server.js", "vue3": "vue3-wrapper/server.js",
+        "angular": "angular-wrapper/server.js", "python": "python-wrapper/server.py",
+        "ruby": "ruby-wrapper/server.rb", "liquid": "liquid-wrapper/server.rb",
+        "php": "php-wrapper/server.php", "go": "go-wrapper/server.go", "rust": "rust-wrapper/src/main.rs",
+        "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
+        "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
+        "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
+        "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
+    }
+
+    def test_every_wrapper_names_its_required_capabilities(self):
+        """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
+        capability the policy requires of it, so adding a required capability to the policy without
+        the wrappers fails here rather than in all 20 lanes."""
+        policy = test_runner.load_capability_policy()
+        self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
+        for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                source = src.read()
+            for cap in policy["sdks"][sdk]["required"]:
+                with self.subTest(sdk=sdk, capability=cap):
+                    self.assertRegex(source, rf"\b{re.escape(cap)}\b", f"{path} never names {cap}")
+
     def test_finalize_scenarios_require_single_finalize_event(self):
         """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on
         singleFinalizeEvent: an SDK that logs a second lifecycle event is a reviewed exception, never

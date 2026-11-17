@@ -90,6 +90,7 @@ app.MapGet("/capabilities", () => Results.Ok(new
     refreshNoOpOnFailedContext = true,
     throwsOnMisuse = true,
     singleFinalizeEvent = true,
+    semverNumericOperands = false,
     assignmentRules = true,
     semverOperators = true,
     xAgentHeader = true,

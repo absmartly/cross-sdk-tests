@@ -296,6 +296,7 @@ void main() async {
         'refreshNoOpOnFailedContext': true,
         'throwsOnMisuse': true,
         'singleFinalizeEvent': true,
+        'semverNumericOperands': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,

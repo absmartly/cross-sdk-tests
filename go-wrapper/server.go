@@ -259,6 +259,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"refreshNoOpOnFailedContext":      true,
 		"throwsOnMisuse":                  true,
 		"singleFinalizeEvent":             true,
+		"semverNumericOperands":           true,
 		"clientNoEnvironment":             true,
 		"clientRejectsBlankApplication":   false,
 		"clientAcceptsBlankApplication":   true,

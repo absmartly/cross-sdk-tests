@@ -97,6 +97,7 @@ public class WrapperController {
         response.put("refreshNoOpOnFailedContext", true);
         response.put("throwsOnMisuse", true);
         response.put("singleFinalizeEvent", true);
+        response.put("semverNumericOperands", true);
         response.put("clientNoEnvironment", true);
         response.put("clientRejectsBlankApplication", true);
         response.put("clientAcceptsBlankApplication", false);

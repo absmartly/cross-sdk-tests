@@ -164,6 +164,7 @@ def capabilities():
         'refreshNoOpOnFailedContext': False,
         'throwsOnMisuse': True,
         'singleFinalizeEvent': False,
+        'semverNumericOperands': True,
         'clientNoEnvironment': True,
         'clientRejectsBlankApplication': False,
         'clientAcceptsBlankApplication': True,
