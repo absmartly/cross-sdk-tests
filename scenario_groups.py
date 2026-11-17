@@ -3,7 +3,8 @@
 One definition for the generators and their tests: generate_sdk_round_2026_11_scenarios.py owns the
 ROUND groups (230-253), generate_parity_round_scenarios.py the PARITY groups (300+), which stay
 after the round groups, and generate_switchback_scenarios.py the SWITCHBACK group (400+), which
-stays after the parity groups.
+stays after the parity groups, and generate_context_compression_scenarios.py the CONTEXT_FETCH
+group (500+, transport and context-fetch scenarios), which stays after the Switchback group.
 """
 
 ROUND_RULES = " - Custom Assignment Rules - "
@@ -20,6 +21,9 @@ PARITY_MARKERS = (PARITY_RULES, PARITY_SEMVER, PARITY_XAGENT, PARITY_CLIENT_APP)
 
 SWITCHBACK = " - Switchback "
 SWITCHBACK_FIRST_NUMBER = 400
+
+CONTEXT_FETCH = " - Context Fetch Compression - "
+CONTEXT_FETCH_FIRST_NUMBER = 500
 
 
 def number(scenario):

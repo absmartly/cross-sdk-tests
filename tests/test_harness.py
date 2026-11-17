@@ -962,8 +962,27 @@ class AggregatorTests(unittest.TestCase):
     def test_capability_policy_violation_flag(self):
         self.assert_forced("capability_policy_violations", ["v"], "CAPS POLICY")
 
+    def test_measurement_failed_flag(self):
+        stats = {"measurement_failed": {"contextFetchCompression": "context server down"}, "passed": 10, "failed": 0}
+        self.assertEqual(results_aggregator.run_level_status(stats), "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchCompression": "x"}, "MEASURE FAIL")
+
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
+
+    def test_harness_error_does_not_hide_sdk_failures(self):
+        row = self.load(dict(self.base, passed=8, failed=1, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertTrue(results_aggregator.print_results_table({}, {"x": row}, ["x"], False, True))
+        self.assertIn("8/9 FAIL + HARNESS ERROR", re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()))
+
+    def test_harness_error_flag_is_distinct_from_sdk_failure(self):
+        row = self.load(dict(self.base, passed=9, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        self.assertEqual(row["failed"], 0)
+        self.assert_forced("harness_errors", 1, "HARNESS ERROR")
 
     def test_existing_flags(self):
         self.assert_forced("service_failed", True, "DOWN")
@@ -1015,15 +1034,32 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes."""
+        the wrappers fails here rather than in all 20 lanes. `measuredCapabilities` are exempt: the
+        orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
+        measured = set(policy.get("measuredCapabilities") or [])
         self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
         for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
             with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
                 source = src.read()
             for cap in policy["sdks"][sdk]["required"]:
+                if cap in measured:
+                    continue
                 with self.subTest(sdk=sdk, capability=cap):
                     self.assertRegex(source, rf"\b{re.escape(cap)}\b", f"{path} never names {cap}")
+
+    def test_no_wrapper_reports_a_measured_capability(self):
+        """A measured capability is never self-reported: the orchestrator would drop the value, so a
+        wrapper naming one is dead code that suggests the opposite."""
+        policy = test_runner.load_capability_policy()
+        measured = policy.get("measuredCapabilities") or []
+        self.assertTrue(measured)
+        for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                source = src.read()
+            for cap in measured:
+                with self.subTest(sdk=sdk, capability=cap):
+                    self.assertNotRegex(source, rf"\b{re.escape(cap)}\b", f"{path} reports measured {cap}")
 
     def test_finalize_scenarios_require_single_finalize_event(self):
         """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on

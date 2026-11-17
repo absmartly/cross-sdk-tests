@@ -265,7 +265,8 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 
 
 def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
-    scenarios = canonical()
+    # Only the later Context Fetch group (500+) may follow it.
+    scenarios = [s for s in canonical() if scenario_groups.CONTEXT_FETCH not in s["name"]]
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
     assert numbers == sorted(set(numbers))
 
@@ -549,7 +550,8 @@ MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in canonical()
+            if generator.GROUP_MARKER not in s["name"] and scenario_groups.CONTEXT_FETCH not in s["name"]]
     assert len(kept) == KEPT_COUNT
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 
