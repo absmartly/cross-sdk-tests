@@ -291,23 +291,18 @@ Measured 2026-11-17 on this branch (stacked on #20, ae86279) with the same SDK
 pins as above. Cloudflare's order is zstd > br > gzip; on the 441-experiment
 tenant br is 321 KB against gzip's 420 KB (-24%), and zstd 234 KB (-44%).
 
-**How it is measured.** The context server can now encode br (pinned
-`brotli==1.2.0` wheel, `context-server/requirements.txt`). Each payload declares
-the codings it may serve: the gzip payloads keep gzip/identity, the br payloads
-allow `br`, `gzip`, `identity` in that order, honouring q-values (`br;q=0`
-refuses br; `*` does not revive it). At startup the orchestrator runs a second
-probe against a br payload (create, then refresh after the data changed):
-`contextFetchBrotli` is true only when both requests advertise br, both are
-served br, and both bodies are used (the refreshed one checked by its new
-value). The probe, like the scenarios, runs over the context server's plain
-**http** (`http://context-server:8080`); the evidence and `report.json` say so
-(`transport`). A client that picks its `Accept-Encoding` by scheme is therefore
-measured on its http behaviour only (see javascript below).
-Wrapper-reported values are dropped. A probe that cannot measure is a MEASURE FAIL gating only 274, and a served coding the shared negotiation would
-not choose is a harness fault, never the SDK's (probe and scenarios, as in #20).
-273 is ungated: every SDK loads a br-allowing payload with whatever it
-negotiates and must match the Direct Data Twin 271 and use the refreshed data.
-274 requires `contextFetchBrotli`.
+**How it is measured.** The context server encodes br with the pinned
+`brotli==1.2.0` wheel (`context-server/requirements.txt`). The br payloads allow
+`br`, `gzip`, `identity` in that order, honouring q-values (`br;q=0` refuses br;
+`*` does not revive it). A second startup probe, like the gzip one but on a br
+payload, sets `contextFetchBrotli` true only when create and refresh both
+advertise br, are served br, and their bodies are used. Probe and scenarios run
+over the context server's plain **http**, recorded as `transport` in the
+evidence and `report.json`, so a client that picks its `Accept-Encoding` by
+scheme is measured on http only (see javascript below). Failed measurements and
+wrong served codings are handled as for gzip (above); a MEASURE FAIL gates only
+274. 273 is ungated: whatever an SDK negotiates, it must match the twin 271 and
+use the refreshed data. 274 requires `contextFetchBrotli`.
 
 **Observed on the 14 lanes built here** (`report.json`, `context_fetch_brotli_probe`):
 
@@ -388,14 +383,13 @@ An exception that starts measuring true fails the run until it is moved.
   own fetch against local servers: over http (the context server) it sends
   `gzip, deflate`; over https it sends `br, gzip, deflate` and decodes a br body.
   So `contextFetchBrotli` = false for this family is an artefact of the
-  harness's http transport: against a production `https://` endpoint the SDK
-  already advertises and decodes br. The `node-fetch` 2.6.8 fallback sends a
+  harness's http transport. The `node-fetch` 2.6.8 fallback sends a
   fixed `gzip,deflate` (`lib/index.js:1360`) whatever the scheme. Change: none
   needed on Node >= 24.22.3 over https (observed); undici's source has the same
   https-only br branch from 5.0.0, Node 18's line, on (read in the 5.0.0,
   5.10.0, 5.20.0, 5.28.4, 6.0.0 and 6.21.0 tarballs, not run). Verify that the
-  SDK keeps using global fetch rather than `node-fetch`, whose header is fixed.
-  In browsers `Accept-Encoding` is a forbidden header the browser sets itself (current browsers send
+  SDK keeps using global fetch rather than `node-fetch`.
+  Browsers set `Accept-Encoding` themselves (current ones send
   `gzip, deflate, br, zstd`): browser handles it.
 - **python** (python3-sdk 80daada). Native: **observed** `gzip, deflate`
   (requests 2.34.2, urllib3 2.8.0 in the lane). urllib3 appends `br` only when
@@ -469,10 +463,8 @@ An exception that starts measuring true fails the run until it is moved.
    (`CURLOPT_ACCEPT_ENCODING ""`, also fixes gzip), php curl default
    (`CURLOPT_ENCODING ''`, observed to work in the lane image), dotnet
    (`DecompressionMethods.All` on net8/9), rust (reqwest `brotli` feature, pure
-   Rust). The javascript family needs none on Node >= 24.22.3 over https (undici
-   7.30.2 sends `br, gzip, deflate` there and decodes br, observed); only its
-   http measurement here is false. Verify the SDK keeps using global fetch, not
-   the `node-fetch` fallback.
+   Rust). The javascript family needs none on Node >= 24.22.3 over https
+   (observed, see above); only its http measurement here is false.
 3. **Needs a dependency**: python (`brotli` wheel as an extra; zero code),
    go (`andybalholm/brotli`, pure Go, plus header/decode code), ruby/liquid
    (`faraday-gzip` + C-extension `brotli` gem), java `core-api` (httpclient5 5.6
@@ -488,17 +480,16 @@ to its default `Accept-Encoding` on 3.14 with no extra package
 already advertises zstd (observed), as does any libcurl client with
 `CURLOPT_ACCEPT_ENCODING ""` on images whose libcurl links libzstd (cpp, php,
 observed via `ldd`); Node's undici 7.30.2 decodes zstd (observed, see
-javascript above) but advertises it on neither scheme (`gzip, deflate` over
-http, `br, gzip, deflate` over https, observed in the lane image); newer undici
+javascript above) but advertises it on neither scheme; newer undici
 adds zstd over https (`br, gzip, deflate, zstd` observed with Node 26 / undici
 8.11.2 in review). .NET, Go, the JDK, dart:io and OTP have no zstd decoder; reqwest's `zstd` feature and Java's zstd-jni are native builds.
 The context server does not serve zstd: covering it needs a zstd encoder on the
 server (stdlib on Python 3.14, or the `zstandard` wheel on 3.11) and a third
 preference list, a separate follow-up.
 
-**Follow-up: https transport.** The context server is plain http, so every
-`contextFetchBrotli` (and `contextFetchCompression`) measurement is an http
-measurement. Clients that choose `Accept-Encoding` by scheme (Node's undici
-today) are measured false here although they advertise br over https. Serving
-the context server over https too (a self-signed certificate each lane's SDK
-trusts) would measure the production transport; not done in this change.
+**Follow-up: https transport.** Every `contextFetchBrotli` (and
+`contextFetchCompression`) measurement here is an http measurement, so
+scheme-dependent clients (Node's undici today) measure false although they
+advertise br over https. Serving the context server over https too (a
+self-signed certificate each lane's SDK trusts) would measure the production
+transport; not done in this change.
