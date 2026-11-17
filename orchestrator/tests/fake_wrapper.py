@@ -19,12 +19,12 @@ ineligible). `mode` selects the SDK behaviour:
 
 import gzip
 import json
-
-import brotli
 import threading
 import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import brotli
 
 
 class FakeSDKContext:
