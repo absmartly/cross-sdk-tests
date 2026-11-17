@@ -993,12 +993,15 @@ class StaticRepoChecks(unittest.TestCase):
         # self-test; only the header comment and the SDK import may differ.
         def body(path, skip):
             with open(os.path.join(REPO_ROOT, path)) as src:
-                return [line for line in src.read().splitlines() if not any(line.startswith(s) for s in skip)]
+                return [line for line in src.read().splitlines() if line not in skip]
 
-        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/"])
+        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
         flutter = body(
             "flutter-wrapper/lib/holdout_self_test.dart",
-            ["import 'package:absmartly_sdk/", "// Copy of dart-wrapper/holdout_self_test.dart"],
+            [
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+                "// Copy of dart-wrapper/holdout_self_test.dart; only the import differs.",
+            ],
         )
         self.assertEqual(flutter, dart)
 
