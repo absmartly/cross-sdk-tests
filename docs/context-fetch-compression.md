@@ -252,14 +252,16 @@ stated.
 
 - Client: global `fetch` (Node's undici in the node:24 image), else `node-fetch`
   (`src/fetch.ts:22-27`). Fetch at `src/client.ts:98-107`/`:194`.
-- Accept-Encoding: **observed `gzip, deflate`** on javascript, vue2, vue3 and angular
+- Accept-Encoding: **observed `gzip, deflate`** over the context server's http on javascript, vue2, vue3 and angular
   (User-Agent `node`). react: lane not built here (yarn registry unreachable); same SDK and runtime,
   so react is `required` too and its CI lane proves it.
 - Decodes: gzip, br and zstd. **Observed** in the lane image (Node v24.22.3,
   undici 7.30.2) with a local server forcing each coding: global `fetch`
-  advertises only `gzip, deflate` but decoded all three. Forced gzip (requested),
-  **observed** in the probe: decoded and loaded. Advertising br/zstd needs an
-  explicit `Accept-Encoding` header, since undici's default does not list them.
+  decoded all three. Forced gzip (requested), **observed** in the probe: decoded
+  and loaded. What undici advertises depends on the URL scheme
+  (`lib/web/fetch/index.js:1523-1528` in 7.30.2): **observed** in the lane image,
+  `gzip, deflate` over http (the harness's context server) and
+  `br, gzip, deflate` over https (no zstd in 7.30.2).
 - Browsers: the browser sets `Accept-Encoding` itself (zstd/br/gzip in current browsers).
 - Fix: none.
 
@@ -297,8 +299,11 @@ refuses br; `*` does not revive it). At startup the orchestrator runs a second
 probe against a br payload (create, then refresh after the data changed):
 `contextFetchBrotli` is true only when both requests advertise br, both are
 served br, and both bodies are used (the refreshed one checked by its new
-value). Wrapper-reported values are dropped. A probe that cannot measure is a
-MEASURE FAIL gating only 274, and a served coding the shared negotiation would
+value). The probe, like the scenarios, runs over the context server's plain
+**http** (`http://context-server:8080`); the evidence and `report.json` say so
+(`transport`). A client that picks its `Accept-Encoding` by scheme is therefore
+measured on its http behaviour only (see javascript below).
+Wrapper-reported values are dropped. A probe that cannot measure is a MEASURE FAIL gating only 274, and a served coding the shared negotiation would
 not choose is a harness fault, never the SDK's (probe and scenarios, as in #20).
 273 is ungated: every SDK loads a br-allowing payload with whatever it
 negotiates and must match the Direct Data Twin 271 and use the refreshed data.
@@ -309,7 +314,7 @@ negotiates and must match the Direct Data Twin 271 and use the refreshed data.
 | lane | Accept-Encoding on the br probe (create, refresh) | served | `contextFetchBrotli` | 273 | 274 |
 |---|---|---|---|---|---|
 | swift | `deflate, gzip, br, zstd` (both) | br, br | **true** | pass (br) | **pass (br)** |
-| javascript, angular, vue2, vue3 | `gzip, deflate` | gzip | false | pass (gzip) | skip (exception) |
+| javascript, angular, vue2, vue3 | `gzip, deflate` (http; `br, gzip, deflate` over https, see below) | gzip | false (http artefact) | pass (gzip) | skip (exception) |
 | python | `gzip, deflate` | gzip | false | pass (gzip) | skip |
 | ruby, liquid | `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` | gzip | false | pass (gzip) | skip |
 | java, kotlin, go, rust, cpp, php | none | identity | false | pass (identity) | skip |
@@ -372,18 +377,26 @@ An exception that starts measuring true fails the run until it is moved.
   code in the binary (the static dictionary is ~120 KB). Safe: yes. (`zstd`
   feature links C libzstd via zstd-sys, built from source.)
 - **javascript** (javascript-sdk 311cfca) and **react, vue2, vue3, angular**
-  (wrap it; react from code). Native: **observed** `gzip, deflate` (Node's
-  global fetch, undici); the SDK sets no Accept-Encoding (`src/client.ts:184-191`).
-  Decode: **observed** in the javascript lane image (Node v24.22.3): the same
-  global `fetch` with an explicit `Accept-Encoding: br, gzip, deflate` is
-  served br by the context server and decodes it. The `node-fetch` 2.6.8
-  fallback (`src/fetch.ts`) sends `gzip,deflate` (`lib/index.js:1360`) and
-  decodes br when zlib has Brotli (`:1716`). Change (code, no dependency): in
-  Node only, add `"Accept-Encoding": "br, gzip, deflate"` to the request
-  headers. In browsers `Accept-Encoding` is a forbidden header the browser sets
-  itself (current browsers send `gzip, deflate, br, zstd`): browser handles it,
-  so the SDK must not try there. Cost: none. Safe: yes on Node >= 11.7 (zlib
-  Brotli); gate on runtime.
+  (wrap it; react from code). Client on Node: global `fetch` (undici); the
+  `node-fetch` fallback runs only when `globalThis.fetch` is missing
+  (`src/fetch.ts:19-33`, `lib/fetch.js:61-69` in the lane image's
+  `node_modules/@absmartly/javascript-sdk`). **Observed** in the javascript lane
+  image: the SDK's exported fetch is the bound global `fetch`, User-Agent `node`.
+  The SDK sets no Accept-Encoding (`src/client.ts:184-191`), so undici's default
+  applies, and it is scheme-dependent (`lib/web/fetch/index.js:1523-1528`).
+  **Observed** in the lane image (Node v24.22.3, undici 7.30.2), with the SDK's
+  own fetch against local servers: over http (the context server) it sends
+  `gzip, deflate`; over https it sends `br, gzip, deflate` and decodes a br body.
+  So `contextFetchBrotli` = false for this family is an artefact of the
+  harness's http transport: against a production `https://` endpoint the SDK
+  already advertises and decodes br. The `node-fetch` 2.6.8 fallback sends a
+  fixed `gzip,deflate` (`lib/index.js:1360`) whatever the scheme. Change: none
+  needed on Node >= 24.22.3 over https (observed); undici's source has the same
+  https-only br branch from 5.0.0, Node 18's line, on (read in the 5.0.0,
+  5.10.0, 5.20.0, 5.28.4, 6.0.0 and 6.21.0 tarballs, not run). Verify that the
+  SDK keeps using global fetch rather than `node-fetch`, whose header is fixed.
+  In browsers `Accept-Encoding` is a forbidden header the browser sets itself (current browsers send
+  `gzip, deflate, br, zstd`): browser handles it.
 - **python** (python3-sdk 80daada). Native: **observed** `gzip, deflate`
   (requests 2.34.2, urllib3 2.8.0 in the lane). urllib3 appends `br` only when
   `brotli` or `brotlicffi` is importable (`urllib3/util/request.py:22-31` in
@@ -456,7 +469,10 @@ An exception that starts measuring true fails the run until it is moved.
    (`CURLOPT_ACCEPT_ENCODING ""`, also fixes gzip), php curl default
    (`CURLOPT_ENCODING ''`, observed to work in the lane image), dotnet
    (`DecompressionMethods.All` on net8/9), rust (reqwest `brotli` feature, pure
-   Rust), javascript family on Node (explicit header; decode already observed).
+   Rust). The javascript family needs none on Node >= 24.22.3 over https (undici
+   7.30.2 sends `br, gzip, deflate` there and decodes br, observed); only its
+   http measurement here is false. Verify the SDK keeps using global fetch, not
+   the `node-fetch` fallback.
 3. **Needs a dependency**: python (`brotli` wheel as an extra; zero code),
    go (`andybalholm/brotli`, pure Go, plus header/decode code), ruby/liquid
    (`faraday-gzip` + C-extension `brotli` gem), java `core-api` (httpclient5 5.6
@@ -471,9 +487,18 @@ to its default `Accept-Encoding` on 3.14 with no extra package
 (`urllib3/util/request.py:33-41`; observed in a 3.14 venv). Swift on Linux
 already advertises zstd (observed), as does any libcurl client with
 `CURLOPT_ACCEPT_ENCODING ""` on images whose libcurl links libzstd (cpp, php,
-observed via `ldd`); Node's undici decodes zstd (observed, see javascript
-above) but does not advertise it. .NET, Go, the JDK, dart:io and OTP have no
-zstd decoder; reqwest's `zstd` feature and Java's zstd-jni are native builds.
+observed via `ldd`); Node's undici 7.30.2 decodes zstd (observed, see
+javascript above) but advertises it on neither scheme (`gzip, deflate` over
+http, `br, gzip, deflate` over https, observed in the lane image); newer undici
+adds zstd over https (`br, gzip, deflate, zstd` observed with Node 26 / undici
+8.11.2 in review). .NET, Go, the JDK, dart:io and OTP have no zstd decoder; reqwest's `zstd` feature and Java's zstd-jni are native builds.
 The context server does not serve zstd: covering it needs a zstd encoder on the
 server (stdlib on Python 3.14, or the `zstandard` wheel on 3.11) and a third
 preference list, a separate follow-up.
+
+**Follow-up: https transport.** The context server is plain http, so every
+`contextFetchBrotli` (and `contextFetchCompression`) measurement is an http
+measurement. Clients that choose `Accept-Encoding` by scheme (Node's undici
+today) are measured false here although they advertise br over https. Serving
+the context server over https too (a self-signed certificate each lane's SDK
+trusts) would measure the production transport; not done in this change.

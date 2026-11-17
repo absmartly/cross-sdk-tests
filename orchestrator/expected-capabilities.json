@@ -74,7 +74,7 @@
         "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)",
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "observed: Node's global fetch (undici) sends `gzip, deflate`, never br, though it decodes br; the SDK sets no Accept-Encoding header (src/client.ts)"
+        "contextFetchBrotli": "observed: over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
     "python": {
@@ -586,7 +586,7 @@
         "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, whose Node fetch sends `gzip, deflate`, never br; the SDK sets no Accept-Encoding"
+        "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk; over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
     "vue2": {
@@ -618,7 +618,7 @@
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "observed: wraps javascript-sdk; Node's fetch sends `gzip, deflate`, never br; the SDK sets no Accept-Encoding"
+        "contextFetchBrotli": "observed: wraps javascript-sdk; over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
     "vue3": {
@@ -650,7 +650,7 @@
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "observed: wraps javascript-sdk; Node's fetch sends `gzip, deflate`, never br; the SDK sets no Accept-Encoding"
+        "contextFetchBrotli": "observed: wraps javascript-sdk; over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
     "angular": {
@@ -682,7 +682,7 @@
         "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "observed: wraps javascript-sdk; Node's fetch sends `gzip, deflate`, never br; the SDK sets no Accept-Encoding"
+        "contextFetchBrotli": "observed: wraps javascript-sdk; over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     }
   }

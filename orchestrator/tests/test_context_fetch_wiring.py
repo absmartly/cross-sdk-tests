@@ -251,6 +251,19 @@ def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory, tmp_path):
         orch.generate_report(str(report_path), [])
     report = json.loads(report_path.read_text())
     assert report["context_fetch_brotli_probe"]["fake"]["contextFetchBrotli"] is True
+    # The measurement is over the context server's plain http: Node's undici, for one, adds br
+    # only for https URLs, so the evidence must say which transport it saw.
+    assert report["context_fetch_brotli_probe"]["fake"]["transport"] == "http"
+
+
+def test_br_probe_evidence_names_the_http_transport(server_url, wrapper_factory):
+    """A Node-like `gzip, deflate` over http is reported as observed over http, not as a general fact."""
+    wrapper = wrapper_factory("gzip")
+    orch = br_orchestrator_for(wrapper, required=False)
+    with mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert orch.capabilities["fake"][BR] is False
+    assert orch.measured_evidence["fake"][BR].startswith("observed over http Accept-Encoding ['gzip', 'gzip']")
 
 
 @pytest.mark.parametrize("mode, failed", [

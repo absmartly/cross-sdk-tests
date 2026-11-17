@@ -308,7 +308,9 @@ Wrappers need nothing new for this, but they must:
 The orchestrator also probes every wrapper once at startup through the same
 path to measure the `contextFetchCompression` capability (a gzip-or-identity
 payload) and the `contextFetchBrotli` capability (a payload allowing
-br > gzip > identity; `report.json` key `context_fetch_brotli_probe`); see
+br > gzip > identity; `report.json` key `context_fetch_brotli_probe`, whose
+`transport` records that the context server is plain http: a client that picks
+its Accept-Encoding by scheme, like Node's undici, is measured on http only); see
 [docs/context-fetch-compression.md](docs/context-fetch-compression.md).
 Wrappers do not report either: any value in `/capabilities` is dropped. The
 same wrapper rules apply to br: no wrapper-added `Accept-Encoding: br`, no

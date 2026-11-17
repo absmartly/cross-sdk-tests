@@ -8,6 +8,7 @@ import time
 import uuid
 from collections import Counter
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 import requests
 
@@ -963,10 +964,16 @@ class TestOrchestrator:
             ("refresh data not used", negotiated.get("refreshDecoded") is not True),
         ) if failed]
         value = not failed_checks
+        # Clients may choose their Accept-Encoding by URL scheme (Node's undici
+        # adds br only for https), so the evidence names the transport measured:
+        # the context server is plain http, unlike a production https endpoint.
+        transport = urlsplit(CONTEXT_SERVER_SDK_URL).scheme or "http"
         self.measured_evidence.setdefault(sdk_name, {})["contextFetchBrotli"] = (
-            f"observed Accept-Encoding {headers!r}, served {served!r}; failed: {', '.join(failed_checks) or 'none'}"
+            f"observed over {transport} Accept-Encoding {headers!r}, served {served!r}; "
+            f"failed: {', '.join(failed_checks) or 'none'}"
         )
         self.context_fetch_brotli_probe[sdk_name] = {
+            "transport": transport,
             "acceptEncoding": headers,
             "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
             "served": served,
@@ -977,7 +984,7 @@ class TestOrchestrator:
             "contextFetchBrotli": value,
         }
         print(
-            f"  context fetch (br payload) {sdk_name}: Accept-Encoding {headers!r} -> served {served}; "
+            f"  context fetch (br payload, over {transport}) {sdk_name}: Accept-Encoding {headers!r} -> served {served}; "
             f"contextFetchBrotli={value}"
             + (f" (failed: {', '.join(failed_checks)})" if failed_checks else "")
         )
@@ -2340,7 +2347,7 @@ class TestOrchestrator:
                       f"error={forced['error']}")
             for sdk_name in sorted(self.context_fetch_brotli_probe):
                 probe = self.context_fetch_brotli_probe[sdk_name]
-                print(f"  {sdk_name} (br payload): Accept-Encoding {probe['acceptEncoding']} -> served "
+                print(f"  {sdk_name} (br payload, over {probe['transport']}): Accept-Encoding {probe['acceptEncoding']} -> served "
                       f"{probe['served']}; contextFetchBrotli={probe['contextFetchBrotli']}")
             for sdk_name in sorted(self.measurement_failed):
                 for cap, reason in sorted(self.measurement_failed[sdk_name].items()):
