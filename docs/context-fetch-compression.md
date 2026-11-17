@@ -114,7 +114,7 @@ stated.
   `SocketsHttpHandler` (net8/9) or `HttpClientHandler` (netstandard2.0), and neither
   sets `AutomaticDecompression`. The fetch is `ABSmartlyService.cs:126`.
 - **The wrapper injects its own transport**: `DummyHttpClientFactory` and
-  `DummyHttpClient` wrap a bare `new HttpClient()` (`dotnet-wrapper/Program.cs:1299-1340`).
+  `DummyHttpClient` wrap a bare `new HttpClient()` (`dotnet-wrapper/Program.cs:1390-1405`).
   The lane therefore shows .NET's `HttpClient` default, not the SDK's DI handler.
   Both send nothing, so the result would be the same here.
 - Accept-Encoding, **from code**: none. `HttpClient` adds it only when the handler's
@@ -361,7 +361,7 @@ An exception that starts measuring true fails the run until it is moved.
   .NET Core 3.0+ (System.IO.Compression), no package. The netstandard2.0 target
   (`ABSmartly.Sdk.csproj:19`) has no Brotli member: gzip/deflate only there.
   Cost: none. Safe: yes. Note the wrapper injects a bare `HttpClient`
-  (`dotnet-wrapper/Program.cs:1299-1340`), so the lane would also need the
+  (`dotnet-wrapper/Program.cs:1390-1405`), so the lane would also need the
   wrapper to use the SDK's handler to show it.
 - **rust** (rust-sdk 7c26910). Native: **observed** none; reqwest 0.12 with
   only `json` (`Cargo.toml:26`). Change (flag): `features = ["json", "gzip",
