@@ -68503,7 +68503,7 @@
   },
   {
     "name": "500 - Holdout Conformance - Duplicate holdoutIds Entries Are One Holdout",
-    "description": "holdoutIds lists the same holdout twice (and three times). The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per holdout, alongside the not-held-out experiment's own exposure and with the held-out one suppressed. A refresh that drops the duplicates is not a coverage change, so the covered experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes (gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
+    "description": "holdoutIds lists the same holdout twice, three times, and twice apart ([7003, 7004, 7003]). The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per holdout, alongside each not-held-out experiment's own exposure and with the held-out one suppressed. A refresh that drops the duplicates is not a coverage change, so the covered experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes (gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
     "contextData": {
       "experiments": [
         {
@@ -68590,6 +68590,49 @@
             7002,
             7002
           ]
+        },
+        {
+          "id": 503,
+          "name": "exp_hc_dup_ids_apart",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": null,
+          "holdoutIds": [
+            7003,
+            7004,
+            7003
+          ]
         }
       ],
       "holdouts": [
@@ -68616,6 +68659,30 @@
             0.5,
             0.5
           ]
+        },
+        {
+          "id": 7003,
+          "name": "hc_dup_apart_a",
+          "unitType": "session_id",
+          "iteration": 1,
+          "seedHi": 1,
+          "seedLo": 2,
+          "split": [
+            0.5,
+            0.5
+          ]
+        },
+        {
+          "id": 7004,
+          "name": "hc_dup_apart_b",
+          "unitType": "session_id",
+          "iteration": 1,
+          "seedHi": 1,
+          "seedLo": 4,
+          "split": [
+            0.5,
+            0.5
+          ]
         }
       ]
     },
@@ -68624,7 +68691,8 @@
         "action": "createContextWith",
         "params": {
           "units": {
-            "session_id": "svk-unit-1"
+            "session_id": "svk-unit-1",
+            "user_id": "svk-user-1"
           },
           "options": {
             "publishDelay": -1,
@@ -68649,6 +68717,10 @@
                   {
                     "id": 502,
                     "name": "exp_hc_dup_ids_held"
+                  },
+                  {
+                    "id": 503,
+                    "name": "exp_hc_dup_ids_apart"
                   }
                 ]
               }
@@ -68712,6 +68784,62 @@
                 "name": "hc_dup_held",
                 "unit": "session_id",
                 "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_hc_dup_ids_apart"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 503,
+                "name": "exp_hc_dup_ids_apart",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 7003,
+                "name": "hc_dup_apart_a",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 7004,
+                "name": "hc_dup_apart_b",
+                "unit": "user_id",
+                "variant": 1,
                 "assigned": true,
                 "eligible": true,
                 "overridden": false,
@@ -68809,6 +68937,48 @@
                 "holdoutIds": [
                   7002
                 ]
+              },
+              {
+                "id": 503,
+                "name": "exp_hc_dup_ids_apart",
+                "iteration": 1,
+                "unitType": "user_id",
+                "seedHi": 0,
+                "seedLo": 0,
+                "split": [
+                  0.0,
+                  1.0
+                ],
+                "trafficSeedHi": 0,
+                "trafficSeedLo": 0,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": null,
+                "holdoutIds": [
+                  7003,
+                  7004
+                ]
               }
             ],
             "holdouts": [
@@ -68835,6 +69005,30 @@
                   0.5,
                   0.5
                 ]
+              },
+              {
+                "id": 7003,
+                "name": "hc_dup_apart_a",
+                "unitType": "session_id",
+                "iteration": 1,
+                "seedHi": 1,
+                "seedLo": 2,
+                "split": [
+                  0.5,
+                  0.5
+                ]
+              },
+              {
+                "id": 7004,
+                "name": "hc_dup_apart_b",
+                "unitType": "session_id",
+                "iteration": 1,
+                "seedHi": 1,
+                "seedLo": 4,
+                "split": [
+                  0.5,
+                  0.5
+                ]
               }
             ]
           }
@@ -68853,6 +69047,10 @@
                   {
                     "id": 502,
                     "name": "exp_hc_dup_ids_held"
+                  },
+                  {
+                    "id": 503,
+                    "name": "exp_hc_dup_ids_apart"
                   }
                 ]
               }
@@ -68881,10 +69079,20 @@
         }
       },
       {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_hc_dup_ids_apart"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
         "action": "pending",
         "params": {},
         "expect": {
-          "result": 3,
+          "result": 6,
           "events": []
         }
       }

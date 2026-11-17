@@ -119,7 +119,7 @@ across languages.
 
   | Rule | Scenario | Mutant it catches |
   | --- | --- | --- |
-  | a repeated `holdoutIds` entry is one holdout: one exposure, and a refresh that drops the duplicate re-exposes nothing | 500 | duplicates kept |
+  | a repeated `holdoutIds` entry, adjacent or not, is one holdout: one exposure, and a refresh that drops the duplicate re-exposes nothing | 500 | duplicates kept; only adjacent repeats dropped |
   | a holdout with an empty or missing `split` is ignored | 501 | splitless holdout applies |
   | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn on edit |
   | `peek` queues no holdout exposure | 503 | peek fires holdouts |

@@ -58,6 +58,8 @@ UNIT = {"session_id": "svk-unit-1"}
 # svk-user-1 lands on arm 1 with HELD, so one holdout splits the two unit types (H6).
 HELD = (1, 2)
 NOT_HELD = (1, 1)
+# Not held out for svk-user-1 (arm 1 of [0.5, 0.5]).
+USER_NOT_HELD = ((1, 2), (1, 4))
 # svk-unit-1 lands on arm 1 of split [0.2, 0.8] with NOT_HELD's seeds: the edit H3 makes to a held
 # unit's holdout would move it out of the holdout if the SDK re-randomized.
 EDITED_SPLIT = [0.2, 0.8]
@@ -93,21 +95,30 @@ def specs():
 
     dup = covered(experiment(501, "exp_hc_dup_ids"), 7001, 7001)
     dup_held = covered(experiment(502, "exp_hc_dup_ids_held"), 7002, 7002, 7002)
-    dup_holdouts = [holdout(7001, "hc_dup_not_held", NOT_HELD), holdout(7002, "hc_dup_held", HELD)]
+    # Its own unit type, so its holdouts' exposures are not already spent by the two above.
+    dup_apart = covered(dict(experiment(503, "exp_hc_dup_ids_apart"), unitType="user_id"),
+                        7003, 7004, 7003)
+    dup_holdouts = [holdout(7001, "hc_dup_not_held", NOT_HELD), holdout(7002, "hc_dup_held", HELD),
+                    holdout(7003, "hc_dup_apart_a", USER_NOT_HELD[0]),
+                    holdout(7004, "hc_dup_apart_b", USER_NOT_HELD[1])]
     out.append(spec(
         "Duplicate holdoutIds Entries Are One Holdout",
-        "holdoutIds lists the same holdout twice (and three times). The SDK dedups at install, as "
-        "javascript-sdk does: treatment fires exactly one exposure per holdout, alongside the "
-        "not-held-out experiment's own exposure and with the held-out one suppressed. A refresh "
-        "that drops the duplicates is not a coverage change, so the covered experiments keep "
-        "their exposure state and nothing re-exposes. Not yet the java-sdk behaviour: it keeps "
-        "duplicates in the holdout-set identity, so the refresh re-exposes (gated on "
-        "holdoutIdsDedup until the owner confirms this contract and java-sdk follows).",
-        [dup, dup_held], dup_holdouts,
+        "holdoutIds lists the same holdout twice, three times, and twice apart ([7003, 7004, 7003]). "
+        "The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per "
+        "holdout, alongside each not-held-out experiment's own exposure and with the held-out one "
+        "suppressed. A refresh that drops the duplicates is not a coverage change, so the covered "
+        "experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk "
+        "behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes "
+        "(gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows).",
+        [dup, dup_held, dup_apart], dup_holdouts,
         [treatment("exp_hc_dup_ids"), treatment("exp_hc_dup_ids_held"),
-         refresh({"experiments": [covered(dup, 7001), covered(dup_held, 7002)],
+         treatment("exp_hc_dup_ids_apart"),
+         refresh({"experiments": [covered(dup, 7001), covered(dup_held, 7002),
+                                  covered(dup_apart, 7003, 7004)],
                   "holdouts": dup_holdouts}),
-         treatment("exp_hc_dup_ids"), treatment("exp_hc_dup_ids_held"), PENDING],
+         treatment("exp_hc_dup_ids"), treatment("exp_hc_dup_ids_held"),
+         treatment("exp_hc_dup_ids_apart"), PENDING],
+        units={"session_id": "svk-unit-1", "user_id": "svk-user-1"},
         requires=[HOLDOUTS_CAPABILITY, DEDUP_CAPABILITY]))
 
     empty = holdout(7101, "hc_empty_split", HELD, split=[])

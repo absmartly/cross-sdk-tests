@@ -84,6 +84,26 @@ jobs:
       - name: Switchback scenarios match their generator
         run: python generate_switchback_scenarios.py --check
 
+      # The Holdout Conformance group is recorded from the javascript-sdk reference, built from
+      # the commit the SDK-round generator pins (PINNED_COMMIT), next to this repo as SDK_PATH.
+      - name: Read the javascript-sdk reference pin
+        id: js-pin
+        run: echo "commit=$(python -c 'import generate_sdk_round_2026_11_scenarios as g; print(g.PINNED_COMMIT)')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the javascript-sdk reference
+        uses: actions/checkout@v4
+        with:
+          repository: absmartly/javascript-sdk
+          ref: ${{ steps.js-pin.outputs.commit }}
+          path: reference/javascript-sdk
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Holdout Conformance scenarios match the javascript-sdk reference
+        run: SDK_PATH="$PWD/reference/javascript-sdk" python generate_holdout_conformance_scenarios.py --check
+
   cross-sdk:
     name: ${{ matrix.sdk }}
     needs: harness

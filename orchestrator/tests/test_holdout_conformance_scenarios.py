@@ -9,6 +9,7 @@ The expectations are recorded from the javascript-sdk reference. This module che
   scenario (it may be caught elsewhere too):
 
     H1 ``keeps-duplicate-ids``          holdoutIds is not deduped (java-sdk today)
+       ``drops-adjacent-repeats-only``  only a repeat of the previous id is dropped
     H2 ``splitless-holdout-applies``    a holdout with an empty/missing split still covers
     H3 ``re-randomizes-on-edit``        a same-iteration seed/split edit redraws the arm
     H4 ``peek-fires-holdouts``          peek queues the holdout exposures
@@ -38,10 +39,11 @@ MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 FIRST = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True). Update ONLY together with a
 # regeneration from the pinned reference (generate_holdout_conformance_scenarios.py --check clean).
-GROUP_DIGEST = "6d69cf1ea1aa520f9965829d103c6584f1512e29938d17a307e282bad2c579b9"
+GROUP_DIGEST = "e00351510820884ebfd88a3a0abd5095d4b4dc4814e0355a9c028693fe342a00"
 
 MUTANT_SCENARIO = {
     "keeps-duplicate-ids": "Duplicate holdoutIds",
+    "drops-adjacent-repeats-only": "Duplicate holdoutIds",
     "splitless-holdout-applies": "Empty Or Missing Split",
     "re-randomizes-on-edit": "Seed Or Split Edit",
     "peek-fires-holdouts": "Peek On A Covered Experiment",
@@ -117,7 +119,12 @@ class Model:
         for exp in data["experiments"]:
             assert exp["fullOnVariant"] == 0 and exp["trafficSplit"] == [0, 1], exp["name"]
             ids = [i for i in exp.get("holdoutIds") or [] if i in self.holdouts]
-            ids = sorted(ids) if self.is_("keeps-duplicate-ids") else sorted(set(ids))
+            if self.is_("keeps-duplicate-ids"):
+                ids = sorted(ids)
+            elif self.is_("drops-adjacent-repeats-only"):
+                ids = sorted(i for n, i in enumerate(ids) if n == 0 or ids[n - 1] != i)
+            else:
+                ids = sorted(set(ids))
             self.experiments[exp["name"]] = (exp, ids)
 
     def holdout_arm(self, holdout_id, unit_type):
