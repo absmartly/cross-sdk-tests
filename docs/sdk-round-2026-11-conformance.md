@@ -109,6 +109,12 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
+Exception: ruby-sdk is pinned to `feat/holdouts` while ruby-sdk#43 (holdouts) is
+open, because its lane now requires `holdouts`/`holdout_arms` (the liquid lane,
+which wraps ruby-sdk, builds that branch too but does not advertise holdouts).
+Keep ruby-sdk's `feat/holdouts` branch until a follow-up PR here re-pins ruby-sdk
+to `main` and its lane is green; re-run this suite after any push to that branch.
+
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
