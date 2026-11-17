@@ -97,13 +97,13 @@ def specs():
     dup_held = covered(experiment(502, "exp_hc_dup_ids_held"), 7002, 7002, 7002)
     # Its own unit type, so its holdouts' exposures are not already spent by the two above.
     dup_apart = covered(dict(experiment(503, "exp_hc_dup_ids_apart"), unitType="user_id"),
-                        7003, 7004, 7003)
+                        7003, 7004, 7003, 7004)
     dup_holdouts = [holdout(7001, "hc_dup_not_held", NOT_HELD), holdout(7002, "hc_dup_held", HELD),
                     holdout(7003, "hc_dup_apart_a", USER_NOT_HELD[0]),
                     holdout(7004, "hc_dup_apart_b", USER_NOT_HELD[1])]
     out.append(spec(
         "Duplicate holdoutIds Entries Are One Holdout",
-        "holdoutIds lists the same holdout twice, three times, and twice apart ([7003, 7004, 7003]). "
+        "holdoutIds lists the same holdout twice, three times, and apart ([7003, 7004, 7003, 7004]). "
         "The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per "
         "holdout, alongside each not-held-out experiment's own exposure and with the held-out one "
         "suppressed. A refresh that drops the duplicates is not a coverage change, so the covered "

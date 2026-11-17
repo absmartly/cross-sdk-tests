@@ -688,7 +688,7 @@ async function runHoldoutIdsDedupBattery() {
   });
   const context = sdk.createContextWith(
     { units: { session_id: 'svk-unit-1', user_id: 'svk-user-1' } },
-    contextData([901, 901], [902, 903, 902]),
+    contextData([901, 901], [902, 903, 902, 903]),
     { publishDelay: -1, refreshPeriod: 0 }
   );
   await context.ready();

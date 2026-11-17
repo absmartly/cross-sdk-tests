@@ -1250,7 +1250,7 @@ ordering wrong.
 ### Capability: `holdoutIdsDedup`
 
 No new endpoint. It gates scenario 500: a `holdoutIds` list naming one holdout
-more than once, adjacent or not (`[901, 901]`, `[901, 902, 901]`), is one
+more than once, adjacent or not (`[901, 901]`, `[902, 903, 902, 903]`), is one
 holdout, as javascript-sdk dedups it at install. The holdout fires one
 exposure, and a refresh whose only change is dropping the duplicate is not a
 coverage change, so the covered experiment keeps its exposure state and

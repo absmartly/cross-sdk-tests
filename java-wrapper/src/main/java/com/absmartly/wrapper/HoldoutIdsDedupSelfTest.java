@@ -104,7 +104,7 @@ final class HoldoutIdsDedupSelfTest {
         com.absmartly.sdk.Context context = sdk.createContextWith(
             ContextConfig.create().setUnit(SESSION, "svk-unit-1").setUnit(USER, "svk-user-1")
                 .setPublishDelay(-1).setRefreshInterval(0),
-            contextData(holdoutIdsField, holdoutsField, new int[] {901, 901}, new int[] {902, 903, 902}));
+            contextData(holdoutIdsField, holdoutsField, new int[] {901, 901}, new int[] {902, 903, 902, 903}));
         context.waitUntilReady();
 
         String prefix = "[holdoutIdsDedup probe]";

@@ -68503,7 +68503,7 @@
   },
   {
     "name": "500 - Holdout Conformance - Duplicate holdoutIds Entries Are One Holdout",
-    "description": "holdoutIds lists the same holdout twice, three times, and twice apart ([7003, 7004, 7003]). The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per holdout, alongside each not-held-out experiment's own exposure and with the held-out one suppressed. A refresh that drops the duplicates is not a coverage change, so the covered experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes (gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
+    "description": "holdoutIds lists the same holdout twice, three times, and apart ([7003, 7004, 7003, 7004]). The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per holdout, alongside each not-held-out experiment's own exposure and with the held-out one suppressed. A refresh that drops the duplicates is not a coverage change, so the covered experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes (gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows). Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
     "contextData": {
       "experiments": [
         {
@@ -68631,7 +68631,8 @@
           "holdoutIds": [
             7003,
             7004,
-            7003
+            7003,
+            7004
           ]
         }
       ],
