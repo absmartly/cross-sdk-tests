@@ -164,7 +164,7 @@ stated.
 
 ## ruby (ruby-sdk `main` c3a0e08) and liquid (liquid-sdk `main` e38f9c6, wraps ruby-sdk)
 
-- Client: Faraday 2.8.1 with `net_http_persistent` (`lib/default_http_client.rb:24-31`).
+- Client: Faraday with `net_http_persistent` (`lib/default_http_client.rb:24-31`); the ruby lane runs Faraday 2.8.1, the liquid lane 2.15.1 (User-Agents `Faraday v2.8.1` and `Faraday v2.15.1`).
   Both wrappers use the SDK's `Client.create` (`ruby-wrapper/server.rb:164-170`,
   `liquid-wrapper/server.rb:294-300`).
 - Accept-Encoding: **observed `gzip;q=1.0,deflate;q=0.6,identity;q=0.3`** on both lanes (Net::HTTP default).
