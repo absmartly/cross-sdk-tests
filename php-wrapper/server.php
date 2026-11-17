@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/HoldoutSelfTest.php';
 
 use ABSmartly\SDK\SDK;
 use ABSmartly\SDK\Config;
@@ -253,7 +254,11 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'clientAcceptsBlankApplication' => true,
             'assignmentRules' => true,
             'semverOperators' => true,
-            'xAgentHeader' => true
+            'xAgentHeader' => true,
+            // Reported from a behavioral self-test against the built php-sdk
+            // (HoldoutSelfTest.php), never hard-coded.
+            'holdouts' => HoldoutSelfTest::runHoldouts(),
+            'holdout_arms' => HoldoutSelfTest::runHoldoutArms()
         ]);
     }
 
@@ -491,11 +496,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextConfig->setEventLogger($eventCollector);
 
         if (isset($body->data)) {
-            // Hand the experiments straight to the SDK — exactly as the SDK's
-            // own collector fetch does (new ContextData($decoded->experiments)).
-            // The wrapper never inspects or reshapes the payload.
+            // Hand the experiments and holdouts straight to the SDK, exactly as
+            // the SDK's own collector fetch does. The wrapper never inspects or
+            // reshapes the payload.
             $experiments = $body->data->experiments ?? [];
-            $contextData = new ContextData($experiments);
+            $holdouts = $body->data->holdouts ?? [];
+            $contextData = new ContextData($experiments, is_array($holdouts) ? $holdouts : []);
             $context = $sdk->createContextWithData($contextConfig, $contextData);
 
             $contexts[$contextId] = [
