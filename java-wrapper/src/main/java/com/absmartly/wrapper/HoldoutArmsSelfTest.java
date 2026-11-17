@@ -1,12 +1,13 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.ABSmartly;
-import com.absmartly.sdk.ABSmartlyConfig;
-import com.absmartly.sdk.ContextConfig;
-import com.absmartly.sdk.ContextEventLogger;
-import com.absmartly.sdk.json.ContextData;
-import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.Exposure;
+import com.absmartly.sdk.ABsmartlyClient;
+import com.absmartly.sdk.ContextState;
+import com.absmartly.sdk.Exposure;
+import com.absmartly.sdk.event.ContextEvent;
+import com.absmartly.sdk.event.EventListener;
+import com.absmartly.sdk.event.ExposureEvent;
+import com.absmartly.sdk.internal.json.ContextPayload;
+import com.absmartly.sdk.internal.json.Experiment;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
@@ -79,7 +80,7 @@ final class HoldoutArmsSelfTest {
 
     private static boolean runBattery() throws Exception {
         Field holdoutIdsField = findField(Experiment.class, "holdoutIds");
-        Field holdoutsField = findField(ContextData.class, "holdouts");
+        Field holdoutsField = findField(ContextPayload.class, "holdouts");
         if (holdoutIdsField == null || holdoutsField == null) {
             // HoldoutSelfTest.run() already returned true, so this is unreachable in practice,
             // but the probe must still fail closed rather than NPE if reflection ever disagrees.
@@ -119,7 +120,7 @@ final class HoldoutArmsSelfTest {
             return false;
         }
 
-        ContextData contextData = new ContextData();
+        ContextPayload contextData = new ContextPayload();
         contextData.experiments = new Experiment[] {
             exp0NonFullOn, exp0FullOn, exp1NonFullOn, exp1FullOn, exp2NonFullOn, exp2FullOn
         };
@@ -130,30 +131,20 @@ final class HoldoutArmsSelfTest {
         holdoutsField.set(contextData, holdoutsArray);
 
         List<ProbeExposure> exposures = new CopyOnWriteArrayList<>();
-        ContextEventLogger logger = (context, type, data) -> {
-            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure) {
-                Exposure exposure = (Exposure) data;
-                exposures.add(new ProbeExposure(exposure.id, exposure.name, exposure.variant));
+        EventListener listener = event -> {
+            if (event.type() == ContextEvent.Type.EXPOSURE) {
+                Exposure exposure = ((ExposureEvent) event).exposure();
+                exposures.add(new ProbeExposure(exposure.id(), exposure.name(), exposure.variant()));
             }
         };
 
-        ContextConfig contextConfig = ContextConfig.create()
-            .setUnit(UNIT_TYPE, UID)
-            .setPublishDelay(-1)
-            .setRefreshInterval(0);
+        ABsmartlyClient client = SdkSupport.inMemoryClient();
+        com.absmartly.sdk.Context context = SdkSupport.context(client, contextData,
+            java.util.Collections.singletonMap(UNIT_TYPE, UID), listener);
 
-        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-            .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) -> java.util.concurrent.CompletableFuture.completedFuture(null))
-            .setContextEventLogger(logger);
-
-        ABSmartly sdk = ABSmartly.create(sdkConfig);
-        com.absmartly.sdk.Context context = sdk.createContextWith(contextConfig, contextData);
-        context.waitUntilReady();
-
-        if (!context.isReady() || context.isFailed()) {
-            System.out.println("[holdout_arms probe] FAILED: context not ready (failed="
-                + context.isFailed() + ")");
+        if (context.state() != ContextState.READY) {
+            System.out.println("[holdout_arms probe] FAILED: context not ready (state=" + context.state() + ")");
+            client.close();
             return false;
         }
 
@@ -203,6 +194,7 @@ final class HoldoutArmsSelfTest {
             }
         } finally {
             context.close();
+            client.close();
         }
 
         System.out.println("[holdout_arms probe] behavioral self-test PASSED: all 3 arm checks "

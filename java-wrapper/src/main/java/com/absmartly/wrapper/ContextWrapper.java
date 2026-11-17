@@ -1,29 +1,23 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.Client;
 import com.absmartly.sdk.Context;
 
-import java.io.IOException;
-
+/** One wrapper context: the SDK context, the client and transport behind it, and its event log. */
 public class ContextWrapper {
-    private Context context;
-    private EventCollector eventCollector;
-    private DummyContextDataProvider dataProvider;
-    private CustomPublisher eventHandler;
-    private boolean publishFail;
-    private Client client;
+    private final Context context;
+    private final EventCollector eventCollector;
+    private final WrapperTransport transport;
+    private final AutoCloseable owner;
+    // Only inline-data contexts take refresh(newData), as the 1.x wrapper's in-memory provider did.
+    private final boolean acceptsNewData;
 
-    public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider) {
+    public ContextWrapper(Context context, EventCollector eventCollector, WrapperTransport transport,
+            AutoCloseable owner, boolean acceptsNewData) {
         this.context = context;
         this.eventCollector = eventCollector;
-        this.dataProvider = dataProvider;
-    }
-
-    public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider, CustomPublisher eventHandler) {
-        this.context = context;
-        this.eventCollector = eventCollector;
-        this.dataProvider = dataProvider;
-        this.eventHandler = eventHandler;
+        this.transport = transport;
+        this.owner = owner;
+        this.acceptsNewData = acceptsNewData;
     }
 
     public Context getContext() {
@@ -34,32 +28,28 @@ public class ContextWrapper {
         return eventCollector;
     }
 
-    public DummyContextDataProvider getDataProvider() {
-        return dataProvider;
+    WrapperTransport getTransport() {
+        return transport;
     }
 
-    public boolean isPublishFail() {
-        return publishFail;
+    boolean acceptsNewData() {
+        return acceptsNewData && transport != null && transport.fetchesFromMemory();
     }
 
     public void setPublishFail(boolean publishFail) {
-        this.publishFail = publishFail;
-        if (eventHandler != null) {
-            eventHandler.setShouldFail(publishFail);
+        if (transport != null) {
+            transport.failNextPublish(publishFail);
         }
     }
 
-    public void setClient(Client client) {
-        this.client = client;
-    }
-
+    /** Releases the per-context client (its scheduler and HTTP transport). */
     public void closeClient() {
-        if (client == null) {
+        if (owner == null) {
             return;
         }
         try {
-            client.close();
-        } catch (IOException ignored) {
+            owner.close();
+        } catch (Exception ignored) {
         }
     }
 }

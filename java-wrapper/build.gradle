@@ -14,7 +14,7 @@ repositories {
 }
 
 // The Docker build installs core-api from the sibling java-sdk checkout and records its version here.
-// No released core-api has the java.util futures the wrapper uses, so there is no fallback: outside
+// The wrapper targets the java-sdk 2.x API (ABsmartlyClient), which no released core-api has, so there is no fallback: outside
 // Docker, install it the same way (see Dockerfile) or pass -PcoreApiVersion=<installed version>.
 def coreApiVersionFile = file("${System.getProperty('user.home')}/.m2/core-api.version")
 def coreApiVersion = project.findProperty('coreApiVersion') ?:
