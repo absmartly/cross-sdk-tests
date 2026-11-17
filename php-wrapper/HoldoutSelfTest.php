@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 // Behavioral self-test for the `holdouts` / `holdout_arms` wrapper capabilities. Mirrors
 // javascript-wrapper/holdoutSelfTest.js: build a real ContextData from fixtures ported from the
-// scenario battery (203-208, 221 and 214-216), create a real Context against the built php-sdk,
+// scenario battery (203-208, 221, 227, 305 and 214-216), create a real Context against the built php-sdk,
 // call getTreatment() and require BOTH the returned variant and the exact ordered id/name/variant
 // sequence of exposure events that single call logs. A php-sdk without holdouts ignores the
 // fields and fails these checks, so the capability reports false. Any throwable fails closed.
@@ -161,6 +161,7 @@ final class HoldoutSelfTest
             self::experiment(303, 'probe_f_fullon', $heldOut, 2, ['A', 'B', 'C'], [403]),
             self::experiment(308, 'probe_g_late_unit', $late, 2, ['A', 'B', 'C'], [408], [0.5, 0.5, 0.0]),
             $expRule,
+            self::experiment(310, 'probe_i_unit_type', $notHeldOut, 0, ['A', 'B'], [410]),
         ];
         $holdouts = [
             self::holdout(401, 'probe_a_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
@@ -172,6 +173,9 @@ final class HoldoutSelfTest
             self::holdout(403, 'probe_f_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
             self::holdout(408, 'probe_g_holdout', $late, 1, 222, [0.1, 0.9], 'full'),
             self::holdout(409, 'probe_h_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
+            // Declares the held-out unit type, but covers a session_id_b experiment: its arm must be drawn from the
+            // covered experiment's unit (not held out), never the holdout's own (held out).
+            self::holdout(410, 'probe_i_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
         ];
 
         $logger = new HoldoutProbeLogger();
@@ -194,7 +198,9 @@ final class HoldoutSelfTest
             && self::verify($p, 'E (mirrors 207)', $context, $logger, 'probe_e_dangling_plus_valid', 0, [self::exposure(407, 'probe_e_holdout', 0)])
             && self::verify($p, 'F (mirrors 208)', $context, $logger, 'probe_f_fullon', 0, [self::exposure(403, 'probe_f_holdout', 0)])
             && self::verify($p, 'H (mirrors 305)', $context, $logger, 'probe_h_rule', 1,
-                [self::exposure(309, 'probe_h_rule', 1), self::exposure(409, 'probe_h_holdout', 0)]);
+                [self::exposure(309, 'probe_h_rule', 1), self::exposure(409, 'probe_h_holdout', 0)])
+            && self::verify($p, 'I (mirrors 227)', $context, $logger, 'probe_i_unit_type', 0,
+                [self::exposure(310, 'probe_i_unit_type', 0), self::exposure(410, 'probe_i_holdout', 1)]);
         if (!$ok) {
             return false;
         }
@@ -213,7 +219,7 @@ final class HoldoutSelfTest
             return false;
         }
 
-        echo "{$p} behavioral self-test PASSED: all 9 checks mirroring scenarios 203-208, 221 and 305 passed\n";
+        echo "{$p} behavioral self-test PASSED: all 10 checks mirroring scenarios 203-208, 221, 227 and 305 passed\n";
         return true;
     }
 
