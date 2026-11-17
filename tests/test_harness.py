@@ -234,6 +234,11 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.exposures([2, 1, 3], [1, 2, 3]), [])
         self.assertEqual(self.exposures([2, 1], [1, 2], unordered=False),
                          ["events[0].data.id", "events[1].data.id"])
+        explicit_false = {"result": None, "unorderedEvents": False,
+                          "events": [{"type": "exposure", "data": {"id": i}} for i in (1, 2)]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in (2, 1)]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, explicit_false)),
+                         ["events[0].data.id", "events[1].data.id"])
 
     def test_unordered_events_still_check_values_and_count(self):
         self.assertEqual(self.exposures([1, 4], [1, 2]), ["events[1].data.id"])
@@ -267,6 +272,17 @@ class ValidateStepTests(unittest.TestCase):
                     "events": [{"type": "goal", "data": {"name": "a", "properties": None}},
                                {"type": "goal", "data": {"name": "b", "properties": None}}]}
         self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_sameshapeas_by_expected_position(self):
+        # sameShapeAs takes the baseline event at the expected event's position, so the pairing must too.
+        baseline = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}},
+                                               {"type": "exposure", "data": {"id": 2, "variant": 1}}]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 2, "variant": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "sameShapeAs": 0, "data": {"id": 1}},
+                               {"type": "exposure", "sameShapeAs": 0, "data": {"id": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(1, "variableValue", actual, expected, [baseline])), [])
 
     def test_unordered_events_observation_ignores_order(self):
         expected = {"unorderedEvents": True}

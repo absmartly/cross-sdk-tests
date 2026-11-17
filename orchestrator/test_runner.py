@@ -288,16 +288,17 @@ def units_match_unordered(actual: Any, expected: Any) -> bool:
 
 
 def events_in_expected_order(
-    actual: List[Any], expected: List[Any], matches: Callable[[Any, Any], bool]
+    actual: List[Any], expected: List[Any], matches: Callable[[Any, Any, int], bool]
 ) -> List[Any]:
-    """`actual` reordered so each event `matches` the expected one at its position, one-to-one, or
-    unchanged if no ordering does, so the positional check reports the mismatch."""
+    """`actual` reordered so each event `matches` the expected one at its position (passed as the
+    third argument), one-to-one, or unchanged if no ordering does, so the positional check reports
+    the mismatch."""
 
     def assign(i: int, used: Tuple[int, ...]) -> Optional[Tuple[int, ...]]:
         if i == len(expected):
             return used
         for j, candidate in enumerate(actual):
-            if j not in used and matches(candidate, expected[i]):
+            if j not in used and matches(candidate, expected[i], i):
                 found = assign(i + 1, used + (j,))
                 if found is not None:
                     return found
@@ -1329,9 +1330,9 @@ class TestOrchestrator:
             # Only the set of events is pinned (e.g. exposures one call queues together, whose order
             # differs between SDKs and is not part of the contract): pair them one-to-one in any
             # order by the same per-event check, then check each pair below as usual.
-            def pairs(actual_event: Any, expected_event: Any) -> bool:
+            def pairs(actual_event: Any, expected_event: Any, i: int) -> bool:
                 mismatches: List[str] = []
-                check_event(0, actual_event, expected_event, lambda *args: mismatches.append(args[0]))
+                check_event(i, actual_event, expected_event, lambda *args: mismatches.append(args[0]))
                 return not mismatches
 
             actual_events = events_in_expected_order(actual_events, expected_events, pairs)
