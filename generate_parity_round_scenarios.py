@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate the 2026-11 feature-parity scenario groups of test_scenarios_complete.json (300+).
 
-The feature-parity round ports three javascript-sdk features to every SDK (each SDK's
-`feat/assignment-rules-semver-x-agent-publish` branch; java-sdk#22 and the javascript-sdk#68
-reference already carry the first two):
+The feature-parity round ported three javascript-sdk features to every SDK (each SDK's
+`feat/assignment-rules-semver-x-agent-publish` PR, all merged to main; java-sdk#22 and the
+javascript-sdk#68 reference already carried the first two):
 
   * Assignment rules (Experiment.assignmentRules). The 2026-11 round group (230-239) pins the
     basics; this file adds what it does not cover: a split rule hashes the unit with the
@@ -765,18 +765,20 @@ def build_groups():
 
 
 def assemble(existing, build_groups):
-    """The canonical file with the parity groups (from `build_groups()`) rebuilt after every other
-    scenario. Returns (updated scenarios, the rebuilt groups)."""
-    kept = [s for s in existing if not any(m in s["name"] for m in PARITY_MARKERS)]
+    """The canonical file with the parity groups (from `build_groups()`) rebuilt at FIRST_NUMBER..:
+    scenarios numbered below stay before them and the Switchback group (400+) stays after them, in file order. Returns (updated scenarios, the rebuilt groups)."""
+    rest = [s for s in existing if not any(m in s["name"] for m in PARITY_MARKERS)]
+    before = [s for s in rest if scenario_groups.number(s) < FIRST_NUMBER]
+    after = [s for s in rest if scenario_groups.number(s) >= FIRST_NUMBER]
     groups = build_groups()
-    # The parity groups own FIRST_NUMBER..; any other scenario numbered in that range (e.g. a later
-    # generator appending without knowing it) is a collision, not something to renumber silently.
-    taken = {int(s["name"].split(" - ", 1)[0]) for s in kept}
-    clashes = sorted(taken & {int(g["name"].split(" - ", 1)[0]) for g in groups})
-    if clashes or max(taken) >= FIRST_NUMBER:
-        raise SystemExit(f"scenarios {clashes or [max(taken)]} collide with the parity range "
-                         f"starting at {FIRST_NUMBER}")
-    return kept + groups, groups
+    # The parity groups own FIRST_NUMBER up to the Switchback group's first id; any other scenario
+    # numbered in that range (e.g. a later generator appending without knowing it) is a collision,
+    # not something to renumber silently.
+    end = scenario_groups.SWITCHBACK_FIRST_NUMBER
+    clashes = sorted(scenario_groups.number(s) for s in after if scenario_groups.number(s) < end)
+    if clashes or (groups and scenario_groups.number(groups[-1]) >= end):
+        raise SystemExit(f"scenarios {clashes} collide with the parity range {FIRST_NUMBER}-{end - 1}")
+    return before + groups + after, groups
 
 
 def main():

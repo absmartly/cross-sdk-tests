@@ -10,11 +10,16 @@ source of truth for the cross-SDK suite (see README for the count); the harness 
 runs this script, and nothing (CI included) may be wired to it. This
 generator is OUT OF DATE:
 
-  * It emits only 192 scenarios, not the canonical 229.
+  * It emits only 192 scenarios, not the canonical count.
   * ~14 shared scenarios have DRIFTED content vs. canonical, e.g. the IN-operator
     argument order in scenario 144, and createContextWith vs createContext in
     scenarios 26/27/29/31/32.
   * It does not emit the Holdouts scenario group (203-227) at all.
+  * It does not emit the 2026-11 SDK round groups (230-253, generate_sdk_round_2026_11_scenarios.py)
+    or the feature-parity groups (300-332, generate_parity_round_scenarios.py).
+  * It does not emit the Switchback group (400-425); that group is owned by
+    generate_switchback_scenarios.py, which rewrites it in place in the
+    canonical file and verifies it with --check.
 
 To avoid clobbering the fixed oracle, this script writes to
 'test_scenarios_generated.json' (NOT the canonical file). Its output must be

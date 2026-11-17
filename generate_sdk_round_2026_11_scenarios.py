@@ -31,9 +31,9 @@ wrapper API can observe black-box:
     scenario SKIPs there.
 
 The reference is @absmartly/javascript-sdk built from the sibling ../javascript-sdk checkout on the
-branch sdk-branches.sh pins for javascript-sdk: feat/sdk-system-attributes (javascript-sdk PR #68).
-That is main (already the TypeScript rewrite, custom assignment rules from #66, the semver operators,
-and #67's four edge-case fixes) plus §5's always-on application/environment attributes and
+branch sdk-branches.sh pins for javascript-sdk: main, at the merge of javascript-sdk PR #68.
+That carries the TypeScript rewrite, custom assignment rules from #66, the semver operators,
+#67's four edge-case fixes and §5's always-on application/environment attributes and
 app_version removal. The expected results are NOT written by hand: every scenario's steps run through
 that build via tools/sdk-round-2026-11/compute.js and each step's `result` and `events` are recorded
 verbatim (exposedAt/achievedAt/publishedAt dropped, the ready event projected to experiment id/name
@@ -67,12 +67,13 @@ TOOL_DIR = os.path.join(HERE, "tools", "sdk-round-2026-11")
 COMPUTE = os.path.join(TOOL_DIR, "compute.js")
 SDK_PATH = os.environ.get("SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "javascript-sdk")))
 
-# javascript-sdk PR #68 (feat/sdk-system-attributes) head. The reference build must be this
-# exact commit so the recorded expectations are reproducible; the build carries version 1.14.0.
+# javascript-sdk main at the merge of PR #68 (same tree as the PR head 9403b837 the expectations were
+# recorded from). The reference build must be this exact commit so the recorded expectations are
+# reproducible; the build carries version 1.14.0.
 # This branch is main (the TypeScript rewrite, custom assignment rules from #66, the semver_*
 # operators, and the four #67 edge-case fixes, all already merged to main) plus §5 of Márcio's
 # 2026-11 brief: always-on application/environment audience attributes and app_version removal.
-PINNED_COMMIT = "9403b837cf5fe224c82035b5c67bd7a4969421d0"
+PINNED_COMMIT = "311cfca6fbefafb23ea26684ec64a72d4509a8a8"
 JS_SDK_VERSION = "1.14.0"
 
 RULES_MARKER = scenario_groups.ROUND_RULES
@@ -482,7 +483,7 @@ def ensure_reference_build():
     if head != PINNED_COMMIT:
         raise SystemExit(
             f"javascript-sdk checkout is at {head}, not the pinned reference {PINNED_COMMIT} "
-            f"(javascript-sdk#68 head). Check it out (sdk-branches.sh pins this branch for CI)."
+            f"(javascript-sdk main at the #68 merge). Check it out (sdk-branches.sh pins this branch for CI)."
         )
     # A modified working tree (including a hand-edited or stale lib/) means the
     # build no longer corresponds to the pin, so refuse rather than record

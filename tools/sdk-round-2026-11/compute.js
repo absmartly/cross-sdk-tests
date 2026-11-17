@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Runs the 2026-11 SDK-round scenario cases through the real @absmartly/javascript-sdk, pinned by
-// PINNED_COMMIT in generate_sdk_round_2026_11_scenarios.py to javascript-sdk#68
-// (feat/sdk-system-attributes), and prints what the SDK did at every step.
+// PINNED_COMMIT in generate_sdk_round_2026_11_scenarios.py to javascript-sdk main at the merge of
+// #68, and prints what the SDK did at every step.
 //
-// That branch is the reference the other SDKs are being aligned to this round: it is main (already
+// That commit is the reference the other SDKs are aligned to this round: main (already
 // the TypeScript rewrite, custom assignment rules from #66, the semver_* operators, and the four
 // #67 assignment-rule edge-case fixes) plus the §5 system-attributes change:
 //   - audiences and assignment-rule conditions always see the configured application and environment
