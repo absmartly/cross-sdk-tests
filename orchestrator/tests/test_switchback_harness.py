@@ -264,10 +264,19 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
     assert runner.should_skip_wrapper_test("sdk", inert[0])[0] is False
 
 
+def without_later_groups(scenarios):
+    """The Holdout Conformance group (501+) follows the Switchback group; it is neither kept nor
+    part of this group."""
+    return [s for s in scenarios if scenario_groups.HOLDOUT_CONFORMANCE not in s["name"]]
+
+
 def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_tail():
-    scenarios = canonical()
-    numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
+    everything = canonical()
+    numbers = [int(s["name"].split(" - ", 1)[0]) for s in everything]
     assert numbers == sorted(set(numbers))
+    scenarios = without_later_groups(everything)
+    assert everything[:len(scenarios)] == scenarios
+    numbers = numbers[:len(scenarios)]
 
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(KEPT_COUNT, len(scenarios)))
@@ -549,7 +558,7 @@ MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in without_later_groups(canonical()) if generator.GROUP_MARKER not in s["name"]]
     assert len(kept) == KEPT_COUNT
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 

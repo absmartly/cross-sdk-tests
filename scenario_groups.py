@@ -2,8 +2,9 @@
 
 One definition for the generators and their tests: generate_sdk_round_2026_11_scenarios.py owns the
 ROUND groups (230-253), generate_parity_round_scenarios.py the PARITY groups (300+), which stay
-after the round groups, and generate_switchback_scenarios.py the SWITCHBACK group (400+), which
-stays after the parity groups.
+after the round groups, generate_switchback_scenarios.py the SWITCHBACK group (400+), which
+stays after the parity groups, and generate_holdout_conformance_scenarios.py the HOLDOUT_CONFORMANCE
+group (501+), which stays after the Switchback group.
 """
 
 ROUND_RULES = " - Custom Assignment Rules - "
@@ -20,6 +21,11 @@ PARITY_MARKERS = (PARITY_RULES, PARITY_SEMVER, PARITY_XAGENT, PARITY_CLIENT_APP)
 
 SWITCHBACK = " - Switchback "
 SWITCHBACK_FIRST_NUMBER = 400
+
+HOLDOUT_CONFORMANCE = " - Holdout Conformance - "
+# 500 was the plan's H1 (duplicate holdoutIds), dropped as not a contract case (the backend never
+# sends a holdout id twice); it stays unused so 501-507 keep their numbers.
+HOLDOUT_CONFORMANCE_FIRST_NUMBER = 501
 
 
 def number(scenario):

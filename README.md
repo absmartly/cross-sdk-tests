@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **305 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **312 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -107,6 +107,35 @@ across languages.
 
   The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
   switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
+
+  Scenarios 501-507 (Holdout Conformance, H2-H8) add the holdout cases every
+  SDK holdout port must agree on, beyond 203-227 and 305. They require
+  `holdouts`. Their expectations are
+  recorded from the javascript-sdk reference by
+  `generate_holdout_conformance_scenarios.py`, and
+  `orchestrator/tests/test_holdout_conformance_scenarios.py` replays them with
+  an independent model and checks that each wrong implementation below fails
+  its scenario.
+
+  | Rule | Scenario | Mutant it catches |
+  | --- | --- | --- |
+  | a holdout with an empty or missing `split` is ignored | 501 | splitless holdout applies |
+  | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn (for an experiment first evaluated after the edit too), or covered experiments re-resolved, on a seedHi or split edit |
+  | `peek` queues no holdout exposure | 503 | peek fires holdouts |
+  | unknown fields in a holdout entry, and experiment-only fields (traffic, audience, full-on), are ignored | 504 | full-on applied to a holdout |
+  | one holdout over two unit types: two exposures, one arm per unit type | 505 | arm cached per holdout id |
+  | a strict audience mismatch on a covered, not-held-out experiment still fires the holdout | 506 | mismatch skips holdouts |
+  | shared variable key: a suppressed first candidate loses to an assigned one, and both holdouts fire | 507 | suppressed wins; only the winner fires |
+
+  507's `variableValue` queues three exposures whose order differs between the
+  reference SDKs (javascript-sdk queues each candidate's own exposure before its
+  holdouts, java-sdk every visited candidate's holdouts first); the order is not
+  part of the contract, so that step sets `unorderedEvents: true` and the
+  harness matches its events one-to-one in any order.
+
+  The plan's H1 (a repeated `holdoutIds` entry) is not a contract case: the
+  backend never sends a holdout id twice, so no scenario pins it and 500 is
+  left unused.
 
   Scenarios 230-253 pin the
   2026-11 SDK round's reference-aligned behaviours (see
@@ -299,7 +328,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 305-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 312-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -323,9 +352,11 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 305 scenarios
+├── test_scenarios_complete.json  # 312 scenarios
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (400-425) in place; --check verifies
+├── generate_holdout_conformance_scenarios.py  # regenerates the Holdout
+│                                 #   Conformance group (501-507); --check
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be
