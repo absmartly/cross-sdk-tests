@@ -253,7 +253,6 @@ Future<void> startServer() async {
   });
 
   router.get('/capabilities', (shelf.Request request) async {
-    // Advertised only when the behavioural self-test passes against the SDK.
     final holdouts = await holdout_self_test.runHoldouts();
     final holdoutArms = await holdout_self_test.runHoldoutArms();
     return shelf.Response.ok(

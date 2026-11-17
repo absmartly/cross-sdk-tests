@@ -51,7 +51,6 @@ class _NoHttpClient implements HTTPClient {
   void close() {}
 }
 
-// One expected exposure: id, name and variant.
 class _E {
   const _E(this.id, this.name, this.variant);
 
