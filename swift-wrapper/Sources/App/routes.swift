@@ -483,7 +483,9 @@ func routes(_ app: VaporApplication) throws {
             "semverOperators": true,
             "xAgentHeader": true,
             "clientRejectsBlankApplication": true,
-            "clientAcceptsBlankApplication": false
+            "clientAcceptsBlankApplication": false,
+            "holdouts": HoldoutSelfTest.runHoldouts(),
+            "holdout_arms": HoldoutSelfTest.runHoldoutArms()
         ])
     }
 
