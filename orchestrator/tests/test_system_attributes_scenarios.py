@@ -48,9 +48,10 @@ sys.path.insert(0, REPO_ROOT)
 import scenario_groups  # noqa: E402
 
 GROUP_MARKER = scenario_groups.ROUND_SYSATTR
-# Groups appended after this one (generate_parity_round_scenarios.py, 300+). They are neither
-# "kept" scenarios for the digest nor part of this group; this group must directly precede them.
-LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS
+# Groups appended after this one (generate_parity_round_scenarios.py, 300+, then the Switchback
+# group from generate_switchback_scenarios.py, 400+). They are neither "kept" scenarios for the
+# digest nor part of this group; this group must directly precede them.
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK,)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
@@ -324,7 +325,7 @@ class SystemAttributesGroupTest(unittest.TestCase):
         self.assertEqual(tail, self.group, "the group must be the contiguous tail of the file")
         # Only the later parity groups may follow it, all numbered above it.
         self.assertEqual(self.everything[:len(self.scenarios)], self.scenarios,
-                         "only the later parity groups may follow this group")
+                         "only the later parity and Switchback groups may follow this group")
         if self.later:
             last = int(self.group[-1]["name"].split(" - ", 1)[0])
             first_later = int(self.later[0]["name"].split(" - ", 1)[0])

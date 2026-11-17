@@ -11,8 +11,8 @@ covered it, and the scenario id(s) that pin it now. Scenarios live in
 ## Reference / oracle
 
 The JavaScript SDK is the canonical reference. For this round the reference is
-**javascript-sdk#68** (`feat/sdk-system-attributes`), which `sdk-branches.sh`
-pins for `javascript-sdk`. That branch is:
+**javascript-sdk#68**, now merged: `sdk-branches.sh` pins `javascript-sdk` to
+`main`, whose tree is the #68 head the expectations were recorded from. It is:
 
 * `main`, which is already the TypeScript rewrite, already carries custom
   assignment rules (merged from #66), already registers the `semver_*`
@@ -26,7 +26,7 @@ pins for `javascript-sdk`. That branch is:
 
 The expected results are recorded by `tools/sdk-round-2026-11/compute.js`, which
 builds the sibling `../javascript-sdk` checkout and runs every scenario's steps
-through it (the generator verifies the checkout is at the pinned #68 commit before
+through it (the generator verifies the checkout is at the pinned commit before
 recording anything). The expected `result` and `events` of every step are the
 SDK's real output, not hand-written.
 
@@ -95,40 +95,23 @@ Scenario 35 (duplicate unit) lists the released v1 wordings of ruby-sdk
 `errorAnyOf` next to the reference wording, so the divergence is visible in the
 scenario rather than rewritten by the ruby, liquid and php wrappers.
 
-## Branch pins and merge order (sdk-branches.sh)
+## Branch pins (sdk-branches.sh)
 
-`sdk-branches.sh` is what CI builds, on this PR and on `main` after it merges, so
-it must only name refs that stay put. As of 2026-11-16:
+`sdk-branches.sh` is what CI builds, so it must only name refs that stay put.
+Every SDK PR of this round has merged, so every SDK of the round is pinned to
+`main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
+kotlin#4, php#10, python3#14, ruby#41, rust#9, scala#4, swift#10); java-sdk `main`
+also carries switchback (java-sdk#15). `PINNED_COMMIT` in
+`generate_sdk_round_2026_11_scenarios.py` is javascript-sdk `main` at the #68
+merge (311cfca), whose tree is identical to the #68 head (9403b83) the
+expectations were recorded from. angular and liquid are pinned to `main` too
+(their pinned branches merged); react, vue2 and vue3 stay on their open PR
+branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
+round.
 
-| SDK | pin | why |
-| --- | --- | --- |
-| cpp, dotnet, elixir, java, kotlin, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same SDK sources as the PR head CI tested |
-| javascript-sdk | `feat/sdk-system-attributes` | javascript-sdk#68 is open; it is the reference, and the generators pin its commit `9403b83` |
-| go-sdk, php-sdk, flutter-sdk | `feat/assignment-rules-semver-x-agent-publish` | go#14, php#10, flutter#10 are open |
-| angular, react, vue2, vue3, liquid | unchanged from `main` | not part of this round |
-| python3-sdk | `feat/holdouts` | python3-sdk holdouts PR is open; this lane requires `holdouts`/`holdout_arms`. Re-pin to `main` once that PR merges |
-
-The older `feat/sdk-system-attributes` branches of the non-JS SDKs are no longer
-pinned; ignore them.
-
-Merge order:
-
-1. Re-run CI on this PR against the current heads of the four open SDK PRs
-   (push or re-run the workflow) right before merging it.
-2. Merge the open SDK PRs (javascript-sdk#68, go#14, php#10, flutter#10) with
-   delete-branch-on-merge **off** for those four branches until step 4, so `main`'s
-   CI here can still clone them.
-3. Merge this PR.
-4. Follow-up PR here: re-pin javascript-sdk, go-sdk, php-sdk and flutter-sdk to
-   `main` and confirm CI is green; then the four branches may be deleted. If
-   javascript-sdk#68 merges with a different commit, bump `PINNED_COMMIT` in
-   `generate_sdk_round_2026_11_scenarios.py` in the same PR and re-run both
-   `--check`s.
-
-A rebase of a pinned open branch changes what CI tests without a change here, so
-re-run CI after any force-push to those four branches.
-
-The python3-sdk holdouts pin follows the same rule: keep python3-sdk's
+Exception: python3-sdk is pinned to `feat/holdouts` while python3-sdk#17 (holdouts)
+is open, because its lane now requires `holdouts`/`holdout_arms`. The pin follows
+the same rule: keep python3-sdk's
 `feat/holdouts` branch (delete-branch-on-merge **off** for python3-sdk#17) until a
 follow-up PR here re-pins python3-sdk to `main` and its lane is green; re-run
 this suite after any push to that branch.
@@ -146,7 +129,11 @@ outside its range where they are, and fails rather than renumbers when another
 scenario sits inside it. So #16/#20 only need to renumber their own groups to
 254+; a missed renumber shows up as a generator error, not a silent shift
 (`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
-groups with a generator, give it a fixed first number the same way.
+groups with a generator, give it a fixed first number the same way. The three
+generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
+and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
+`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
+outside all three.
 
 ## Coverage matrix
 
