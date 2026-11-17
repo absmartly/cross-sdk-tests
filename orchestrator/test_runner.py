@@ -1498,12 +1498,20 @@ class TestOrchestrator:
                 # have rejected what the context server sent. Check the server
                 # first; if it served an encoding the negotiation would not
                 # choose, the error response is the harness's, not the SDK's.
+                # A recorder that cannot be read (served_fault False) says
+                # nothing about what was served: as on the success path, the
+                # error response is still validated and its diagnostics kept
+                # next to the harness error, which then stops the scenario.
+                pending_harness_error: Optional[str] = None
                 try:
                     wire_failures = step_fetch_failures(step_index, action)
                 except HarnessError as harness_exc:
                     failures.extend(harness_exc.failures)
                     harness_error = f"step {step_index} ({action}): {harness_exc}"
-                    break
+                    if harness_exc.served_fault:
+                        break
+                    pending_harness_error = harness_error
+                    wire_failures = []
                 failures.extend(wire_failures)
 
                 error_msg = None
@@ -1606,6 +1614,9 @@ class TestOrchestrator:
                             "error": f"Request failed: {error_msg}",
                         }
                     )
+
+                if pending_harness_error is not None:
+                    break
 
             except requests.RequestException as exc:
                 failures.append(

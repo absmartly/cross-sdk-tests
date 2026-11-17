@@ -446,6 +446,37 @@ def test_require_advertised_failure_survives_a_wrong_encoding(
     assert_report(orch, tmp_path, failed=1)
 
 
+@pytest.mark.parametrize("step", ["createContext", "refresh"])
+def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
+        server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, step):
+    """HTTP-error path, recorder unreadable (served_fault=False): nothing says the server was wrong,
+    so the wrapper's error response is still validated and its detail kept next to the harness error."""
+    wrapper = wrapper_factory("none-http")
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    serve_wrong_encoding("gzip", FETCH_OF_STEP[step])  # the wrapper answers this step with HTTP 500
+    real_call = orch._context_server_call
+    reads = []
+
+    def call(m, path, **kwargs):
+        if m == "GET" and "/requests/" in path:
+            reads.append(path)
+            if len(reads) == FETCH_OF_STEP[step]:
+                raise test_runner.requests.ConnectionError("context server reset")
+        return real_call(m, path, **kwargs)
+
+    with mock.patch.object(orch, "_context_server_call", side_effect=call), mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    step_index = [s["action"] for s in group[0]["steps"]].index(step)
+    assert result["harness_error"].startswith(f"step {step_index} ({step}): ")
+    assert "context server reset" in result["harness_error"]
+    errors = [f for f in result["failures"] if f["step"] == step_index]
+    assert any("cannot decode gzip" in str(f.get("error")) for f in errors), result["failures"]
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
+    assert wrapper.contexts == {}
+
+
 @pytest.mark.parametrize("mutate, reason", [
     (lambda s: s.update(directData=False), "'directData' must be true"),
     (lambda s: s.update(directData=True, contextServer={}), "cannot be combined"),
