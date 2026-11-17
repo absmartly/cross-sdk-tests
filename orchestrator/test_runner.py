@@ -140,12 +140,17 @@ class HarnessError(Exception):
     Raised by the context-server control calls. Inside a scenario it is
     recorded as a harness error: it fails the run but is never counted as the
     SDK's FAIL. `failures` carries SDK failures found before the harness fault,
-    so they are still reported as the SDK's.
+    so they are still reported as the SDK's. `served_fault` is True when the
+    context server served an encoding the negotiation would not choose: the
+    SDK's response to that fetch is then not the SDK's to answer for.
     """
 
-    def __init__(self, message: str, failures: Optional[List[Dict[str, Any]]] = None) -> None:
+    def __init__(
+        self, message: str, failures: Optional[List[Dict[str, Any]]] = None, served_fault: bool = False
+    ) -> None:
         super().__init__(message)
         self.failures = failures or []
+        self.served_fault = served_fault
 
 
 # Capabilities the orchestrator measures itself instead of reading the wrapper's
@@ -1039,7 +1044,7 @@ class TestOrchestrator:
                     fail(f"contextFetch.acceptEncoding[{coding}]", f"advertises {coding}", header)
         if server_faults:
             # Every record was checked first, so SDK failures in this step travel with it.
-            raise HarnessError("; ".join(server_faults), failures)
+            raise HarnessError("; ".join(server_faults), failures, served_fault=True)
         return failures
 
     def set_capabilities(self, sdk_name: str, payload: Dict[str, Any]) -> None:
@@ -1458,11 +1463,23 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
+                # Negotiation first: when the context server served this step an
+                # encoding the negotiation would not choose, the response (e.g.
+                # 200 with failed: true) is not judged as the SDK's. A recorder
+                # that cannot be read says nothing about what was served, so the
+                # response is still validated before that harness error stops
+                # the scenario.
+                try:
+                    wire_failures = step_fetch_failures(step_index, action)
+                except HarnessError as harness_exc:
+                    if not harness_exc.served_fault:
+                        failures.extend(self.validate_step(step_index, action, data, expected, responses))
+                    raise
                 step_failures = self.validate_step(step_index, action, data, expected, responses)
                 if step_failures:
                     failures.extend(step_failures)
                 responses[step_index] = data
-                failures.extend(step_fetch_failures(step_index, action))
+                failures.extend(wire_failures)
                 observations[step_index] = (
                     action,
                     observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),

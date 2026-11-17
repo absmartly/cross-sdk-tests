@@ -343,11 +343,13 @@ def test_sdk_failure_before_a_harness_error_is_still_an_sdk_failure(server_url, 
 #
 # The mutation: from the `from_fetch`-th GET /context on, the in-process context
 # server serves `coding` whatever the negotiation chooses. Each SDK response path
-# is covered: a 200 the SDK decodes (gzip SDK served identity) and an HTTP
-# error (mode "none-http" served unrequested gzip).
+# is covered: a 200 the SDK decodes (gzip SDK served identity), a 200 with
+# `failed: true` (mode "none" served unrequested gzip) and an HTTP error (mode
+# "none-http" served unrequested gzip).
 
 WRONG_ENCODING_PATHS = [
     ("gzip", "identity"),   # decoded fine: only the server fault
+    ("none", "gzip"),       # wrapper answers 200 with failed: true
     ("none-http", "gzip"),  # wrapper answers HTTP 500
 ]
 FETCH_OF_STEP = {"createContext": 1, "refresh": 2}
@@ -427,7 +429,7 @@ def test_sdk_failure_before_the_wrong_encoding_step_is_still_counted(
     assert_report(orch, tmp_path, failed=1)
 
 
-@pytest.mark.parametrize("mode, coding", [("none-http", "gzip")])
+@pytest.mark.parametrize("mode, coding", [("none", "gzip"), ("none-http", "gzip")])
 def test_require_advertised_failure_survives_a_wrong_encoding(
         server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, mode, coding):
     """The SDK not advertising gzip is independent of what the server sent: still an SDK failure."""
