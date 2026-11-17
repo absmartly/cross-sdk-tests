@@ -7,7 +7,7 @@ it copes with what it gets back is decided and recorded in one process, not in
 twenty wrappers.
 
 Control API (used by the orchestrator):
-  PUT    /payload/{id}   {"data": {...}, "encodings": [...], "force": null|"gzip"|"identity"}
+  PUT    /payload/{id}   {"data": {...}, "encodings": [...], "force": null|"br"|"gzip"|"identity"}
                          Stores the context data the SDK will fetch. `encodings` is the
                          server preference list (subset of br, gzip, identity, in order);
                          the first one the client accepts is served (see negotiation.py).
