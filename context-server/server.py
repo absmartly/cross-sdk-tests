@@ -43,7 +43,8 @@ import brotli  # pinned in context-server/requirements.txt (and orchestrator/req
 from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines, settings_error
 
 COMPRESSORS = {
-    "br": lambda body: brotli.compress(body),
+    # Quality 5, not the default 11: the SDK decodes any quality the same way, and 11 costs ~100 ms per 250 KB on every uncached GET.
+    "br": lambda body: brotli.compress(body, quality=5),
     "gzip": lambda body: gzip.compress(body, mtime=0),
     "identity": lambda body: body,
 }

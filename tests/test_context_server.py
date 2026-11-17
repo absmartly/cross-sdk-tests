@@ -229,6 +229,8 @@ class LiveServer(unittest.TestCase):
         self.assertEqual(response.getheader("Content-Encoding"), "br")
         self.assertEqual(response.getheader("Vary"), "Accept-Encoding")
         self.assertEqual(json.loads(brotli.decompress(body)), DATA)
+        # Encoded at quality 5 (server.py COMPRESSORS), not brotli's slow default 11.
+        self.assertEqual(body, brotli.compress(json.dumps(DATA).encode(), quality=5))
         [record] = self.recorded("br1")
         self.assertEqual(record["served"], "br")
         self.assertEqual(record["bodyBytes"], len(body))
