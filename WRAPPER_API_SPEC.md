@@ -285,7 +285,7 @@ unversioned `absmartly-javascript-sdk`.
 ### 2b-ii. Context Server Endpoints (context-fetch compression)
 
 **Endpoints on the context server.** Scenarios that carry a `contextServer`
-object (270-272) store their payload on the negotiating context server
+object (270-274) store their payload on the negotiating context server
 (`context-server/`, compose service `context-server:8080`) instead, and the
 `endpoint` in `POST /context` is `http://context-server:8080/negotiate/{payloadId}`.
 Wrappers need nothing new for this, but they must:
@@ -306,9 +306,13 @@ Wrappers need nothing new for this, but they must:
   and asserts the new value afterwards.
 
 The orchestrator also probes every wrapper once at startup through the same
-path to measure the `contextFetchCompression` capability (see
-[docs/context-fetch-compression.md](docs/context-fetch-compression.md)).
-Wrappers do not report it: any value in `/capabilities` is dropped.
+path to measure the `contextFetchCompression` capability (a gzip-or-identity
+payload) and the `contextFetchBrotli` capability (a payload allowing
+br > gzip > identity; `report.json` key `context_fetch_brotli_probe`); see
+[docs/context-fetch-compression.md](docs/context-fetch-compression.md).
+Wrappers do not report either: any value in `/capabilities` is dropped. The
+same wrapper rules apply to br: no wrapper-added `Accept-Encoding: br`, no
+wrapper-side br decoding.
 
 ### 2c. Diagnostics Endpoint (utility/class verification)
 

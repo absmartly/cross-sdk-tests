@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
@@ -160,7 +160,10 @@ class HarnessError(Exception):
 # measured value goes through the same policy check as an advertised one, so an
 # SDK listed as a reviewed exception that starts measuring true fails until the
 # policy moves it.
-MEASURED_CAPABILITY_PROBES = {"contextFetchCompression": "measure_context_fetch_compression"}
+MEASURED_CAPABILITY_PROBES = {
+    "contextFetchCompression": "measure_context_fetch_compression",
+    "contextFetchBrotli": "measure_context_fetch_brotli",
+}
 
 
 class Colors:
@@ -627,6 +630,8 @@ class TestOrchestrator:
         self.known_capabilities = set(self.policy["capabilities"])
         # sdk_name -> what the context-fetch probe observed on the wire.
         self.context_fetch_probe: Dict[str, Dict[str, Any]] = {}
+        # contextFetchBrotli probe (a br-allowing payload), per SDK.
+        self.context_fetch_brotli_probe: Dict[str, Dict[str, Any]] = {}
         # sdk_name -> measured capability -> why it could not be measured. Fails
         # the run and skips only the scenarios requiring that capability.
         self.measurement_failed: Dict[str, Dict[str, str]] = {}
@@ -808,8 +813,12 @@ class TestOrchestrator:
         refresh_data: Optional[Dict[str, Any]],
         force: Optional[str],
         timeout: float,
+        encodings: Sequence[str] = tuple(negotiation.DEFAULT_PREFERENCE),
     ) -> Dict[str, Any]:
         """Create an endpoint-backed context on the context server; optionally refresh it with new data.
+
+        `encodings` is the payload's server preference: the gzip default, or
+        negotiation.BR_PREFERENCE for the contextFetchBrotli probe.
 
         Wrapper-side problems are recorded in the outcome (`error`). A context
         server that cannot be used raises (MeasurementError, or the requests /
@@ -817,7 +826,7 @@ class TestOrchestrator:
         """
         payload_id = f"probe-{uuid.uuid4()}"
         self.context_server_put(payload_id, {
-            "data": data, "encodings": list(negotiation.DEFAULT_PREFERENCE), "force": force,
+            "data": data, "encodings": list(encodings), "force": force,
         })
         outcome: Dict[str, Any] = {}
         context_id = None
@@ -883,6 +892,93 @@ class TestOrchestrator:
             self.context_server_delete(payload_id)
         return outcome
 
+    @staticmethod
+    def _probe_data(name: str) -> Dict[str, Any]:
+        return {"experiments": [{
+            "id": 1, "name": name, "iteration": 1, "unitType": "session_id",
+            "seedHi": 0, "seedLo": 0, "split": [0.5, 0.5], "trafficSeedHi": 0, "trafficSeedLo": 0,
+            "trafficSplit": [0, 1], "fullOnVariant": 0, "applications": [{"name": "website"}],
+            "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
+            "audience": "", "audienceStrict": False,
+        }]}
+
+    def _measured_fetches(
+        self, base_url: str, preference: Sequence[str]
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """Run the create + refresh probe against a payload with `preference`.
+
+        Returns the probe outcome and its successful fetches. Raises
+        MeasurementError when nothing about the SDK was measured: the context
+        server unusable, no GET /context reached it, or it served an encoding
+        the shared negotiation would not choose for that preference.
+        """
+        not_ready = self.context_server_ready()
+        if not_ready:
+            raise MeasurementError(not_ready)
+        try:
+            negotiated = self._probe_context_fetch(
+                base_url, self._probe_data("exp_context_fetch_probe"),
+                self._probe_data("exp_context_fetch_probe_refreshed"),
+                None, CONTEXT_CREATE_TIMEOUT, encodings=preference,
+            )
+        except (requests.RequestException, ValueError, HarnessError) as exc:
+            raise MeasurementError(f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
+        fetches = [r for r in negotiated["requests"] if r.get("status") == 200]
+        if not fetches:
+            raise MeasurementError(f"the SDK made no GET /context to the context server ({negotiated.get('error')})")
+        # The context server serving an encoding the shared negotiation would not
+        # choose is the harness's fault: nothing about the SDK was measured.
+        mismatched = [
+            (r.get("acceptEncoding"), r.get("served")) for r in fetches
+            if r.get("served") != negotiation.choose_encoding(r.get("acceptEncoding"), preference)
+        ]
+        if mismatched:
+            raise MeasurementError(
+                f"the context server served an encoding the negotiation would not choose "
+                f"(Accept-Encoding, served): {mismatched!r}"
+            )
+        return negotiated, fetches
+
+    def measure_context_fetch_brotli(self, sdk_name: str, base_url: str) -> bool:
+        """contextFetchBrotli: br advertised on create and refresh, br served, and both bodies used.
+
+        The probe payload allows br > gzip > identity (negotiation.BR_PREFERENCE),
+        so an SDK that advertises br is served br. Raises MeasurementError when
+        the probe could not measure anything (see _measured_fetches).
+        """
+        negotiated, fetches = self._measured_fetches(base_url, negotiation.BR_PREFERENCE)
+        headers = [r.get("acceptEncoding") for r in fetches]
+        served = [r.get("served") for r in fetches]
+        refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
+        advertised = all(negotiation.advertises(h, "br") for h in headers)
+        failed_checks = [name for name, failed in (
+            ("no br advertised", not advertised),
+            ("br not served", any(c != "br" for c in served)),
+            ("refresh not fetched", not refreshed),
+            ("not decoded", negotiated.get("decoded") is not True),
+            ("refresh data not used", negotiated.get("refreshDecoded") is not True),
+        ) if failed]
+        value = not failed_checks
+        self.measured_evidence.setdefault(sdk_name, {})["contextFetchBrotli"] = (
+            f"observed Accept-Encoding {headers!r}, served {served!r}; failed: {', '.join(failed_checks) or 'none'}"
+        )
+        self.context_fetch_brotli_probe[sdk_name] = {
+            "acceptEncoding": headers,
+            "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
+            "served": served,
+            "refreshFetched": refreshed,
+            "decoded": negotiated.get("decoded"),
+            "refreshDecoded": negotiated.get("refreshDecoded"),
+            "error": negotiated.get("error"),
+            "contextFetchBrotli": value,
+        }
+        print(
+            f"  context fetch (br payload) {sdk_name}: Accept-Encoding {headers!r} -> served {served}; "
+            f"contextFetchBrotli={value}"
+            + (f" (failed: {', '.join(failed_checks)})" if failed_checks else "")
+        )
+        return value
+
     def measure_context_fetch_compression(self, sdk_name: str, base_url: str) -> bool:
         """contextFetchCompression: gzip advertised on create and refresh, and both bodies used.
 
@@ -890,40 +986,8 @@ class TestOrchestrator:
         context server unusable, no GET /context reached it, or it served an
         encoding the negotiation would not choose).
         """
-        def probe_data(name: str) -> Dict[str, Any]:
-            return {"experiments": [{
-                "id": 1, "name": name, "iteration": 1, "unitType": "session_id",
-                "seedHi": 0, "seedLo": 0, "split": [0.5, 0.5], "trafficSeedHi": 0, "trafficSeedLo": 0,
-                "trafficSplit": [0, 1], "fullOnVariant": 0, "applications": [{"name": "website"}],
-                "variants": [{"name": "A", "config": None}, {"name": "B", "config": None}],
-                "audience": "", "audienceStrict": False,
-            }]}
-
-        not_ready = self.context_server_ready()
-        if not_ready:
-            raise MeasurementError(not_ready)
-        try:
-            negotiated = self._probe_context_fetch(
-                base_url, probe_data("exp_context_fetch_probe"), probe_data("exp_context_fetch_probe_refreshed"),
-                None, CONTEXT_CREATE_TIMEOUT,
-            )
-        except (requests.RequestException, ValueError, HarnessError) as exc:
-            raise MeasurementError(f"could not use the context server at {CONTEXT_SERVER_URL}: {exc}") from exc
-        fetches = [r for r in negotiated["requests"] if r.get("status") == 200]
-        if not fetches:
-            raise MeasurementError(f"the SDK made no GET /context to the context server ({negotiated.get('error')})")
+        negotiated, fetches = self._measured_fetches(base_url, negotiation.DEFAULT_PREFERENCE)
         headers = [r.get("acceptEncoding") for r in fetches]
-        # The context server serving an encoding the shared negotiation would not
-        # choose is the harness's fault: nothing about the SDK was measured.
-        mismatched = [
-            (r.get("acceptEncoding"), r.get("served")) for r in fetches
-            if r.get("served") != negotiation.choose_encoding(r.get("acceptEncoding"), negotiation.DEFAULT_PREFERENCE)
-        ]
-        if mismatched:
-            raise MeasurementError(
-                f"the context server served an encoding the negotiation would not choose "
-                f"(Accept-Encoding, served): {mismatched!r}"
-            )
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
         decoded = negotiated.get("decoded") is True and negotiated.get("refreshDecoded") is True
         value = bool(all(negotiation.advertises(h, "gzip") for h in headers) and refreshed and decoded)
@@ -946,7 +1010,7 @@ class TestOrchestrator:
         # (including building the report) is recorded and `value` stands.
         try:
             forced = self._probe_context_fetch(
-                base_url, probe_data("exp_context_fetch_probe"), None, "gzip", FORCED_GZIP_TIMEOUT)
+                base_url, self._probe_data("exp_context_fetch_probe"), None, "gzip", FORCED_GZIP_TIMEOUT)
             forced_headers = [r.get("acceptEncoding") for r in forced["requests"]]
             forced_report = {
                 "reportOnly": True,
@@ -2138,6 +2202,8 @@ class TestOrchestrator:
             report["cross_sdk_consistency"] = self.consistency_report
         if self.context_fetch_probe:
             report["context_fetch_probe"] = self.context_fetch_probe
+        if self.context_fetch_brotli_probe:
+            report["context_fetch_brotli_probe"] = self.context_fetch_brotli_probe
         if self.measurement_failed:
             report["measurement_failed"] = self.measurement_failed
         if self.context_fetches:
@@ -2255,7 +2321,7 @@ class TestOrchestrator:
                 for reason, count in sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])):
                     print(f"    - {count}x {reason}")
 
-        if self.context_fetch_probe or self.measurement_failed:
+        if self.context_fetch_probe or self.context_fetch_brotli_probe or self.measurement_failed:
             print("\nContext fetch (SDK's own GET {endpoint}/context, measured on the context server):")
             print(f"{'-' * 60}")
             for sdk_name in sorted(self.context_fetch_probe):
@@ -2268,6 +2334,10 @@ class TestOrchestrator:
                 print(f"    forced gzip (report only, requested={forced.get('requested')}): ready={forced['ready']} "
                       f"failed={forced['failed']} decoded={forced['decoded']} "
                       f"error={forced['error']}")
+            for sdk_name in sorted(self.context_fetch_brotli_probe):
+                probe = self.context_fetch_brotli_probe[sdk_name]
+                print(f"  {sdk_name} (br payload): Accept-Encoding {probe['acceptEncoding']} -> served "
+                      f"{probe['served']}; contextFetchBrotli={probe['contextFetchBrotli']}")
             for sdk_name in sorted(self.measurement_failed):
                 for cap, reason in sorted(self.measurement_failed[sdk_name].items()):
                     print(f"  {sdk_name}: {Colors.RED}measurement of {cap} FAILED{Colors.RESET}: {reason}")

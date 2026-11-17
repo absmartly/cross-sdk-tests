@@ -148,7 +148,7 @@ def test_place_group_rejects_a_split_group():
 def test_required_where_observed_or_read_from_code():
     """Required where a lane observed gzip or the code shows it (CI proves it); the rest are exceptions."""
     policy = test_runner.load_capability_policy()
-    assert policy["measuredCapabilities"] == [CAP]
+    assert policy["measuredCapabilities"] == [CAP, "contextFetchBrotli"]
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
     assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
                         "scala", "swift", "vue2", "vue3"]
