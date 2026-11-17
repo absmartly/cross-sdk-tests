@@ -356,12 +356,12 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms"
       ],
       "unsupported": {
-        "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"

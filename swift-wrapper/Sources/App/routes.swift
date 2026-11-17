@@ -483,7 +483,11 @@ func routes(_ app: VaporApplication) throws {
             "semverOperators": true,
             "xAgentHeader": true,
             "clientRejectsBlankApplication": true,
-            "clientAcceptsBlankApplication": false
+            "clientAcceptsBlankApplication": false,
+            // Advertised only when the behavioural self-test passes against the SDK this
+            // wrapper was built from (HoldoutSelfTest.swift).
+            "holdouts": HoldoutSelfTest.runHoldouts(),
+            "holdout_arms": HoldoutSelfTest.runHoldoutArms()
         ])
     }
 
