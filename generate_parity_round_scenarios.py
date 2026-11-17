@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate the 2026-11 feature-parity scenario groups of test_scenarios_complete.json (300+).
 
-The feature-parity round ports three javascript-sdk features to every SDK (each SDK's
-`feat/assignment-rules-semver-x-agent-publish` branch; java-sdk#22 and the javascript-sdk#68
-reference already carry the first two):
+The feature-parity round ported three javascript-sdk features to every SDK (each SDK's
+`feat/assignment-rules-semver-x-agent-publish` PR, all merged to main; java-sdk#22 and the
+javascript-sdk#68 reference already carried the first two):
 
   * Assignment rules (Experiment.assignmentRules). The 2026-11 round group (230-239) pins the
     basics; this file adds what it does not cover: a split rule hashes the unit with the

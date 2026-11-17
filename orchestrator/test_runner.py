@@ -973,7 +973,7 @@ class TestOrchestrator:
                     data = response.json()
 
                 elif action in SWITCHBACK_ACTIONS:
-                    # One keep-alive session for a scenario's pure-function steps (up to 294 calls).
+                    # One keep-alive session for a scenario's pure-function steps (up to 294 vector calls).
                     if pure_session is None:
                         pure_session = requests.Session()
                     response = pure_session.post(f"{base_url}{SWITCHBACK_ACTIONS[action]}", json=params, timeout=5)

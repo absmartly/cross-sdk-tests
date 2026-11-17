@@ -1,6 +1,6 @@
 # Cross-SDK conformance for the 2026-11 feature-parity round
 
-Thirteen SDK PRs port three javascript-sdk features to every SDK, each on its
+Thirteen SDK PRs ported three javascript-sdk features to every SDK, each from its
 `feat/assignment-rules-semver-x-agent-publish` branch (java-sdk#22 and the
 javascript-sdk#68 reference already had the first two). Every PR has merged and
 `sdk-branches.sh` pins each SDK to `main`; see "Branch pins" in

@@ -1323,6 +1323,20 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
 
+    def test_parity_generator_rejects_growing_into_the_switchback_range(self):
+        import generate_parity_round_scenarios as parity
+        existing = [s for s in self.load() if scenario_groups.SWITCHBACK not in s["name"]]
+        grown = dict(existing[-1], name=f"{scenario_groups.SWITCHBACK_FIRST_NUMBER} - Assignment Rules - Grown")
+        with self.assertRaises(SystemExit):
+            parity.assemble(existing, lambda: [s for s in existing if any(m in s["name"] for m in self.PARITY)]
+                            + [grown])
+
+    def test_parity_generator_keeps_the_switchback_group_after_it(self):
+        import generate_parity_round_scenarios as parity
+        existing = self.load()
+        updated, _ = parity.assemble(existing, self.rebuilt(existing, self.PARITY))
+        self.assertEqual(updated, existing)
+
 
 class BlankClientApplicationTest(unittest.TestCase):
     """Scenarios 322-323 catch a wrapper that repairs an explicitly blank client.application into its
