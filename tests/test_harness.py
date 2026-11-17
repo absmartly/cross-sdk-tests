@@ -239,6 +239,25 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.exposures([1, 4], [1, 2]), ["events[1].data.id"])
         self.assertEqual(self.exposures([1, 1], [1, 2]), ["events[1].data.id"])
         self.assertEqual(self.exposures([1], [1, 2]), ["events.length"])
+        # One actual event matches at most one expected event.
+        self.assertEqual(self.exposures([1, 2], [1, 1]), ["events[1].data.id"])
+
+    def test_unordered_events_backtrack_to_a_full_match(self):
+        # Expected data is a subset: {id: 1} also matches the event {id: 1, variant: 2} needs, so the
+        # first pairing has to be undone for both to match.
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 1, "variant": 2}},
+                                             {"type": "exposure", "data": {"id": 1, "variant": 3}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}},
+                               {"type": "exposure", "data": {"id": 1, "variant": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_by_type(self):
+        actual = {"result": None, "events": [{"type": "goal", "data": {"id": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "goal", "data": {"id": 1}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
 
     def test_unordered_events_observation_ignores_order(self):
         expected = {"unorderedEvents": True}
