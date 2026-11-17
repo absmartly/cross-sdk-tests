@@ -18,7 +18,8 @@ declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
   ["dotnet-sdk"]="main"
-  ["elixir-sdk"]="main"
+  # elixir-sdk#5 (holdouts, feat/holdouts) is open; re-pin to main once it merges.
+  ["elixir-sdk"]="feat/holdouts"
   ["flutter-sdk"]="main"
   ["go-sdk"]="main"
   ["java-sdk"]="main"

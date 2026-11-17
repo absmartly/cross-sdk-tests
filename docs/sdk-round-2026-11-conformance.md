@@ -109,6 +109,15 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
+**Holdouts for elixir-sdk.** The elixir lane requires `holdouts` and
+`holdout_arms`, advertised from a behavioural self-test
+(`elixir-wrapper/lib/elixir_wrapper/holdout_self_test.ex`, a port of
+`javascript-wrapper/holdoutSelfTest.js`), so `sdk-branches.sh` pins elixir-sdk to
+`feat/holdouts`, the branch of the open elixir-sdk#5. Merge order: merge
+elixir-sdk#5 first, then re-pin `["elixir-sdk"]` to `main` on the companion PR,
+before it merges, and re-run the elixir lane. Never merge the companion PR while
+the pin names a feature branch.
+
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332

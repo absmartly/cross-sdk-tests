@@ -44,7 +44,11 @@ defmodule ElixirWrapper.Router do
       semverOperators: true,
       xAgentHeader: true,
       clientRejectsBlankApplication: false,
-      clientAcceptsBlankApplication: true
+      clientAcceptsBlankApplication: true,
+      # Measured by a behavioural self-test against the SDK this wrapper was
+      # built from (holdout_self_test.ex); false when it fails.
+      holdouts: ElixirWrapper.HoldoutSelfTest.holdouts?(),
+      holdout_arms: ElixirWrapper.HoldoutSelfTest.holdout_arms?()
     })
   end
 
