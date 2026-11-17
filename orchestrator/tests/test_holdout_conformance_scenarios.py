@@ -10,6 +10,7 @@ The expectations are recorded from the javascript-sdk reference. This module che
 
     H2 ``splitless-holdout-applies``    a holdout with an empty/missing split still covers
     H3 ``re-randomizes-on-edit``        a same-iteration seed/split edit redraws the arm
+       ``redraws-arm-on-seed-hi-edit``  a same-iteration seedHi edit redraws the arm
        ``re-resolves-on-seed-hi-edit``  a same-iteration seedHi edit re-resolves covered experiments
        ``re-resolves-on-split-edit``    a same-iteration split edit re-resolves covered experiments
     H4 ``peek-fires-holdouts``          peek queues the holdout exposures
@@ -39,11 +40,12 @@ MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 FIRST = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True). Update ONLY together with a
 # regeneration from the pinned reference (generate_holdout_conformance_scenarios.py --check clean).
-GROUP_DIGEST = "88bcdad900730b496832f1da8c8fc71604c5d1889b0285ab58b843a42c532581"
+GROUP_DIGEST = "5e626b7287372b82c24fb72b8db93019b7c324b07d0074d4d1c3abf1c0f24829"
 
 MUTANT_SCENARIO = {
     "splitless-holdout-applies": "Empty Or Missing Split",
     "re-randomizes-on-edit": "Seed Or Split Edit",
+    "redraws-arm-on-seed-hi-edit": "Seed Or Split Edit",
     "re-resolves-on-seed-hi-edit": "Seed Or Split Edit",
     "re-resolves-on-split-edit": "Seed Or Split Edit",
     "peek-fires-holdouts": "Peek On A Covered Experiment",
@@ -126,8 +128,12 @@ class Model:
         key = holdout_id if self.is_("arm-cached-per-holdout-id") else (holdout_id, unit_type)
         draw = (live["iteration"], live["seedHi"], live["seedLo"], tuple(live.get("split") or ()))
         cached = self.arms.get(key)
-        same = cached and (cached["draw"] == draw if self.is_("re-randomizes-on-edit")
-                           else cached["draw"][0] == draw[0])
+        if self.is_("re-randomizes-on-edit"):
+            same = cached and cached["draw"] == draw
+        elif self.is_("redraws-arm-on-seed-hi-edit"):
+            same = cached and cached["draw"][:2] == draw[:2]
+        else:
+            same = cached and cached["draw"][0] == draw[0]
         if same:
             return cached
         if self.is_("holdout-honours-full-on") and live.get("fullOnVariant"):

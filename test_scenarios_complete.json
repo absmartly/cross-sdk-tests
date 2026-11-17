@@ -68743,7 +68743,7 @@
   },
   {
     "name": "502 - Holdout Conformance - A Same-Iteration Seed Or Split Edit Does Not Re-Randomize Or Re-Expose",
-    "description": "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's original arm, and nothing new is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
+    "description": "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other keeps its variant, and nothing new is queued for them. Two siblings first evaluated after the refresh follow the original arms too: 7201's is still held out, and 7202's assigns and queues only its own exposure. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
     "contextData": {
       "experiments": [
         {
@@ -68868,6 +68868,47 @@
           "holdoutIds": [
             7201
           ]
+        },
+        {
+          "id": 524,
+          "name": "exp_hc_reseed_not_held_sibling",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": null,
+          "holdoutIds": [
+            7202
+          ]
         }
       ],
       "holdouts": [
@@ -68931,6 +68972,10 @@
                   {
                     "id": 523,
                     "name": "exp_hc_reseed_sibling"
+                  },
+                  {
+                    "id": 524,
+                    "name": "exp_hc_reseed_not_held_sibling"
                   }
                 ]
               }
@@ -69132,6 +69177,47 @@
                 "holdoutIds": [
                   7201
                 ]
+              },
+              {
+                "id": 524,
+                "name": "exp_hc_reseed_not_held_sibling",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 0,
+                "seedLo": 0,
+                "split": [
+                  0.0,
+                  1.0
+                ],
+                "trafficSeedHi": 0,
+                "trafficSeedLo": 0,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": null
+                  },
+                  {
+                    "name": "B",
+                    "config": null
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null,
+                "assignmentRules": null,
+                "holdoutIds": [
+                  7202
+                ]
               }
             ],
             "holdouts": [
@@ -69180,6 +69266,10 @@
                   {
                     "id": 523,
                     "name": "exp_hc_reseed_sibling"
+                  },
+                  {
+                    "id": 524,
+                    "name": "exp_hc_reseed_not_held_sibling"
                   }
                 ]
               }
@@ -69218,10 +69308,36 @@
         }
       },
       {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_hc_reseed_not_held_sibling"
+        },
+        "expect": {
+          "result": 1,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 524,
+                "name": "exp_hc_reseed_not_held_sibling",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
         "action": "pending",
         "params": {},
         "expect": {
-          "result": 3,
+          "result": 4,
           "events": []
         }
       }

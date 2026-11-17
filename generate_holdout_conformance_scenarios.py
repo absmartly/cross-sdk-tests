@@ -24,8 +24,8 @@ case lands on the arm it is about (orchestrator/tests/test_holdout_conformance_s
 them with an independent model and checks it).
 
 The group owns 500.. and starts at 501 (500 was H1): 254-299 is left for the open #16/#20
-renumbering, 300-399 is the parity range and 400+ the Switchback group of cross-sdk-tests#13, which
-may still grow.
+renumbering, 300-399 is the parity range and 400-499 the Switchback group of cross-sdk-tests#13,
+which may still grow within it.
 
 Usage:
     python3 generate_holdout_conformance_scenarios.py          # rewrite the group in place
@@ -111,14 +111,16 @@ def specs():
     held, not_held = holdout(7201, "hc_reseed_held", HELD), holdout(7202, "hc_reseed_not_held", NOT_HELD)
     reseed = [covered(experiment(521, "exp_hc_reseed_held"), 7201),
               covered(experiment(522, "exp_hc_reseed_not_held"), 7202),
-              covered(experiment(523, "exp_hc_reseed_sibling"), 7201)]
+              covered(experiment(523, "exp_hc_reseed_sibling"), 7201),
+              covered(experiment(524, "exp_hc_reseed_not_held_sibling"), 7202)]
     out.append(spec(
         "A Same-Iteration Seed Or Split Edit Does Not Re-Randomize Or Re-Expose",
         "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits "
         "both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), "
-        "so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other "
-        "keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's "
-        "original arm, and nothing new is queued.",
+        "so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment "
+        "stays suppressed, the other keeps its variant, and nothing new is queued for them. Two "
+        "siblings first evaluated after the refresh follow the original arms too: 7201's is still "
+        "held out, and 7202's assigns and queues only its own exposure.",
         reseed, [held, not_held],
         [treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
          refresh({"experiments": reseed,
@@ -126,7 +128,7 @@ def specs():
                                dict(not_held, seedHi=EDITED_HELD[0], seedLo=EDITED_HELD[1],
                                     split=EDITED_HELD_SPLIT)]}),
          treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
-         treatment("exp_hc_reseed_sibling"), PENDING]))
+         treatment("exp_hc_reseed_sibling"), treatment("exp_hc_reseed_not_held_sibling"), PENDING]))
 
     out.append(spec(
         "Peek On A Covered Experiment Queues No Holdout Exposure",
