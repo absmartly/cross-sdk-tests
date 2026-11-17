@@ -8,6 +8,10 @@ import sys
 import threading
 import unittest
 
+# Pinned in orchestrator/requirements.txt (CI installs it): a missing wheel is an
+# ImportError that fails this module, never a silent skip.
+import brotli
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "context-server"))
 
 import negotiation  # noqa: E402
@@ -69,15 +73,61 @@ class NegotiationRules(unittest.TestCase):
         self.assertIsNone(negotiation.combine_header_lines(None))
         self.assertIsNone(negotiation.combine_header_lines([]))
 
-    def test_server_only_produces_gzip_or_identity(self):
-        self.assertEqual(set(negotiation.CODINGS), {"gzip", "identity"})
+    def test_server_produces_br_gzip_or_identity_and_never_zstd(self):
+        self.assertEqual(set(negotiation.CODINGS), {"br", "gzip", "identity"})
+        self.assertEqual(set(context_server.COMPRESSORS), set(negotiation.CODINGS))
+
+    def test_gzip_group_preference_never_serves_br(self):
+        # 270-272 and the contextFetchCompression probe: br is never chosen,
+        # whatever the SDK advertises (swift sends `deflate, gzip, br, zstd`).
+        self.assertEqual(negotiation.DEFAULT_PREFERENCE, ["gzip", "identity"])
+        for header in ("deflate, gzip, br, zstd", "br", "br;q=1, gzip;q=0.1", "*", "zstd, br, gzip"):
+            self.assertNotEqual(negotiation.choose_encoding(header), "br", header)
+        self.assertEqual(negotiation.choose_encoding("br"), "identity")
+        self.assertEqual(negotiation.choose_encoding("deflate, gzip, br, zstd"), "gzip")
+
+    def test_br_preference_is_br_then_gzip_honouring_qvalues(self):
+        br = negotiation.BR_PREFERENCE
+        self.assertEqual(br, ["br", "gzip", "identity"])
+        cases = {
+            "deflate, gzip, br, zstd": "br",       # swift
+            "gzip, deflate, br": "br",
+            "br": "br",
+            "BR": "br",
+            "br;q=0.1, gzip;q=1": "br",            # server preference, not client q order
+            "br;q=0, gzip": "gzip",                # br refused
+            "br;q=0": "identity",
+            "gzip, br;q=0": "gzip",
+            "br;q=0, *": "gzip",                   # `*` does not revive a refused br
+            "gzip": "gzip",
+            "gzip, deflate": "gzip",
+            "zstd": "identity",                    # zstd is never served
+            "zstd, gzip": "gzip",
+            "*": "br",
+            "*;q=0, gzip": "gzip",
+            "": "identity",
+            None: "identity",
+            "identity": "identity",
+            "br;q=oops, gzip": "gzip",             # malformed q is a refusal
+        }
+        for header, served in cases.items():
+            self.assertEqual(negotiation.choose_encoding(header, br), served, header)
+        self.assertEqual(negotiation.choose_encoding("gzip", ["br", "identity"]), "identity")
+
+    def test_advertises_br(self):
+        for header in ("br", "gzip, br", "deflate, gzip, br, zstd", " BR ;q=0.5"):
+            self.assertTrue(negotiation.advertises(header, "br"), header)
+        for header in (None, "", "*", "gzip", "br;q=0", "brotli"):
+            self.assertFalse(negotiation.advertises(header, "br"), header)
 
     def test_payload_validation(self):
         self.assertIsNone(context_server.validate_payload({"data": DATA}))
         self.assertIsNone(context_server.validate_payload({"data": DATA, "encodings": ["gzip", "identity"]}))
         self.assertIsNotNone(context_server.validate_payload({"data": []}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": ["deflate"]}))
-        self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": ["br"]}))
+        self.assertIsNone(context_server.validate_payload({"data": DATA, "encodings": ["br", "gzip", "identity"]}))
+        self.assertIsNone(context_server.validate_payload({"data": DATA, "force": "br"}))
+        self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": ["zstd"]}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "encodings": []}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "force": "deflate"}))
         self.assertIsNotNone(context_server.validate_payload({"data": DATA, "force": "zstd"}))
@@ -171,6 +221,37 @@ class LiveServer(unittest.TestCase):
         conn.close()
         self.assertIsNone(response.getheader("Content-Encoding"))
         self.assertIsNone(self.recorded("h")[0]["acceptEncoding"])
+
+    def test_br_when_advertised_on_a_br_payload(self):
+        self.put("br1", encodings=negotiation.BR_PREFERENCE)
+        response, body = self.request("GET", "/negotiate/br1/context", headers={
+            "Accept-Encoding": "deflate, gzip, br, zstd"})
+        self.assertEqual(response.getheader("Content-Encoding"), "br")
+        self.assertEqual(response.getheader("Vary"), "Accept-Encoding")
+        self.assertEqual(json.loads(brotli.decompress(body)), DATA)
+        [record] = self.recorded("br1")
+        self.assertEqual(record["served"], "br")
+        self.assertEqual(record["bodyBytes"], len(body))
+
+    def test_br_payload_serves_gzip_when_br_is_refused(self):
+        self.put("br2", encodings=negotiation.BR_PREFERENCE)
+        response, body = self.request("GET", "/negotiate/br2/context", headers={"Accept-Encoding": "gzip, br;q=0"})
+        self.assertEqual(response.getheader("Content-Encoding"), "gzip")
+        self.assertEqual(json.loads(gzip.decompress(body)), DATA)
+        self.assertEqual(self.recorded("br2")[0]["served"], "gzip")
+
+    def test_gzip_payload_never_serves_br(self):
+        self.put("br3")  # default preference: the gzip group's
+        response, body = self.request("GET", "/negotiate/br3/context", headers={"Accept-Encoding": "br"})
+        self.assertIsNone(response.getheader("Content-Encoding"))
+        self.assertEqual(json.loads(body), DATA)
+
+    def test_refresh_put_keeps_br_settings(self):
+        self.put("br4", encodings=negotiation.BR_PREFERENCE)
+        self.request("PUT", "/payload/br4", {"data": {"experiments": []}})
+        response, body = self.request("GET", "/negotiate/br4/context", headers={"Accept-Encoding": "br"})
+        self.assertEqual(response.getheader("Content-Encoding"), "br")
+        self.assertEqual(json.loads(brotli.decompress(body)), {"experiments": []})
 
     def test_head_is_not_routed(self):
         response, _ = self.request("HEAD", "/health")

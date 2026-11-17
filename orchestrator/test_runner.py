@@ -35,8 +35,9 @@ SWITCHBACK_ACTIONS = {
 CONTEXT_SERVER_URL = os.getenv("CONTEXT_SERVER_URL", "http://context-server:8080").rstrip("/")
 CONTEXT_SERVER_SDK_URL = os.getenv("CONTEXT_SERVER_SDK_URL", CONTEXT_SERVER_URL).rstrip("/")
 CONTEXT_FETCH_ACTIONS = ("createContext", "createContextWith", "refresh")
-# Codings whose presence in an SDK's Accept-Encoding is reported. Only gzip is
-# ever served or gated on; br and zstd are report-only.
+# Codings whose presence in an SDK's Accept-Encoding is reported. gzip and br
+# are served (br only to payloads whose `encodings` list it: the br group and
+# the contextFetchBrotli probe); zstd is report-only.
 REPORTED_ENCODINGS = ("gzip", "br", "zstd")
 # One timeout for creating a context, used by scenarios and by the probe, so a
 # fetch that passes the probe cannot time out in the scenarios (or vice versa).

@@ -480,7 +480,7 @@ def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
 @pytest.mark.parametrize("mutate, reason", [
     (lambda s: s.update(directData=False), "'directData' must be true"),
     (lambda s: s.update(directData=True, contextServer={}), "cannot be combined"),
-    (lambda s: s.update(contextServer={"encodings": ["br"]}), "contextServer:"),
+    (lambda s: s.update(contextServer={"encodings": ["zstd"]}), "contextServer:"),
 ])
 def test_invalid_direct_data_and_context_server_are_rejected(group, mutate, reason):
     scenario = copy.deepcopy(group[1])

@@ -9,8 +9,8 @@ twenty wrappers.
 Control API (used by the orchestrator):
   PUT    /payload/{id}   {"data": {...}, "encodings": [...], "force": null|"gzip"|"identity"}
                          Stores the context data the SDK will fetch. `encodings` is the
-                         server preference list (subset of gzip, identity, in order); the
-                         first one the client accepts is served (see negotiation.py).
+                         server preference list (subset of br, gzip, identity, in order);
+                         the first one the client accepts is served (see negotiation.py).
                          `force` serves that encoding even when it was not advertised.
                          Omitted `encodings`/`force` keep the stored values (refresh).
   GET    /requests/{id}  Every request the SDK made for that payload, in order.
@@ -23,8 +23,10 @@ SDK-facing API:
 The path deliberately does not start with /context_payload/: some wrappers
 rewrite such endpoints to their own host.
 
-Only gzip and identity are served. Whether an SDK also lists br or zstd is
-reported by the orchestrator from the recorded Accept-Encoding, never served.
+br, gzip and identity can be served; each payload's `encodings` decides which
+(the gzip group never lists br). br is encoded with the pinned `brotli` wheel
+(context-server/requirements.txt); the server refuses to start without it.
+zstd is never served: the orchestrator only reports whether an SDK lists it.
 """
 
 import gzip
@@ -36,9 +38,15 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+import brotli  # pinned in context-server/requirements.txt (and orchestrator/requirements.txt for the tests)
+
 from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines, settings_error
 
-COMPRESSORS = {"gzip": lambda body: gzip.compress(body, mtime=0), "identity": lambda body: body}
+COMPRESSORS = {
+    "br": lambda body: brotli.compress(body),
+    "gzip": lambda body: gzip.compress(body, mtime=0),
+    "identity": lambda body: body,
+}
 assert set(COMPRESSORS) == set(CODINGS)
 
 

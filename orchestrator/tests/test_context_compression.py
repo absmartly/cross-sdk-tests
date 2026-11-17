@@ -442,7 +442,7 @@ def test_forced_encoding_is_expected_regardless_of_request():
     assert check({"force": "gzip"}, [fetch(None, "gzip")]) == []
 
 
-@pytest.mark.parametrize("spec", [[], {"encodings": ["deflate"]}, {"encodings": ["br"]}, {"encodings": []},
+@pytest.mark.parametrize("spec", [[], {"encodings": ["deflate"]}, {"encodings": ["zstd"]}, {"encodings": []},
                                   {"force": "lz4"}, {"force": "zstd"},
                                   {"requireAdvertised": ["identity"]}, {"extra": 1}])
 def test_bad_context_server_specs_are_rejected(spec):
