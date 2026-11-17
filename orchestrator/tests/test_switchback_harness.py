@@ -555,7 +555,6 @@ def test_main_scenarios_are_untouched():
 
 
 def test_check_fails_when_only_the_declared_cluster_order_changes(canonical_copy):
-    # Dict equality ignores key order; --check compares the serialized text, so it does not.
     scenarios, write = canonical_copy
     mutated = copy.deepcopy(scenarios)
     scenario = next(s for s in mutated if "Unit Without A Value Is Skipped" in s["name"])

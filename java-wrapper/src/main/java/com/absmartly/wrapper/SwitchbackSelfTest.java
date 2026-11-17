@@ -312,10 +312,7 @@ final class SwitchbackSelfTest {
         return true;
     }
 
-    // Mirrors the payload scenario: expose and publish a unit baseline, then expose and publish a
-    // switchback experiment on the same unit. The switchback exposure and its publish event must
-    // have exactly the baseline's fields at every depth, and the published exposure must carry
-    // the served values. Returns the baseline publish event, or null when a check fails.
+    // Mirrors the payload scenario. Returns the baseline publish event, or null when a check fails.
     private static PublishEvent checkPayloadShape(Context context, List<Exposure> exposures,
             List<PublishEvent> published) throws Exception {
         context.publish();

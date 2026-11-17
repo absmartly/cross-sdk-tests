@@ -1294,9 +1294,7 @@ class TestOrchestrator:
                         ):
                             continue
                         if key == "units" and expected_event.get("unorderedUnits") is True:
-                            # `unorderedUnits: true`: the published units are a set (an SDK
-                            # publishes them in its own map order); each expected unit must
-                            # match a distinct actual unit, and the counts must be equal.
+                            # An SDK publishes its units in its own map order.
                             if not units_match_unordered(actual_value, expected_value):
                                 fail(f"events[{i}].data.units (unordered)", expected_value, actual_value)
                             continue
