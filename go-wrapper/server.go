@@ -266,6 +266,9 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"assignmentRules":                 true,
 		"semverOperators":                 true,
 		"xAgentHeader":                    true,
+		"holdouts":                        holdoutsSupported(),
+		"holdout_arms":                    holdoutArmsSupported(),
+		"holdoutIdsDedup":                 holdoutIdsDedupSupported(),
 	})
 }
 
