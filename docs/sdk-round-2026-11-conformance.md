@@ -102,10 +102,11 @@ it must only name refs that stay put. As of 2026-11-16:
 
 | SDK | pin | why |
 | --- | --- | --- |
-| cpp, dotnet, elixir, java, kotlin, python3, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same SDK sources as the PR head CI tested |
+| cpp, dotnet, elixir, java, kotlin, ruby, rust, scala, swift | `main` | the parity PR merged (cpp#3, dotnet#12, elixir#3, java#22, kotlin#4, python3#14, ruby#41, rust#9, scala#4, swift#10); each `main` has the same SDK sources as the PR head CI tested |
 | javascript-sdk | `feat/sdk-system-attributes` | javascript-sdk#68 is open; it is the reference, and the generators pin its commit `9403b83` |
 | go-sdk, php-sdk, flutter-sdk | `feat/assignment-rules-semver-x-agent-publish` | go#14, php#10, flutter#10 are open |
 | angular, react, vue2, vue3, liquid | unchanged from `main` | not part of this round |
+| python3-sdk | `feat/holdouts` | python3-sdk holdouts PR is open; this lane requires `holdouts`/`holdout_arms`. Re-pin to `main` once that PR merges |
 
 The older `feat/sdk-system-attributes` branches of the non-JS SDKs are no longer
 pinned; ignore them.

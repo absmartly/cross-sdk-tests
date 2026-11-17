@@ -27,7 +27,8 @@ declare -A SDK_BRANCHES=(
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="feat/comprehensive-test-coverage"
   ["php-sdk"]="feat/assignment-rules-semver-x-agent-publish"
-  ["python3-sdk"]="main"
+  # python3-sdk holdouts PR (feat/holdouts) is open; re-pin to main once it merges.
+  ["python3-sdk"]="feat/holdouts"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   ["ruby-sdk"]="main"
   ["rust-sdk"]="main"

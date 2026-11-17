@@ -83,11 +83,11 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms"
       ],
       "unsupported": {
-        "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
         "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
