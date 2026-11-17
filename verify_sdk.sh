@@ -48,6 +48,7 @@ SDK_URLS="$SDK_URLS" python3 - <<'PY'
 import json, os, sys
 sys.path.insert(0, 'orchestrator')
 from test_runner import TestOrchestrator, load_capability_policy, load_scenarios
+from results_aggregator import verify_status_lines
 pairs = [p for p in os.environ['SDK_URLS'].split(';') if p]
 sdks = dict(p.split('=', 1) for p in pairs)
 policy = load_capability_policy()
@@ -74,27 +75,13 @@ os.makedirs('test-results', exist_ok=True)
 # would print PASS / exit 0). Gate on its return code; keep the per-scenario
 # detail print purely as human diagnostics.
 report_exit = o.generate_report('test-results/report.json', failed)
-r = json.load(open('test-results/report.json'))
+with open('test-results/report.json') as src:
+    r = json.load(src)
 total = len(scs)
+# Per-SDK lines: results_aggregator.verify_status_lines (tested in
+# tests/test_harness.py). A failed capability measurement prints MEASURE FAIL,
+# never PASS, matching generate_report()'s verdict.
 for sdk in sdks:
-    # A service that never started is driven through no scenario, so every
-    # per-scenario `passed` defaults True and the SDK would misprint as a full
-    # pass. The report's sdk_stats flags it; surface it as DOWN instead.
-    if r['sdk_stats'].get(sdk, {}).get('service_failed'):
-        print(f"\n{sdk}: DOWN")
-        continue
-    not_passed = [(sc['name'], sc['sdks'][sdk]) for sc in r['results']
-                  if not sc['sdks'].get(sdk, {}).get('passed', True)]
-    # A harness error with no SDK failure (e.g. a context-server control call
-    # failed) is the harness's, not the SDK's: list it apart, never as a FAIL.
-    harness = [(n, res) for n, res in not_passed if res.get('harness_error') and not res.get('failures')]
-    fails = [(n, res) for n, res in not_passed if (n, res) not in harness]
-    mark = 'PASS' if not fails and not harness else ('FAIL' if fails else 'HARNESS ERROR')
-    print(f"\n{sdk}: {total-len(not_passed)}/{total} {mark}")
-    for f, res in fails:
-        det = res.get('failures') or [{'error': res.get('error')}]
-        print(f"  - FAIL {f} :: {json.dumps(det[:1])[:160]}")
-    for f, res in harness:
-        print(f"  - HARNESS ERROR {f} :: {str(res['harness_error'])[:160]}")
+    print("\n".join(verify_status_lines(r, sdk, total)))
 sys.exit(report_exit)
 PY

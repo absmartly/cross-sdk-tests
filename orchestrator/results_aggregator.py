@@ -358,6 +358,38 @@ def run_level_status(stats):
     return None
 
 
+def verify_status_lines(report, sdk, total):
+    """verify_sdk.sh's per-SDK lines, from test_runner's report.json.
+
+    The status comes from the scenario results and from the report's run-level
+    measurement failure: a failed measurement skips the scenarios that require
+    the capability (skips count as passes) but fails the SDK, so it must not
+    print PASS.
+    """
+    stats = report.get("sdk_stats", {}).get(sdk, {})
+    if stats.get("service_failed"):
+        return [f"\n{sdk}: DOWN"]
+    not_passed = [(sc["name"], sc["sdks"][sdk]) for sc in report.get("results", [])
+                  if not sc["sdks"].get(sdk, {}).get("passed", True)]
+    # A harness error with no SDK failure (e.g. a context-server control call
+    # failed) is the harness's, not the SDK's: list it apart, never as a FAIL.
+    harness = [(n, res) for n, res in not_passed if res.get("harness_error") and not res.get("failures")]
+    fails = [(n, res) for n, res in not_passed if (n, res) not in harness]
+    mark = "PASS" if not fails and not harness else ("FAIL" if fails else "HARNESS ERROR")
+    measurement_failed = stats.get("measurement_failed") or {}
+    if measurement_failed:
+        mark = "MEASURE FAIL" if mark == "PASS" else f"{mark} + MEASURE FAIL"
+    lines = [f"\n{sdk}: {total - len(not_passed)}/{total} {mark}"]
+    for cap, reason in sorted(measurement_failed.items()):
+        lines.append(f"  - MEASURE FAIL {cap} :: {str(reason)[:160]}")
+    for f, res in fails:
+        det = res.get("failures") or [{"error": res.get("error")}]
+        lines.append(f"  - FAIL {f} :: {json.dumps(det[:1])[:160]}")
+    for f, res in harness:
+        lines.append(f"  - HARNESS ERROR {f} :: {str(res['harness_error'])[:160]}")
+    return lines
+
+
 def load_cross_sdk_report(report_path):
     if not report_path or not os.path.exists(report_path):
         return {}
