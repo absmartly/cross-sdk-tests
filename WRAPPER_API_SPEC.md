@@ -74,6 +74,60 @@ Content-Type: application/json
 }
 ```
 
+#### Client config (`application` / `environment`)
+
+Both create modes accept an optional `client` object that sets the SDK client's
+**application name** and **environment name** for this context. It lets a
+scenario target the always-on `application` / `environment` audience attributes
+(the 2026-11 system-attributes round: every SDK evaluates audiences and
+assignment-rule conditions with the configured application and environment, and
+no longer with `app_version`).
+
+```http
+POST /context
+Content-Type: application/json
+
+{
+  "data": { "experiments": [...] },
+  "units": { "session_id": "abc123" },
+  "options": { "publishDelay": -1, "refreshPeriod": 0 },
+  "client": { "application": "sysattr-app", "environment": "sysattr-env" }
+}
+```
+
+Rules:
+
+- `client.application`, when a non-empty string, is the application name the SDK
+  is configured with (so an audience `{"var": "application"}` sees it).
+- `client.environment`, when a non-empty string, is the environment name the SDK
+  is configured with (so an audience `{"var": "environment"}` sees it).
+- **Omitting `client.environment`** (absent, `null`, or empty) configures the SDK
+  with **no environment**, so `environment` is left out of the evaluation map
+  entirely — the "no environment configured" case. A wrapper whose SDK client
+  requires a non-empty environment at construction must still honour this (for
+  example by reporting the configured environment as absent), never by
+  substituting a placeholder the audience could match. A wrapper that cannot build
+  a no-environment client at all reports `clientNoEnvironment: false` (a reviewed
+  policy exception) and scenario 253, the only one that exercises this case, skips
+  for it.
+- When the whole `client` object is omitted, the wrapper uses its own default
+  application/environment, exactly as before — every pre-2026-11 scenario is
+  unaffected.
+- The names are the client configuration only. They are **not** user attributes:
+  the SDK must overlay user attributes on top (a `context.attribute("environment",
+  …)` set by a later step always wins), and `getAttributes()` must not report
+  them. The SDK does not publish them (the collector adds them server-side).
+- A wrapper must still reject input its own SDK rejects (e.g. a blank application
+  name the SDK forbids) with its documented 400; it must not silently coerce bad
+  input into a value the SDK would accept. Concretely: only an **omitted**
+  `client.application` falls back to the default; any supplied string, including
+  `""`, is passed to the SDK unchanged on every creation path, and an SDK
+  rejection is a 400 carrying the SDK's own message (and `events`). A non-string
+  `client.application` is a 400 (`Invalid 'application' in client argument`).
+  `/capabilities` advertises `clientRejectsBlankApplication` when the SDK rejects
+  `""` and `clientAcceptsBlankApplication` when it accepts it (the SDK then leaves
+  `application` out of the evaluation map); scenarios 322-323 check both.
+
 #### E2E Mode
 When `mode: "e2e"` is set, the wrapper creates a real SDK instance connected to a live ABsmartly environment instead of using mock endpoints.
 
@@ -178,6 +232,55 @@ GET /context_payload/{payloadId}/context?application=...&environment=...
 2. Orchestrator creates context with `endpoint: http://wrapper:3000/context_payload/{payloadId}`
 3. SDK calls `GET {endpoint}/context?application=...&environment=...`
 4. Wrapper returns stored payload
+
+### 2b-i. Captured Requests and Publish To Endpoint (capability `xAgentHeader`)
+
+Scenarios 320-321 check the `X-Agent` header the SDK itself sends. Every
+wrapper that advertises `xAgentHeader` must:
+
+1. **Record every request its mock collector serves**, per payload id, in
+   arrival order: the method and every request header exactly as received.
+
+   ```http
+   GET /context_payload/{payloadId}/requests
+   ```
+
+   ```json
+   {"requests": [{"method": "GET", "headers": {"x-agent": "absmartly-go-sdk/1.2.0", "x-api-key": "..."}}]}
+   ```
+
+   Header names may use any case (the orchestrator compares them
+   case-insensitively); a value may be a string or a one-element list. Unknown
+   payload ids return `{"requests": []}`.
+
+2. **Accept the SDK's publish** on the same mock collector path:
+
+   ```http
+   PUT /context_payload/{payloadId}/context
+   ```
+
+   records the request like the GET above and answers `200` with `{}`.
+
+3. **Honour `publishToEndpoint: true` on `POST /context`** (only together with
+   `endpoint`): `publish()` on that context goes through the SDK's own default
+   publisher/HTTP client to `PUT {endpoint}/context`, instead of the wrapper's
+   in-memory publisher. Publish events, `publishFail` and every other endpoint
+   behave as usual. Without the flag nothing changes.
+
+The headers must be the SDK's own: the wrapper must not set, rewrite or strip
+`X-Agent` (or any other header) on the SDK's requests, and must not fetch or
+publish on the SDK's behalf. The orchestrator reads the recorded requests with
+the `capturedRequests` step (`params.method` selects GET or PUT; `expect`
+carries `minRequests` and `headerPatterns`, header name to a regex that must
+match the whole value; `{lang}` in a regex is replaced with the language of
+the SDK under test: the lane name, except flutter → `dart`, liquid → `ruby`
+and the JS framework wrappers → `javascript`). For the parity round the
+contract is `absmartly-<lang>-sdk/<semver>`, with `<semver>` per the semver.org
+2.0.0 grammar (no leading zeroes, no empty pre-release or build identifiers).
+
+The javascript-family wrappers implement the endpoints but list `xAgentHeader`
+as a reviewed exception: javascript-sdk#68 (the reference) still sends the
+unversioned `absmartly-javascript-sdk`.
 
 ### 2c. Diagnostics Endpoint (utility/class verification)
 
@@ -756,7 +859,11 @@ A wrapper is a thin adapter between HTTP JSON and the SDK. It must not:
 
 Allowed: converting between JSON and the SDK's native types, mapping the SDK's
 idiomatic error (exception, Go `error`, Rust `Err`, Elixir `{:error, _}`) to a
-400 with its message, awaiting the SDK's async APIs, and injecting a test
+400 with its message (the SDK's own text, or a cross-SDK wording the SDK itself
+exposes on the error, such as python3-sdk's `canonical_message` or go-sdk's
+`Canonical()`; never a wording the wrapper writes), serializing an SDK event-type
+enum to the contract's name when the SDK logs exactly one event for that
+transition (for example go-sdk's `Close` constant as `finalize`), awaiting the SDK's async APIs, and injecting a test
 transport where a scenario asks for one (`publishFail`, `failLoad`,
 `payloadThrottle`). A `failLoad` transport must fail the fetch the way a real
 network failure does (reject or raise); it must not return malformed data.
@@ -820,6 +927,8 @@ curl -X POST http://localhost:3000/context/ctx-123.../treatment \
 | PUT | /context_payload/{id} | Store payload for async fetch |
 | GET | /context_payload/{id} | Read stored payload (supports `?throttle=<ms>`) |
 | GET | /context_payload/{id}/context | Mock ABsmartly API context endpoint |
+| PUT | /context_payload/{id}/context | Mock collector publish endpoint (`xAgentHeader`) |
+| GET | /context_payload/{id}/requests | Requests the mock collector recorded (`xAgentHeader`) |
 | POST | /context | Create context |
 | POST | /context/{id}/setUnit | Set unit |
 | POST | /context/{id}/getUnit | Get unit |
@@ -1135,3 +1244,74 @@ exposure sequence published (which experiments/holdouts fire, in what order,
 at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
+
+### Capability: `assignmentRules`
+
+No new endpoint — this capability gates correct handling of the per-experiment
+`assignmentRules` wire field (a JSON **string** of `{"rules": [ ... ]}`) on the
+existing `treatment`/`peek`/`variableValue`/`publish` endpoints. An experiment's
+rules are evaluated in order; the first matching rule sets the variant and the
+resulting exposure is flagged `ruleOverride: true` with `assigned: false`, so the
+backend can exclude it from analysis (like an override). A matching rule takes
+precedence over audience targeting and custom assignments, is beaten only by an
+explicit override, and serves variable values. An `assign` rule gives a fixed
+variant; a `split` rule randomizes the unit over its own `percentages`. If the
+first matching rule's variant is out of range (or a split lacks one percentage
+per variant), normal assignment applies and later rules are not tried. Rules may
+carry an `environments` array (empty = all environments). A rule variant for an
+experiment removed from the context data on refresh is rebuilt, not served stale.
+
+`assignmentRules` is `required` for every SDK in
+`orchestrator/expected-capabilities.json`, so the scenarios (230-239, 300-314,
+324-330, `requires: ["assignmentRules"]`) are what verify the behaviour: a
+wrapper that reports `false` is a policy violation, and the scenarios still run
+and fail. A wrapper may therefore advertise it as a constant `true`. If the
+capability ever becomes a reviewed exception for some SDK again, that wrapper
+must instead derive it from a BEHAVIORAL self-test (the same discipline as
+`holdouts`: build a real context with an `assignmentRules` experiment, drive
+`treatment()`/`variableValue()`, assert the variant and the exposure's
+`ruleOverride`/`assigned` flags, and fail closed on any exception), because a
+wire-model marker alone does not prove rule resolution.
+
+Exposure events gain one field for this capability: `ruleOverride` (boolean),
+`true` only on an exposure whose variant came from a matching assignment rule.
+It is reported alongside the existing `assigned`/`overridden`/`custom` flags and
+is compared only where a scenario asserts it.
+
+### Capability: `semverOperators`
+
+No new endpoint — this capability gates the semantic-version comparison
+operators `semver_eq`, `semver_gt`, `semver_gte`, `semver_lt` and `semver_lte`
+in audience filters (and rule conditions). They compare version strings
+semantically and locale-independently: a leading `v`/`V` is ignored, `+build`
+metadata is ignored, a missing version part is `0`, numeric identifiers are
+compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
+pre-release ranks below its release.
+
+`semverOperators` is likewise `required` for every SDK, so the scenarios
+(240-245, 314-319, 331-332, `requires: ["semverOperators"]`) verify it and a constant
+`true` is allowed. A wrapper whose SDK lists it as a reviewed exception derives it
+from a BEHAVIORAL self-test instead: a strict audience using `semver_gt` must
+assign the experiment's variant when the attribute version is greater (numeric
+comparison) and variant 0 with `audienceMismatch: true` when it is not, failing
+closed on any exception.
+
+### Capability: `throwsOnMisuse`
+
+No new endpoint. `true` when the SDK surfaces misuse to the caller as an error,
+as the JS reference does: `setUnit` with a blank or already-set uid, a mutation
+(`track`, `attribute`, `setUnit`, `treatment`) after finalize, and a read before
+the context is ready. The wrapper maps that error to a 400 carrying the SDK's own
+message. An SDK that only logs misuse (an `error` event) and returns normally
+reports `false` and lists a reviewed exception; its wrapper returns the SDK's
+result and the logged event unchanged and must not synthesize a 400 from it.
+Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
+
+### Capability: `singleFinalizeEvent`
+
+No new endpoint. `true` when sealing the context logs exactly one lifecycle
+event, `finalize`, as the JS reference does. An SDK that logs more than one event
+for that transition (for example a legacy `close` followed by `finalize`) reports
+`false` and lists a reviewed exception; its wrapper returns every event unchanged.
+Every scenario with a `finalize` step requires it (19, 131, 147-149, 186,
+188-192, 228).

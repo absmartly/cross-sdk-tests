@@ -92,8 +92,8 @@ public:
 // call fail (one-shot) with "Publish failed", so the publishFail capability
 // exercises the SDK's real failure path instead of the wrapper short-circuiting
 // publish. Whether pending events survive is decided entirely by the SDK.
-// In e2e mode the delegate is the SDK's DefaultContextPublisher (real HTTP);
-// in local mode there is no collector, so a successful transport is a no-op.
+// In e2e mode and with publishToEndpoint the delegate is the SDK's
+// DefaultContextPublisher (real HTTP); otherwise in local mode there is no collector, so a successful transport is a no-op.
 class FailablePublisher : public absmartly::ContextPublisher {
 public:
     explicit FailablePublisher(std::shared_ptr<absmartly::ContextPublisher> delegate = nullptr)
@@ -151,6 +151,31 @@ static std::atomic<int> context_counter{0};
 
 static std::mutex payloads_mu;
 static std::map<std::string, absmartly::ContextData> payload_store;
+
+static std::mutex captured_mu;
+static std::map<std::string, json> captured_requests;
+
+static void capture_request(const std::string& payload_id, const httplib::Request& req) {
+    json headers = json::object();
+    for (const auto& [name, value] : req.headers) {
+        // httplib injects the peer/local socket addresses as pseudo headers;
+        // they were not sent by the SDK.
+        if (name == "REMOTE_ADDR" || name == "REMOTE_PORT" || name == "LOCAL_ADDR" ||
+            name == "LOCAL_PORT") {
+            continue;
+        }
+        if (!headers.contains(name)) {
+            headers[name] = json::array();
+        }
+        headers[name].push_back(value);
+    }
+    std::lock_guard<std::mutex> lock(captured_mu);
+    auto& list = captured_requests[payload_id];
+    if (!list.is_array()) {
+        list = json::array();
+    }
+    list.push_back({{"method", req.method}, {"headers", headers}});
+}
 
 static int server_port = 3000;
 
@@ -229,13 +254,17 @@ static std::string translate_endpoint(const std::string& endpoint) {
     return endpoint;
 }
 
-// Delays the SDK's own data provider by `throttle_ms`, then lets it fetch.
+// Delays the SDK's own data provider's first fetch (context creation) by
+// `throttle_ms`; later fetches (refresh) go straight to it.
 class DeferredContextDataProvider : public absmartly::ContextDataProvider {
 public:
     DeferredContextDataProvider(std::shared_ptr<absmartly::ContextDataProvider> inner, int throttle_ms)
         : inner_(std::move(inner)), throttle_ms_(throttle_ms) {}
 
     std::future<absmartly::ContextData> get_context_data() override {
+        if (delayed_.exchange(true)) {
+            return inner_->get_context_data();
+        }
         return std::async(std::launch::async, [inner = inner_, ms = throttle_ms_]() {
             std::this_thread::sleep_for(std::chrono::milliseconds(ms));
             return inner->get_context_data().get();
@@ -245,6 +274,23 @@ public:
 private:
     std::shared_ptr<absmartly::ContextDataProvider> inner_;
     int throttle_ms_;
+    std::atomic<bool> delayed_{false};
+};
+
+// A fetch that fails the way a network failure does (failLoad), or a context
+// built from inline data that has no endpoint to re-fetch from.
+class FailingContextDataProvider : public absmartly::ContextDataProvider {
+public:
+    explicit FailingContextDataProvider(std::string message) : message_(std::move(message)) {}
+
+    std::future<absmartly::ContextData> get_context_data() override {
+        std::promise<absmartly::ContextData> p;
+        p.set_exception(std::make_exception_ptr(std::runtime_error(message_)));
+        return p.get_future();
+    }
+
+private:
+    std::string message_;
 };
 
 static json make_response(const json& result, const std::vector<Event>& events) {
@@ -322,7 +368,16 @@ int main() {
                     {"publishFail", true}, {"variableKeysMap", true},
                     {"globalCustomFieldKeys", true}, {"getUnits", true},
                     {"getAttributes", true}, {"readyError", true},
-                    {"diagnosticsUtf8", false}};
+                    {"diagnosticsUtf8", false}, {"numericUnitIds", true},
+                    {"publishThrowsOnFailure", true}, {"trackRejectsNonObjectProperties", true},
+                    {"refreshNoOpOnFailedContext", true},
+                    {"throwsOnMisuse", true},
+                    {"singleFinalizeEvent", true},
+                    {"semverNumericOperands", true},
+                    {"assignmentRules", true}, {"semverOperators", true},
+                    {"xAgentHeader", true},
+                    {"clientRejectsBlankApplication", true},
+                    {"clientAcceptsBlankApplication", false}};
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -356,6 +411,28 @@ int main() {
                  json resp = make_response(result, window_events());
                  res.set_content(resp.dump(), "application/json");
              });
+
+    // Mock collector - with publishToEndpoint the SDK publishes
+    // PUT {endpoint}/context here. Registered before the payload-store PUT,
+    // whose pattern would otherwise match this path too.
+    svr.Put(R"(/context_payload/([^/]+)/context)",
+            [](const httplib::Request& req, httplib::Response& res) {
+                capture_request(req.matches[1], req);
+                res.set_content("{}", "application/json");
+            });
+
+    svr.Get(R"(/context_payload/([^/]+)/requests)",
+            [](const httplib::Request& req, httplib::Response& res) {
+                json requests = json::array();
+                {
+                    std::lock_guard<std::mutex> lock(captured_mu);
+                    auto it = captured_requests.find(req.matches[1]);
+                    if (it != captured_requests.end()) {
+                        requests = it->second;
+                    }
+                }
+                res.set_content(json{{"requests", requests}}.dump(), "application/json");
+            });
 
     svr.Put(R"(/context_payload/(.+))",
             [](const httplib::Request& req, httplib::Response& res) {
@@ -410,6 +487,7 @@ int main() {
     svr.Get(R"(/context_payload/([^/]+)/context)",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
+                capture_request(payload_id, req);
                 std::optional<absmartly::ContextData> cd = find_payload(payload_id);
                 if (!cd) {
                     res.status = 404;
@@ -522,6 +600,37 @@ int main() {
                          config.refresh_period = opts["refreshPeriod"].get<int>();
                      }
                  }
+
+                 // Optional client config (the 2026-11 system-attributes round): a
+                 // scenario sets the application/environment names of the SDK's
+                 // Client. Every creation path below builds the context through
+                 // SDK::create_context/create_context_with, so cpp-sdk itself copies
+                 // the client's names into the context config; the wrapper never
+                 // sets ContextConfig::application/environment. When the `client`
+                 // field is omitted, the fixed test-app/test-env defaults keep every
+                 // pre-2026-11 scenario unchanged. Supplied names are forwarded as-is
+                 // (even blank), so the SDK's Client rejects what it forbids: it
+                 // throws on an empty environment, so the no-environment case
+                 // (clientNoEnvironment) is a reviewed exception and SKIPs.
+                 std::string client_application = "test-app";
+                 std::string client_environment = "test-env";
+                 if (body.contains("client") && body["client"].is_object()) {
+                     const auto& client_cfg = body["client"];
+                     if (client_cfg.contains("application")) {
+                         if (!client_cfg["application"].is_string()) {
+                             res.status = 400;
+                             res.set_content(
+                                 make_error_response("Invalid 'application' in client argument", "CREATE_ERROR").dump(),
+                                 "application/json");
+                             return;
+                         }
+                         client_application = client_cfg["application"].get<std::string>();
+                     }
+                     client_environment = client_cfg.contains("environment") && client_cfg["environment"].is_string()
+                                              ? client_cfg["environment"].get<std::string>()
+                                              : "";
+                 }
+
                  int payload_throttle = 0;
                  if (body.contains("options") && body["options"].is_object()) {
                      auto& opts = body["options"];
@@ -538,44 +647,59 @@ int main() {
 
                  try {
                      std::unique_ptr<absmartly::Context> ctx;
+                     const bool live_fetch =
+                         !body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string();
 
-                     if (!body.contains("data") && body.contains("endpoint") && body["endpoint"].is_string()) {
+                     absmartly::ClientConfig client_config;
+                     client_config.endpoint = live_fetch ? translate_endpoint(body["endpoint"].get<std::string>())
+                                                         : "http://localhost:3000";
+                     client_config.api_key = "test-api-key";
+                     client_config.application = client_application;
+                     client_config.environment = client_environment;
+                     // The SDK's own Client validates the config (e.g. rejects a
+                     // blank application); its exception becomes the 400 below.
+                     auto client = std::make_shared<absmartly::Client>(
+                         client_config, std::make_shared<absmartly::DefaultHTTPClient>());
+
+                     absmartly::SDKConfig sdk_config;
+                     sdk_config.client = client;
+                     sdk_config.context_event_handler = collector;
+                     sdk_config.context_event_publisher = publisher;
+
+                     if (live_fetch) {
                          // Live fetch: the SDK's Client GETs `{endpoint}/context`
                          // itself. The mock collector route answers 404 for an
                          // unknown payload, so a missing payload fails the
                          // context instead of loading as ready-but-empty.
                          fetches_from_endpoint = true;
-                         absmartly::ClientConfig client_config;
-                         client_config.endpoint = translate_endpoint(body["endpoint"].get<std::string>());
-                         client_config.api_key = "test-api-key";
-                         client_config.application = "test-app";
-                         client_config.environment = "test-env";
-                         auto client = std::make_shared<absmartly::Client>(
-                             client_config, std::make_shared<absmartly::DefaultHTTPClient>());
-                         auto provider = std::make_shared<absmartly::DefaultContextDataProvider>(client);
-
+                         std::shared_ptr<absmartly::ContextDataProvider> provider =
+                             std::make_shared<absmartly::DefaultContextDataProvider>(client);
+                         // publishToEndpoint: publish through the SDK's own
+                         // publisher to {endpoint}/context (this same server,
+                         // whose thread pool keeps serving while publish waits).
+                         if (body.contains("publishToEndpoint") && body["publishToEndpoint"].is_boolean() &&
+                             body["publishToEndpoint"].get<bool>()) {
+                             publisher = std::make_shared<FailablePublisher>(
+                                 std::make_shared<absmartly::DefaultContextPublisher>(client));
+                             sdk_config.context_event_publisher = publisher;
+                         }
                          if (payload_throttle > 0) {
                              // Return before the data arrives: the context stays
                              // not-ready until the delayed SDK fetch resolves
-                             // (is_ready() picks it up). Refresh uses the
-                             // undelayed SDK provider.
-                             DeferredContextDataProvider deferred(provider, payload_throttle);
-                             ctx = std::make_unique<absmartly::Context>(
-                                 config, deferred.get_context_data(), collector, publisher, provider);
-                         } else {
-                             absmartly::SDKConfig sdk_config;
-                             sdk_config.client = client;
-                             sdk_config.context_data_provider = provider;
-                             sdk_config.context_event_handler = collector;
-                             sdk_config.context_event_publisher = publisher;
-                             auto sdk = absmartly::SDK::create(std::move(sdk_config));
-                             ctx = sdk->create_context(config);
+                             // (is_ready() picks it up). Refresh is not delayed.
+                             provider = std::make_shared<DeferredContextDataProvider>(provider, payload_throttle);
+                         }
+                         sdk_config.context_data_provider = provider;
+                         auto sdk = absmartly::SDK::create(std::move(sdk_config));
+                         ctx = sdk->create_context(config);
+                         if (payload_throttle <= 0) {
                              ctx->wait_until_ready();
                          }
                      } else if (body.contains("failLoad") && body["failLoad"].is_boolean() && body["failLoad"].get<bool>()) {
-                         auto promise = std::make_shared<std::promise<absmartly::ContextData>>();
-                         ctx = std::make_unique<absmartly::Context>(config, promise->get_future(), collector, publisher);
-                         promise->set_exception(std::make_exception_ptr(std::runtime_error("Context load failed")));
+                         sdk_config.context_data_provider =
+                             std::make_shared<FailingContextDataProvider>("Context load failed");
+                         auto sdk = absmartly::SDK::create(std::move(sdk_config));
+                         ctx = sdk->create_context(config);
                          // Resolve the load now, so the failed state, ready_error
                          // and the `error` event all exist before we respond.
                          ctx->wait_until_ready();
@@ -584,7 +708,10 @@ int main() {
                          if (body.contains("data")) {
                              context_data = parse_context_data(body["data"]);
                          }
-                         ctx = std::make_unique<absmartly::Context>(config, context_data, collector, publisher);
+                         sdk_config.context_data_provider = std::make_shared<FailingContextDataProvider>(
+                             "cpp-wrapper: an inline-data context has no endpoint to refresh from");
+                         auto sdk = absmartly::SDK::create(std::move(sdk_config));
+                         ctx = sdk->create_context_with(config, std::move(context_data));
                      }
 
                      bool ready = ctx->is_ready();

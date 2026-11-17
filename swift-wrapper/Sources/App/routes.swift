@@ -77,7 +77,10 @@ class EventCollector: ContextEventLogger {
                 "data": convertGoalToDict(goal),
                 "timestamp": timestamp
             ]
-        case .finalize:
+        case .close:
+            // The swift-sdk's real enum case is `.close` (`.finalize` is only a
+            // static alias and cannot be matched as a switch pattern). Emit the
+            // cross-SDK event name "finalize", like the other wrappers.
             eventRecord = [
                 "type": "finalize",
                 "data": NSNull(),
@@ -167,6 +170,7 @@ class EventCollector: ContextEventLogger {
         dict["fullOn"] = exposure.fullOn
         dict["custom"] = exposure.custom
         dict["audienceMismatch"] = exposure.audienceMismatch
+        dict["ruleOverride"] = exposure.ruleOverride
         return dict
     }
 
@@ -367,8 +371,31 @@ class PayloadStore {
     }
 }
 
+// Locked like PayloadStore.
+class CapturedRequests {
+    private var requests: [String: [[String: Any]]] = [:]
+    private let lock = NSLock()
+
+    func record(_ req: Request, payloadId: String) {
+        var headers: [String: String] = [:]
+        for (name, value) in req.headers {
+            headers[name] = headers[name].map { "\($0), \(value)" } ?? value
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        requests[payloadId, default: []].append(["method": req.method.rawValue, "headers": headers])
+    }
+
+    func list(_ payloadId: String) -> [[String: Any]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests[payloadId] ?? []
+    }
+}
+
 let contextManager = ContextManager()
 let payloadStore = PayloadStore()
+let capturedRequests = CapturedRequests()
 
 let payloadNotFoundBody: [String: Any] = ["error": "payload not found"]
 
@@ -444,7 +471,19 @@ func routes(_ app: VaporApplication) throws {
             "globalCustomFieldKeys": true,
             "getUnits": true,
             "getAttributes": true,
-            "readyError": true
+            "readyError": true,
+            "numericUnitIds": true,
+            "publishThrowsOnFailure": true,
+            "trackRejectsNonObjectProperties": true,
+            "refreshNoOpOnFailedContext": true,
+            "throwsOnMisuse": false,
+            "singleFinalizeEvent": true,
+            "semverNumericOperands": true,
+            "assignmentRules": true,
+            "semverOperators": true,
+            "xAgentHeader": true,
+            "clientRejectsBlankApplication": true,
+            "clientAcceptsBlankApplication": false
         ])
     }
 
@@ -481,7 +520,24 @@ func routes(_ app: VaporApplication) throws {
         return HTTPResponse(status: .ok, body: .init(data: data))
     }
     app.get("context_payload", ":payloadId", use: servePayload)
-    app.get("context_payload", ":payloadId", "context", use: servePayload)
+    app.get("context_payload", ":payloadId", "context") { req async throws -> HTTPResponse in
+        if let payloadId = req.parameters.get("payloadId") {
+            capturedRequests.record(req, payloadId: payloadId)
+        }
+        return try await servePayload(req)
+    }
+
+    // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+    app.on(.PUT, "context_payload", ":payloadId", "context", body: .collect(maxSize: "10mb")) { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        capturedRequests.record(req, payloadId: payloadId)
+        return try reply([:])
+    }
+
+    app.get("context_payload", ":payloadId", "requests") { req -> HTTPResponse in
+        guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
+        return try reply(["requests": capturedRequests.list(payloadId)])
+    }
 
     app.post("context") { req async throws -> HTTPResponse in
         let request = try requestBody(req)
@@ -516,9 +572,36 @@ func routes(_ app: VaporApplication) throws {
             return try contextResult(contextId, context, eventCollector)
         }
 
-        let publisher = CustomPublisher()
+        // publishToEndpoint: the SDK's own DefaultContextPublisher (wired in below
+        // once the endpoint's client exists) sends PUT {endpoint}/context.
+        let publishToEndpoint = request["publishToEndpoint"].boolValue && request["endpoint"].string != nil
+        var publisher = CustomPublisher()
         let config = makeConfig(request, logger: eventCollector)
         let payloadThrottle = request["options"]["payloadThrottle"].intValue
+        // Optional client config (the 2026-11 system-attributes round): a scenario can
+        // set the application/environment names so audiences can target them. When the
+        // `client` field is omitted, the fixed test-app/test-env defaults keep every
+        // pre-2026-11 scenario unchanged. An explicitly supplied application is
+        // forwarded as-is so the SDK validates it; only an omitted one falls back to
+        // the default. swift-sdk's DefaultClient throws on an empty environment, so
+        // the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        let clientApplication: String
+        if request["client"]["application"].exists() {
+            guard let value = request["client"]["application"].string else {
+                return try errorReply("Invalid 'application' in client argument")
+            }
+            clientApplication = value
+        } else {
+            clientApplication = "test-app"
+        }
+        let clientEnvironment: String
+        if let value = request["client"]["environment"].string, !value.isEmpty {
+            clientEnvironment = value
+        } else if request["client"].exists() && request["client"].type != .null {
+            return try errorReply("client.environment is required by swift-sdk; no-environment contexts are not supported")
+        } else {
+            clientEnvironment = "test-env"
+        }
         let context: Context
         let sdk: ABSmartlySDK
 
@@ -532,17 +615,37 @@ func routes(_ app: VaporApplication) throws {
             } catch {
                 return try errorReply("Invalid context data: \(error.localizedDescription)")
             }
+            // Honour the requested client config for inline-data contexts too, so
+            // an audience on application/environment matches here as it does in
+            // endpoint mode (finding 1). The SDK reads these names from the config
+            // client; inline data never fetches, so the endpoint is a dummy.
+            let dataClient: DefaultClient
+            do {
+                dataClient = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication,
+                    endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
-                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: nil))
+                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: dataClient))
             context = sdk.createContextWithData(config: config, contextData: contextData)
         } else if var endpoint = request["endpoint"].string {
             if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {
                 endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
             }
             // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: endpoint, environment: "test-env"))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
+            if publishToEndpoint {
+                publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
+            }
             let provider: ContextDataProvider? = payloadThrottle > 0
                 ? DeferredContextDataProvider(inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
                 : nil
@@ -555,8 +658,13 @@ func routes(_ app: VaporApplication) throws {
             }
         } else if request["failLoad"].boolValue {
             // A real fetch failure: the SDK's own client against a port nothing listens on.
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: "test-api-key", application: "test-app", endpoint: "http://127.0.0.1:1", environment: "test-env"))
+            let client: DefaultClient
+            do {
+                client = try DefaultClient(config: ClientConfig(
+                    apiKey: "test-api-key", application: clientApplication, endpoint: "http://127.0.0.1:1", environment: clientEnvironment))
+            } catch {
+                return try errorReply(error.localizedDescription)
+            }
             sdk = try ABSmartlySDK(config: ABSmartlyConfig(
                 contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
                 variableParser: nil, scheduler: nil, client: client))

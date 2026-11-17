@@ -32,7 +32,19 @@ defmodule ElixirWrapper.Router do
       globalCustomFieldKeys: true,
       getUnits: true,
       getAttributes: true,
-      readyError: true
+      readyError: true,
+      numericUnitIds: true,
+      publishThrowsOnFailure: true,
+      trackRejectsNonObjectProperties: true,
+      refreshNoOpOnFailedContext: true,
+      throwsOnMisuse: true,
+      singleFinalizeEvent: true,
+      semverNumericOperands: true,
+      assignmentRules: true,
+      semverOperators: true,
+      xAgentHeader: true,
+      clientRejectsBlankApplication: false,
+      clientAcceptsBlankApplication: true
     })
   end
 
@@ -70,17 +82,37 @@ defmodule ElixirWrapper.Router do
         attributes = params["attributes"] || %{}
         create_context_e2e(conn, units, attributes)
 
+      %{"client" => %{"application" => app}} when not is_binary(app) ->
+        send_error(conn, 400, "Invalid 'application' in client argument")
+
+      # elixir-sdk requires a non-empty environment: a supplied client without one
+      # fails closed instead of evaluating with a placeholder an audience could match.
+      %{"client" => client}
+      when is_map(client) and
+             (not is_map_key(client, "environment") or
+                not is_binary(:erlang.map_get("environment", client)) or
+                :erlang.map_get("environment", client) == "") ->
+        send_error(conn, 400, "client.environment is required by elixir-sdk; no-environment contexts are not supported")
+
       %{"data" => data, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_sync(conn, data, units, options)
+        create_context_sync(conn, data, units, options, params["client"])
 
       %{"failLoad" => true, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_failed(conn, units, options)
+        create_context_failed(conn, units, options, params["client"])
 
       %{"endpoint" => endpoint, "units" => units} = params ->
         options = params["options"] || %{}
-        create_context_async(conn, endpoint, units, options)
+
+        create_context_async(
+          conn,
+          endpoint,
+          units,
+          options,
+          params["client"],
+          params["publishToEndpoint"] == true
+        )
 
       _ ->
         send_error(conn, 400, "Missing required parameters")
@@ -102,6 +134,7 @@ defmodule ElixirWrapper.Router do
 
   get "/context_payload/:payload_id/context" do
     payload_id = conn.path_params["payload_id"]
+    capture_request(conn, payload_id)
 
     case ContextStore.get_payload(payload_id) do
       {:ok, data} ->
@@ -110,6 +143,16 @@ defmodule ElixirWrapper.Router do
       {:error, _} ->
         send_error(conn, 404, "Payload not found")
     end
+  end
+
+  # Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
+  put "/context_payload/:payload_id/context" do
+    capture_request(conn, conn.path_params["payload_id"])
+    send_json(conn, 200, %{})
+  end
+
+  get "/context_payload/:payload_id/requests" do
+    send_json(conn, 200, %{requests: ContextStore.captured_requests(conn.path_params["payload_id"])})
   end
 
   post "/context/:context_id/setUnit" do
@@ -393,7 +436,7 @@ defmodule ElixirWrapper.Router do
     DynamicSupervisor.start_child(ABSmartly.ContextSupervisor, child_spec)
   end
 
-  defp create_context_sync(conn, data, units, options) do
+  defp create_context_sync(conn, data, units, options, client) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
@@ -402,11 +445,16 @@ defmodule ElixirWrapper.Router do
 
     context_data = ABSmartly.Types.ContextData.from_map(data)
 
+    # Honour the requested client config for inline-data contexts too, so an
+    # audience on application/environment matches here as it does in endpoint
+    # mode (finding 1). Defaults keep every pre-2026-11 scenario unchanged.
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: "http://localhost:3000",
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
+      application: client_application,
+      environment: client_environment,
       publisher: ElixirWrapper.ArmablePublisher
     }
 
@@ -438,7 +486,7 @@ defmodule ElixirWrapper.Router do
     end
   end
 
-  defp create_context_async(conn, endpoint, units, options) do
+  defp create_context_async(conn, endpoint, units, options, client, publish_to_endpoint) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
@@ -448,12 +496,24 @@ defmodule ElixirWrapper.Router do
     payload_throttle = options["payloadThrottle"] || 0
     translated_endpoint = translate_endpoint(endpoint)
 
+    # Optional client config (the 2026-11 system-attributes round): a scenario can
+    # set the application/environment names so audiences can target them. When the
+    # `client` field is omitted, the fixed test-app/test defaults keep every
+    # pre-2026-11 scenario unchanged. elixir-sdk requires a non-empty environment, so
+    # the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: translated_endpoint,
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
-      publisher: ElixirWrapper.ArmablePublisher
+      application: client_application,
+      environment: client_environment,
+      # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
+      publisher:
+        if(publish_to_endpoint,
+          do: ElixirWrapper.ArmableE2EPublisher,
+          else: ElixirWrapper.ArmablePublisher
+        )
     }
 
     context_options =
@@ -512,18 +572,20 @@ defmodule ElixirWrapper.Router do
     end
   end
 
-  defp create_context_failed(conn, units, options) do
+  defp create_context_failed(conn, units, options, client) do
     collector = EventCollector.new()
 
     event_handler = fn event_type, event_data ->
       EventCollector.push(collector, event_type, event_data)
     end
 
+    {client_application, client_environment} = client_names(client)
+
     sdk_config = %ABSmartly.Types.SDKConfig{
       endpoint: "http://localhost:3000",
       api_key: "test-key",
-      application: "test-app",
-      environment: "test",
+      application: client_application,
+      environment: client_environment,
       publisher: ElixirWrapper.ArmablePublisher
     }
 
@@ -628,8 +690,41 @@ defmodule ElixirWrapper.Router do
     end
   end
 
+  # Records the method and every request header as received (Plug lower-cases
+  # header names).
+  defp capture_request(conn, payload_id) do
+    headers =
+      Enum.reduce(conn.req_headers, %{}, fn {name, value}, acc ->
+        Map.update(acc, name, [value], &(&1 ++ [value]))
+      end)
+
+    ContextStore.capture_request(payload_id, %{method: conn.method, headers: headers})
+  end
+
   defp translate_endpoint(endpoint) do
     String.replace(endpoint, ~r/localhost:\d+/, "127.0.0.1:3000")
+  end
+
+  # Resolve the client application/environment from the optional `client` field on
+  # POST /context. Defaults keep every pre-2026-11 scenario unchanged. An explicitly
+  # supplied application is forwarded as-is so the SDK validates it; only an omitted
+  # one falls back to "test-app".
+  defp client_names(nil), do: {"test-app", "test"}
+
+  defp client_names(client) when is_map(client) do
+    application =
+      case client do
+        %{"application" => app} when is_binary(app) -> app
+        _ -> "test-app"
+      end
+
+    environment =
+      case client["environment"] do
+        env when is_binary(env) and env != "" -> env
+        _ -> "test"
+      end
+
+    {application, environment}
   end
 
   defp with_context_action(conn, func) do

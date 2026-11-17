@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **222 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **279 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -52,6 +52,52 @@ across languages.
   a second `finalize()` publishes them; scenario 229 (`readyError`) checks that
   `refresh()` on a context whose load failed is a successful no-op (no fetch,
   no event, still failed).
+
+  Scenarios 230-253 pin the
+  2026-11 SDK round's reference-aligned behaviours (see
+  [docs/sdk-round-2026-11-conformance.md](docs/sdk-round-2026-11-conformance.md)):
+  230-239 (`requires: assignmentRules`) cover custom assignment rules — a
+  matching rule wins with a `ruleOverride:true`/`assigned:false` exposure, is
+  beaten only by an override, takes precedence over audience targeting and
+  custom assignments, serves variable values, out-of-range rule variants fall
+  through without trying later rules, and a rule variant for an experiment
+  removed on refresh is rebuilt rather than served stale (javascript-sdk#67).
+  240-245 (`requires: semverOperators`) cover the `semver_*` audience operators
+  (numeric, not lexicographic, comparison). 246-247 (ungated) pin audience
+  re-evaluation after `setAttribute`: a flipped strict audience reassigns the
+  unit and queues a fresh exposure. 248-253 (the §5 system-attributes group;
+  248-252 ungated, 253 `requires: clientNoEnvironment`) pin that every SDK
+  always evaluates audiences and rule conditions with the client's configured
+  `application` and `environment` names (no opt-in), user attributes overlay
+  the system values, an unconfigured name is left out of the map (the
+  no-environment case, 253), and a variable read goes through the matched
+  variant too. The SDKs also drop `app_version` from evaluation; these
+  scenarios do not exercise that, the SDKs' own unit tests do. The scenarios set
+  the client application/environment through the optional `client` field on
+  `POST /context` (see [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md)). With the
+  parity pins every SDK requires the rules and semver capabilities, the
+  ungated scenarios (246-252) run on every SDK, and 253 runs on the SDKs that
+  advertise `clientNoEnvironment`.
+
+  Scenarios 300-332 pin the 2026-11 feature-parity round, where every SDK
+  ports assignment rules, the `semver_*` operators and a versioned `X-Agent`
+  (see [docs/feature-parity-conformance.md](docs/feature-parity-conformance.md)):
+  300-314 (`requires: assignmentRules`) cover split rules hashed with the
+  experiment seed, environment scoping, first match, precedence over holdouts,
+  traffic and full-on, the missing-unit split, malformed/wrong-count splits and
+  the percentage tolerance; 315-319 (`requires: semverOperators`) cover each
+  operator, pre-release ordering and invalid versions; 320-321
+  (`requires: xAgentHeader`) check the SDK's own context fetch and publish
+  requests carry `absmartly-<lang>-sdk/<version>`; 322-323 check a wrapper
+  forwards an explicitly blank `client.application` instead of repairing it
+  (`clientRejectsBlankApplication` / `clientAcceptsBlankApplication`, one per
+  SDK); 324-326 (`requires: assignmentRules`) check rule conditions read the
+  configured application/environment, with a user-set value winning, while a
+  rule's environment scope always uses the configured environment; 327-330 check
+  split-percentage parsing, unknown or malformed rules, rule changes on refresh
+  and invalid rules JSON; 331-332 check semver operand normalisation
+  (332 also `requires: semverNumericOperands`). With the parity pins in `sdk-branches.sh` every SDK requires the rules
+  and semver capabilities.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -186,7 +232,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 222-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 279-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -210,7 +256,7 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 222 scenarios
+├── test_scenarios_complete.json  # 279 scenarios
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be
 │                                 #   diffed against the canonical file above

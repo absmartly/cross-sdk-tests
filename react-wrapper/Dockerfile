@@ -33,6 +33,7 @@ RUN rm -rf /react-sdk/node_modules/react /react-sdk/node_modules/react-dom && \
 
 COPY cross-sdk-tests/react-wrapper/server.js ./
 COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
+COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 
 EXPOSE 3000
 
