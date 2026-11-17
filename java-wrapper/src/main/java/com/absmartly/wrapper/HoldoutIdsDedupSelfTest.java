@@ -29,9 +29,11 @@ import static com.absmartly.wrapper.HoldoutProbeSupport.verifyTreatmentAndExposu
 final class HoldoutIdsDedupSelfTest {
     private HoldoutIdsDedupSelfTest() {}
 
-    private static final String UNIT_TYPE = "session_id";
-    // seedHi=1/seedLo=1 over [0.5, 0.5] puts this unit in arm 1 (not held out).
-    private static final String UID = "svk-unit-1";
+    // None of the holdouts holds its unit out: seedHi=1/seedLo=1 puts svk-unit-1 in arm 1 of
+    // [0.5, 0.5], and seedLo 2 and 4 do the same for svk-user-1. The non-adjacent repeat is on its own
+    // unit type so its holdouts' exposures are not already spent by the adjacent one.
+    private static final String SESSION = "session_id";
+    private static final String USER = "user_id";
     private static final String[] TWO_VARIANTS = {"A", "B"};
 
     private static volatile Boolean cachedResult;
@@ -63,14 +65,21 @@ final class HoldoutIdsDedupSelfTest {
         }
     }
 
-    private static ContextData contextData(Field holdoutIdsField, Field holdoutsField, int[] holdoutIds)
-            throws Exception {
+    private static ContextData contextData(Field holdoutIdsField, Field holdoutsField, int[] adjacent,
+            int[] apart) throws Exception {
         Class<?> holdoutType = holdoutsField.getType().getComponentType();
         ContextData data = new ContextData();
-        data.experiments = new Experiment[] {buildExperiment(801, "dedup_covered", UNIT_TYPE, 0, 0,
-            new double[] {0, 1}, 0, TWO_VARIANTS, holdoutIds, holdoutIdsField)};
-        Object holdouts = Array.newInstance(holdoutType, 1);
-        Array.set(holdouts, 0, buildHoldoutEntry(holdoutType, 901, "dedup_holdout", UNIT_TYPE, 1, 1,
+        data.experiments = new Experiment[] {
+            buildExperiment(801, "dedup_covered", SESSION, 0, 0, new double[] {0, 1}, 0, TWO_VARIANTS, adjacent,
+                holdoutIdsField),
+            buildExperiment(802, "dedup_apart", USER, 0, 0, new double[] {0, 1}, 0, TWO_VARIANTS, apart,
+                holdoutIdsField)};
+        Object holdouts = Array.newInstance(holdoutType, 3);
+        Array.set(holdouts, 0, buildHoldoutEntry(holdoutType, 901, "dedup_holdout", SESSION, 1, 1,
+            new double[] {0.5, 0.5}, "full", TWO_VARIANTS));
+        Array.set(holdouts, 1, buildHoldoutEntry(holdoutType, 902, "dedup_apart_a", USER, 1, 2,
+            new double[] {0.5, 0.5}, "full", TWO_VARIANTS));
+        Array.set(holdouts, 2, buildHoldoutEntry(holdoutType, 903, "dedup_apart_b", USER, 1, 4,
             new double[] {0.5, 0.5}, "full", TWO_VARIANTS));
         holdoutsField.set(data, holdouts);
         return data;
@@ -93,19 +102,26 @@ final class HoldoutIdsDedupSelfTest {
             .setContextEventHandler((context, event) -> CompletableFuture.completedFuture(null))
             .setContextEventLogger(logger));
         com.absmartly.sdk.Context context = sdk.createContextWith(
-            ContextConfig.create().setUnit(UNIT_TYPE, UID).setPublishDelay(-1).setRefreshInterval(0),
-            contextData(holdoutIdsField, holdoutsField, new int[] {901, 901}));
+            ContextConfig.create().setUnit(SESSION, "svk-unit-1").setUnit(USER, "svk-user-1")
+                .setPublishDelay(-1).setRefreshInterval(0),
+            contextData(holdoutIdsField, holdoutsField, new int[] {901, 901}, new int[] {902, 903, 902}));
         context.waitUntilReady();
 
         String prefix = "[holdoutIdsDedup probe]";
         try {
-            if (!verifyTreatmentAndExposures(prefix, "duplicate ids", context, exposures, "dedup_covered", 1,
+            if (!verifyTreatmentAndExposures(prefix, "adjacent duplicate", context, exposures, "dedup_covered", 1,
                     new ProbeExposure(801, "dedup_covered", 1),
                     new ProbeExposure(901, "dedup_holdout", 1))) return false;
-            provider.setNextData(contextData(holdoutIdsField, holdoutsField, new int[] {901}));
+            if (!verifyTreatmentAndExposures(prefix, "non-adjacent duplicate", context, exposures, "dedup_apart", 1,
+                    new ProbeExposure(802, "dedup_apart", 1),
+                    new ProbeExposure(902, "dedup_apart_a", 1),
+                    new ProbeExposure(903, "dedup_apart_b", 1))) return false;
+            provider.setNextData(contextData(holdoutIdsField, holdoutsField, new int[] {901}, new int[] {902, 903}));
             context.refresh();
-            if (!verifyTreatmentAndExposures(prefix, "refresh dropping the duplicate", context, exposures,
+            if (!verifyTreatmentAndExposures(prefix, "refresh dropping the adjacent duplicate", context, exposures,
                     "dedup_covered", 1)) return false;
+            if (!verifyTreatmentAndExposures(prefix, "refresh dropping the non-adjacent duplicate", context,
+                    exposures, "dedup_apart", 1)) return false;
         } finally {
             context.close();
         }

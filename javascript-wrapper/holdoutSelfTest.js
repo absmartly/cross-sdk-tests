@@ -656,22 +656,17 @@ async function runHoldoutArmsBattery() {
 // experiment keeps its exposure state and re-exposes nothing. Gated on the base battery.
 async function runHoldoutIdsDedupBattery() {
   const prefix = '[holdoutIdsDedup probe]';
-  const UID = 'svk-unit-1';
-  const experiment = (holdoutIds) => ({
-    ...buildExperiment({
-      id: 801,
-      name: 'dedup_covered',
-      unitType: 'session_id',
-      seedHi: 0,
-      seedLo: 0,
-      split: [0, 1],
-      fullOnVariant: 0,
-      variantNames: ['A', 'B'],
-      holdoutIds,
-    }),
+  const experiment = (id, name, unitType, holdoutIds) =>
+    buildExperiment({ id, name, unitType, seedHi: 0, seedLo: 0, split: [0, 1], fullOnVariant: 0, variantNames: ['A', 'B'], holdoutIds });
+  const holdout = (id, name, unitType, seedLo) => ({ id, name, unitType, iteration: 1, seedHi: 1, seedLo, split: [0.5, 0.5] });
+  // None of these holds its unit out: seedHi=1/seedLo=1 puts svk-unit-1 in arm 1 of [0.5, 0.5], and
+  // seedLo 2 and 4 do the same for svk-user-1. The non-adjacent repeat is on its own unit type so
+  // its holdouts' exposures are not already spent by the adjacent one.
+  const holdouts = [holdout(901, 'dedup_holdout', 'session_id', 1), holdout(902, 'dedup_apart_a', 'user_id', 2), holdout(903, 'dedup_apart_b', 'user_id', 4)];
+  const contextData = (adjacent, apart) => ({
+    experiments: [experiment(801, 'dedup_covered', 'session_id', adjacent), experiment(802, 'dedup_apart', 'user_id', apart)],
+    holdouts,
   });
-  // seedHi=1/seedLo=1 over [0.5, 0.5] puts svk-unit-1 in arm 1 (not held out).
-  const holdouts = [{ id: 901, name: 'dedup_holdout', unitType: 'session_id', iteration: 1, seedHi: 1, seedLo: 1, split: [0.5, 0.5] }];
   let next = null;
   class Provider extends absmartly.ContextDataProvider {
     getContextData() {
@@ -692,21 +687,31 @@ async function runHoldoutIdsDedupBattery() {
     },
   });
   const context = sdk.createContextWith(
-    { units: { session_id: UID } },
-    { experiments: [experiment([901, 901])], holdouts },
+    { units: { session_id: 'svk-unit-1', user_id: 'svk-user-1' } },
+    contextData([901, 901], [902, 903, 902]),
     { publishDelay: -1, refreshPeriod: 0 }
   );
   await context.ready();
   if (
-    !verifyTreatmentAndExposures(prefix, 'duplicate ids', context, exposureLog, 'dedup_covered', 1, [
+    !verifyTreatmentAndExposures(prefix, 'adjacent duplicate', context, exposureLog, 'dedup_covered', 1, [
       { id: 801, name: 'dedup_covered', variant: 1 },
       { id: 901, name: 'dedup_holdout', variant: 1 },
     ])
   )
     return false;
-  next = { experiments: [experiment([901])], holdouts };
+  if (
+    !verifyTreatmentAndExposures(prefix, 'non-adjacent duplicate', context, exposureLog, 'dedup_apart', 1, [
+      { id: 802, name: 'dedup_apart', variant: 1 },
+      { id: 902, name: 'dedup_apart_a', variant: 1 },
+      { id: 903, name: 'dedup_apart_b', variant: 1 },
+    ])
+  )
+    return false;
+  next = contextData([901], [902, 903]);
   await context.refresh();
-  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the duplicate', context, exposureLog, 'dedup_covered', 1, []))
+  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the adjacent duplicate', context, exposureLog, 'dedup_covered', 1, []))
+    return false;
+  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the non-adjacent duplicate', context, exposureLog, 'dedup_apart', 1, []))
     return false;
   console.log(`${prefix} behavioral self-test PASSED`);
   return true;
