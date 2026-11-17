@@ -128,6 +128,11 @@ Merge order:
 A rebase of a pinned open branch changes what CI tests without a change here, so
 re-run CI after any force-push to those four branches.
 
+The python3-sdk holdouts pin follows the same rule: keep python3-sdk's
+`feat/holdouts` branch (delete-branch-on-merge **off** for python3-sdk#17) until a
+follow-up PR here re-pins python3-sdk to `main` and its lane is green; re-run
+this suite after any push to that branch.
+
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
