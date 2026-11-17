@@ -178,8 +178,9 @@ Future<bool> _holdoutsBattery() async {
     'experiments': [
       _experiment(301, 'probe_a_covered', s, [0.5, 0.5], 0, ['A', 'B'], [401]),
       _experiment(302, 'probe_b_covered', b, [0.5, 0.5], 0, ['A', 'B'], [402]),
+      // Listed high id first: exposures still follow id order (JS sorts).
       _experiment(
-          304, 'probe_c_union', s, [0.5, 0.5], 0, ['A', 'B'], [404, 405]),
+          304, 'probe_c_union', s, [0.5, 0.5], 0, ['A', 'B'], [405, 404]),
       _experiment(305, 'probe_d_covered', s, [0.5, 0.5], 0, ['A', 'B'], [406]),
       _experiment(
           306, 'probe_d_uncovered_sibling', s, [0.5, 0.5], 0, ['A', 'B'], null),
