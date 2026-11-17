@@ -42,7 +42,7 @@ import generate_sdk_round_2026_11_scenarios as round2611
 import scenario_groups
 from generate_sdk_round_2026_11_scenarios import (
     PENDING, SYSATTR_APP, SYSATTR_ENV, attribute, audience_filter, custom_assignment, experiment, override, peek,
-    rules, treatment, variable_value,
+    refresh, rules, treatment, variable_value,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -380,6 +380,64 @@ def rules_system_attributes_specs():
     ]
 
 
+def rules_robustness_specs():
+    """Rule data the backend may change or extend: unknown rule types and malformed rule fields are
+    skipped for the next rule, invalid rules JSON stays isolated to its experiment, and a rule change
+    on refresh re-resolves the assignment. Appended after the other parity groups."""
+    fallback = {"name": "fallback", "type": "assign", "variant": 0}
+    specs = []
+    malformed = (("unknown-type", {"name": "future", "type": "pin", "variant": 1}),
+                 ("fractional-variant", {"name": "fraction", "type": "assign", "variant": 1.5}),
+                 ("string-environments", {"name": "scoped", "type": "assign", "variant": 1,
+                                          "environments": "production"}))
+    exps, steps = [], []
+    for i, (label, bad) in enumerate(malformed):
+        name = f"exp_rules_skip_{label.replace('-', '_')}"
+        exps.append(experiment(487 + i, name, assignment_rules=rules(bad, fallback)))
+        steps.append(treatment(name))
+    steps.append(PENDING)
+    specs.append(spec(
+        "Unknown Rule Types And Malformed Rule Fields Are Skipped For The Next Rule",
+        "A rule of an unknown type ('pin', carrying a variant), an assign rule with a fractional "
+        "variant (1.5), and a rule whose environments is a string rather than a list are each "
+        "skipped, and the next rule (assign variant 0) wins with ruleOverride:true. A future rule "
+        "type must never be served as an assign rule.",
+        exps, steps, client={"application": "parity-app", "environment": "parity-env"},
+        requires=[RULES_CAPABILITY]))
+
+    matching = rules({"name": "a", "type": "assign", "variant": 0})
+    not_matching = rules({"name": "a", "type": "assign", "variant": 0,
+                          "conditions": {"eq": [{"var": "country"}, {"value": "US"}]}})
+    changed = experiment(492, "exp_rules_refresh_changed", assignment_rules=matching)
+    dropped = experiment(493, "exp_rules_refresh_dropped", assignment_rules=matching)
+    after_changed = experiment(492, "exp_rules_refresh_changed", assignment_rules=not_matching)
+    after_dropped = dict(experiment(493, "exp_rules_refresh_dropped"))
+    after_dropped.pop("assignmentRules", None)
+    specs.append(spec(
+        "A Rule Changed Or Removed On Refresh Re-Resolves The Assignment",
+        "Both experiments start with a matching assign-0 rule (variant 0, ruleOverride:true). A "
+        "refresh changes the first experiment's rule to one whose condition no longer matches and "
+        "removes the second experiment's rules: each now gets its normal variant 1 with a fresh "
+        "exposure (ruleOverride:false) instead of the stale rule variant.",
+        [changed, dropped],
+        [treatment("exp_rules_refresh_changed"), treatment("exp_rules_refresh_dropped"),
+         refresh({"experiments": [after_changed, after_dropped]}),
+         treatment("exp_rules_refresh_changed"), treatment("exp_rules_refresh_dropped"), PENDING],
+        requires=[RULES_CAPABILITY]))
+
+    bad = experiment(494, "exp_rules_invalid_json")
+    bad["assignmentRules"] = "{not json"
+    specs.append(spec(
+        "Invalid Assignment Rules JSON Stays Isolated To Its Experiment",
+        "An experiment whose assignmentRules is not valid JSON gets its normal assignment (variant 1, "
+        "ruleOverride:false), and the next experiment's valid assign-0 rule still applies: one bad "
+        "rules string never fails the context or other experiments.",
+        [bad, experiment(495, "exp_rules_after_invalid", assignment_rules=matching)],
+        [treatment("exp_rules_invalid_json"), treatment("exp_rules_after_invalid"), PENDING],
+        requires=[RULES_CAPABILITY]))
+    return specs
+
+
 def rules_split_parsing_specs():
     """Split percentages are parsed like JS parseFloat: a numeric prefix counts and trailing text is
     ignored. Appended after the other parity groups so earlier numbers stay put."""
@@ -469,6 +527,17 @@ def semver_specs():
              ("semver_lte", "1.0.0", ""), ("semver_gt", 2, "1.9.9"),
              ("semver_gt", "abc", "1.0.0"), ("semver_lt", "abc", "1.0.0")], 540),
     ]
+
+
+def semver_coercion_specs():
+    """Operand coercion the reference pins: numbers are converted like JS toFixed(15) with trailing
+    zeros trimmed (so 1e-7 is 0.0000001, not '1e-7'), and leading zeros in a numeric identifier are
+    stripped. Appended after the other parity groups."""
+    return [semver_case_spec(
+        "Numeric Operands And Leading Zeros Normalize Like The Reference",
+        "A numeric attribute is compared as its fixed-point string (1e-7 equals 0.0000001), and "
+        "leading zeros in numeric identifiers are ignored (01.0.0 equals 1.0.0).",
+        [("semver_eq", 1e-7, "0.0000001"), ("semver_eq", "01.0.0", "1.0.0")], 550)]
 
 
 # ---------------------------------------------------------------------------
@@ -626,6 +695,11 @@ def build_scenario(s, ran, number, marker, strip_rule_override):
                   "expect": {"result": ran["ready"],
                              "events": round2611.ready_events(ran["readyEvents"])}}]
     for (action, params), got in zip(s["steps"], ran["steps"]):
+        if action == "refresh":
+            out_steps.append({"action": action, "params": params,
+                              "expect": {"result": got["result"],
+                                         "events": round2611.refresh_events(got["events"])}})
+            continue
         events = got["events"]
         for event in events:
             if event["type"] != "exposure":
@@ -668,11 +742,13 @@ def build_groups():
     groups.extend(xagent_scenarios(n))
     groups.extend(client_application_scenarios(FIRST_NUMBER + len(groups)))
     n = FIRST_NUMBER + len(groups)
-    specs = rules_system_attributes_specs() + rules_split_parsing_specs()
-    for s, ran in zip(specs, run_reference(specs)):
+    later = [(s, RULES_MARKER) for s in
+             rules_system_attributes_specs() + rules_split_parsing_specs() + rules_robustness_specs()]
+    later += [(s, SEMVER_MARKER) for s in semver_coercion_specs()]
+    for (s, marker), ran in zip(later, run_reference([s for s, _ in later])):
         if len(ran["steps"]) != len(s["steps"]):
             raise SystemExit(f"{s['title']}: JS reference returned an incomplete step list")
-        groups.append(build_scenario(s, ran, n, RULES_MARKER, strip_rule_override=False))
+        groups.append(build_scenario(s, ran, n, marker, strip_rule_override=marker != RULES_MARKER))
         n += 1
     return groups
 

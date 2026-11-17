@@ -1263,7 +1263,7 @@ experiment removed from the context data on refresh is rebuilt, not served stale
 
 `assignmentRules` is `required` for every SDK in
 `orchestrator/expected-capabilities.json`, so the scenarios (230-239, 300-314,
-324-327, `requires: ["assignmentRules"]`) are what verify the behaviour: a
+324-330, `requires: ["assignmentRules"]`) are what verify the behaviour: a
 wrapper that reports `false` is a policy violation, and the scenarios still run
 and fail. A wrapper may therefore advertise it as a constant `true`. If the
 capability ever becomes a reviewed exception for some SDK again, that wrapper
@@ -1289,7 +1289,7 @@ compared numerically (so `1.10.0 > 1.9.0`, not lexicographically), and a
 pre-release ranks below its release.
 
 `semverOperators` is likewise `required` for every SDK, so the scenarios
-(240-245, 314-319, `requires: ["semverOperators"]`) verify it and a constant
+(240-245, 314-319, 331, `requires: ["semverOperators"]`) verify it and a constant
 `true` is allowed. A wrapper whose SDK lists it as a reviewed exception derives it
 from a BEHAVIORAL self-test instead: a strict audience using `semver_gt` must
 assign the experiment's variant when the attribute version is greater (numeric

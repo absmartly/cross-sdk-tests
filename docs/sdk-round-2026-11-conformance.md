@@ -126,7 +126,7 @@ re-run CI after any force-push to those four branches.
 
 ### Scenario numbering versus open PRs
 
-This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-327
+This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-331
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
 `scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
 fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
