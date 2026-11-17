@@ -941,28 +941,42 @@ class TestOrchestrator:
             )
         return negotiated, fetches
 
-    def measure_context_fetch_brotli(self, sdk_name: str, base_url: str) -> bool:
-        """contextFetchBrotli: br advertised on create and refresh, and both bodies used.
-
-        The probe payload allows br > gzip > identity (negotiation.BR_PREFERENCE),
-        so an SDK that advertises br is served br (_measured_fetches raises if
-        the server served anything else). Raises MeasurementError when
-        the probe could not measure anything (see _measured_fetches).
-        """
-        negotiated, fetches = self._measured_fetches(base_url, negotiation.BR_PREFERENCE)
+    @staticmethod
+    def _probe_report(
+        negotiated: Dict[str, Any], fetches: List[Dict[str, Any]], coding: str
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """The probe fields and failed checks both measured capabilities share; `coding` must be advertised."""
         headers = [r.get("acceptEncoding") for r in fetches]
-        served = [r.get("served") for r in fetches]
         refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
-        advertised = all(negotiation.advertises(h, "br") for h in headers)
-        # No "br not served" check: a header that advertises br (q > 0) makes br
-        # acceptable, br is first in BR_PREFERENCE, so the negotiation chooses br;
-        # anything else served already raised in _measured_fetches.
         failed_checks = [name for name, failed in (
-            ("no br advertised", not advertised),
+            (f"no {coding} advertised", not all(negotiation.advertises(h, coding) for h in headers)),
             ("refresh not fetched", not refreshed),
             ("not decoded", negotiated.get("decoded") is not True),
             ("refresh data not used", negotiated.get("refreshDecoded") is not True),
         ) if failed]
+        return {
+            "acceptEncoding": headers,
+            # Reviewers read the User-Agent per lane: it should be the SDK's own
+            # HTTP client (WRAPPER_API_SPEC: no wrapper-side fetch).
+            "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
+            "served": [r.get("served") for r in fetches],
+            "refreshFetched": refreshed,
+            "decoded": negotiated.get("decoded"),
+            "refreshDecoded": negotiated.get("refreshDecoded"),
+            "error": negotiated.get("error"),
+        }, failed_checks
+
+    def measure_context_fetch_brotli(self, sdk_name: str, base_url: str) -> bool:
+        """contextFetchBrotli: br advertised on create and refresh, and both bodies used.
+
+        The probe payload allows br > gzip > identity (negotiation.BR_PREFERENCE).
+        There is no "br not served" check: br advertised (q > 0) on that payload
+        means the negotiation chooses br, and anything else served already raised
+        MeasurementError in _measured_fetches, as does a probe that measured nothing.
+        """
+        probe, failed_checks = self._probe_report(
+            *self._measured_fetches(base_url, negotiation.BR_PREFERENCE), "br")
+        headers, served = probe["acceptEncoding"], probe["served"]
         value = not failed_checks
         # Clients may choose their Accept-Encoding by URL scheme (Node's undici
         # adds br only for https), so the evidence names the transport measured:
@@ -972,17 +986,7 @@ class TestOrchestrator:
             f"observed over {transport} Accept-Encoding {headers!r}, served {served!r}; "
             f"failed: {', '.join(failed_checks) or 'none'}"
         )
-        self.context_fetch_brotli_probe[sdk_name] = {
-            "transport": transport,
-            "acceptEncoding": headers,
-            "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
-            "served": served,
-            "refreshFetched": refreshed,
-            "decoded": negotiated.get("decoded"),
-            "refreshDecoded": negotiated.get("refreshDecoded"),
-            "error": negotiated.get("error"),
-            "contextFetchBrotli": value,
-        }
+        self.context_fetch_brotli_probe[sdk_name] = {"transport": transport, **probe, "contextFetchBrotli": value}
         print(
             f"  context fetch (br payload, over {transport}) {sdk_name}: Accept-Encoding {headers!r} -> served {served}; "
             f"contextFetchBrotli={value}"
@@ -997,15 +1001,9 @@ class TestOrchestrator:
         context server unusable, no GET /context reached it, or it served an
         encoding the negotiation would not choose).
         """
-        negotiated, fetches = self._measured_fetches(base_url, negotiation.DEFAULT_PREFERENCE)
-        headers = [r.get("acceptEncoding") for r in fetches]
-        refreshed = negotiated.get("refreshStatus") == 200 and len(fetches) >= 2
-        failed_checks = [name for name, failed in (
-            ("no gzip advertised", not all(negotiation.advertises(h, "gzip") for h in headers)),
-            ("refresh not fetched", not refreshed),
-            ("not decoded", negotiated.get("decoded") is not True),
-            ("refresh data not used", negotiated.get("refreshDecoded") is not True),
-        ) if failed]
+        probe, failed_checks = self._probe_report(
+            *self._measured_fetches(base_url, negotiation.DEFAULT_PREFERENCE), "gzip")
+        headers = probe["acceptEncoding"]
         value = not failed_checks
         self.measured_evidence.setdefault(sdk_name, {})["contextFetchCompression"] = (
             f"observed Accept-Encoding {headers!r}; failed: {', '.join(failed_checks) or 'none'}"
@@ -1039,21 +1037,12 @@ class TestOrchestrator:
                 "error": f"report-only probe failed: {str(exc) or exc.__class__.__name__}",
             }
 
-        self.context_fetch_probe[sdk_name] = {
-            "acceptEncoding": headers,
-            # Reviewers read the User-Agent per lane: it should be the SDK's own
-            # HTTP client (WRAPPER_API_SPEC: no wrapper-side fetch).
-            "userAgent": sorted({str(r.get("userAgent")) for r in fetches}),
-            "served": [r.get("served") for r in fetches],
-            "refreshFetched": refreshed,
-            "decoded": negotiated.get("decoded"),
-            "refreshDecoded": negotiated.get("refreshDecoded"),
-            "error": negotiated.get("error"),
+        probe = self.context_fetch_probe[sdk_name] = {
+            **probe,
             "advertises": {c: any(negotiation.advertises(h, c) for h in headers) for c in REPORTED_ENCODINGS},
             "contextFetchCompression": value,
             "forcedGzip": forced_report,
         }
-        probe = self.context_fetch_probe[sdk_name]
         print(
             f"  context fetch {sdk_name}: Accept-Encoding {headers!r} -> served {probe['served']}; "
             f"User-Agent {probe['userAgent']}; contextFetchCompression={value}; "
