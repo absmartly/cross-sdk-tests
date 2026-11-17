@@ -83,12 +83,18 @@ for sdk in sdks:
     if r['sdk_stats'].get(sdk, {}).get('service_failed'):
         print(f"\n{sdk}: DOWN")
         continue
-    fails = [sc['name'] for sc in r['results'] if not sc['sdks'].get(sdk, {}).get('passed', True)]
-    mark = 'PASS' if not fails else 'FAIL'
-    print(f"\n{sdk}: {total-len(fails)}/{total} {mark}")
-    for f in fails:
-        res = next(sc['sdks'][sdk] for sc in r['results'] if sc['name']==f)
+    not_passed = [(sc['name'], sc['sdks'][sdk]) for sc in r['results']
+                  if not sc['sdks'].get(sdk, {}).get('passed', True)]
+    # A harness error with no SDK failure (e.g. a context-server control call
+    # failed) is the harness's, not the SDK's: list it apart, never as a FAIL.
+    harness = [(n, res) for n, res in not_passed if res.get('harness_error') and not res.get('failures')]
+    fails = [(n, res) for n, res in not_passed if (n, res) not in harness]
+    mark = 'PASS' if not fails and not harness else ('FAIL' if fails else 'HARNESS ERROR')
+    print(f"\n{sdk}: {total-len(not_passed)}/{total} {mark}")
+    for f, res in fails:
         det = res.get('failures') or [{'error': res.get('error')}]
-        print(f"  - {f} :: {json.dumps(det[:1])[:160]}")
+        print(f"  - FAIL {f} :: {json.dumps(det[:1])[:160]}")
+    for f, res in harness:
+        print(f"  - HARNESS ERROR {f} :: {str(res['harness_error'])[:160]}")
 sys.exit(report_exit)
 PY
