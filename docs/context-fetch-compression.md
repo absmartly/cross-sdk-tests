@@ -45,7 +45,7 @@ stated.
 
 - Client: Apache httpclient5 **async** (`HttpAsyncClientBuilder`),
   `core-api/src/main/java/com/absmartly/sdk/DefaultHTTPClient.java:51`. The SDK
-  declares 5.1.3 (`core-api/build.gradle:9`). The lane runs **5.2.1**: the wrapper
+  declares 5.1.3 (`gradle/sdk-module.gradle:5`). The lane runs **5.2.1**: the wrapper
   is a Spring Boot app and Boot's dependency management pins httpclient5, as the
   User-Agent `Apache-HttpAsyncClient/5.2.1 (Java/17.0.21)` shows. An application
   without Boot gets 5.1.3. The wrapper uses the SDK's `Client`/`DefaultHTTPClient`
@@ -62,13 +62,21 @@ stated.
   and decodes them (`ContentCompressionAsyncExec.java:92-119` in 5.6.5). The 5.6
   release notes list "transparent content decompression and content compression with
   deflate, gzip, zstd (optional), and brotli (optional) codecs in the async transport".
-  5.6.5 also fixes an async Brotli decompression hang. Caveat: httpclient5 5.2+
-  needs Java 8, and java-sdk compiles with `sourceCompatibility = "1.6"`
-  (`build.gradle:40`), so the bump also needs a Java 8 floor. On 5.1.x (the
-  current Java 6/7 compatible line) the alternative is to set
-  `Accept-Encoding: gzip` in `Client.getContextData` and gunzip in `Client`
-  when `Content-Encoding: gzip`, with `java.util.zip.GZIPInputStream`. That needs
-  a `getContentEncoding` on the SDK's `HTTPClient.Response`.
+  5.6.5 also fixes an async Brotli decompression hang. Caveat, Java floor:
+  httpclient5 5.1.x needs **Java 7** (its parent pom sets
+  `maven.compiler.source`/`target` 1.7, the 5.1.3 jar's classes are class-file
+  major version 51, and the 5.1 release notes say "5.1 is going to be the last
+  release series compatible with Java 1.7"); 5.2 and later, 5.6 included, need
+  **Java 8** (1.8, major 52). java-sdk ships two artifacts from the same sources
+  and both depend on httpclient5 5.1.3 (`gradle/sdk-module.gradle:5`):
+  `core-api` (Java 8+, `targetCompatibility = "1.8"` in `core-api/build.gradle:7-8`)
+  and `core-api-java6` (described as Java 6/7, sources at 1.6 in `build.gradle:41-42`).
+  So the 5.6 bump fits `core-api` with no floor change. For `core-api-java6` it
+  raises the floor from Java 7 (5.1.x's) to Java 8, which defeats that artifact.
+  There, stay on 5.1.x (Java 7+, not Java 6) and set `Accept-Encoding: gzip` in
+  `Client.getContextData` and gunzip in `Client` when `Content-Encoding: gzip`,
+  with `java.util.zip.GZIPInputStream`. That needs a `getContentEncoding` on the
+  SDK's `HTTPClient.Response`.
 - br/zstd: not without new native dependencies (brotli4j, zstd-jni). gzip only.
 
 ## kotlin (kotlin-sdk `main` bb7181f)
