@@ -36702,7 +36702,7 @@
   },
   {
     "name": "327 - Assignment Rules - Split Percentages Parse A Numeric Prefix Like parseFloat",
-    "description": "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it and the fallback rule assigns variant 0. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
+    "description": "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it and the fallback rule assigns variant 0. 'abc/100' has no numeric prefix, so it is invalid (NaN) and the fallback assigns variant 0; a parser that maps garbage to 0 (atof, to_f) accepts it as 0/100 and assigns variant 1. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk#68).",
     "contextData": {
       "experiments": [
         {
@@ -36742,6 +36742,44 @@
           "audienceStrict": false,
           "customFieldValues": null,
           "assignmentRules": "{\"rules\":[{\"name\":\"prefix\",\"type\":\"split\",\"percentages\":\"0abc/100\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
+        },
+        {
+          "id": 496,
+          "name": "exp_rules_parse_nan",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"nan\",\"type\":\"split\",\"percentages\":\"abc/100\"},{\"name\":\"fallback\",\"type\":\"assign\",\"variant\":0}]}"
         }
       ]
     },
@@ -36771,6 +36809,10 @@
                   {
                     "id": 486,
                     "name": "exp_rules_parse_prefix"
+                  },
+                  {
+                    "id": 496,
+                    "name": "exp_rules_parse_nan"
                   }
                 ]
               }
@@ -36806,10 +36848,37 @@
         }
       },
       {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_rules_parse_nan"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 496,
+                "name": "exp_rules_parse_nan",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
         "action": "pending",
         "params": {},
         "expect": {
-          "result": 1,
+          "result": 2,
           "events": []
         }
       }

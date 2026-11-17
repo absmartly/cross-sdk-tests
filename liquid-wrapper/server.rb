@@ -450,6 +450,7 @@ post '/context' do
     failing_sdk_config.context_data_provider = FailingDataProvider.new
     failing_sdk_config.context_event_handler = publisher
     failing_sdk_config.context_event_logger = event_collector
+    failing_sdk_config.client = client
     context = ABSmartly.new(failing_sdk_config).create_context(context_config)
   elsif payload_throttle.to_i > 0
     # Delay the SDK's own fetch; the context stays not-ready until it lands.

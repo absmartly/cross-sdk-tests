@@ -448,10 +448,14 @@ def rules_split_parsing_specs():
         "Split Percentages Parse A Numeric Prefix Like parseFloat",
         "'0abc/100' parses as 0/100 (parseFloat reads the numeric prefix), so the split rule is valid "
         "and assigns variant 1 with ruleOverride:true; a parser that rejects trailing text skips it "
-        "and the fallback rule assigns variant 0.",
+        "and the fallback rule assigns variant 0. 'abc/100' has no numeric prefix, so it is invalid "
+        "(NaN) and the fallback assigns variant 0; a parser that maps garbage to 0 (atof, to_f) "
+        "accepts it as 0/100 and assigns variant 1.",
         [experiment(486, "exp_rules_parse_prefix", assignment_rules=rules(
-            {"name": "prefix", "type": "split", "percentages": "0abc/100"}, fallback))],
-        [treatment("exp_rules_parse_prefix"), PENDING],
+            {"name": "prefix", "type": "split", "percentages": "0abc/100"}, fallback)),
+         experiment(496, "exp_rules_parse_nan", assignment_rules=rules(
+             {"name": "nan", "type": "split", "percentages": "abc/100"}, fallback))],
+        [treatment("exp_rules_parse_prefix"), treatment("exp_rules_parse_nan"), PENDING],
         requires=[RULES_CAPABILITY])]
 
 

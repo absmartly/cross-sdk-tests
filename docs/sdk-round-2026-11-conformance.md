@@ -32,20 +32,23 @@ SDK's real output, not hand-written.
 
 ## New capabilities
 
-Two `requires` capabilities gate the groups so an SDK that has not implemented
-the feature on `main` or any open PR is skipped (a reviewed exception in
-`orchestrator/expected-capabilities.json`) rather than failed:
+Two `requires` capabilities gate the groups. Both are `required` for every SDK in
+`orchestrator/expected-capabilities.json`, so the gated scenarios run on every
+lane and a wrapper reporting `false` is a policy violation. A wrapper may
+advertise them as a constant `true`; javascript, the JS family and java still
+derive them from a behavioural self-test (`assignmentRulesSelfTest.js`,
+`AssignmentRulesSelfTest.java`), which `WRAPPER_API_SPEC.md` requires only of an
+SDK that lists one as a reviewed exception.
 
-| capability | meaning | advertised by |
-| --- | --- | --- |
-| `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values | javascript + react/vue2/vue3/angular (behavioral self-test in `assignmentRulesSelfTest.js`), java (`AssignmentRulesSelfTest.java`) |
-| `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent | same wrappers, same self-tests |
+| capability | meaning |
+| --- | --- |
+| `assignmentRules` | custom assignment rules: a matching rule wins with a `ruleOverride:true` exposure and serves variable values |
+| `semverOperators` | `semver_eq/gt/gte/lt/lte` audience operators, numeric & locale-independent |
 
 When this round started only **javascript-sdk** (reference) and **java-sdk**
 implemented either feature. The feature-parity round
 (`docs/feature-parity-conformance.md`) ported both to every SDK, so both
-capabilities are now `required` for every lane: a wrapper that reports `false`
-is a policy violation and the gated scenarios still run and fail.
+capabilities are now `required` for every lane.
 
 A third capability, `clientNoEnvironment`, gates only the System Attributes
 group's no-environment scenario (253):
@@ -181,7 +184,7 @@ The re-evaluation group is **ungated**: `attribute` + `treatment` are core
 actions every wrapper exposes, and every SDK in this round adopts the JS
 attribute-sequence behaviour, so the scenarios run on all SDKs.
 
-### System attributes — always-on application/environment (§5, every SDK's feat/sdk-system-attributes)
+### System attributes — always-on application/environment (§5, javascript-sdk#68 and every SDK's parity PR)
 
 Mirrors §4 tests 1, 3, 4 and 6 plus a variable read through the matched variant.
 The scenarios set the client application/environment through the optional `client`

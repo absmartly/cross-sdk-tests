@@ -709,7 +709,7 @@ int main() {
                              context_data = parse_context_data(body["data"]);
                          }
                          sdk_config.context_data_provider = std::make_shared<FailingContextDataProvider>(
-                             "Cannot refresh: no data provider configured");
+                             "cpp-wrapper: an inline-data context has no endpoint to refresh from");
                          auto sdk = absmartly::SDK::create(std::move(sdk_config));
                          ctx = sdk->create_context_with(config, std::move(context_data));
                      }

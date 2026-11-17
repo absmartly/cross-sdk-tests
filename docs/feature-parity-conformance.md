@@ -54,7 +54,7 @@ JS-family lanes list `xAgentHeader` as a reviewed exception.
 | Rule conditions read the configured `environment` and `application` (system attributes) | 324 |
 | A user-set `environment` overrides the configured one in a rule condition | 325 |
 | A rule's `environments` scope uses the configured environment, never a user-set `environment` | 326 |
-| Split percentages parse a numeric prefix like JS `parseFloat` (`0abc/100` is 0/100) | 327 |
+| Split percentages parse like JS `parseFloat`: `0abc/100` is 0/100, `abc/100` is invalid (NaN) | 327 |
 | An unknown rule type, a fractional assign variant and a string `environments` are skipped for the next rule | 328 |
 | A rule changed or removed on refresh re-resolves the assignment instead of serving the stale rule variant | 329 |
 | Invalid `assignmentRules` JSON stays isolated to its experiment | 330 |

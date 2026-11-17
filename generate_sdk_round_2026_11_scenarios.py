@@ -17,7 +17,7 @@ wrapper API can observe black-box:
   * Audience re-evaluation after setAttribute: setting an attribute that flips a strict audience
     reassigns the unit and queues a fresh exposure (go-sdk#10, php-sdk#8, ruby-sdk#39,
     python3-sdk#11 all adopt the JS attribute-sequence behaviour).
-  * System attributes (§5 of Márcio's 2026-11 brief, every SDK's feat/sdk-system-attributes branch):
+  * System attributes (§5 of Márcio's 2026-11 brief, javascript-sdk#68 and every SDK's parity PR):
     audiences and assignment-rule conditions always evaluate with the client's configured
     `application` and `environment` names (no opt-in), user attributes always overlay the system
     values, a name that is not configured is left out of the map, and `app_version` is gone. The

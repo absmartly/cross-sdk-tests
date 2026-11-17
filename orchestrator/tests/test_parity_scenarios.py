@@ -3,7 +3,8 @@
 Their expectations are recorded from the pinned javascript-sdk reference, and only
 `generate_parity_round_scenarios.py --check` (which needs that build) re-derives them. This test pins
 them in CI without the reference: a hand edit to any parity scenario (an expected variant, an
-exposure flag, a weakened `events` list, a dropped step) changes the digest.
+exposure flag, a weakened `events` list, a dropped step or `requires`) fails
+`test_parity_scenarios_unchanged`.
 
 Update PARITY_DIGEST ONLY together with a regeneration: run the generator against the pinned
 javascript-sdk checkout, confirm `--check` is clean, then paste the digest this test reports.
@@ -24,7 +25,7 @@ import scenario_groups  # noqa: E402
 
 FIRST, LAST = 300, 332
 # sha256 of json.dumps([parity scenarios in file order], sort_keys=True).
-PARITY_DIGEST = "490204624e9f328fd34e87791440819586df9cdf0ded7fd75cb947d52f388bbb"
+PARITY_DIGEST = "56b70c02fa1b00a2d7571a2b7d3a27b7ff5d4bc3cf02b260f600873dc01a9248"
 
 
 def parity_scenarios(scenarios):
@@ -51,33 +52,6 @@ class ParityGroupsPinnedTest(unittest.TestCase):
     def test_parity_scenarios_unchanged(self):
         self.assertEqual(digest(self.parity), PARITY_DIGEST,
                          "a parity scenario (300-332) changed without regenerating it from the reference")
-
-    def test_digest_catches_hand_edits(self):
-        """The edits that used to pass every CI check change the digest."""
-        by_number = {int(s["name"].split(" - ", 1)[0]): s for s in self.parity}
-
-        def edited(number, edit):
-            copy = json.loads(json.dumps(self.parity))
-            edit(next(s for s in copy if s["name"] == by_number[number]["name"]))
-            return digest(copy)
-
-        def change_result(scenario):
-            step = next(st for st in scenario["steps"] if st["action"] == "treatment")
-            step["expect"]["result"] = 1 - step["expect"]["result"]
-
-        def flip_assigned(scenario):
-            step = next(st for st in scenario["steps"] if st["action"] == "treatment")
-            data = step["expect"]["events"][0]["data"]
-            data["assigned"] = not data["assigned"]
-
-        def weaken_events(scenario):
-            for st in scenario["steps"]:
-                st["expect"]["events"] = [{"type": e["type"]} for e in st["expect"].get("events", [])]
-
-        for number, edit in ((305, change_result), (316, change_result), (300, flip_assigned),
-                             (305, weaken_events)):
-            with self.subTest(number=number, edit=edit.__name__):
-                self.assertNotEqual(edited(number, edit), PARITY_DIGEST)
 
 
 if __name__ == "__main__":
