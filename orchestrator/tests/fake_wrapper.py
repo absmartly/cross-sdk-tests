@@ -17,6 +17,10 @@ ineligible). `mode` selects the SDK behaviour:
   br-q0        sends Accept-Encoding: gzip, br;q=0 (refuses br); decodes gzip, cannot decode br
   br-skip-fetch   like br, but refresh never fetches
   br-undecodable  sends Accept-Encoding: br, gzip but cannot decode br (every load fails)
+  broken-http  like gzip (served gzip, as negotiated), but from the context's
+               `break_from`-th fetch on the SDK fails to load the body it
+               decoded ("SDK bug: cannot parse context") and the wrapper answers
+               HTTP 500: a genuine SDK failure, not a served fault
 """
 
 import gzip
@@ -45,7 +49,7 @@ class FakeSDKContext:
     def fetch(self):
         headers = {"User-Agent": "fake-sdk/1"}
         mode = self.wrapper.mode
-        if mode in ("gzip", "stale", "skip-fetch"):
+        if mode in ("gzip", "stale", "skip-fetch", "broken-http"):
             headers["Accept-Encoding"] = "gzip"
         elif mode == "br-strip" and self.fetches:
             headers["Accept-Encoding"] = "identity"
@@ -56,6 +60,7 @@ class FakeSDKContext:
         else:
             headers["Accept-Encoding"] = "identity"  # urllib would otherwise send nothing either
         self.fetches += 1
+        broken = mode == "broken-http" and self.fetches >= self.wrapper.break_from
         request = urllib.request.Request(f"{self.endpoint}/context?application=website&environment=test",
                                          headers=headers)
         try:
@@ -69,6 +74,8 @@ class FakeSDKContext:
                     if not self.wrapper.mode.startswith("br") or self.wrapper.mode in ("br-q0", "br-undecodable"):
                         raise ValueError("cannot decode br")
                     body = brotli.decompress(body)
+                if broken:
+                    raise ValueError("SDK bug: cannot parse context")
                 self.last_fetch_failed = False
                 return json.loads(body)
         except Exception as exc:  # noqa: BLE001 - mirrors an SDK's failed load
@@ -109,8 +116,9 @@ class FakeSDKContext:
 
 
 class FakeWrapper:
-    def __init__(self, mode="gzip"):
+    def __init__(self, mode="gzip", break_from=1):
         self.mode = mode
+        self.break_from = break_from  # broken-http: the first failing fetch of each context
         self.contexts = {}
         self.refresh_bodies = []
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -164,7 +172,7 @@ class FakeWrapper:
                 parts = self.path.split("?")[0].strip("/").split("/")
                 if parts == ["context"]:
                     ctx = FakeSDKContext(wrapper, body.get("endpoint"), body.get("units"), body.get("data"))
-                    if ctx.failed and wrapper.mode == "none-http":
+                    if ctx.failed and wrapper.mode in ("none-http", "broken-http"):
                         return self._json(500, {"error": f"context failed: {ctx.error}", "events": []})
                     context_id = str(uuid.uuid4())
                     wrapper.contexts[context_id] = ctx
@@ -181,7 +189,7 @@ class FakeWrapper:
                         ctx.data = body["newData"]
                     else:
                         ctx.refresh()
-                        if ctx.last_fetch_failed and wrapper.mode == "none-http":
+                        if ctx.last_fetch_failed and wrapper.mode in ("none-http", "broken-http"):
                             return self._json(500, {"error": f"refresh failed: {ctx.error}", "events": []})
                     refs = [{"id": e["id"], "name": e["name"]} for e in ctx.data["experiments"]]
                     return self._json(200, {"result": None, "events": [{"type": "refresh",

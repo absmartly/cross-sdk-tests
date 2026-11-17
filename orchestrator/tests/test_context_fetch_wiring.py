@@ -50,8 +50,8 @@ def server_url():
 def wrapper_factory():
     made = []
 
-    def make(mode):
-        wrapper = FakeWrapper(mode)
+    def make(mode, **kwargs):
+        wrapper = FakeWrapper(mode, **kwargs)
         made.append(wrapper)
         return wrapper
 
@@ -615,20 +615,25 @@ def test_require_advertised_failure_survives_a_wrong_encoding(
 
 @pytest.mark.parametrize("step", ["createContext", "refresh"])
 def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
-        server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, step):
+        server_url, wrapper_factory, group, tmp_path, step):
     """HTTP-error path, recorder unreadable (served_fault=False): nothing says the server was wrong,
-    so the wrapper's error response is still validated and its detail kept next to the harness error."""
-    wrapper = wrapper_factory("none-http")
+    so the wrapper's error response is still validated and its detail kept next to the harness error.
+
+    The server is correct here (no serve_wrong_encoding): the SDK advertises gzip, is served gzip
+    as negotiated, and then genuinely fails on this step's fetch, so the SDK FAIL is the SDK's."""
+    # The SDK fails on this step's fetch; the wrapper answers it with HTTP 500.
+    wrapper = wrapper_factory("broken-http", break_from=FETCH_OF_STEP[step])
     orch = orchestrator_for(wrapper)
     orch.capabilities["fake"] = {CAP: True}
-    serve_wrong_encoding("gzip", FETCH_OF_STEP[step])  # the wrapper answers this step with HTTP 500
     real_call = orch._context_server_call
     reads = []
+    hidden = []  # what the recorder held when the orchestrator's read was made to fail
 
     def call(m, path, **kwargs):
         if m == "GET" and "/requests/" in path:
             reads.append(path)
             if len(reads) == FETCH_OF_STEP[step]:
+                hidden.extend(real_call(m, path, **kwargs).json()["requests"])
                 raise test_runner.requests.ConnectionError("context server reset")
         return real_call(m, path, **kwargs)
 
@@ -636,10 +641,13 @@ def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
         orch.run_scenario(group[0])
     result = orch.results[0]["sdks"]["fake"]
     step_index = [s["action"] for s in group[0]["steps"]].index(step)
+    # The server did its job: every fetch so far advertised gzip and was served gzip, as negotiated.
+    assert [(r["acceptEncoding"], r["served"]) for r in hidden] == [("gzip", "gzip")] * FETCH_OF_STEP[step]
     assert result["harness_error"].startswith(f"step {step_index} ({step}): ")
     assert "context server reset" in result["harness_error"]
+    assert "negotiation chooses" not in result["harness_error"]
     errors = [f for f in result["failures"] if f["step"] == step_index]
-    assert any("cannot decode gzip" in str(f.get("error")) for f in errors), result["failures"]
+    assert any("SDK bug: cannot parse context" in str(f.get("error")) for f in errors), result["failures"]
     # ... and then the harness error stops the scenario: no later step ran.
     assert all(f["step"] <= step_index for f in result["failures"]), result["failures"]
     assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
