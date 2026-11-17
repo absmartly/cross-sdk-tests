@@ -188,7 +188,8 @@ def test_probe_handles_a_non_object_wrapper_body(server_url, wrapper_factory):
         return bad if url.endswith("/context") else real_post(url, *args, **kwargs)
 
     with mock.patch.object(test_runner.requests, "post", side_effect=post):
-        outcome = orch._probe_context_fetch(wrapper.url, generator.context_data(), None, None, 5)
+        outcome = orch._probe_context_fetch(wrapper.url, generator.context_data(), None, None, 5,
+                                           encodings=test_runner.negotiation.DEFAULT_PREFERENCE)
     assert "non-object body" in outcome["error"]
     assert outcome["requests"] == []
 

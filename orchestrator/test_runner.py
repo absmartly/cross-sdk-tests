@@ -813,12 +813,13 @@ class TestOrchestrator:
         refresh_data: Optional[Dict[str, Any]],
         force: Optional[str],
         timeout: float,
-        encodings: Sequence[str] = tuple(negotiation.DEFAULT_PREFERENCE),
+        encodings: Sequence[str],
     ) -> Dict[str, Any]:
         """Create an endpoint-backed context on the context server; optionally refresh it with new data.
 
-        `encodings` is the payload's server preference: the gzip default, or
-        negotiation.BR_PREFERENCE for the contextFetchBrotli probe.
+        `encodings` is the payload's server preference, always explicit:
+        negotiation.DEFAULT_PREFERENCE (the gzip probe and its forced-gzip
+        sub-probe) or negotiation.BR_PREFERENCE (the contextFetchBrotli probe).
 
         Wrapper-side problems are recorded in the outcome (`error`). A context
         server that cannot be used raises (MeasurementError, or the requests /
@@ -1010,7 +1011,8 @@ class TestOrchestrator:
         # (including building the report) is recorded and `value` stands.
         try:
             forced = self._probe_context_fetch(
-                base_url, self._probe_data("exp_context_fetch_probe"), None, "gzip", FORCED_GZIP_TIMEOUT)
+                base_url, self._probe_data("exp_context_fetch_probe"), None, "gzip", FORCED_GZIP_TIMEOUT,
+                encodings=negotiation.DEFAULT_PREFERENCE)
             forced_headers = [r.get("acceptEncoding") for r in forced["requests"]]
             forced_report = {
                 "reportOnly": True,
