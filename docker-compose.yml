@@ -63,6 +63,13 @@ services:
       dockerfile: cross-sdk-tests/swift-wrapper/Dockerfile
       target: tester
 
+  swift-v1-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-v1-wrapper/Dockerfile
+      target: tester
+
   rust-unit:
     init: true
     build:
@@ -271,6 +278,21 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
+  # swift-sdk 1.x (release/1.x) during its 12-month maintenance window; built from the
+  # swift-sdk-v1 checkout. swift-sdk above is 2.x.
+  swift-v1-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-v1-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=swift-v1
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
   dotnet-sdk:
     build:
       context: ..
@@ -416,6 +438,7 @@ services:
       - dart-sdk
       - flutter-sdk
       - swift-sdk
+      - swift-v1-sdk
       - dotnet-sdk
       - react-sdk
       - vue2-sdk

@@ -44,6 +44,7 @@ jobs:
             {"sdk":"go","repos":"go-sdk"},
             {"sdk":"rust","repos":"rust-sdk"},
             {"sdk":"swift","repos":"swift-sdk"},
+            {"sdk":"swift-v1","repos":"swift-sdk-v1"},
             {"sdk":"dotnet","repos":"dotnet-sdk"},
             {"sdk":"cpp","repos":"cpp-sdk"},
             {"sdk":"elixir","repos":"elixir-sdk"},
@@ -112,7 +113,7 @@ jobs:
             branch="${SDK_BRANCHES[$repo]:-main}"
             echo "::group::Cloning absmartly/$repo ($branch)"
             git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
+              "https://github.com/absmartly/${SDK_REPOS[$repo]:-$repo}.git" "$repo"
             echo "::endgroup::"
           done
 

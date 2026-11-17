@@ -8,12 +8,16 @@ across languages.
 
 ## What's here
 
-- **20 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+- **21 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
   directory:
 
   `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
-  `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
+  `swift-v1`, `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
+
+  `swift` wraps swift-sdk 2.x (`feat/swift-2.0` until it merges, then `main`); `swift-v1` wraps
+  the 1.x maintenance line (`release/1.x`, built from a `swift-sdk-v1/` checkout) for its
+  12-month support window. Both lanes run the same scenarios with the same capability policy.
 
 - **305 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
@@ -299,7 +303,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 305-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 305-scenario suite for all 21
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -308,7 +312,7 @@ CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
 Each lane uploads its report, which records every scenario outcome and what
 the SDK returned at each step. A separate `cross-sdk-consistency` job then
-downloads the reports from all 20 lanes and compares the SDKs with each other
+downloads the reports from all 21 lanes and compares the SDKs with each other
 (`test_runner.py --compare-reports`), because a lane runs only one SDK and has
 nothing to compare against. That job runs even when some lanes fail. It fails
 if a report is missing or unreadable, if fewer than two SDKs or zero

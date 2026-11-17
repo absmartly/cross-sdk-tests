@@ -1,10 +1,10 @@
-// swift-tools-version:5.9
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
-    name: "ABSmartlyWrapper",
+    name: "ABsmartlyWrapper",
     platforms: [
-        .macOS(.v10_15)
+        .macOS(.v13)
     ],
     dependencies: [
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
@@ -15,24 +15,27 @@ let package = Package(
             name: "App",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
-                .product(name: "ABSmartly", package: "swift-sdk")
+                .product(name: "ABsmartly", package: "swift-sdk")
             ],
-            path: "Sources/App"
+            path: "Sources/App",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "Run",
             dependencies: [
                 .target(name: "App")
             ],
-            path: "Sources/Run"
+            path: "Sources/Run",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "AppTests",
             dependencies: [
                 .target(name: "App"),
-                .product(name: "ABSmartly", package: "swift-sdk")
+                .product(name: "ABsmartly", package: "swift-sdk")
             ],
-            path: "Tests/AppTests"
+            path: "Tests/AppTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

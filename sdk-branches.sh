@@ -14,6 +14,9 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
+# swift-sdk 2.0 (swift-sdk#<2.0 PR>) is on feat/swift-2.0 until it merges; then re-pin "swift-sdk"
+# to main. "swift-sdk-v1" is the 1.x lane (the swift-v1 wrapper) and clones absmartly/swift-sdk into
+# swift-sdk-v1/: main is 1.5.0 until 2.0 merges, then re-pin it to release/1.x (cut from v1.5.0).
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
@@ -31,7 +34,14 @@ declare -A SDK_BRANCHES=(
   ["ruby-sdk"]="main"
   ["rust-sdk"]="main"
   ["scala-sdk"]="main"
-  ["swift-sdk"]="main"
+  ["swift-sdk"]="feat/swift-2.0"
+  ["swift-sdk-v1"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
+)
+
+# Checkout directories that are not repository names: <dir> -> absmartly/<repo>. The swift-v1 lane
+# builds swift-sdk 1.x from swift-sdk-v1/ next to the 2.x checkout in swift-sdk/.
+declare -A SDK_REPOS=(
+  ["swift-sdk-v1"]="swift-sdk"
 )

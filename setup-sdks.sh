@@ -45,7 +45,7 @@ source "$SCRIPT_DIR/sdk-branches.sh"
 clone_or_update() {
   local repo="$1"
   local branch="$2"
-  local url="https://github.com/absmartly/${repo}.git"
+  local url="https://github.com/absmartly/${SDK_REPOS[$repo]:-$repo}.git"
 
   if [ -d "$repo" ]; then
     cd "$repo"
