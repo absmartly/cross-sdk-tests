@@ -1256,6 +1256,21 @@ class TestOrchestrator:
         seen_fetches = 0
         harness_error: Optional[str] = None
 
+        def step_fetch_failures(step_index: int, action: str) -> List[Dict[str, Any]]:
+            """Check the context-server fetches of a fetching step; [] for any other step.
+
+            Raises HarnessError (carrying the step's SDK wire failures) when the
+            recorder cannot be read or the server served an encoding the
+            negotiation would not choose.
+            """
+            nonlocal seen_fetches
+            if server_spec is None or not payload_id or action not in CONTEXT_FETCH_ACTIONS:
+                return []
+            recorded = self.context_server_requests(payload_id)
+            seen, seen_fetches = seen_fetches, len(recorded)
+            fetch_log.append({"step": step_index, "action": action, "requests": recorded[seen:]})
+            return self.check_context_fetches(step_index, action, server_spec, recorded, seen)
+
         for step_index, step in enumerate(steps):
             action = step.get("action")
             params = step.get("params", {})
@@ -1447,13 +1462,7 @@ class TestOrchestrator:
                 if step_failures:
                     failures.extend(step_failures)
                 responses[step_index] = data
-                if server_spec is not None and payload_id and action in CONTEXT_FETCH_ACTIONS:
-                    recorded = self.context_server_requests(payload_id)
-                    failures.extend(
-                        self.check_context_fetches(step_index, action, server_spec, recorded, seen_fetches)
-                    )
-                    fetch_log.append({"step": step_index, "action": action, "requests": recorded[seen_fetches:]})
-                    seen_fetches = len(recorded)
+                failures.extend(step_fetch_failures(step_index, action))
                 observations[step_index] = (
                     action,
                     observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),
@@ -1468,6 +1477,18 @@ class TestOrchestrator:
                 break
 
             except requests.HTTPError as exc:
+                # A fetching step that answered with an HTTP error: the SDK may
+                # have rejected what the context server sent. Check the server
+                # first; if it served an encoding the negotiation would not
+                # choose, the error response is the harness's, not the SDK's.
+                try:
+                    wire_failures = step_fetch_failures(step_index, action)
+                except HarnessError as harness_exc:
+                    failures.extend(harness_exc.failures)
+                    harness_error = f"step {step_index} ({action}): {harness_exc}"
+                    break
+                failures.extend(wire_failures)
+
                 error_msg = None
                 error_body = None
                 if exc.response is not None:

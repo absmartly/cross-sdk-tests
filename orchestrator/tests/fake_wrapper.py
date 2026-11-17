@@ -7,6 +7,8 @@ ineligible). `mode` selects the SDK behaviour:
 
   gzip         sends Accept-Encoding: gzip, decodes gzip (a conforming SDK)
   none         sends Accept-Encoding: identity (never gzip) and cannot decode gzip
+  none-http    like none, but a failed load answers HTTP 500 (create and refresh)
+               instead of 200 with `failed: true`
   stale        like gzip, but keeps its old data after a refresh fetch
   skip-fetch   like gzip, but refresh never fetches
 """
@@ -26,6 +28,7 @@ class FakeSDKContext:
         self.units = units
         self.failed = False
         self.error = None
+        self.last_fetch_failed = False
         self.assignments = {}
         self.exposures = []
         self.data = data if data is not None else self.fetch()
@@ -42,11 +45,13 @@ class FakeSDKContext:
             with urllib.request.urlopen(request, timeout=5) as response:
                 body = response.read()
                 if response.headers.get("Content-Encoding") == "gzip":
-                    if self.wrapper.mode == "none":
+                    if self.wrapper.mode in ("none", "none-http"):
                         raise ValueError("cannot decode gzip")
                     body = gzip.decompress(body)
+                self.last_fetch_failed = False
                 return json.loads(body)
         except Exception as exc:  # noqa: BLE001 - mirrors an SDK's failed load
+            self.last_fetch_failed = True
             self.failed = True
             self.error = str(exc)
             return {"experiments": []}
@@ -138,6 +143,8 @@ class FakeWrapper:
                 parts = self.path.split("?")[0].strip("/").split("/")
                 if parts == ["context"]:
                     ctx = FakeSDKContext(wrapper, body.get("endpoint"), body.get("units"), body.get("data"))
+                    if ctx.failed and wrapper.mode == "none-http":
+                        return self._json(500, {"error": f"context failed: {ctx.error}", "events": []})
                     context_id = str(uuid.uuid4())
                     wrapper.contexts[context_id] = ctx
                     refs = [{"id": e["id"], "name": e["name"]} for e in ctx.data["experiments"]]
@@ -153,6 +160,8 @@ class FakeWrapper:
                         ctx.data = body["newData"]
                     else:
                         ctx.refresh()
+                        if ctx.last_fetch_failed and wrapper.mode == "none-http":
+                            return self._json(500, {"error": f"refresh failed: {ctx.error}", "events": []})
                     refs = [{"id": e["id"], "name": e["name"]} for e in ctx.data["experiments"]]
                     return self._json(200, {"result": None, "events": [{"type": "refresh",
                                                                          "data": {"experiments": refs}}]})

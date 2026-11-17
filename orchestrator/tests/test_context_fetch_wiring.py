@@ -339,6 +339,111 @@ def test_sdk_failure_before_a_harness_error_is_still_an_sdk_failure(server_url, 
     assert row["forced_status"] == "HARNESS ERROR" and row["failed"] == 1
 
 
+# -- the context server serving the wrong encoding is the harness's fault --------
+#
+# The mutation: from the `from_fetch`-th GET /context on, the in-process context
+# server serves `coding` whatever the negotiation chooses. Each SDK response path
+# is covered: a 200 the SDK decodes (gzip SDK served identity) and an HTTP
+# error (mode "none-http" served unrequested gzip).
+
+WRONG_ENCODING_PATHS = [
+    ("gzip", "identity"),   # decoded fine: only the server fault
+    ("none-http", "gzip"),  # wrapper answers HTTP 500
+]
+FETCH_OF_STEP = {"createContext": 1, "refresh": 2}
+
+
+@pytest.fixture
+def serve_wrong_encoding():
+    real = context_server.choose_encoding
+    patcher = None
+
+    def start(coding, from_fetch):
+        nonlocal patcher
+        calls = []
+
+        def choose(header, preference, force=None):
+            calls.append(header)
+            return coding if len(calls) >= from_fetch else real(header, preference, force)
+
+        patcher = mock.patch.object(context_server, "choose_encoding", side_effect=choose)
+        patcher.start()
+
+    yield start
+    if patcher is not None:
+        patcher.stop()
+
+
+def assert_report(orch, tmp_path, failed, harness_errors=1):
+    report_path = tmp_path / "report.json"
+    with mock.patch("builtins.print"):
+        assert orch.generate_report(str(report_path), []) == 1
+    stats = json.loads(report_path.read_text())["sdk_stats"]["fake"]
+    assert stats["failed"] == failed and stats["harness_errors"] == harness_errors and stats["errors"] == 0
+    row = results_aggregator.load_cross_sdk_report(str(report_path))["fake"]
+    assert row["forced_status"] == "HARNESS ERROR" and row["failed"] == failed
+
+
+@pytest.mark.parametrize("step", ["createContext", "refresh"])
+@pytest.mark.parametrize("mode, coding", WRONG_ENCODING_PATHS)
+def test_wrong_encoding_is_a_harness_error_on_every_response_path(
+        server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, mode, coding, step):
+    """However the wrapper answers the step the server broke, it is a HARNESS ERROR, not an SDK FAIL."""
+    wrapper = wrapper_factory(mode)
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    serve_wrong_encoding(coding, FETCH_OF_STEP[step])
+    with mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    step_index = [s["action"] for s in group[0]["steps"]].index(step)
+    assert result.get("harness_error", "").startswith(f"step {step_index} ({step}): ")
+    assert "negotiation chooses" in result["harness_error"]
+    assert result["failures"] == []
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "harness_error"
+    assert wrapper.contexts == {}
+    assert_report(orch, tmp_path, failed=0)
+
+
+@pytest.mark.parametrize("mode, coding", WRONG_ENCODING_PATHS)
+def test_sdk_failure_before_the_wrong_encoding_step_is_still_counted(
+        server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, mode, coding):
+    """A failure on a step before the faulty refresh stays an SDK failure, on every response path."""
+    wrapper = wrapper_factory(mode)
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    serve_wrong_encoding(coding, FETCH_OF_STEP["refresh"])
+    earlier = {"step": 1, "action": "treatment", "field": "x", "expected": 1, "actual": 2}
+    real_validate = orch.validate_step
+
+    def validate(step_index, *args, **kwargs):
+        return [earlier] if step_index == 1 else real_validate(step_index, *args, **kwargs)
+
+    with mock.patch.object(orch, "validate_step", side_effect=validate), mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "(refresh)" in result["harness_error"] and result["failures"] == [earlier]
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
+    assert_report(orch, tmp_path, failed=1)
+
+
+@pytest.mark.parametrize("mode, coding", [("none-http", "gzip")])
+def test_require_advertised_failure_survives_a_wrong_encoding(
+        server_url, wrapper_factory, group, serve_wrong_encoding, tmp_path, mode, coding):
+    """The SDK not advertising gzip is independent of what the server sent: still an SDK failure."""
+    wrapper = wrapper_factory(mode)
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    serve_wrong_encoding(coding, FETCH_OF_STEP["createContext"])
+    with mock.patch("builtins.print"):
+        orch.run_scenario(group[2])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "negotiation chooses" in result["harness_error"]
+    assert [f["field"] for f in result["failures"]] == ["contextFetch.acceptEncoding[gzip]"]
+    assert orch.scenario_outcomes[group[2]["name"]]["fake"] == "fail"
+    assert_report(orch, tmp_path, failed=1)
+
+
 @pytest.mark.parametrize("mutate, reason", [
     (lambda s: s.update(directData=False), "'directData' must be true"),
     (lambda s: s.update(directData=True, contextServer={}), "cannot be combined"),
