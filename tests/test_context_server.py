@@ -8,8 +8,8 @@ import sys
 import threading
 import unittest
 
-# Pinned in orchestrator/requirements.txt (CI installs it): a missing wheel is an
-# ImportError that fails this module, never a silent skip.
+# Pinned in orchestrator/requirements-test.txt (CI's harness job installs it): a
+# missing wheel is an ImportError that fails this module, never a silent skip.
 import brotli
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "context-server"))
@@ -273,6 +273,38 @@ class LiveServer(unittest.TestCase):
     def test_bad_payload_rejected(self):
         response, _ = self.request("PUT", "/payload/f", {"data": DATA, "encodings": ["deflate"]})
         self.assertEqual(response.status, 400)
+
+
+class BrotliIsTestOnly(unittest.TestCase):
+    """brotli is a harness-test dependency: not in the orchestrator image or the consistency job."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def read(self, *path):
+        with open(os.path.join(self.ROOT, *path)) as src:
+            return src.read()
+
+    @staticmethod
+    def pins(text):
+        return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
+
+    def test_orchestrator_runtime_requirements_have_no_brotli(self):
+        self.assertNotIn("brotli", " ".join(self.pins(self.read("orchestrator", "requirements.txt"))))
+
+    def test_test_requirements_extend_runtime_with_the_servers_brotli_pin(self):
+        test_pins = self.pins(self.read("orchestrator", "requirements-test.txt"))
+        server_pins = self.pins(self.read("context-server", "requirements.txt"))
+        self.assertIn("-r requirements.txt", test_pins)
+        self.assertEqual([p for p in test_pins if p.startswith("brotli")], server_pins)
+
+    def test_ci_installs_brotli_only_in_the_harness_job(self):
+        workflow = self.read(".github", "workflows", "cross-sdk.yml")
+        installs = [line.strip() for line in workflow.splitlines() if "pip install -r" in line]
+        self.assertEqual(installs, ["run: pip install -r orchestrator/requirements-test.txt",  # harness
+                                    "run: pip install -r orchestrator/requirements.txt"])     # consistency
+        self.assertLess(workflow.index("requirements-test.txt"), workflow.index("\n  cross-sdk:\n"))
+        self.assertGreater(workflow.index("run: pip install -r orchestrator/requirements.txt"),
+                           workflow.index("\n  cross-sdk-consistency:\n"))
 
 
 if __name__ == "__main__":

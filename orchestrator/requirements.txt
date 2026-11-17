@@ -1,5 +1,1 @@
 requests==2.31.0
-# br for the Context Fetch group: the harness tests run the context server
-# (context-server/server.py) in process and decode its br bodies. Same pin as
-# context-server/requirements.txt; test_runner.py itself never imports it.
-brotli==1.2.0

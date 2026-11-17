@@ -64,8 +64,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install orchestrator requirements
-        run: pip install -r orchestrator/requirements.txt
+      - name: Install harness test requirements
+        # requirements-test.txt = requirements.txt + brotli (the br tests import
+        # it at module level, so without it they fail, never skip).
+        run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
         run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py

@@ -38,7 +38,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
-import brotli  # pinned in context-server/requirements.txt (and orchestrator/requirements.txt for the tests)
+import brotli  # pinned in context-server/requirements.txt (and orchestrator/requirements-test.txt for the tests)
 
 from negotiation import CODINGS, DEFAULT_PREFERENCE, choose_encoding, combine_header_lines, settings_error
 

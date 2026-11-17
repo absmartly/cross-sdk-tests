@@ -1,0 +1,7 @@
+# Harness tests only (CI's `harness` job): never installed into the
+# orchestrator image or the consistency job, which need requirements.txt alone.
+-r requirements.txt
+# br for the Context Fetch group: the harness tests run the context server
+# (context-server/server.py) in process and decode its br bodies. Same pin as
+# context-server/requirements.txt; test_runner.py itself never imports it.
+brotli==1.2.0

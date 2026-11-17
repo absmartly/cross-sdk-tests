@@ -179,7 +179,8 @@ across languages.
   generator's `--check`, a replay of every switchback context scenario against
   mutant SDK models, and a digest of the 279 non-switchback scenarios) run in
   a few seconds with `python3 -m pytest orchestrator/tests -q` (needs `pytest`
-  and `requests`); CI runs them in `harness-unit-tests` next to `tests/`.
+  and `pip install -r orchestrator/requirements-test.txt`, which adds the
+  test-only `brotli` pin); CI runs them in `harness-unit-tests` next to `tests/`.
   The java wrapper's switchback endpoint tests run inside the wrapper's
   `builder` image stage with `gradle test`.
 
@@ -277,9 +278,12 @@ on `run-tests.sh`) opts in to the old fast mode that skips scenarios a
 wrapper declares as pure pass-through to another SDK under test.
 `--no-wrapper-skip` is kept as a no-op for compatibility.
 
-The orchestrator's own unit tests need no Docker:
+The orchestrator's own unit tests need no Docker. They need the harness test
+requirements, as CI's `harness` job installs them (`brotli` is test-only: the
+orchestrator image and the consistency job install `requirements.txt` alone):
 
 ```bash
+pip install -r orchestrator/requirements-test.txt
 python3 -m unittest discover -s tests -v
 ```
 
