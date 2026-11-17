@@ -259,6 +259,15 @@ class ValidateStepTests(unittest.TestCase):
                     "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "goal", "data": {"id": 1}}]}
         self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
 
+    def test_unordered_events_pair_by_the_positional_rules(self):
+        # Java omits a goal's null properties; the pairing must allow it like the positional check.
+        actual = {"result": None, "events": [{"type": "goal", "data": {"name": "b"}},
+                                             {"type": "goal", "data": {"name": "a"}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "goal", "data": {"name": "a", "properties": None}},
+                               {"type": "goal", "data": {"name": "b", "properties": None}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
     def test_unordered_events_observation_ignores_order(self):
         expected = {"unorderedEvents": True}
         a = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "exposure", "data": {"id": 2}}]}
@@ -1375,6 +1384,16 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parity.assemble(existing, lambda: [s for s in existing if any(m in s["name"] for m in self.PARITY)]
                             + [grown])
+
+    def test_holdout_conformance_generator_rejects_a_scenario_in_its_range(self):
+        import generate_holdout_conformance_scenarios as holdout_conformance
+        markers = (scenario_groups.HOLDOUT_CONFORMANCE,)
+        existing = self.load()
+        updated, _ = holdout_conformance.assemble(existing, self.rebuilt(existing, markers))
+        self.assertEqual(updated, existing)
+        intruder = dict(existing[0], name="505 - Somebody Else - Numbered Inside The Holdout Conformance Range")
+        with self.assertRaises(SystemExit):
+            holdout_conformance.assemble(existing + [intruder], self.rebuilt(existing, markers))
 
     def test_parity_generator_keeps_the_switchback_group_after_it(self):
         import generate_parity_round_scenarios as parity

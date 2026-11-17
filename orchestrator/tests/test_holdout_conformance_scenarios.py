@@ -10,6 +10,8 @@ The expectations are recorded from the javascript-sdk reference. This module che
 
     H2 ``splitless-holdout-applies``    a holdout with an empty/missing split still covers
     H3 ``re-randomizes-on-edit``        a same-iteration seed/split edit redraws the arm
+       ``re-resolves-on-seed-hi-edit``  a same-iteration seedHi edit re-resolves covered experiments
+       ``re-resolves-on-split-edit``    a same-iteration split edit re-resolves covered experiments
     H4 ``peek-fires-holdouts``          peek queues the holdout exposures
     H5 ``holdout-honours-full-on``      experiment-only fields of a holdout entry are applied
     H6 ``arm-cached-per-holdout-id``    the arm is cached per holdout, not per (holdout, unit type)
@@ -37,11 +39,13 @@ MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 FIRST = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True). Update ONLY together with a
 # regeneration from the pinned reference (generate_holdout_conformance_scenarios.py --check clean).
-GROUP_DIGEST = "5ca6f4df8aec6e2f8e67d1bf0cb57be45832f8a2d2253e656a7e22e884c62cea"
+GROUP_DIGEST = "88bcdad900730b496832f1da8c8fc71604c5d1889b0285ab58b843a42c532581"
 
 MUTANT_SCENARIO = {
     "splitless-holdout-applies": "Empty Or Missing Split",
     "re-randomizes-on-edit": "Seed Or Split Edit",
+    "re-resolves-on-seed-hi-edit": "Seed Or Split Edit",
+    "re-resolves-on-split-edit": "Seed Or Split Edit",
     "peek-fires-holdouts": "Peek On A Covered Experiment",
     "holdout-honours-full-on": "Unknown Fields",
     "arm-cached-per-holdout-id": "Two Unit Types",
@@ -143,6 +147,10 @@ class Model:
     def resolve(self, name):
         exp, ids = self.experiments[name]
         identity = [(i, self.holdouts[i]["iteration"]) for i in ids]
+        if self.is_("re-resolves-on-seed-hi-edit"):
+            identity = [(i, it, self.holdouts[i]["seedHi"]) for i, it in identity]
+        elif self.is_("re-resolves-on-split-edit"):
+            identity = [(i, it, self.holdouts[i]["split"]) for i, it in identity]
         cached = self.assignments.get(name)
         if cached and cached["identity"] == identity:
             return cached

@@ -120,7 +120,7 @@ across languages.
   | Rule | Scenario | Mutant it catches |
   | --- | --- | --- |
   | a holdout with an empty or missing `split` is ignored | 501 | splitless holdout applies |
-  | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn on edit |
+  | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn, or covered experiments re-resolved, on a seedHi or split edit |
   | `peek` queues no holdout exposure | 503 | peek fires holdouts |
   | unknown fields in a holdout entry, and experiment-only fields (traffic, audience, full-on), are ignored | 504 | full-on applied to a holdout |
   | one holdout over two unit types: two exposures, one arm per unit type | 505 | arm cached per holdout id |

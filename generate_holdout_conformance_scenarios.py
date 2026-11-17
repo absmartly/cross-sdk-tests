@@ -60,6 +60,10 @@ NOT_HELD = (1, 1)
 # svk-unit-1 lands on arm 1 of split [0.2, 0.8] with NOT_HELD's seeds: the edit H3 makes to a held
 # unit's holdout would move it out of the holdout if the SDK re-randomized.
 EDITED_SPLIT = [0.2, 0.8]
+# svk-unit-1 lands on arm 0 of split [0.45, 0.55] with these seeds: the edit H3 makes to a not-held
+# unit's holdout changes its seedHi and split too, and would hold the unit out if re-randomized.
+EDITED_HELD = (7, 2)
+EDITED_HELD_SPLIT = [0.45, 0.55]
 
 
 def holdout(holdout_id, name, seed, *, split=None, unit_type="session_id", **extra):
@@ -110,16 +114,17 @@ def specs():
               covered(experiment(523, "exp_hc_reseed_sibling"), 7201)]
     out.append(spec(
         "A Same-Iteration Seed Or Split Edit Does Not Re-Randomize Or Re-Expose",
-        "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but swaps "
-        "their seeds and changes 7201's split to [0.2, 0.8], under which a fresh draw would flip "
-        "both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other "
+        "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits "
+        "both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), "
+        "so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other "
         "keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's "
         "original arm, and nothing new is queued.",
         reseed, [held, not_held],
         [treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
          refresh({"experiments": reseed,
                   "holdouts": [dict(held, seedHi=NOT_HELD[0], seedLo=NOT_HELD[1], split=EDITED_SPLIT),
-                               dict(not_held, seedHi=HELD[0], seedLo=HELD[1])]}),
+                               dict(not_held, seedHi=EDITED_HELD[0], seedLo=EDITED_HELD[1],
+                                    split=EDITED_HELD_SPLIT)]}),
          treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
          treatment("exp_hc_reseed_sibling"), PENDING]))
 

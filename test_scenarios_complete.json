@@ -68743,7 +68743,7 @@
   },
   {
     "name": "502 - Holdout Conformance - A Same-Iteration Seed Or Split Edit Does Not Re-Randomize Or Re-Expose",
-    "description": "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but swaps their seeds and changes 7201's split to [0.2, 0.8], under which a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's original arm, and nothing new is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
+    "description": "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's original arm, and nothing new is queued. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
     "contextData": {
       "experiments": [
         {
@@ -69152,11 +69152,11 @@
                 "name": "hc_reseed_not_held",
                 "unitType": "session_id",
                 "iteration": 1,
-                "seedHi": 1,
+                "seedHi": 7,
                 "seedLo": 2,
                 "split": [
-                  0.5,
-                  0.5
+                  0.45,
+                  0.55
                 ]
               }
             ]
