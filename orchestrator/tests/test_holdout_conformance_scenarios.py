@@ -38,7 +38,7 @@ MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 FIRST = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True). Update ONLY together with a
 # regeneration from the pinned reference (generate_holdout_conformance_scenarios.py --check clean).
-GROUP_DIGEST = "f2dd284803056f549f2dd5959c4f19362bedcfc9fda40e73c44267e4e7f62ac0"
+GROUP_DIGEST = "6d69cf1ea1aa520f9965829d103c6584f1512e29938d17a307e282bad2c579b9"
 
 MUTANT_SCENARIO = {
     "keeps-duplicate-ids": "Duplicate holdoutIds",
@@ -236,13 +236,22 @@ class Model:
         return {"result": result, "events": events}
 
 
+def as_harness_sees(scenario, outcomes):
+    """Steps marked `unorderedEvents` are matched by the harness as a set, so compare them as one."""
+    for step, outcome in zip(scenario["steps"][1:], outcomes):
+        if step["expect"].get("unorderedEvents"):
+            outcome["events"] = sorted(outcome["events"], key=lambda e: json.dumps(e, sort_keys=True))
+    return outcomes
+
+
 def replay(scenario, mutant=None):
     model = Model(scenario, mutant)
-    return [model.step(s["action"], s["params"]) for s in scenario["steps"][1:]]
+    return as_harness_sees(scenario, [model.step(s["action"], s["params"]) for s in scenario["steps"][1:]])
 
 
 def recorded(scenario):
-    return [{"result": s["expect"]["result"], "events": s["expect"]["events"]} for s in scenario["steps"][1:]]
+    return as_harness_sees(scenario, [{"result": s["expect"]["result"], "events": list(s["expect"]["events"])}
+                                      for s in scenario["steps"][1:]])
 
 
 def same(a, b):
@@ -282,6 +291,13 @@ class HoldoutConformanceGroupTest(unittest.TestCase):
                 s = self.scenario(fragment)
                 self.assertFalse(same(replay(s, mutant), recorded(s)),
                                  f"mutant {mutant} reproduced {s['name']}")
+
+    def test_only_the_shared_key_exposures_are_unordered(self):
+        """Only 507's variableValue queues exposures in an SDK-specific order (JS: each candidate's own
+        exposure before its holdouts; Java: every visited candidate's holdouts first)."""
+        unordered = [(s["name"], step["action"]) for s in self.group for step in s["steps"]
+                     if step["expect"].get("unorderedEvents")]
+        self.assertEqual(unordered, [(self.scenario("Shared Variable Key")["name"], "variableValue")])
 
     def test_peeks_queue_nothing(self):
         for s in self.group:

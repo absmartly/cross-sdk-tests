@@ -128,6 +128,12 @@ across languages.
   | a strict audience mismatch on a covered, not-held-out experiment still fires the holdout | 506 | mismatch skips holdouts |
   | shared variable key: a suppressed first candidate loses to an assigned one, and both holdouts fire | 507 | suppressed wins; only the winner fires |
 
+  507's `variableValue` queues three exposures whose order differs between the
+  reference SDKs (javascript-sdk queues each candidate's own exposure before its
+  holdouts, java-sdk every visited candidate's holdouts first); the order is not
+  part of the contract, so that step sets `unorderedEvents: true` and the
+  harness matches its events one-to-one in any order.
+
   500 is gated on `holdoutIdsDedup` because the javascript-sdk dedup is not
   yet a confirmed contract (the owner must confirm it) and java-sdk keeps
   duplicates: its refresh re-exposes. java is a reviewed exception until

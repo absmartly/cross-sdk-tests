@@ -79,10 +79,13 @@ def configs(prefix):
     return [json.dumps({"color": f"{prefix}{i}"}, separators=(",", ":")) for i in range(2)]
 
 
-def spec(title, description, experiments, holdouts, steps, *, units=None, requires=None):
+def spec(title, description, experiments, holdouts, steps, *, units=None, requires=None,
+         unordered_steps=()):
+    """`unordered_steps`: indexes into `steps` whose exposures are pinned as a set
+    (`unorderedEvents`), for one call that queues several exposures in an SDK-specific order."""
     return {"title": title, "description": description, "experiments": experiments,
             "holdouts": holdouts, "steps": steps, "units": units or UNIT,
-            "requires": requires or [HOLDOUTS_CAPABILITY]}
+            "requires": requires or [HOLDOUTS_CAPABILITY], "unordered_steps": set(unordered_steps)}
 
 
 def specs():
@@ -200,14 +203,17 @@ def specs():
         "Experiments 571 (held out by 7701) and 572 (not held out by 7702) both define color; 571 "
         "is visited first. peekVariableValue returns 572's assigned value and queues nothing. "
         "variableValue returns it too and fires 7701's exposure for the suppressed candidate it "
-        "visited, then 572's own exposure and 7702's. Treatment on either afterwards queues "
-        "nothing.",
+        "visited, 572's own exposure and 7702's, in any order: javascript-sdk queues each "
+        "candidate's own exposure before its holdouts, java-sdk every visited candidate's holdouts "
+        "first, and neither order means anything to the Collector. Treatment on either afterwards "
+        "queues nothing.",
         [covered(experiment(571, "exp_hc_key_suppressed", configs=configs("first_")), 7701),
          covered(experiment(572, "exp_hc_key_assigned", configs=configs("second_")), 7702)],
         [holdout(7701, "hc_key_held", HELD), holdout(7702, "hc_key_not_held", NOT_HELD)],
         [("peekVariableValue", {"key": "color", "defaultValue": "default"}), PENDING,
          variable_value("color", "default"), treatment("exp_hc_key_suppressed"),
-         treatment("exp_hc_key_assigned"), PENDING]))
+         treatment("exp_hc_key_assigned"), PENDING],
+        unordered_steps=[2]))
     return out
 
 
@@ -255,7 +261,7 @@ def build_scenario(s, ran, number):
                   "params": {"units": s["units"], "options": {"publishDelay": -1, "refreshPeriod": 0}},
                   "expect": {"result": ran["ready"],
                              "events": round2611.ready_events(ran["readyEvents"])}}]
-    for (action, params), got in zip(s["steps"], ran["steps"]):
+    for index, ((action, params), got) in enumerate(zip(s["steps"], ran["steps"])):
         if action == "refresh":
             events = round2611.refresh_events(got["events"])
         elif action == "publish":
@@ -268,8 +274,10 @@ def build_scenario(s, ran, number):
                 # No group experiment has assignment rules, and SDKs without them never emit the
                 # flag; scenario 305 pins rules with holdouts.
                 event["data"].pop("ruleOverride", None)
-        out_steps.append({"action": action, "params": params,
-                          "expect": {"result": got["result"], "events": events}})
+        expect = {"result": got["result"], "events": events}
+        if index in s["unordered_steps"]:
+            expect["unorderedEvents"] = True
+        out_steps.append({"action": action, "params": params, "expect": expect})
     return {
         "name": f"{number}{MARKER}{title}",
         "description": f"{s['description']} Expected results recorded from "

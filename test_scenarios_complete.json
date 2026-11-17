@@ -70651,7 +70651,7 @@
   },
   {
     "name": "507 - Holdout Conformance - Shared Variable Key: Suppressed First Candidate Loses, Both Holdouts Fire",
-    "description": "Experiments 571 (held out by 7701) and 572 (not held out by 7702) both define color; 571 is visited first. peekVariableValue returns 572's assigned value and queues nothing. variableValue returns it too and fires 7701's exposure for the suppressed candidate it visited, then 572's own exposure and 7702's. Treatment on either afterwards queues nothing. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
+    "description": "Experiments 571 (held out by 7701) and 572 (not held out by 7702) both define color; 571 is visited first. peekVariableValue returns 572's assigned value and queues nothing. variableValue returns it too and fires 7701's exposure for the suppressed candidate it visited, 572's own exposure and 7702's, in any order: javascript-sdk queues each candidate's own exposure before its holdouts, java-sdk every visited candidate's holdouts first, and neither order means anything to the Collector. Treatment on either afterwards queues nothing. Expected results recorded from @absmartly/javascript-sdk 1.14.0 (javascript-sdk main).",
     "contextData": {
       "experiments": [
         {
@@ -70874,7 +70874,8 @@
                 "audienceMismatch": false
               }
             }
-          ]
+          ],
+          "unorderedEvents": true
         }
       },
       {
