@@ -10,7 +10,8 @@ defmodule ElixirWrapper.Router do
   plug(Plug.Parsers,
     parsers: [:json],
     pass: ["application/json"],
-    json_decoder: Jason
+    # Keeps switchbackClusters in its JSON order (see OrderedJson).
+    json_decoder: ElixirWrapper.OrderedJson
   )
 
   plug(:dispatch)
@@ -48,8 +49,34 @@ defmodule ElixirWrapper.Router do
       # Measured by a behavioural self-test against the SDK this wrapper was
       # built from (holdout_self_test.ex); false when it fails.
       holdouts: ElixirWrapper.HoldoutSelfTest.holdouts?(),
-      holdout_arms: ElixirWrapper.HoldoutSelfTest.holdout_arms?()
+      holdout_arms: ElixirWrapper.HoldoutSelfTest.holdout_arms?(),
+      # Measured by a behavioural self-test (switchback_self_test.ex).
+      switchback: ElixirWrapper.SwitchbackSelfTest.switchback?()
     })
+  end
+
+  # clusterUnit is the raw R33 cluster key and is not hashed; 64-bit values
+  # arrive as decimal strings (WRAPPER_API_SPEC.md, capability `switchback`).
+  post "/switchback/assign" do
+    switchback_call(conn, fn p ->
+      ElixirWrapper.SwitchbackSelfTest.assign(
+        string_param!(p, "clusterUnit"),
+        long_param!(p, "periodIndex"),
+        long_param!(p, "seed"),
+        arm_count_param!(p)
+      )
+    end)
+  end
+
+  post "/switchback/permutation" do
+    switchback_call(conn, fn p ->
+      ElixirWrapper.SwitchbackSelfTest.permutation(
+        string_param!(p, "clusterUnit"),
+        long_param!(p, "cycleIndex"),
+        long_param!(p, "seed"),
+        arm_count_param!(p)
+      )
+    end)
   end
 
   post "/diagnostic" do
@@ -762,6 +789,47 @@ defmodule ElixirWrapper.Router do
 
   defp ok_to_nil(:ok), do: nil
   defp ok_to_nil(other), do: other
+
+  # Answers whenever the assigner links, independent of the self-test
+  # verdict, so a regressed assigner reports its actual outputs.
+  defp switchback_call(conn, fun) do
+    if ElixirWrapper.SwitchbackSelfTest.available?() do
+      try do
+        send_json(conn, 200, %{result: fun.(conn.body_params), events: []})
+      rescue
+        e in ArgumentError -> send_json(conn, 400, %{error: Exception.message(e)})
+      end
+    else
+      send_json(conn, 501, %{error: "linked SDK has no switchback assigner"})
+    end
+  end
+
+  @long_min -0x8000000000000000
+  @long_max 0x7FFFFFFFFFFFFFFF
+
+  defp string_param!(params, name) do
+    case params[name] do
+      value when is_binary(value) -> value
+      _ -> raise ArgumentError, "#{name} must be a string"
+    end
+  end
+
+  defp long_param!(params, name) do
+    text = string_param!(params, name)
+
+    case Integer.parse(text) do
+      {value, ""} when value >= @long_min and value <= @long_max and text != "" -> value
+      _ -> raise ArgumentError, "#{name} must be a signed 64-bit decimal string"
+    end
+  end
+
+  defp arm_count_param!(params) do
+    case params["armCount"] do
+      n when is_integer(n) and n >= 2 -> n
+      n when is_integer(n) -> raise ArgumentError, "armCount must be at least 2, got #{n}"
+      _ -> raise ArgumentError, "armCount must be an integer"
+    end
+  end
 
   defp send_json(conn, status, data) do
     conn
