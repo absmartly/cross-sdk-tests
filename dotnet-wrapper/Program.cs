@@ -127,7 +127,7 @@ async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, ob
         if (request.ValueKind != JsonValueKind.Object) throw new ArgumentException("request must be an object");
         return Results.Ok(new { result = call(request), events = Array.Empty<object>() });
     }
-    catch (Exception e) when (e is ArgumentException or JsonException or FormatException or OverflowException)
+    catch (Exception e) when (e is ArgumentException or JsonException or FormatException or OverflowException or InvalidOperationException)
     {
         return Results.BadRequest(new { error = e.Message });
     }
@@ -639,7 +639,7 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
             {
                 // Boxed per branch: `? l : GetDouble()` would type the whole conditional as double
                 // and pass a whole number such as 4000000002 to the SDK as 4000000002.0.
-                JsonValueKind.Number => jsonElement.TryGetInt64(out var l) ? (object)l : jsonElement.GetDouble(),
+                JsonValueKind.Number => jsonElement.Clone(),
                 JsonValueKind.String => jsonElement.GetString(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,

@@ -285,8 +285,8 @@ public static class SwitchbackSelfTest
             // baseline's shape, and a unit experiment carrying every R33 field publishes the
             // baseline's bytes once id, name and timestamps are aligned.
             var serializer = new DefaultContextEventSerializer();
-            var baselineJson = Normalized(serializer.Serialize(baseline), false);
-            if (Normalized(serializer.Serialize(switchback), true) != Normalized(serializer.Serialize(baseline), true))
+            var baselineJson = Normalized(serializer.Serialize(baseline));
+            if (Normalized(serializer.Serialize(switchback)) != Normalized(serializer.Serialize(baseline)))
             {
                 Console.WriteLine($"{Prefix} check publish payload FAILED: shape of " +
                                   Encoding.UTF8.GetString(serializer.Serialize(switchback)) + " differs from " +
@@ -294,7 +294,7 @@ public static class SwitchbackSelfTest
                 return false;
             }
 
-            if (Normalized(serializer.Serialize(inert), false) != baselineJson)
+            if (Normalized(serializer.Serialize(inert)) != baselineJson)
             {
                 Console.WriteLine($"{Prefix} check unit inertness FAILED: " +
                                   Encoding.UTF8.GetString(serializer.Serialize(inert)) + " differs from " +
@@ -325,7 +325,7 @@ public static class SwitchbackSelfTest
 
     // The publish JSON with publishedAt and each exposure's exposedAt removed, plus (for a shape
     // comparison) id, name and variant blanked.
-    private static string Normalized(byte[] json, bool shapeOnly)
+    private static string Normalized(byte[] json)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
         node.Remove("publishedAt");
@@ -335,7 +335,6 @@ public static class SwitchbackSelfTest
             e.Remove("exposedAt");
             e["id"] = 0;
             e["name"] = "";
-            if (shapeOnly) e["variant"] = 0;
         }
 
         return node.ToJsonString();
