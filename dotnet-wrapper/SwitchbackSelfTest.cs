@@ -324,7 +324,7 @@ public static class SwitchbackSelfTest
     }
 
     // The publish JSON with publishedAt and each exposure's exposedAt removed, plus (for a shape
-    // comparison) id, name and variant blanked.
+    // comparison) id and name blanked.
     private static string Normalized(byte[] json)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
@@ -352,7 +352,13 @@ public static class SwitchbackSelfTest
             return null;
         }
 
-        return publisher.Published[before];
+        var published = publisher.Published[before];
+        var exposure = published.Exposures[0];
+        if (exposure.Id != expected.Id || exposure.Name != expected.Name || exposure.Unit != expected.Unit ||
+            exposure.Variant != expected.Variant || !exposure.Assigned || !exposure.Eligible ||
+            exposure.Overridden || exposure.FullOn || exposure.Custom || exposure.AudienceMismatch || exposure.ExposedAt <= 0)
+            return null;
+        return published;
     }
 
     private static bool Expect(IContext context, Log log, string check, string experimentName, int expectedTreatment,
