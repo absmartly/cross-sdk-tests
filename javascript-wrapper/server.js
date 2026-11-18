@@ -884,9 +884,10 @@ function switchbackParams(body, indexName) {
   for (const name of ['clusterUnit', indexName, 'seed']) {
     if (typeof request[name] !== 'string') throw new Error(`${name} must be a string`);
   }
-  // The golden vectors use 2, 3 and 10 arms; the bound keeps one request from building a huge permutation.
-  if (!Number.isInteger(request.armCount) || request.armCount > MAX_SWITCHBACK_ARMS) {
-    throw new Error(`armCount must be an integer of at most ${MAX_SWITCHBACK_ARMS}`);
+  // WRAPPER_API_SPEC.md: the same bound in every wrapper, so no request builds a huge permutation. A
+  // JSON 3.0 parses as 3 here, as the spec allows.
+  if (!Number.isInteger(request.armCount) || request.armCount < 2 || request.armCount > MAX_SWITCHBACK_ARMS) {
+    throw new Error(`armCount must be an integer between 2 and ${MAX_SWITCHBACK_ARMS}`);
   }
   return [request.clusterUnit, request[indexName], request.seed, request.armCount];
 }

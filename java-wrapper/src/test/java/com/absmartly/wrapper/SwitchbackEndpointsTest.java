@@ -122,8 +122,8 @@ class SwitchbackEndpointsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 0, -3})
-    void rejectsTooFewArmsWith400WithoutCallingTheAssigner(int armCount) {
+    @ValueSource(ints = {1, 0, -3, 1001, Integer.MAX_VALUE})
+    void rejectsArmCountsOutsideTheContractWith400WithoutCallingTheAssigner(int armCount) {
         WrongFunctions functions = new WrongFunctions();
         WrapperController controller = new WrapperController(functions);
 

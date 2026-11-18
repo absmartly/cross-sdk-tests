@@ -1368,12 +1368,15 @@ Both endpoints are pure functions with no context. Request rules:
   **decimal strings** and must be parsed exactly (never through a double);
   JSON numbers lose precision above 2^53 in most languages. `seed` is the
   experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
-- `armCount` is a JSON integer, at least 2.
+- `armCount` is a JSON integer from 2 to 1000 (the vectors use 2, 3 and 10).
+  The bound is part of the contract, so every wrapper rejects the same
+  requests. A wrapper may read an integral JSON number such as `3.0` as `3`
+  (JavaScript cannot tell them apart); scenarios always send integers.
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
+  `armCount` outside 2..1000) returns 400 with `{"error": "..."}`. A wrapper whose SDK
   lacks the function returns 501.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`

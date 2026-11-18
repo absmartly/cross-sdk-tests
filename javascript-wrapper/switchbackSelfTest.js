@@ -3,8 +3,6 @@
 // switchback functions, then switchback serving through a real Context on an R33 payload parsed from
 // JSON text, on the same clock-free grid the scenarios use. A javascript-sdk build without switchbacks
 // lacks the module or serves the sticky unit assignment, so the battery fails closed.
-//
-// Lazy, cached, run-once (the in-flight Promise is cached), and any exception reports `false`.
 
 const absmartly = require('@absmartly/javascript-sdk');
 
@@ -41,7 +39,6 @@ const PERMUTATION_CASES = [
   ['123456789', '0', '0', [2, 0, 1]],
 ];
 
-// The SDK's switchback functions, or null for a build without them.
 function loadFunctions() {
   try {
     return require('@absmartly/javascript-sdk/lib/switchback-long');
@@ -109,10 +106,9 @@ function switchbackJson(id, name, seedHi, seedLo, arms, clusters, extra) {
     switchbackDesignType: 'balanced_block',
     switchbackEstimand: 'global_average_treatment_effect',
   }, extra || {});
-  const text = JSON.stringify(experiment);
-  if (!clusters) return text;
-  const map = clusters.map(([type, path]) => `${JSON.stringify(type)}:${JSON.stringify(path)}`).join(',');
-  return `${text.slice(0, -1)},"switchbackClusters":{${map}}}`;
+  // Named, non-index keys keep their insertion order through JSON.stringify.
+  if (clusters) experiment.switchbackClusters = Object.fromEntries(clusters);
+  return JSON.stringify(experiment);
 }
 
 // The unit baseline: seeds whose 3-arm unit draw for serving-9 is 1.
@@ -191,7 +187,6 @@ function expect(context, exposures, check, experimentName, expectedTreatment, ex
   return matches;
 }
 
-// Field names at every depth, so a switchback publish can be compared with a unit baseline's shape.
 function shapeMismatch(baseline, actual, path) {
   const kind = (v) => (Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v);
   if (kind(baseline) !== kind(actual)) return `${path}: baseline is ${kind(baseline)}, got ${kind(actual)}`;
@@ -279,8 +274,6 @@ async function checkContextServing() {
     expect(context, exposures, 'Phase 1E fields only', 'sb_phase1e_only', 0, []);
   if (!served) return false;
 
-  // A unit baseline and then a switchback on the same unit, each published on its own, with the same
-  // fields at every depth.
   await context.publish();
   const before = exposures.length;
   const unitServed = exposureOf(514, 'sb_unit_baseline', 'unit_serving', 1);

@@ -227,7 +227,6 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
     assert len(gated) == len(built_group) - 1 == GROUP_SIZE - 1
 
-    # python lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
     reason = runner.policy["sdks"]["python"]["unsupported"]["switchback"]
     runner.capabilities = {"python": {"switchback": False}}
     for scenario in gated:

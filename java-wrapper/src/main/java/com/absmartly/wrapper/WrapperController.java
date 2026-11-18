@@ -210,10 +210,13 @@ public class WrapperController {
 
     // The 400-on-armCount<2 contract is the wrapper's, so it must not depend on how the linked
     // assigner reacts (a regressed one could return a value or throw something unexpected).
+    static final int MAX_SWITCHBACK_ARMS = 1000;
+
     private static int armCountParam(Map<String, Object> request) {
         int armCount = intParam(request, "armCount");
-        if (armCount < 2) {
-            throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
+        // WRAPPER_API_SPEC.md: the same bound in every wrapper, so no request builds a huge permutation.
+        if (armCount < 2 || armCount > MAX_SWITCHBACK_ARMS) {
+            throw new IllegalArgumentException("armCount must be between 2 and " + MAX_SWITCHBACK_ARMS + ", got " + armCount);
         }
         return armCount;
     }
