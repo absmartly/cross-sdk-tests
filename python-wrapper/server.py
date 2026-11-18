@@ -24,8 +24,12 @@ import jsons
 import threading
 
 import holdout_self_test
+import switchback_self_test
 
 app = Flask(__name__)
+# Serve payloads with their keys in the order received: Flask sorts keys by
+# default, which would reorder switchbackClusters, whose order is semantic.
+app.json.sort_keys = False
 
 class DeferredContextDataProvider(ContextDataProvider):
     """Delays the SDK's own context-data fetch by throttle_ms.
@@ -174,7 +178,8 @@ def capabilities():
         'semverOperators': True,
         'xAgentHeader': True,
         'holdouts': holdout_self_test.run_holdouts(),
-        'holdout_arms': holdout_self_test.run_holdout_arms()
+        'holdout_arms': holdout_self_test.run_holdout_arms(),
+        'switchback': switchback_self_test.run()
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -912,6 +917,58 @@ def diagnostic():
         return jsonify({'result': result, 'events': []})
     except Exception as e:
         return jsonify({'error': str(e), 'events': []}), 500
+
+def _switchback_long(body, name):
+    # 64-bit values arrive as decimal strings and are parsed exactly.
+    value = body.get(name)
+    if not isinstance(value, str) or \
+            re.fullmatch(r'-?[0-9]+', value) is None:
+        raise ValueError(f'{name} must be a decimal string')
+    number = int(value)
+    if not -(1 << 63) <= number < (1 << 63):
+        raise ValueError(f'{name} is out of the signed 64-bit range')
+    return number
+
+
+def _switchback_call(compute):
+    # Answers whenever the assigner exists, independent of the self-test
+    # verdict, so a regressed assigner reports its actual outputs.
+    if switchback_self_test.assigner() is None:
+        return jsonify({'error': 'python3-sdk has no switchback assigner'}), 501
+    try:
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            raise ValueError('request body must be a JSON object')
+        cluster_unit = body.get('clusterUnit')
+        if not isinstance(cluster_unit, str):
+            raise ValueError('clusterUnit must be a string')
+        arm_count = body.get('armCount')
+        if isinstance(arm_count, bool) or not isinstance(arm_count, int) or \
+                arm_count < 2:
+            raise ValueError(f'armCount must be an integer of at least 2, '
+                             f'got {arm_count!r}')
+        result = compute(body, cluster_unit, arm_count)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'result': result, 'events': []})
+
+
+# clusterUnit is the raw R33 cluster key, passed to the SDK unchanged (never
+# hashed). See WRAPPER_API_SPEC.md, capability `switchback`.
+@app.route('/switchback/assign', methods=['POST'])
+def switchback_assign():
+    return _switchback_call(lambda body, unit, arms: switchback_self_test.assign(
+        unit, _switchback_long(body, 'periodIndex'),
+        _switchback_long(body, 'seed'), arms))
+
+
+@app.route('/switchback/permutation', methods=['POST'])
+def switchback_permutation():
+    return _switchback_call(
+        lambda body, unit, arms: switchback_self_test.permutation(
+            unit, _switchback_long(body, 'cycleIndex'),
+            _switchback_long(body, 'seed'), arms))
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=False)

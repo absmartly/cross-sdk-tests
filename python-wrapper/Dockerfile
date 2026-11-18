@@ -16,7 +16,7 @@ WORKDIR /app
 COPY cross-sdk-tests/python-wrapper/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY cross-sdk-tests/python-wrapper/server.py cross-sdk-tests/python-wrapper/holdout_self_test.py ./
+COPY cross-sdk-tests/python-wrapper/server.py cross-sdk-tests/python-wrapper/holdout_self_test.py cross-sdk-tests/python-wrapper/switchback_self_test.py ./
 
 EXPOSE 3000
 
