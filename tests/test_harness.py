@@ -454,7 +454,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "java", "javascript", "python", "react", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
