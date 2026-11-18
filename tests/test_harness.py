@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -841,6 +842,71 @@ class ConsistencyTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
 
+    def test_hyphenated_lanes_map_to_an_agent_language(self):
+        """A lane named <lang>-<suffix> (e.g. swift-v1) sends X-Agent absmartly-<lang>-sdk/..., so the
+        X-Agent scenarios need SDK_AGENT_LANGUAGE to map it, or they fail with `{lang}` = the lane."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            matrix = json.loads(re.search(r"matrix='(.*?)'", src.read(), re.DOTALL).group(1))
+        for lane in matrix["include"]:
+            if "-" in lane["sdk"]:
+                with self.subTest(lane=lane["sdk"]):
+                    self.assertIn(lane["sdk"], test_runner.SDK_AGENT_LANGUAGE)
+
+    def test_lane_checkouts_resolve_through_sdk_repos(self):
+        """Checkout dirs that are not repo names (swift-sdk-v1) are cloned through SDK_REPOS, by the
+        shared clone_sdk helper, in both CI and setup-sdks.sh; and every lane repo has a pin."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            workflow = src.read()
+        with open(os.path.join(REPO_ROOT, "setup-sdks.sh")) as src:
+            setup = src.read()
+        with open(os.path.join(REPO_ROOT, "sdk-branches.sh")) as src:
+            branches = src.read()
+        self.assertIn('clone_sdk "$repo" "$branch"', workflow)
+        self.assertIn('clone_sdk "$repo" "$branch"', setup)
+        self.assertIn('${SDK_REPOS[$dir]:-$dir}', branches)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
+        pins = self.sdk_branch_pins()
+        for lane in matrix["include"]:
+            for repo in lane["repos"].split():
+                with self.subTest(repo=repo):
+                    self.assertIn(repo, pins)
+        self.assertRegex(branches, r'\["swift-sdk-v1"\]="swift-sdk"')
+
+    @staticmethod
+    def sdk_branch_pins():
+        """SDK_BRANCHES as sdk-branches.sh defines it (sourced by bash, so SDK_REPOS cannot leak in)."""
+        script = 'source sdk-branches.sh; for k in "${!SDK_BRANCHES[@]}"; do printf "%s=%s\\n" "$k" "${SDK_BRANCHES[$k]}"; done'
+        out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+        return dict(line.split("=", 1) for line in out.splitlines() if line)
+
+    def test_swift_v1_lane_is_pinned_to_an_immutable_1x_ref(self):
+        """swift-sdk main becomes 2.0 when swift-sdk#13 merges, so the 1.x lane must never track main:
+        it is pinned to a full commit SHA, a v1.* tag, or a release/1.* branch."""
+        pin = self.sdk_branch_pins().get("swift-sdk-v1")
+        self.assertIsNotNone(pin, "swift-sdk-v1 has no pin, so CI would fall back to main")
+        self.assertRegex(pin, r"^(?:[0-9a-f]{40}|v1\.[0-9.]+|release/1\.[0-9x.]*)$")
+
+    def test_clone_sdk_takes_the_sha_path_for_a_commit_and_branch_path_otherwise(self):
+        """clone_sdk fetches a full SHA (git clone --branch cannot) and clones a branch or tag."""
+        with tempfile.TemporaryDirectory() as tmp:
+            stub = os.path.join(tmp, "git")
+            log = os.path.join(tmp, "calls")
+            with open(stub, "w") as f:
+                f.write(f"#!/bin/bash\necho \"$*\" >> {log}\n")
+            os.chmod(stub, 0o755)
+            env = dict(os.environ, PATH=f"{tmp}:{os.environ['PATH']}")
+            sha = "b67a2a9fd9ebbdda46fe1fede873a03102b449f0"
+            script = f'source "{REPO_ROOT}/sdk-branches.sh"; cd "{tmp}"; clone_sdk swift-sdk-v1 {sha}; clone_sdk swift-sdk feat/swift-2.0'
+            subprocess.run(["bash", "-c", script], env=env, check=True, capture_output=True)
+            with open(log) as f:
+                calls = f.read().splitlines()
+        self.assertIn("init -q swift-sdk-v1", calls)
+        self.assertIn("-C swift-sdk-v1 remote add origin https://github.com/absmartly/swift-sdk.git", calls)
+        self.assertIn(f"-C swift-sdk-v1 fetch -q --depth 1 origin {sha}", calls)
+        self.assertIn("-C swift-sdk-v1 checkout -q FETCH_HEAD", calls)
+        self.assertIn("clone -q --depth 1 --branch feat/swift-2.0 https://github.com/absmartly/swift-sdk.git swift-sdk", calls)
+        self.assertFalse(any(c.startswith("clone") and sha in c for c in calls))
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()
@@ -851,8 +917,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 20)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 20)
+        self.assertEqual(len(matrix["include"]), 21)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 21)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -1007,7 +1073,7 @@ class StaticRepoChecks(unittest.TestCase):
         "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
         "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
         "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
-        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "swift-v1": "swift-v1-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
         "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
         "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
     }
@@ -1015,7 +1081,7 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes."""
+        the wrappers fails here rather than in all 21 lanes."""
         policy = test_runner.load_capability_policy()
         self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
         for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():

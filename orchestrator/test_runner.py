@@ -448,6 +448,7 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
 # where it is not the lane name: flutter uses the dart_sdk client, liquid wraps ruby-sdk, and the
 # framework wrappers wrap javascript-sdk.
 SDK_AGENT_LANGUAGE = {
+    "swift-v1": "swift",
     "flutter": "dart",
     "liquid": "ruby",
     "react": "javascript",
