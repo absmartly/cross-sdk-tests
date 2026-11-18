@@ -49,13 +49,13 @@ clone_or_update() {
 
   if [ -d "$repo" ]; then
     cd "$repo"
-    git fetch origin "$branch" --depth 1 --update-shallow 2>/dev/null || git fetch origin "$branch" 2>/dev/null || { echo "  WARN $repo: branch '$branch' not found on remote"; cd ..; return 1; }
+    git fetch origin "$branch" --depth 1 --update-shallow 2>/dev/null || git fetch origin "$branch" 2>/dev/null || { echo "  WARN $repo: ref '$branch' not found on remote"; cd ..; return 1; }
     git checkout "$branch" 2>/dev/null || git checkout FETCH_HEAD 2>/dev/null
     git reset --hard "origin/$branch" 2>/dev/null || git reset --hard FETCH_HEAD 2>/dev/null || true
     cd ..
     echo "  UPDATE $repo ($branch)"
   else
-    if git clone -b "$branch" --depth 1 "$url" "$repo" 2>/dev/null; then
+    if clone_sdk "$repo" "$branch" 2>/dev/null; then
       echo "  CLONE $repo ($branch)"
     else
       echo "  FAIL $repo: could not clone branch '$branch'"

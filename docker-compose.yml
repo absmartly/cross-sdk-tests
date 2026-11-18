@@ -278,7 +278,7 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
-  # swift-sdk 1.x (release/1.x) during its 12-month maintenance window; built from the
+  # swift-sdk 1.x (pinned in sdk-branches.sh: 1.5.0 commit b67a2a9 until release/1.x exists) during its 12-month maintenance window; built from the
   # swift-sdk-v1 checkout. swift-sdk above is 2.x.
   swift-v1-sdk:
     build:

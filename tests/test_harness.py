@@ -841,6 +841,36 @@ class ConsistencyTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
 
+    def test_hyphenated_lanes_map_to_an_agent_language(self):
+        """A lane named <lang>-<suffix> (e.g. swift-v1) sends X-Agent absmartly-<lang>-sdk/..., so the
+        X-Agent scenarios need SDK_AGENT_LANGUAGE to map it, or they fail with `{lang}` = the lane."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            matrix = json.loads(re.search(r"matrix='(.*?)'", src.read(), re.DOTALL).group(1))
+        for lane in matrix["include"]:
+            if "-" in lane["sdk"]:
+                with self.subTest(lane=lane["sdk"]):
+                    self.assertIn(lane["sdk"], test_runner.SDK_AGENT_LANGUAGE)
+
+    def test_lane_checkouts_resolve_through_sdk_repos(self):
+        """Checkout dirs that are not repo names (swift-sdk-v1) are cloned through SDK_REPOS, by the
+        shared clone_sdk helper, in both CI and setup-sdks.sh; and every lane repo has a pin."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            workflow = src.read()
+        with open(os.path.join(REPO_ROOT, "setup-sdks.sh")) as src:
+            setup = src.read()
+        with open(os.path.join(REPO_ROOT, "sdk-branches.sh")) as src:
+            branches = src.read()
+        self.assertIn('clone_sdk "$repo" "$branch"', workflow)
+        self.assertIn('clone_sdk "$repo" "$branch"', setup)
+        self.assertIn('${SDK_REPOS[$dir]:-$dir}', branches)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
+        pinned = set(re.findall(r'^  \["([^"]+)"\]=', branches, re.MULTILINE))
+        for lane in matrix["include"]:
+            for repo in lane["repos"].split():
+                with self.subTest(repo=repo):
+                    self.assertIn(repo, pinned)
+        self.assertRegex(branches, r'\["swift-sdk-v1"\]="swift-sdk"')
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()

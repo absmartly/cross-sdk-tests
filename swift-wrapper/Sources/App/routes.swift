@@ -34,7 +34,7 @@ func encodedToAny<T: Encodable>(_ value: T) -> Any {
 }
 
 // An unknown experiment exposes with no unit; the wire contract carries that as an explicit null,
-// not an omitted member. A goal without properties carries no `properties` member, as in 1.x.
+// not an omitted member.
 func exposureToAny(_ exposure: Exposure) -> Any {
     var dict = encodedToAny(exposure) as? [String: Any] ?? [:]
     if dict["unit"] == nil { dict["unit"] = NSNull() }
@@ -42,9 +42,7 @@ func exposureToAny(_ exposure: Exposure) -> Any {
 }
 
 func goalToAny(_ goal: Goal) -> Any {
-    var dict = encodedToAny(goal) as? [String: Any] ?? [:]
-    if dict["properties"] is NSNull { dict.removeValue(forKey: "properties") }
-    return dict
+    encodedToAny(goal)
 }
 
 func publishToAny(_ event: PublishEvent) -> Any {
@@ -373,7 +371,7 @@ func makeClient(
     endpoint: String, application: String, environment: String, transport: WrapperTransport, apiKey: String = "test-api-key"
 ) throws -> ABsmartlyClient {
     guard let url = URL(string: endpoint) else {
-        throw ABsmartlyError.invalidConfiguration("Missing Endpoint configuration")
+        throw Abort(.badRequest, reason: "wrapper: endpoint is not a valid URL: \(endpoint)")
     }
     var configuration = ABsmartlyClient.Configuration(
         endpoint: url, apiKey: apiKey, application: application, environment: .init(rawValue: environment))

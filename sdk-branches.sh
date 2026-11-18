@@ -16,7 +16,10 @@
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
 # swift-sdk 2.0 (swift-sdk#13) is on feat/swift-2.0 until it merges; then re-pin "swift-sdk"
 # to main. "swift-sdk-v1" is the 1.x lane (the swift-v1 wrapper) and clones absmartly/swift-sdk into
-# swift-sdk-v1/: main is 1.5.0 until 2.0 merges, then re-pin it to release/1.x (cut from v1.5.0).
+# swift-sdk-v1/. It is pinned to the immutable commit b67a2a9 (swift-sdk main before 2.0, the
+# 1.5.0 release candidate), because main becomes 2.0 when swift-sdk#13 merges. Re-pin it to
+# release/1.x once the owner cuts that branch from the v1.5.0 tag. A value of 40 hex digits is a
+# commit SHA; anything else is a branch or tag.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
@@ -35,7 +38,7 @@ declare -A SDK_BRANCHES=(
   ["rust-sdk"]="main"
   ["scala-sdk"]="main"
   ["swift-sdk"]="feat/swift-2.0"
-  ["swift-sdk-v1"]="main"
+  ["swift-sdk-v1"]="b67a2a9fd9ebbdda46fe1fede873a03102b449f0"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
 )
@@ -45,3 +48,16 @@ declare -A SDK_BRANCHES=(
 declare -A SDK_REPOS=(
   ["swift-sdk-v1"]="swift-sdk"
 )
+
+# Clones absmartly/<repo> (mapped through SDK_REPOS) at <ref> into ./<dir>. <ref> is a branch, a
+# tag, or a full commit SHA, which `git clone --branch` cannot take.
+clone_sdk() {
+  local dir="$1" ref="$2"
+  local url="https://github.com/absmartly/${SDK_REPOS[$dir]:-$dir}.git"
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+    git init -q "$dir" && git -C "$dir" remote add origin "$url" \
+      && git -C "$dir" fetch -q --depth 1 origin "$ref" && git -C "$dir" checkout -q FETCH_HEAD
+  else
+    git clone -q --depth 1 --branch "$ref" "$url" "$dir"
+  fi
+}
