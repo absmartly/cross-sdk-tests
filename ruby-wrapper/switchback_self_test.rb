@@ -60,7 +60,6 @@ module SwitchbackSelfTest
 
   module_function
 
-  # The SDK's switchback assigner, or nil when the linked ruby-sdk has none.
   def assigner
     defined?(Absmartly::Switchback::Assigner) ? Absmartly::Switchback::Assigner : nil
   end
@@ -133,10 +132,8 @@ module SwitchbackSelfTest
         switchback(530, 'sb_float_value', 0, 42, 10, [%w[unit_serving float_value]]),
         # The first declared unit has no value, so the second serves and is the exposure unit.
         switchback(531, 'sb_second_unit_serves', 0, 42, 10, [%w[unit_serving zone], %w[unit_user profile/zone]]),
-        # An assignment rule wins, published like a unit experiment's rule win.
         switchback(532, 'sb_rule', 0, 42, 10, [%w[unit_serving city]])
           .merge(assignmentRules: '{"rules":[{"type":"assign","environments":[],"variant":7}]}'),
-        # A traffic miss on an eligible cluster is recorded as ineligible.
         switchback(533, 'sb_traffic_miss', 0, 42, 10, [%w[unit_serving city]]).merge(trafficSplit: [1, 0]),
         unit(514, 'sb_unit_baseline'),
         unit(527, 'sb_unit_with_fields').merge(
@@ -174,7 +171,6 @@ module SwitchbackSelfTest
     JSON.parse(DefaultContextEventSerializer.new.serialize(publisher.events[before]))
   end
 
-  # Field names and types at every depth, values left out.
   def shape(json)
     case json
     when Hash then json.keys.sort.to_h { |key| [key, shape(json[key])] }
@@ -250,7 +246,6 @@ module SwitchbackSelfTest
     expect_served(context, log, 'traffic miss', 'sb_traffic_miss', 0,
                   exposure(533, 'sb_traffic_miss', 'unit_serving', 0, eligible: false))
 
-    # A unit baseline and a switchback on the same unit publish the same shape at every depth.
     context.publish
     expect_served(context, log, 'unit baseline', 'sb_unit_baseline', 1, exposure(514, 'sb_unit_baseline', 'unit_serving', 1))
     baseline = publish_one(context, publisher)
@@ -261,7 +256,6 @@ module SwitchbackSelfTest
     check_publish(baseline, exposure(514, 'sb_unit_baseline', 'unit_serving', 1))
     check_publish(served, exposure(513, 'sb_payload', 'unit_serving', 1))
 
-    # A unit experiment carrying every R33 field publishes the same bytes as the plain baseline.
     expect_served(context, log, 'unit inertness', 'sb_unit_with_fields', 1,
                   exposure(527, 'sb_unit_with_fields', 'unit_serving', 1))
     with_fields = publish_one(context, publisher)
