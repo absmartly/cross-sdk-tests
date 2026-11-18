@@ -1008,6 +1008,26 @@ class StaticRepoChecks(unittest.TestCase):
         )
         self.assertEqual(flutter, dart)
 
+    def test_flutter_switchback_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's switchback
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                lines = src.read().splitlines()
+            for line in skip:
+                lines.remove(line)  # first occurrence only; a missing line fails
+            return lines
+
+        dart = body("dart-wrapper/switchback_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
+        flutter = body(
+            "flutter-wrapper/lib/switchback_self_test.dart",
+            [
+                "// Copy of dart-wrapper/switchback_self_test.dart; only the import differs.",
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+            ],
+        )
+        self.assertEqual(flutter, dart)
+
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
             counts = {int(n) for n in re.findall(r"\*\*(\d+) scenarios\*\*", src.read())}
