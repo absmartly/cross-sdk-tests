@@ -769,6 +769,10 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value equals an omitted one (Jackson NON_NULL drops it); other values still differ.
+        null_attr = dict(base_pub, attributes=[{"name": "x", "value": None}])
+        self.assertEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
