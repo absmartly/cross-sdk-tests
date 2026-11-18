@@ -60907,7 +60907,7 @@
   },
   {
     "name": "411 - Switchback - Values - Strings And Whole Numbers Only",
-    "description": "A non-empty string is the key as-is and a whole number is keyed by its decimal text: store_number=4000000002 draws assignSwitchback(\"4000000002\", ...), unlike its int32 wrap or double renderings, and agrees with the string \"4000000002\" from another unit type. 1.5, 3.0, true, an object, an array, \"\" and null give no value: each such experiment is an ineligible control with no exposure, although its lax text rendering would draw nonzero.",
+    "description": "A non-empty string is the key as-is and a whole number is keyed by its decimal text: store_number=4000000002 draws assignSwitchback(\"4000000002\", ...), unlike its int32 wrap or double renderings, and agrees with the string \"4000000002\" from another unit type. 1.5, true, an object, an array, \"\" and null give no value: each such experiment is an ineligible control with no exposure, although its lax text rendering would draw nonzero. The integral float 3.0 is its own scenario, gated on integralFloatAttributes.",
     "contextData": {
       "experiments": [
         {
@@ -60954,59 +60954,6 @@
           "randomizationType": "switchback",
           "switchbackClusters": {
             "store_id": "v_fraction"
-          },
-          "switchbackStartAt": 1704067200000,
-          "switchbackPeriodMs": 1440000000000,
-          "switchbackCarryoverDurationMs": 0,
-          "switchbackBurnInDurationMs": 0,
-          "switchbackBurnOutDurationMs": 0,
-          "switchbackDesignType": "balanced_block",
-          "switchbackEstimand": "global_average_treatment_effect"
-        },
-        {
-          "id": 331,
-          "name": "exp_sb_value_integral_float",
-          "iteration": 1,
-          "unitType": "store_id",
-          "seedHi": 1234567,
-          "seedLo": 1,
-          "split": [
-            0.34,
-            0.33,
-            0.33
-          ],
-          "trafficSeedHi": 1,
-          "trafficSeedLo": 2,
-          "trafficSplit": [
-            0,
-            1
-          ],
-          "fullOnVariant": 0,
-          "applications": [
-            {
-              "name": "website"
-            }
-          ],
-          "variants": [
-            {
-              "name": "A",
-              "config": null
-            },
-            {
-              "name": "B",
-              "config": null
-            },
-            {
-              "name": "C",
-              "config": null
-            }
-          ],
-          "audience": null,
-          "audienceStrict": false,
-          "customFieldValues": null,
-          "randomizationType": "switchback",
-          "switchbackClusters": {
-            "store_id": "v_integral_float"
           },
           "switchbackStartAt": 1704067200000,
           "switchbackPeriodMs": 1440000000000,
@@ -61419,10 +61366,6 @@
                     "name": "exp_sb_value_fraction"
                   },
                   {
-                    "id": 331,
-                    "name": "exp_sb_value_integral_float"
-                  },
-                  {
                     "id": 332,
                     "name": "exp_sb_value_bool"
                   },
@@ -61461,17 +61404,6 @@
         "params": {
           "name": "v_fraction",
           "value": 1.5
-        },
-        "expect": {
-          "result": null,
-          "events": []
-        }
-      },
-      {
-        "action": "attribute",
-        "params": {
-          "name": "v_integral_float",
-          "value": 3.0
         },
         "expect": {
           "result": null,
@@ -61565,16 +61497,6 @@
         "action": "treatment",
         "params": {
           "experimentName": "exp_sb_value_fraction"
-        },
-        "expect": {
-          "result": 0,
-          "events": []
-        }
-      },
-      {
-        "action": "treatment",
-        "params": {
-          "experimentName": "exp_sb_value_integral_float"
         },
         "expect": {
           "result": 0,
@@ -68499,6 +68421,134 @@
     ],
     "requires": [
       "switchback"
+    ]
+  },
+  {
+    "name": "426 - Switchback - Values - An Integral Float Gives No Value",
+    "description": "The attribute value 3.0 is a float, so it gives no cluster value: an ineligible control with no exposure, although keying it like the integer 3 would draw nonzero. Gated on integralFloatAttributes: JavaScript parses 3.0 and 3 alike and keys both as \"3\" (documented).",
+    "contextData": {
+      "experiments": [
+        {
+          "id": 331,
+          "name": "exp_sb_value_integral_float",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": 1234567,
+          "seedLo": 1,
+          "split": [
+            0.34,
+            0.33,
+            0.33
+          ],
+          "trafficSeedHi": 1,
+          "trafficSeedLo": 2,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            },
+            {
+              "name": "C",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "v_integral_float"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "store_id": "values-4"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 331,
+                    "name": "exp_sb_value_integral_float"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "v_integral_float",
+          "value": 3.0
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_value_integral_float"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ],
+    "requires": [
+      "switchback",
+      "integralFloatAttributes"
     ]
   }
 ]

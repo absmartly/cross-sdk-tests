@@ -17,7 +17,7 @@ generator is OUT OF DATE:
   * It does not emit the Holdouts scenario group (203-227) at all.
   * It does not emit the 2026-11 SDK round groups (230-253, generate_sdk_round_2026_11_scenarios.py)
     or the feature-parity groups (300-332, generate_parity_round_scenarios.py).
-  * It does not emit the Switchback group (400-425); that group is owned by
+  * It does not emit the Switchback group (400-426); that group is owned by
     generate_switchback_scenarios.py, which rewrites it in place in the
     canonical file and verifies it with --check.
 

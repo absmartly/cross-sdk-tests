@@ -386,7 +386,9 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
             for g in items("goals")
         ],
         "attributes": [
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            # An attribute set to null is published as `"value": null` by some SDKs and with the member
+            # omitted by others (Jackson NON_NULL); the collector reads both as null.
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")

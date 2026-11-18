@@ -62,6 +62,10 @@ PATH_CASES = os.path.join(HERE, "fixtures", "switchback", "attribute-path-cases.
 
 GROUP_MARKER = scenario_groups.SWITCHBACK
 CAPABILITY = "switchback"
+# The integral-float case of the value rule: the SDK's JSON layer must tell 3.0 from 3. JavaScript (and
+# Dart on the web) parse both as one number, so they key 3.0 as "3" (owner decision 2026-11-17) and list
+# this capability as a reviewed exception.
+FLOAT_CAPABILITY = "integralFloatAttributes"
 
 ASSIGN_CASES = 882
 PERMUTATION_CASES = 504
@@ -1181,18 +1185,24 @@ INELIGIBLE_VALUES = [
 ]
 
 
+def _ineligible_value_experiment(offset: int, label: str) -> dict:
+    base = switchback_experiment(330 + offset, f"exp_sb_value_{label}", [("store_id", f"v_{label}")], 3)
+    # A lax reader would key the value's text; choose seeds so that draw is nonzero.
+    lax = {"fraction": "1.5", "integral_float": "3", "bool": "true", "object": '{"a":1}', "array": '["a"]',
+           "empty": "", "null": "null"}[label]
+    seeds = next(s for s in [(base["seedHi"], base["seedLo"])] + [(SEED_SEARCH_HI, k) for k in range(1, 999)]
+                 if draw(lax, dict(base, seedHi=s[0], seedLo=s[1])) != 0
+                 and draw("3.0", dict(base, seedHi=s[0], seedLo=s[1])) != 0)
+    return dict(base, seedHi=seeds[0], seedLo=seeds[1])
+
+
 def value_normalisation_scenarios() -> list:
     uid = pick_uid("values", QUIET3)
-    ineligible, steps = [], []
-    for offset, (label, value) in enumerate(INELIGIBLE_VALUES):
-        base = switchback_experiment(330 + offset, f"exp_sb_value_{label}", [("store_id", f"v_{label}")], 3)
-        # A lax reader would key the value's text; choose seeds so that draw is nonzero.
-        lax = {"fraction": "1.5", "integral_float": "3", "bool": "true", "object": '{"a":1}', "array": '["a"]',
-               "empty": "", "null": "null"}[label]
-        seeds = next(s for s in [(base["seedHi"], base["seedLo"])] + [(SEED_SEARCH_HI, k) for k in range(1, 999)]
-                     if draw(lax, dict(base, seedHi=s[0], seedLo=s[1])) != 0
-                     and draw("3.0", dict(base, seedHi=s[0], seedLo=s[1])) != 0)
-        ineligible.append(dict(base, seedHi=seeds[0], seedLo=seeds[1]))
+    ineligible = []
+    values = [(offset, label, value) for offset, (label, value) in enumerate(INELIGIBLE_VALUES)
+              if label != "integral_float"]
+    for offset, label, value in values:
+        ineligible.append(_ineligible_value_experiment(offset, label))
     number_exp = switchback_experiment(340, "exp_sb_value_whole_number", [("store_id", "store_number")], 3)
     number = pick_value(lambda k: 4_000_000_000 + k, uid, number_exp, avoid_keys=number_renderings)
     agree_exp = switchback_experiment(341, "exp_sb_value_number_agrees_with_string",
@@ -1202,16 +1212,34 @@ def value_normalisation_scenarios() -> list:
         "Values - Strings And Whole Numbers Only",
         ("A non-empty string is the key as-is and a whole number is keyed by its decimal text: store_number="
          f"{number} draws assignSwitchback(\"{number}\", ...), unlike its int32 wrap or double renderings, and "
-         f"agrees with the string \"{number}\" from another unit type. 1.5, 3.0, true, an object, an array, \"\" "
+         f"agrees with the string \"{number}\" from another unit type. 1.5, true, an object, an array, \"\" "
          "and null give no value: each such experiment is an ineligible control with no exposure, although its "
-         "lax text rendering would draw nonzero."),
+         "lax text rendering would draw nonzero. The integral float 3.0 is its own scenario, gated on "
+         f"{FLOAT_CAPABILITY}."),
         ineligible + [number_exp, agree_exp], {"store_id": uid, "user_id": user},
     )
-    for (label, value), exp in zip(INELIGIBLE_VALUES, ineligible):
+    for (offset, label, value), exp in zip(values, ineligible):
         sc.attr(f"v_{label}", value)
     sc.attr("store_number", number).attr("profile", {"number": str(number)})
     sc.treat(*ineligible).pending().treat(number_exp, agree_exp).publish()
     return [sc.build()]
+
+
+def integral_float_scenarios() -> list:
+    """3.0 gives no cluster value (a float never keys a cluster), split from the value rule because
+    an SDK whose JSON layer cannot tell 3.0 from 3 cannot express it (FLOAT_CAPABILITY)."""
+    uid = pick_uid("values", QUIET3)
+    offset = [label for label, _ in INELIGIBLE_VALUES].index("integral_float")
+    exp = _ineligible_value_experiment(offset, "integral_float")
+    scenario = Scenario(
+        "Values - An Integral Float Gives No Value",
+        ("The attribute value 3.0 is a float, so it gives no cluster value: an ineligible control with no "
+         "exposure, although keying it like the integer 3 would draw nonzero. Gated on "
+         f"{FLOAT_CAPABILITY}: JavaScript parses 3.0 and 3 alike and keys both as \"3\" (documented)."),
+        [exp], {"store_id": uid},
+    ).attr("v_integral_float", 3.0).treat(exp).pending().build()
+    scenario["requires"] = [CAPABILITY, FLOAT_CAPABILITY]
+    return [scenario]
 
 
 def path_scenarios(paths: dict) -> list:
@@ -1724,6 +1752,8 @@ RULES = OrderedDict([
         "Holdout And Assignment Rule - The Rule Wins And The Holdout Is Never Consulted"]),
     ("three or more sources: the declared (JSON) cluster order serves, not a sorted or unordered map", [
         "Many Sources - Declared Cluster Order Is Kept, Not Sorted"]),
+    ("an integral float (3.0) gives no value; gated on integralFloatAttributes", [
+        "Values - An Integral Float Gives No Value"]),
 ])
 
 
@@ -1772,7 +1802,7 @@ MUTANT_SCENARIOS = {
     "swapped_seed": [_SINGLE],
     "round_anchor": [_SCHEDULE],
     "legacy_fields": [_LEGACY],
-    "lax_values": ["Values - Strings And Whole Numbers Only"],
+    "lax_values": ["Values - Strings And Whole Numbers Only", "Values - An Integral Float Gives No Value"],
     "dotted_nesting": [_PATHS],
     "lax_index_position": [_PATHS],
     "legacy_unit_fallback": [_PATHS, _LEGACY],
@@ -1826,7 +1856,7 @@ def group_scenarios(fixtures: Fixtures) -> list:
         *schedule_scenarios(), *traffic_scenarios(), *precedence_scenarios(), *holdout_scenarios(),
         *legacy_scenarios(), *refresh_scenarios(), *dedup_and_payload_scenarios(), *inertness_scenarios(),
         *read_once_scenarios(), *variable_scenarios(), *holdout_and_rule_scenarios(),
-        *many_sources_scenarios(),
+        *many_sources_scenarios(), *integral_float_scenarios(),
     ]
 
 
