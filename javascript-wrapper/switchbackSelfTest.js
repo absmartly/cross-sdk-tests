@@ -133,6 +133,13 @@ function probePayloadText() {
     switchbackStartAt: ANCHOR_PERIOD_0,
     switchbackPeriodMs: PERIOD_MS,
     switchbackDesignType: 'balanced_block',
+    switchbackCarryoverDurationMs: 0,
+    switchbackBurnInDurationMs: 0,
+    switchbackBurnOutDurationMs: 0,
+    switchbackEstimand: 'global_average_treatment_effect',
+    switchbackClusterUnitType: 'unit_serving',
+    switchbackClusterCount: 10,
+    switchbackClusterAttribute: 'city',
   });
   const experiments = [
     switchbackJson(521, 'sb_agree', 0, 42, 10, [['unit_serving', 'city'], ['unit_user', 'profile/city']]),
@@ -276,9 +283,11 @@ async function checkContextServing() {
   // fields at every depth.
   await context.publish();
   const before = exposures.length;
-  context.treatment('sb_unit_baseline');
+  const unitServed = exposureOf(514, 'sb_unit_baseline', 'unit_serving', 1);
+  const switchbackServed = exposureOf(513, 'sb_payload', 'unit_serving', 1);
+  if (!expect(context, exposures, 'unit baseline', 'sb_unit_baseline', 1, [unitServed])) return false;
   const baselineEvent = await publishOne(context, published);
-  context.treatment('sb_payload');
+  if (!expect(context, exposures, 'payload', 'sb_payload', 1, [switchbackServed])) return false;
   const switchbackEvent = await publishOne(context, published);
   const emitted = exposures.slice(before);
   if (emitted.length !== 2 || baselineEvent == null || switchbackEvent == null) {
@@ -286,8 +295,6 @@ async function checkContextServing() {
       `${JSON.stringify(emitted)} and ${JSON.stringify([baselineEvent, switchbackEvent])}`);
     return false;
   }
-  const unitServed = exposureOf(514, 'sb_unit_baseline', 'unit_serving', 1);
-  const switchbackServed = exposureOf(513, 'sb_payload', 'unit_serving', 1);
   const mismatch = shapeMismatch(emitted[0], emitted[1], 'exposure') ||
     shapeMismatch(baselineEvent, switchbackEvent, 'publish');
   if (mismatch || !publishedExactly(baselineEvent, unitServed) || !publishedExactly(switchbackEvent, switchbackServed)) {

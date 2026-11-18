@@ -115,9 +115,7 @@ public class WrapperController {
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("switchback", SwitchbackSelfTest.run());
-        // Jackson decodes 3.0 as a Double, which never keys a cluster (scenario 426); the probe for it is
-        // the switchback self-test itself, whose whole-number check needs the integer path.
-        response.put("integralFloatAttributes", SwitchbackSelfTest.run());
+        response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
         response.put("xAgentHeader", true);

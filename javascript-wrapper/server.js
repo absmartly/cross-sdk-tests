@@ -865,32 +865,38 @@ app.post('/diagnostic', (req, res) => {
 // The switchback pure functions (WRAPPER_API_SPEC.md, capability `switchback`). The 64-bit fields are
 // decimal strings, passed to the SDK unparsed so they are never read through a double. They answer
 // whenever the SDK has the functions, independent of the self-test verdict.
-function switchbackCall(res, call) {
+function switchbackCall(res, exportName, call) {
   const functions = switchbackSelfTest.loadFunctions();
-  if (functions == null) {
-    return res.status(501).json({ error: 'linked SDK has no switchback assigner' });
+  if (functions == null || typeof functions[exportName] !== 'function') {
+    return res.status(501).json({ error: `linked SDK has no switchback ${exportName}` });
   }
   try {
-    return res.json({ result: call(functions), events: [] });
+    return res.json({ result: call(functions[exportName]), events: [] });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
 }
+
+const MAX_SWITCHBACK_ARMS = 1000;
 
 function switchbackParams(body, indexName) {
   const request = body || {};
   for (const name of ['clusterUnit', indexName, 'seed']) {
     if (typeof request[name] !== 'string') throw new Error(`${name} must be a string`);
   }
-  if (!Number.isInteger(request.armCount)) throw new Error('armCount must be an integer');
+  // The golden vectors use 2, 3 and 10 arms; the bound keeps one request from building a huge permutation.
+  if (!Number.isInteger(request.armCount) || request.armCount > MAX_SWITCHBACK_ARMS) {
+    throw new Error(`armCount must be an integer of at most ${MAX_SWITCHBACK_ARMS}`);
+  }
   return [request.clusterUnit, request[indexName], request.seed, request.armCount];
 }
 
 app.post('/switchback/assign', (req, res) =>
-  switchbackCall(res, (functions) => functions.assignSwitchback(...switchbackParams(req.body, 'periodIndex'))));
+  switchbackCall(res, 'assignSwitchback', (assign) => assign(...switchbackParams(req.body, 'periodIndex'))));
 
 app.post('/switchback/permutation', (req, res) =>
-  switchbackCall(res, (functions) => functions.switchbackPermutation(...switchbackParams(req.body, 'cycleIndex'))));
+  switchbackCall(res, 'switchbackPermutation', (permutation) =>
+    permutation(...switchbackParams(req.body, 'cycleIndex'))));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
