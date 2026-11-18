@@ -1,3 +1,4 @@
+use axum::extract::rejection::JsonRejection;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, Method, StatusCode},
@@ -410,7 +411,11 @@ fn switchback_response(result: Result<Value, String>) -> axum::response::Respons
 }
 
 /// POST /switchback/assign: the SDK's assigner over the unchanged cluster unit.
-async fn switchback_assign_handler(Json(req): Json<Value>) -> axum::response::Response {
+async fn switchback_assign_handler(body: Result<Json<Value>, JsonRejection>) -> axum::response::Response {
+    let req = match body {
+        Ok(Json(req)) => req,
+        Err(e) => return switchback_response(Err(format!("invalid JSON body: {}", e.body_text()))),
+    };
     switchback_response(switchback_params(&req, "periodIndex").and_then(|(unit, period, seed, arms)| {
         absmartly::switchback::assign_switchback(&unit, period, seed, arms)
             .map(|v| json!(v))
@@ -419,7 +424,11 @@ async fn switchback_assign_handler(Json(req): Json<Value>) -> axum::response::Re
 }
 
 /// POST /switchback/permutation: the SDK's cycle permutation.
-async fn switchback_permutation_handler(Json(req): Json<Value>) -> axum::response::Response {
+async fn switchback_permutation_handler(body: Result<Json<Value>, JsonRejection>) -> axum::response::Response {
+    let req = match body {
+        Ok(Json(req)) => req,
+        Err(e) => return switchback_response(Err(format!("invalid JSON body: {}", e.body_text()))),
+    };
     switchback_response(switchback_params(&req, "cycleIndex").and_then(|(unit, cycle, seed, arms)| {
         absmartly::switchback::fisher_yates_permutation(arms, absmartly::switchback::base_hash(&unit, cycle, seed))
             .map(|p| json!(p))
@@ -1155,6 +1164,7 @@ async fn main() {
 #[cfg(test)]
 mod switchback_endpoint_tests {
     use super::*;
+    use axum::extract::FromRequest;
 
     // Values above 2^53 must parse exactly, never through a double.
     #[test]
@@ -1165,6 +1175,24 @@ mod switchback_endpoint_tests {
         }
         for bad in [json!("1.0"), json!("9223372036854775808"), json!(5), json!(" 1"), json!("")] {
             assert!(i64_param(&json!({ "periodIndex": bad }), "periodIndex").is_err(), "{}", bad);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_json_gets_the_error_envelope() {
+        for body in [&b"{\"clusterUnit\": "[..], &b"[1, 2]"[..]] {
+            let request = axum::http::Request::builder()
+                .method("POST")
+                .uri("/switchback/assign")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(body.to_vec()))
+                .unwrap();
+            let rejection = Json::<Value>::from_request(request, &()).await;
+            let response = switchback_assign_handler(rejection.map(|j| j)).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+            let json: Value = serde_json::from_slice(&bytes).unwrap();
+            assert!(json["error"].is_string(), "{}", json);
         }
     }
 

@@ -50,9 +50,12 @@ class PublishObservationTests(unittest.TestCase):
     def test_null_and_omitted_attribute_values_compare_equal(self):
         with_null = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": None, "setAt": 1}]}
         omitted = {"hashed": True, "units": [], "attributes": [{"name": "v", "setAt": 2}]}
-        other = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": 0, "setAt": 2}]}
         self.assertEqual(test_runner._publish_observation(with_null), test_runner._publish_observation(omitted))
-        self.assertNotEqual(test_runner._publish_observation(with_null), test_runner._publish_observation(other))
+        for value in (0, "", "<missing>", "null", False):
+            other = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": value, "setAt": 2}]}
+            self.assertNotEqual(
+                test_runner._publish_observation(with_null), test_runner._publish_observation(other), value
+            )
 
 
 class ValuesMatchTests(unittest.TestCase):

@@ -423,8 +423,7 @@ fn publish_one(context: &mut absmartly::Context, published: &Arc<Mutex<Vec<Publi
         .flatten()
 }
 
-/// The fields of every object, at every depth, with each exposure's id, name
-/// and exposedAt and the publishedAt cleared.
+/// With each exposure's id, name and exposedAt and the publishedAt cleared.
 fn normalised(mut event: Value) -> Value {
     event["publishedAt"] = json!(0);
     if let Some(exposures) = event["exposures"].as_array_mut() {
@@ -481,7 +480,21 @@ fn check_payload_shape(
         println!("{} check published exposures FAILED: {:?}", PREFIX, emitted);
         return false;
     }
-    for (event, name) in [(&baseline, "baseline"), (&switchback, "switchback"), (&with_fields, "unit with fields")] {
+    for ((event, name), expected) in [(&baseline, "baseline"), (&switchback, "switchback"), (&with_fields, "unit with fields")]
+        .into_iter()
+        .zip(&expected)
+    {
+        // The exposure the publisher received, not just the logged one.
+        let published_exposure = event["exposures"]
+            .get(0)
+            .and_then(|e| serde_json::from_value::<Exposure>(e.clone()).ok());
+        if !published_exposure.is_some_and(|e| served_as(&e, expected)) {
+            println!(
+                "{} check published exposure FAILED for {}: expected {:?}, got {}",
+                PREFIX, name, expected, event["exposures"]
+            );
+            return false;
+        }
         let units = event["units"].as_array().cloned().unwrap_or_default();
         let hashed = units
             .iter()

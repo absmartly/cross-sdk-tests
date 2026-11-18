@@ -236,7 +236,6 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-# SDKs whose lane passes the switchback scenarios (evidence: their CI lane).
 SWITCHBACK_HOLDERS = {"java", "rust"}
 
 

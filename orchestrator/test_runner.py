@@ -390,7 +390,7 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
         "attributes": [
             # A null value and an omitted one are the same attribute: java-sdk
             # serializes attributes NON_NULL and drops the key, others send null.
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value") if a.get("value") is not None else MISSING)}
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")
