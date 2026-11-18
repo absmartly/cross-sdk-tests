@@ -95,12 +95,61 @@ app.MapGet("/capabilities", () => Results.Ok(new
     // scenarios 203-208/221 and 214-216; a build without holdouts reports false.
     holdouts = HoldoutSelfTest.RunHoldouts(),
     holdout_arms = HoldoutSelfTest.RunHoldoutArms(),
+    // Behavioral self-test (SwitchbackSelfTest.cs): golden vectors plus R33 cluster serving
+    // through a real context; a build without switchbacks reports false.
+    switchback = SwitchbackSelfTest.Run(),
     assignmentRules = true,
     semverOperators = true,
     xAgentHeader = true,
     clientRejectsBlankApplication = true,
     clientAcceptsBlankApplication = false
 }));
+
+// The switchback pure functions (capability `switchback`). 64-bit values arrive as decimal strings
+// and are parsed exactly; clusterUnit is passed to the SDK unchanged (never hashed). A 400 for an
+// invalid request, a 501 when the linked SDK has no switchback assigner. See WRAPPER_API_SPEC.md.
+app.MapPost("/switchback/assign", async Task<IResult> (HttpContext httpContext) =>
+    await SwitchbackCall(httpContext, request => SwitchbackAssignerAccess.Assign(StringParam(request, "clusterUnit"),
+        LongParam(request, "periodIndex"), LongParam(request, "seed"), ArmCountParam(request))));
+
+app.MapPost("/switchback/permutation", async Task<IResult> (HttpContext httpContext) =>
+    await SwitchbackCall(httpContext, request => SwitchbackAssignerAccess.Permutation(StringParam(request, "clusterUnit"),
+        LongParam(request, "cycleIndex"), LongParam(request, "seed"), ArmCountParam(request))));
+
+async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, object> call)
+{
+    if (!SwitchbackAssignerAccess.IsAvailable)
+        return Results.Json(new { error = "linked SDK has no switchback assigner" }, statusCode: 501);
+    try
+    {
+        using var reader = new StreamReader(httpContext.Request.Body);
+        var request = JsonDocument.Parse(await reader.ReadToEndAsync()).RootElement;
+        if (request.ValueKind != JsonValueKind.Object) throw new ArgumentException("request must be an object");
+        return Results.Ok(new { result = call(request), events = Array.Empty<object>() });
+    }
+    catch (Exception e) when (e is ArgumentException or JsonException or FormatException or OverflowException)
+    {
+        return Results.BadRequest(new { error = e.Message });
+    }
+}
+
+static string StringParam(JsonElement request, string name) =>
+    request.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+        ? v.GetString()!
+        : throw new ArgumentException($"{name} must be a string");
+
+static long LongParam(JsonElement request, string name)
+{
+    var text = StringParam(request, name);
+    if (text.Length == 0 || !text.Select((c, i) => char.IsAsciiDigit(c) || (i == 0 && c == '-')).All(x => x) || text == "-")
+        throw new ArgumentException($"{name} must be a decimal string");
+    return long.Parse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture);
+}
+
+static int ArmCountParam(JsonElement request) =>
+    request.TryGetProperty("armCount", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 2
+        ? n
+        : throw new ArgumentException("armCount must be an integer >= 2");
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
 {
@@ -588,7 +637,9 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
         {
             actualValue = jsonElement.ValueKind switch
             {
-                JsonValueKind.Number => jsonElement.TryGetInt64(out var l) ? l : jsonElement.GetDouble(),
+                // Boxed per branch: `? l : GetDouble()` would type the whole conditional as double
+                // and pass a whole number such as 4000000002 to the SDK as 4000000002.0.
+                JsonValueKind.Number => jsonElement.TryGetInt64(out var l) ? (object)l : jsonElement.GetDouble(),
                 JsonValueKind.String => jsonElement.GetString(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
