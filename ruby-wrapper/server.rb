@@ -17,6 +17,8 @@ require 'default_context_publisher'
 require 'context_event_logger'
 require 'hashing'
 require_relative 'holdout_self_test'
+require 'default_context_event_serializer'
+require_relative 'switchback_self_test'
 
 set :port, 3000
 set :bind, '0.0.0.0'
@@ -249,6 +251,7 @@ get '/capabilities' do
     assignmentRules: true,
     holdouts: HoldoutSelfTest.holdouts?,
     holdout_arms: HoldoutSelfTest.holdout_arms?,
+    switchback: SwitchbackSelfTest.switchback?,
     semverOperators: true,
     xAgentHeader: true }.to_json
 end
@@ -406,6 +409,35 @@ delete '/context/:context_id' do
   $contexts.delete(params['context_id'])
   content_type :json
   { result: 'deleted' }.to_json
+end
+
+# The switchback pure functions (capability `switchback`); 64-bit values arrive as decimal strings.
+# They answer whenever the SDK has an assigner, independent of the self-test verdict.
+def switchback_call
+  content_type :json
+  halt 501, { error: 'linked SDK has no switchback assigner' }.to_json if SwitchbackSelfTest.assigner.nil?
+  r = body_json
+  long = lambda do |name|
+    value = r[name.to_sym]
+    raise ArgumentError, "#{name} must be a string" unless value.is_a?(String)
+
+    Integer(value, 10)
+  end
+  arms = r[:armCount]
+  raise ArgumentError, 'armCount must be an integer >= 2' unless arms.is_a?(Integer) && arms >= 2
+  raise ArgumentError, 'clusterUnit must be a string' unless r[:clusterUnit].is_a?(String)
+
+  { result: yield(r[:clusterUnit], long, arms), events: [] }.to_json
+rescue ArgumentError => e
+  halt 400, { error: e.message }.to_json
+end
+
+post '/switchback/assign' do
+  switchback_call { |unit, long, arms| SwitchbackSelfTest.assign(unit, long.call('periodIndex'), long.call('seed'), arms) }
+end
+
+post '/switchback/permutation' do
+  switchback_call { |unit, long, arms| SwitchbackSelfTest.permutation(unit, long.call('cycleIndex'), long.call('seed'), arms) }
 end
 
 post '/diagnostic' do

@@ -120,10 +120,10 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms"
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },
@@ -152,7 +152,7 @@
       ],
       "unsupported": {
         "holdouts": "the liquid wrapper has no holdout self-test yet, so it does not advertise holdouts (the ruby lane covers ruby-sdk's holdout resolution)",
-        "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
+        "switchback": "the liquid wrapper has no switchback self-test, so it does not advertise switchback (the ruby lane covers ruby-sdk's switchback serving)",
         "holdout_arms": "depends on holdouts, which the liquid wrapper does not advertise",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
