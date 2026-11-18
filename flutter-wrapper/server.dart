@@ -11,6 +11,7 @@ import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 import 'lib/widget_test_queue.dart';
+import 'lib/holdout_self_test.dart' as holdout_self_test;
 
 class EventCollector implements ContextEventLogger {
   final List<Map<String, dynamic>> events = [];
@@ -251,9 +252,13 @@ Future<void> startServer() async {
     );
   });
 
-  router.get('/capabilities', (shelf.Request request) {
+  router.get('/capabilities', (shelf.Request request) async {
+    final holdouts = await holdout_self_test.runHoldouts();
+    final holdoutArms = await holdout_self_test.runHoldoutArms();
     return shelf.Response.ok(
       jsonEncode({
+        'holdouts': holdouts,
+        'holdout_arms': holdoutArms,
         'diagnostics': true,
         'diagnosticsUtf8': true,
         'attrsSeq': false,

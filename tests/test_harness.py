@@ -454,7 +454,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "dart", "flutter", "java", "javascript", "react", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
@@ -987,6 +987,26 @@ class StaticRepoChecks(unittest.TestCase):
     def scenario_count(self):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
+
+    def test_flutter_holdout_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's holdout
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                lines = src.read().splitlines()
+            for line in skip:
+                lines.remove(line)  # first occurrence only; a missing line fails
+            return lines
+
+        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
+        flutter = body(
+            "flutter-wrapper/lib/holdout_self_test.dart",
+            [
+                "// Copy of dart-wrapper/holdout_self_test.dart; only the import differs.",
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+            ],
+        )
+        self.assertEqual(flutter, dart)
 
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
