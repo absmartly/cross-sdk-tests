@@ -14,7 +14,7 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
-# swift-sdk 2.0 (swift-sdk#<2.0 PR>) is on feat/swift-2.0 until it merges; then re-pin "swift-sdk"
+# swift-sdk 2.0 (swift-sdk#13) is on feat/swift-2.0 until it merges; then re-pin "swift-sdk"
 # to main. "swift-sdk-v1" is the 1.x lane (the swift-v1 wrapper) and clones absmartly/swift-sdk into
 # swift-sdk-v1/: main is 1.5.0 until 2.0 merges, then re-pin it to release/1.x (cut from v1.5.0).
 declare -A SDK_BRANCHES=(
