@@ -216,11 +216,11 @@
         "semverNumericOperands",
         "holdouts",
         "holdout_arms",
-        "holdoutIdsDedup"
+        "holdoutIdsDedup",
+        "switchback"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
-        "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
         "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
       }
     },

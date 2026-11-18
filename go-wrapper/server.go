@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	gocontext "context"
 	"encoding/json"
 	"errors"
@@ -169,14 +170,14 @@ type ClientConfigRequest struct {
 }
 
 type CreateContextRequest struct {
-	Data       jsonmodels.ContextData `json:"data"`
-	Endpoint   string                 `json:"endpoint"`
-	Units      map[string]interface{} `json:"units"`
-	Options    map[string]interface{} `json:"options"`
-	FailLoad   bool                   `json:"failLoad"`
-	Mode       string                 `json:"mode"`
-	Attributes map[string]interface{} `json:"attributes"`
-	Client     *ClientConfigRequest   `json:"client"`
+	Data       jsonmodels.ContextData     `json:"data"`
+	Endpoint   string                     `json:"endpoint"`
+	Units      map[string]interface{}     `json:"units"`
+	Options    map[string]interface{}     `json:"options"`
+	FailLoad   bool                       `json:"failLoad"`
+	Mode       string                     `json:"mode"`
+	Attributes map[string]json.RawMessage `json:"attributes"`
+	Client     *ClientConfigRequest       `json:"client"`
 	// PublishToEndpoint makes publish() go through the SDK's own default
 	// publisher to PUT {endpoint}/context (X-Agent scenarios).
 	PublishToEndpoint bool `json:"publishToEndpoint"`
@@ -269,6 +270,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"holdouts":                        holdoutsSupported(),
 		"holdout_arms":                    holdoutArmsSupported(),
 		"holdoutIdsDedup":                 holdoutIdsDedupSupported(),
+		"switchback":                      switchbackSupported(),
 	})
 }
 
@@ -611,8 +613,12 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for name, value := range req.Attributes {
-		if err := context.SetAttribute(name, value); err != nil {
+	for name, raw := range req.Attributes {
+		value, err := attributeValue(raw)
+		if err == nil {
+			err = context.SetAttribute(name, value)
+		}
+		if err != nil {
 			writeSDKError(w, http.StatusBadRequest, err, eventCollector.SliceFrom(0))
 			return
 		}
@@ -718,13 +724,62 @@ func getUnit(cd *ContextData, decode func(interface{}) error) (interface{}, erro
 
 func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
-		Name  string      `json:"name"`
-		Value interface{} `json:"value"`
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value"`
 	}
 	if err := decode(&req); err != nil {
 		return nil, err
 	}
-	return nil, cd.context.SetAttribute(req.Name, req.Value)
+	value, err := attributeValue(req.Value)
+	if err != nil {
+		return nil, err
+	}
+	return nil, cd.context.SetAttribute(req.Name, value)
+}
+
+// attributeValue decodes a JSON attribute value the way a Go caller holding
+// the same data would pass it: an integer literal (3, 4000000002) is an int,
+// any other number (3.0, 1.5, 1e1) a float64, recursively. A switchback
+// cluster key is a whole-number integer but never a float, so 3 and 3.0 must
+// stay apart; encoding/json's default would make both float64. An integer
+// beyond int64 stays a json.Number, which the SDK keys by its digits.
+func attributeValue(raw json.RawMessage) (interface{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	return normalizeNumbers(value), nil
+}
+
+func normalizeNumbers(value interface{}) interface{} {
+	switch v := value.(type) {
+	case json.Number:
+		text := v.String()
+		if !strings.ContainsAny(text, ".eE") {
+			if n, err := v.Int64(); err == nil && int64(int(n)) == n {
+				return int(n)
+			}
+			return v
+		}
+		f, _ := v.Float64()
+		return f
+	case map[string]interface{}:
+		for key, item := range v {
+			v[key] = normalizeNumbers(item)
+		}
+		return v
+	case []interface{}:
+		for i, item := range v {
+			v[i] = normalizeNumbers(item)
+		}
+		return v
+	}
+	return value
 }
 
 func getAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
@@ -937,6 +992,8 @@ func main() {
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/capabilities", capabilitiesHandler).Methods("GET")
 	router.HandleFunc("/diagnostic", diagnosticHandler).Methods("POST")
+	router.HandleFunc("/switchback/assign", switchbackAssignHandler).Methods("POST")
+	router.HandleFunc("/switchback/permutation", switchbackPermutationHandler).Methods("POST")
 	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")

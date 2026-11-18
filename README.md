@@ -62,8 +62,9 @@ across languages.
   with a value serves the raw value as the cluster key of
   `assignSwitchback(key, floorDiv(now - switchbackStartAt, switchbackPeriodMs),
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
-  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java is the only
-  capable SDK, and every other SDK lists `switchback` as a reviewed exception.
+  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java and go
+  (absmartly/go-sdk `feat/switchbacks`) require it, and every other SDK lists
+  `switchback` as a reviewed exception.
   The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
   the feature-parity range.
 
@@ -107,6 +108,11 @@ across languages.
 
   The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
   switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
+  The go lane pins `go-sdk` to its switchback branch (`feat/switchbacks`) until
+  it merges. The go wrapper decodes attribute values with `UseNumber`, so a
+  JSON integer reaches the SDK as an integer and `3.0` as a float (scenario
+  411), and advertises `switchback` from a behavioural self-test
+  (`go-wrapper/switchback.go`) that fails closed on a sorted cluster map.
 
   Scenarios 500-507 (Holdout Conformance, H1-H8) add the holdout cases every
   SDK holdout port must agree on, beyond 203-227 and 305. They require
