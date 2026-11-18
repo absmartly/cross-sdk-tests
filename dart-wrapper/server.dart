@@ -63,7 +63,7 @@ class EventCollector implements ContextEventLogger {
 
   @override
   void handleEvent(Context context, EventType type, dynamic data) {
-    String eventType;
+    String eventType = 'finalize';
     switch (type) {
       case EventType.error:
         eventType = 'error';
@@ -464,7 +464,7 @@ void main() async {
         final unitsMap = Map<String, Object>.from(units);
 
         final contextConfig = ContextConfig();
-        contextConfig.setUnits(unitsMap);
+        contextConfig.setUnitValues(unitsMap);
         // e2e: no auto-publish (negative delay) and no auto-refresh; tests
         // drive publish/refresh explicitly.
         contextConfig.setPublishDelay(-1);
@@ -583,7 +583,7 @@ void main() async {
       final unitsMap = Map<String, Object>.from(units);
 
       final contextConfig = ContextConfig();
-      contextConfig.setUnits(unitsMap);
+      contextConfig.setUnitValues(unitsMap);
 
       contextConfig.setPublishDelay(options['publishDelay'] as int? ?? -1);
       contextConfig.setRefreshInterval(0);
@@ -660,7 +660,7 @@ void main() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final result = ctxData.context.getUnit(body['unitType'] as String);
+      final result = ctxData.context.getUnitValue(body['unitType'] as String);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -1172,7 +1172,7 @@ void main() async {
     final ctxData = contexts[contextId];
     if (ctxData == null) return shelf.Response.notFound(jsonEncode({'error': 'Context not found'}));
     try {
-      final result = ctxData.context.getUnits();
+      final result = ctxData.context.getUnitValues();
       return shelf.Response.ok(jsonEncode({'result': result, 'events': []}), headers: {'Content-Type': 'application/json'});
     } catch (e) {
       return shelf.Response(400, body: jsonEncode({'error': e.toString()}), headers: {'Content-Type': 'application/json'});

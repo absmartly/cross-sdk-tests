@@ -12,12 +12,13 @@ import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 import 'lib/widget_test_queue.dart';
 
+
 class EventCollector implements ContextEventLogger {
   final List<Map<String, dynamic>> events = [];
 
   @override
   void handleEvent(Context context, EventType type, dynamic data) {
-    String eventType;
+    String eventType = 'finalize';
     switch (type) {
       case EventType.error:
         eventType = 'error';
@@ -444,7 +445,7 @@ Future<void> startServer() async {
         final unitsMap = Map<String, Object>.from(units);
 
         final contextConfig = ContextConfig();
-        contextConfig.setUnits(unitsMap);
+        contextConfig.setUnitValues(unitsMap);
         // e2e: no auto-publish (negative delay) and no auto-refresh; tests
         // drive publish/refresh explicitly.
         contextConfig.setPublishDelay(-1);
@@ -556,7 +557,7 @@ Future<void> startServer() async {
       final unitsMap = Map<String, Object>.from(units);
 
       final contextConfig = ContextConfig();
-      contextConfig.setUnits(unitsMap);
+      contextConfig.setUnitValues(unitsMap);
 
       contextConfig.setPublishDelay(options['publishDelay'] as int? ?? -1);
       contextConfig.setRefreshInterval(0);
@@ -631,7 +632,7 @@ Future<void> startServer() async {
       final body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
       final eventsBefore = ctxData.eventCollector.events.length;
 
-      final result = ctxData.context.getUnit(body['unitType'] as String);
+      final result = ctxData.context.getUnitValue(body['unitType'] as String);
 
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
@@ -1315,7 +1316,7 @@ Future<void> startServer() async {
 
     try {
       final eventsBefore = ctxData.eventCollector.events.length;
-      final result = ctxData.context.getUnits();
+      final result = ctxData.context.getUnitValues();
       final newEvents = ctxData.eventCollector.getNewEvents(eventsBefore);
       return shelf.Response.ok(
         jsonEncode({'result': result, 'events': newEvents}),
