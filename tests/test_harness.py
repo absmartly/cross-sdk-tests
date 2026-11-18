@@ -1048,7 +1048,10 @@ class StaticRepoChecks(unittest.TestCase):
                 if requires & gated_elsewhere:
                     continue
                 finalized = False
+                setter_after_finalize = False
                 for st in s["steps"]:
+                    if st["action"].startswith("createContext"):
+                        finalized = False  # later steps go to the new context
                     finalized = finalized or st["action"] == "finalize"
                     expect = st["expect"]
                     messages = [expect[k] for k in error_keys if k in expect]
@@ -1056,9 +1059,13 @@ class StaticRepoChecks(unittest.TestCase):
                     if misuse.search(flat):
                         if finalized and st["action"] in ("attribute", "setUnit"):
                             # A setter after finalize has its own, narrower gate.
+                            setter_after_finalize = True
                             self.assertIn("rejectsSettersAfterFinalize", requires, s["name"])
                         else:
                             self.assertIn("throwsOnMisuse", requires, s["name"])
+                if "rejectsSettersAfterFinalize" in requires:
+                    # The narrow gate skips a whole scenario, so it must only gate one that tests such a setter.
+                    self.assertTrue(setter_after_finalize, s["name"])
 
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:
