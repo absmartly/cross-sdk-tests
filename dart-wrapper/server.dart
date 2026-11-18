@@ -340,11 +340,11 @@ void main() async {
       );
     } on ArgumentError catch (e) {
       return shelf.Response(400,
-          body: jsonEncode({'error': e.message.toString()}),
+          body: jsonEncode({'error': e.message.toString(), 'events': []}),
           headers: {'Content-Type': 'application/json'});
     } on FormatException catch (e) {
       return shelf.Response(400,
-          body: jsonEncode({'error': e.message}),
+          body: jsonEncode({'error': e.message, 'events': []}),
           headers: {'Content-Type': 'application/json'});
     }
   }
