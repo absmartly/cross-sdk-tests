@@ -244,6 +244,7 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     throwsOnMisuse: true,
+    rejectsSettersAfterFinalize: true,
     singleFinalizeEvent: true,
     semverNumericOperands: true,
     clientNoEnvironment: true,

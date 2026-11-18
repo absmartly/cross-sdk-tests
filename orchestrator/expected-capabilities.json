@@ -33,6 +33,7 @@
     "clientRejectsBlankApplication": "the SDK's client rejects an explicitly blank application at construction, and the wrapper forwards client.application unchanged on POST /context, so a blank name returns the SDK's own validation error as a 400 instead of being repaired into the wrapper's default (WRAPPER_API_SPEC.md, POST /context client)",
     "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
+    "rejectsSettersAfterFinalize": "setAttribute/setUnit called after finalize throw (or return the SDK's idiomatic error), as in the JS reference; split from throwsOnMisuse so an SDK whose released contract accepts these setters after finalize skips only scenarios 148, 149 and 188",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
     "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)"
   },
@@ -58,6 +59,7 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -85,6 +87,7 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "semverNumericOperands"
       ],
       "unsupported": {
@@ -117,6 +120,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -147,6 +151,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -172,6 +177,7 @@
         "semverOperators",
         "xAgentHeader",
         "clientAcceptsBlankApplication",
+        "throwsOnMisuse",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -183,8 +189,8 @@
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
         "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "throwsOnMisuse": "php-sdk 1.x keeps the v1.0.3 contract that setAttribute()/setAttributes()/setUnit()/setUnits() are accepted after close() (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the throwing behaviour moves to 2.0 on next/major), so scenarios 148, 149 and 188 would fail; the gate also skips 34, 35, 147, 189 and 201, whose throws php-sdk still makes and pins in its own suite; reviewed PHP exception",
-        "refreshNoOpOnFailedContext": "php-sdk 1.x keeps the v1.0.3 behaviour that refresh() re-fetches and applies data on a context whose initial load failed (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the JS no-op moves to 2.0 on next/major), so scenario 229 differs from JS by design; reviewed PHP exception, as for python"
+        "refreshNoOpOnFailedContext": "php-sdk 1.x keeps the v1.0.3 behaviour that refresh() re-fetches and applies data on a context whose initial load failed (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the JS no-op moves to 2.0 on next/major), so scenario 229 differs from JS by design; reviewed PHP exception, as for python",
+        "rejectsSettersAfterFinalize": "php-sdk 1.x keeps the v1.0.3 contract that setAttribute()/setAttributes()/setUnit()/setUnits() are accepted after close() (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the throwing behaviour moves to 2.0 on next/major), so scenarios 148, 149 and 188 would fail; reviewed PHP exception"
       }
     },
     "go": {
@@ -206,6 +212,7 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -236,6 +243,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -270,6 +278,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -296,6 +305,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -326,6 +336,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -364,7 +375,8 @@
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
+        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "rejectsSettersAfterFinalize": "depends on throwsOnMisuse, which is a reviewed exception for this SDK: swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
       }
     },
     "dart": {
@@ -386,6 +398,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -416,6 +429,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -445,6 +459,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent"
       ],
       "unsupported": {
@@ -475,6 +490,7 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -506,6 +522,7 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -538,6 +555,7 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -568,6 +586,7 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -598,6 +617,7 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -628,6 +648,7 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],

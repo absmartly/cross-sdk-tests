@@ -88,6 +88,7 @@ fun Application.configureRouting() {
                 "trackRejectsNonObjectProperties" to true,
                 "refreshNoOpOnFailedContext" to true,
                 "throwsOnMisuse" to true,
+                "rejectsSettersAfterFinalize" to true,
                 "singleFinalizeEvent" to true,
                 "semverNumericOperands" to true,
                 "assignmentRules" to true,

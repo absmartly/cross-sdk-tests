@@ -107,6 +107,7 @@ public class WrapperController {
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
         response.put("throwsOnMisuse", true);
+        response.put("rejectsSettersAfterFinalize", true);
         response.put("singleFinalizeEvent", true);
         response.put("semverNumericOperands", true);
         response.put("clientNoEnvironment", true);

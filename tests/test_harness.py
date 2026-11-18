@@ -1052,7 +1052,8 @@ class StaticRepoChecks(unittest.TestCase):
                     messages = [expect[k] for k in error_keys if k in expect]
                     flat = " ".join(m if isinstance(m, str) else " ".join(m) for m in messages).lower()
                     if misuse.search(flat):
-                        self.assertIn("throwsOnMisuse", requires, s["name"])
+                        # A setter after finalize has its own, narrower gate (rejectsSettersAfterFinalize).
+                        self.assertTrue(requires & {"throwsOnMisuse", "rejectsSettersAfterFinalize"}, s["name"])
 
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:

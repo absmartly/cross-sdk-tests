@@ -265,10 +265,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             //    of throwing; only close() surfaces the error (scenario 193).
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
-            // php-sdk 1.x keeps v1.0.3's accepted post-close attribute/unit setters and failed-context refresh
-            // recovery (php-sdk#12): reviewed exceptions in orchestrator/expected-capabilities.json.
+            // php-sdk 1.x keeps v1.0.3's accepted post-close attribute/unit setters (rejectsSettersAfterFinalize)
+            // and failed-context refresh recovery (php-sdk#12): reviewed exceptions in
+            // orchestrator/expected-capabilities.json. Its other misuse errors still throw (throwsOnMisuse).
             'refreshNoOpOnFailedContext' => false,
-            'throwsOnMisuse' => false,
+            'throwsOnMisuse' => true,
+            'rejectsSettersAfterFinalize' => false,
             'singleFinalizeEvent' => true,
             'semverNumericOperands' => true,
             'clientNoEnvironment' => true,
