@@ -16,8 +16,10 @@
 #include <absmartly/default_context_data_provider.h>
 
 #include "holdout_self_test.h"
+#include "switchback_self_test.h"
 
 #include <atomic>
+#include <charconv>
 #include <cctype>
 #include <chrono>
 #include <future>
@@ -305,14 +307,16 @@ static json make_error_response(const std::string& error,
 }
 
 // Decoded with the SDK's own ContextData from_json, so every payload field the SDK
-// knows (experiments, holdouts) reaches it as it would from the collector.
-static absmartly::ContextData parse_context_data(const json& j) {
+// knows (experiments, holdouts, switchbacks) reaches it as it would from the collector.
+// ordered_json keeps each switchbackClusters map in its declared order, which decides the
+// serving unit; nlohmann::json would sort it.
+static absmartly::ContextData parse_context_data(const nlohmann::ordered_json& j) {
     if (!j.is_object()) {
         return {};
     }
-    json payload = j;
+    nlohmann::ordered_json payload = j;
     if (!payload.contains("experiments") || !payload["experiments"].is_array()) {
-        payload["experiments"] = json::array();
+        payload["experiments"] = nlohmann::ordered_json::array();
     }
     return payload.get<absmartly::ContextData>();
 }
@@ -384,11 +388,61 @@ int main() {
                     {"assignmentRules", true}, {"semverOperators", true},
                     {"holdouts", holdout_self_test::holdouts()},
                     {"holdout_arms", holdout_self_test::holdout_arms()},
+                    {"switchback", switchback_self_test::switchback()},
                     {"xAgentHeader", true},
                     {"clientRejectsBlankApplication", true},
                     {"clientAcceptsBlankApplication", false}};
                 res.set_content(resp.dump(), "application/json");
             });
+
+    // POST /switchback/assign and /switchback/permutation: the SDK's own switchback draw.
+    // 64-bit fields are exact decimal strings; the cluster unit is passed through unchanged.
+    const auto switchback_endpoint = [](bool permutation) {
+        return [permutation](const httplib::Request& req, httplib::Response& res) {
+            const auto bad_request = [&res](const std::string& message) {
+                res.status = 400;
+                res.set_content(make_error_response(message, "BAD_REQUEST").dump(), "application/json");
+            };
+            json body;
+            try {
+                body = json::parse(req.body);
+            } catch (...) {
+                bad_request("Invalid JSON");
+                return;
+            }
+            const auto exact_int64 = [&body](const char* field, int64_t& out) {
+                if (!body.is_object() || !body.contains(field) || !body[field].is_string()) return false;
+                const auto& text = body[field].get_ref<const std::string&>();
+                const char* first = text.data();
+                const char* last = first + text.size();
+                const auto [ptr, ec] = std::from_chars(first, last, out);
+                return ec == std::errc{} && ptr == last && !text.empty();
+            };
+            const char* index_field = permutation ? "cycleIndex" : "periodIndex";
+            int64_t index = 0;
+            int64_t seed = 0;
+            if (!body.is_object() || !body.contains("clusterUnit") || !body["clusterUnit"].is_string()) {
+                bad_request("clusterUnit must be a string");
+                return;
+            }
+            if (!exact_int64(index_field, index) || !exact_int64("seed", seed)) {
+                bad_request(std::string(index_field) + " and seed must be signed 64-bit decimal strings");
+                return;
+            }
+            if (!body.contains("armCount") || !body["armCount"].is_number_integer() ||
+                body["armCount"].get<int64_t>() < 2 || body["armCount"].get<int64_t>() > 1000000) {
+                bad_request("armCount must be an integer >= 2");
+                return;
+            }
+            const auto unit = body["clusterUnit"].get<std::string>();
+            const int arms = body["armCount"].get<int>();
+            const json result = permutation ? json(absmartly::switchback_permutation(unit, index, seed, arms))
+                                            : json(absmartly::assign_switchback(unit, index, seed, arms));
+            res.set_content(json{{"result", result}, {"events", json::array()}}.dump(), "application/json");
+        };
+    };
+    svr.Post("/switchback/assign", switchback_endpoint(false));
+    svr.Post("/switchback/permutation", switchback_endpoint(true));
 
     svr.Post("/diagnostic",
              [](const httplib::Request& req, httplib::Response& res) {
@@ -446,9 +500,9 @@ int main() {
     svr.Put(R"(/context_payload/(.+))",
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
-                json body;
+                nlohmann::ordered_json body;
                 try {
-                    body = json::parse(req.body);
+                    body = nlohmann::ordered_json::parse(req.body);
                 } catch (...) {
                     res.status = 400;
                     res.set_content(
@@ -486,7 +540,7 @@ int main() {
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                json resp = *cd;
+                nlohmann::ordered_json resp = *cd;
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -503,7 +557,7 @@ int main() {
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                json resp = *cd;
+                nlohmann::ordered_json resp = *cd;
                 res.set_content(resp.dump(), "application/json");
             });
 
@@ -715,7 +769,8 @@ int main() {
                      } else {
                          absmartly::ContextData context_data;
                          if (body.contains("data")) {
-                             context_data = parse_context_data(body["data"]);
+                             // Re-read in its served key order (see parse_context_data).
+                             context_data = parse_context_data(nlohmann::ordered_json::parse(req.body)["data"]);
                          }
                          sdk_config.context_data_provider = std::make_shared<FailingContextDataProvider>(
                              "cpp-wrapper: an inline-data context has no endpoint to refresh from");

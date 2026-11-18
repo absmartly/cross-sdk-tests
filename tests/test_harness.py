@@ -494,6 +494,11 @@ class CapabilityPolicyTests(unittest.TestCase):
                 self.assertFalse(removed & set(entry["required"]))
                 self.assertFalse(removed & set(entry["unsupported"]))
 
+    def test_switchback_required_only_where_evidenced(self):
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
+        self.assertEqual(holders, ["cpp", "java"])
+
     def test_java_requires_assignment_rules_semver_and_switchback(self):
         policy = test_runner.load_capability_policy()
         required = {"assignmentRules", "semverOperators", "switchback"}
