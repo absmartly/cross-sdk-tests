@@ -7,4 +7,3 @@ gem 'json'
 
 # The wrapper's own HTTP tests (server_test.rb).
 gem 'minitest', '~> 5.0'
-gem 'rack-test', '~> 2.0'

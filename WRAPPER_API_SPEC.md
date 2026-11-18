@@ -1375,9 +1375,10 @@ Both endpoints are pure functions with no context. Request rules:
   above a wrapper's cap are an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2` or above the wrapper's cap) returns 400 with
-  `{"error": "...", "events": []}`. A wrapper whose SDK lacks the function
-  returns 501 with the same shape. The runner checks `events` on error
-  responses too.
+  `{"error": "..."}`. A wrapper whose SDK lacks the function returns 501. The
+  runner checks `events` on an error response a scenario expects, so the ruby
+  wrapper also sends `"events": []` with both; no scenario expects either
+  error yet.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

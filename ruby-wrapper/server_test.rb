@@ -47,6 +47,23 @@ class SwitchbackRoutesTest < Minitest::Test
     end
   end
 
+  # The wrapper rejects armCount < 2 itself, whatever the linked assigner accepts.
+  def test_arm_count_bound_is_the_wrappers
+    original = SwitchbackSelfTest.method(:assigner)
+    permissive = Module.new do
+      def self.assign(*) = 0
+      def self.fisher_yates_permutation(*) = [0]
+      def self.base_hash(*) = 0
+    end
+    SwitchbackSelfTest.define_singleton_method(:assigner) { permissive }
+    ROUTES.each do |path, valid|
+      assert_equal 400, post(path, valid.merge(armCount: 1)).status, path
+      assert_equal 200, post(path, valid).status, path
+    end
+  ensure
+    SwitchbackSelfTest.define_singleton_method(:assigner, original)
+  end
+
   def test_no_assigner_is_501_with_no_events
     original = SwitchbackSelfTest.method(:assigner)
     SwitchbackSelfTest.define_singleton_method(:assigner) { nil }
