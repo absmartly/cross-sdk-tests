@@ -768,6 +768,17 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
 
+    def test_publish_attribute_null_value_matches_an_omitted_value(self):
+        # Java's Attribute is @JsonInclude(NON_NULL), so it omits a null value
+        # that JS and Dart send; the two are the same observation. A real
+        # value still differs from null.
+        def obs(attribute):
+            data = {"hashed": True, "units": [], "attributes": [attribute]}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [{"type": "publish", "data": data}]}, {})
+
+        self.assertEqual(obs({"name": "x", "value": None}), obs({"name": "x"}))
+        self.assertNotEqual(obs({"name": "x", "value": None}), obs({"name": "x", "value": 0}))
+
     def test_error_response_events_observed(self):
         orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
         import requests
