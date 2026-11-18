@@ -764,6 +764,13 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value published explicitly or omitted is the same record; other values differ.
+        null_explicit = dict(base_pub, attributes=[{"name": "x", "value": None, "setAt": 1}])
+        null_omitted = dict(base_pub, attributes=[{"name": "x", "setAt": 2}])
+        self.assertEqual(obs("publish", null_explicit, "publish"), obs("publish", null_omitted, "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "y"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", base_pub, "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
