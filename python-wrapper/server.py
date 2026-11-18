@@ -173,8 +173,6 @@ def capabilities():
         'assignmentRules': True,
         'semverOperators': True,
         'xAgentHeader': True,
-        # Advertised only when the behavioural self-test passes against the
-        # SDK this wrapper was built from (holdout_self_test.py).
         'holdouts': holdout_self_test.run_holdouts(),
         'holdout_arms': holdout_self_test.run_holdout_arms()
     })

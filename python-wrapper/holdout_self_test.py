@@ -249,7 +249,6 @@ def run_holdouts():
 
 
 def run_holdout_arms():
-    # Three-arm support cannot exist without the two-arm foundation.
     if not run_holdouts():
         print('[holdout_arms probe] skipped: base holdouts battery did not '
               'pass', flush=True)
