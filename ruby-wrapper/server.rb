@@ -413,18 +413,33 @@ end
 
 # The switchback pure functions (capability `switchback`); 64-bit values arrive as decimal strings.
 # They answer whenever the SDK has an assigner, independent of the self-test verdict.
+LONG_RANGE = (-(2**63))..((2**63) - 1)
+# The arms of one permutation are materialized, so armCount is bounded well below Java's int range.
+MAX_ARM_COUNT = 10_000
+
 def switchback_call
   content_type :json
   halt 501, { error: 'linked SDK has no switchback assigner' }.to_json if SwitchbackSelfTest.assigner.nil?
-  r = body_json
+  r = begin
+    body_json
+  rescue JSON::ParserError
+    raise ArgumentError, 'body must be a JSON object'
+  end
+  raise ArgumentError, 'body must be a JSON object' unless r.is_a?(Hash)
+
   long = lambda do |name|
     value = r[name.to_sym]
-    raise ArgumentError, "#{name} must be a string" unless value.is_a?(String)
+    raise ArgumentError, "#{name} must be a decimal string" unless value.is_a?(String) && value.match?(/\A-?\d+\z/)
 
-    Integer(value, 10)
+    parsed = Integer(value, 10)
+    raise ArgumentError, "#{name} is out of the signed 64-bit range" unless LONG_RANGE.cover?(parsed)
+
+    parsed
   end
   arms = r[:armCount]
-  raise ArgumentError, 'armCount must be an integer >= 2' unless arms.is_a?(Integer) && arms >= 2
+  unless arms.is_a?(Integer) && arms >= 2 && arms <= MAX_ARM_COUNT
+    raise ArgumentError, "armCount must be an integer in [2, #{MAX_ARM_COUNT}]"
+  end
   raise ArgumentError, 'clusterUnit must be a string' unless r[:clusterUnit].is_a?(String)
 
   { result: yield(r[:clusterUnit], long, arms), events: [] }.to_json

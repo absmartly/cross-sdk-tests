@@ -128,6 +128,16 @@ module SwitchbackSelfTest
         switchback(526, 'sb_phase1e_only', 0, 1, 10, nil)
           .merge(switchbackClusterUnitType: 'unit_serving', switchbackClusterCount: 10, switchbackClusterAttribute: 'city'),
         switchback(513, 'sb_payload', 0, 1, 3, [%w[unit_serving city]]),
+        # A float never keys a cluster: 3.0 gives no value (the key "3" would draw 0 too, so the
+        # exposure is what tells them apart).
+        switchback(530, 'sb_float_value', 0, 42, 10, [%w[unit_serving float_value]]),
+        # The first declared unit has no value, so the second serves and is the exposure unit.
+        switchback(531, 'sb_second_unit_serves', 0, 42, 10, [%w[unit_serving zone], %w[unit_user profile/zone]]),
+        # An assignment rule wins, published like a unit experiment's rule win.
+        switchback(532, 'sb_rule', 0, 42, 10, [%w[unit_serving city]])
+          .merge(assignmentRules: '{"rules":[{"type":"assign","environments":[],"variant":7}]}'),
+        # A traffic miss on an eligible cluster is recorded as ineligible.
+        switchback(533, 'sb_traffic_miss', 0, 42, 10, [%w[unit_serving city]]).merge(trafficSplit: [1, 0]),
         unit(514, 'sb_unit_baseline'),
         unit(527, 'sb_unit_with_fields').merge(
           randomizationType: 'unit', switchbackClusters: { unit_serving: 'city' }, switchbackClusterValues: ['market_1'],
@@ -137,9 +147,9 @@ module SwitchbackSelfTest
     }
   end
 
-  def exposure(id, name, unit, variant)
+  def exposure(id, name, unit, variant, **flags)
     { id: id, name: name, unit: unit, variant: variant, assigned: true, eligible: true, overridden: false,
-      full_on: false, custom: false, audience_mismatch: false, rule_override: false }
+      full_on: false, custom: false, audience_mismatch: false, rule_override: false }.merge(flags)
   end
 
   def record(exposure)
@@ -220,6 +230,7 @@ module SwitchbackSelfTest
     context.set_attribute('city', 'market_1')
     context.set_attribute('profile', { 'city' => 'market_1', 'zone' => 'market_2' })
     context.set_attribute('store_number', 123_456_789)
+    context.set_attribute('float_value', 3.0)
 
     expect_served(context, log, 'agreement', 'sb_agree', 3, exposure(521, 'sb_agree', 'unit_serving', 3))
     expect_served(context, log, 'agreement repeat', 'sb_agree', 3)
@@ -230,6 +241,14 @@ module SwitchbackSelfTest
     expect_served(context, log, 'empty allow-list admits all', 'sb_allow_empty', 3,
                   exposure(528, 'sb_allow_empty', 'unit_serving', 3))
     expect_served(context, log, 'Phase 1E fields only', 'sb_phase1e_only', 0)
+    expect_served(context, log, 'float value', 'sb_float_value', 0)
+    # profile/zone is market_2: assignSwitchback("market_2", 0, 42, 10) = 9.
+    expect_served(context, log, 'second unit serves', 'sb_second_unit_serves', 9,
+                  exposure(531, 'sb_second_unit_serves', 'unit_user', 9))
+    expect_served(context, log, 'assignment rule', 'sb_rule', 7,
+                  exposure(532, 'sb_rule', 'unit_serving', 7, assigned: false, rule_override: true))
+    expect_served(context, log, 'traffic miss', 'sb_traffic_miss', 0,
+                  exposure(533, 'sb_traffic_miss', 'unit_serving', 0, eligible: false))
 
     # A unit baseline and a switchback on the same unit publish the same shape at every depth.
     context.publish

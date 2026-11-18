@@ -246,7 +246,8 @@ def test_switchback_policy_requires_java_and_ruby_and_excepts_every_other_sdk(ru
     for sdk, entry in sdks.items():
         if sdk not in capable:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"], sdk
+            reason = entry["unsupported"]["switchback"]
+            assert reason.endswith("java-sdk and ruby-sdk serve it (R33)") or "self-test" in reason, sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
