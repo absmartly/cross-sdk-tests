@@ -162,6 +162,7 @@ final class HoldoutSelfTest
             self::experiment(308, 'probe_g_late_unit', $late, 2, ['A', 'B', 'C'], [408], [0.5, 0.5, 0.0]),
             $expRule,
             self::experiment(310, 'probe_i_unit_type', $notHeldOut, 0, ['A', 'B'], [410]),
+            self::experiment(311, 'probe_j_missing_unit', 'device_id', 2, ['A', 'B', 'C'], [411], [0.5, 0.5, 0.0]),
         ];
         $holdouts = [
             self::holdout(401, 'probe_a_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
@@ -176,6 +177,9 @@ final class HoldoutSelfTest
             // Declares the held-out unit type, but covers a session_id_b experiment: its arm must be drawn from the
             // covered experiment's unit (not held out), never the holdout's own (held out).
             self::holdout(410, 'probe_i_holdout', $heldOut, 13, 111, [0.1, 0.9], 'full'),
+            // Covers a full-on experiment whose device_id unit is never set: no arm can be drawn, so no holdout
+            // exposure, while the full-on experiment still exposes itself.
+            self::holdout(411, 'probe_j_holdout', 'device_id', 13, 111, [0.1, 0.9], 'full'),
         ];
 
         $logger = new HoldoutProbeLogger();
@@ -200,7 +204,9 @@ final class HoldoutSelfTest
             && self::verify($p, 'H (mirrors 305)', $context, $logger, 'probe_h_rule', 1,
                 [self::exposure(309, 'probe_h_rule', 1), self::exposure(409, 'probe_h_holdout', 0)])
             && self::verify($p, 'I (mirrors 227)', $context, $logger, 'probe_i_unit_type', 0,
-                [self::exposure(310, 'probe_i_unit_type', 0), self::exposure(410, 'probe_i_holdout', 1)]);
+                [self::exposure(310, 'probe_i_unit_type', 0), self::exposure(410, 'probe_i_holdout', 1)])
+            && self::verify($p, 'J (mirrors 221, unit never set)', $context, $logger, 'probe_j_missing_unit', 2,
+                [self::exposure(311, 'probe_j_missing_unit', 2)]);
         if (!$ok) {
             return false;
         }
@@ -219,7 +225,7 @@ final class HoldoutSelfTest
             return false;
         }
 
-        echo "{$p} behavioral self-test PASSED: all 10 checks mirroring scenarios 203-208, 221, 227 and 305 passed\n";
+        echo "{$p} behavioral self-test PASSED: all 11 checks mirroring scenarios 203-208, 221, 227 and 305 passed\n";
         return true;
     }
 
