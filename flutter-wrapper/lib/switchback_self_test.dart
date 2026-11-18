@@ -69,7 +69,6 @@ List<int> switchbackPermutation(
 final BigInt _longMin = -(BigInt.one << 63);
 final BigInt _longMax = (BigInt.one << 63) - BigInt.one;
 
-// A signed 64-bit decimal, parsed exactly; anything else is an ArgumentError.
 BigInt _long(String text) {
   if (!RegExp(r'^-?[0-9]+$').hasMatch(text)) {
     throw ArgumentError('not a decimal integer: $text');
@@ -251,29 +250,30 @@ String probePayload() {
         ..['switchbackClusterValues'] = ['market_1']
         ..['switchbackStartAt'] = _anchorPeriod0
         ..['switchbackPeriodMs'] = _periodMs
-        ..['switchbackDesignType'] = 'balanced_block',
+        ..['switchbackCarryoverDurationMs'] = 0
+        ..['switchbackBurnInDurationMs'] = 0
+        ..['switchbackBurnOutDurationMs'] = 0
+        ..['switchbackDesignType'] = 'balanced_block'
+        ..['switchbackEstimand'] = 'global_average_treatment_effect',
     ]
   });
 }
 
 class _E {
-  const _E(this.id, this.name, this.unit, this.variant,
-      {this.assigned = true, this.eligible = true});
+  const _E(this.id, this.name, this.unit, this.variant);
 
   final int id;
   final String name;
   final String unit;
   final int variant;
-  final bool assigned;
-  final bool eligible;
 
   bool matches(Exposure e) =>
       e.id == id &&
       e.name == name &&
       e.unit == unit &&
       e.variant == variant &&
-      e.assigned == assigned &&
-      e.eligible == eligible &&
+      e.assigned &&
+      e.eligible &&
       !e.overridden &&
       !e.fullOn &&
       !e.custom &&
@@ -382,7 +382,6 @@ Map<String, dynamic> _serialized(PublishEvent event) =>
     jsonDecode(utf8.decode(DefaultContextEventSerializer().serialize(event)!))
         as Map<String, dynamic>;
 
-// The set of keys at every depth, with list lengths: the shape of a payload.
 String? _shapeMismatch(dynamic baseline, dynamic actual, String path) {
   if ((baseline is Map) != (actual is Map) ||
       (baseline is List) != (actual is List)) {
@@ -454,10 +453,15 @@ Future<PublishEvent?> _checkPayloadShape(
   await context.publish();
 
   final int before = log.exposures.length;
-  context.getTreatment('sb_unit_baseline');
+  final int baselineTreatment = context.getTreatment('sb_unit_baseline');
   final baseline = await _publishOne(context, publisher);
-  context.getTreatment('sb_payload');
+  final int switchbackTreatment = context.getTreatment('sb_payload');
   final switchback = await _publishOne(context, publisher);
+  if (baselineTreatment != 1 || switchbackTreatment != 1) {
+    print('$_prefix check payload shape FAILED: treatments '
+        '$baselineTreatment and $switchbackTreatment, expected 1 and 1');
+    return null;
+  }
   final emitted = log.exposures.sublist(before);
   if (emitted.length != 2 || baseline == null || switchback == null) {
     print('$_prefix check payload shape FAILED: expected 2 exposures and 2 '

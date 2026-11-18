@@ -309,10 +309,8 @@ Future<void> startServer() async {
       if (body is! Map<String, dynamic>) {
         throw ArgumentError('request body must be an object');
       }
-      for (final name in ['clusterUnit']) {
-        if (body[name] is! String) {
-          throw ArgumentError('$name must be a string');
-        }
+      if (body['clusterUnit'] is! String) {
+        throw ArgumentError('clusterUnit must be a string');
       }
       final armCount = body['armCount'];
       if (armCount is! int || armCount < 2) {

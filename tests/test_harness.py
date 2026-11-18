@@ -1006,7 +1006,7 @@ class StaticRepoChecks(unittest.TestCase):
             with open(os.path.join(REPO_ROOT, path)) as src:
                 lines = src.read().splitlines()
             for line in skip:
-                lines.remove(line)  # first occurrence only; a missing line fails
+                lines.remove(line)
             return lines
 
         dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
@@ -1026,7 +1026,7 @@ class StaticRepoChecks(unittest.TestCase):
             with open(os.path.join(REPO_ROOT, path)) as src:
                 lines = src.read().splitlines()
             for line in skip:
-                lines.remove(line)  # first occurrence only; a missing line fails
+                lines.remove(line)
             return lines
 
         dart = body("dart-wrapper/switchback_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])

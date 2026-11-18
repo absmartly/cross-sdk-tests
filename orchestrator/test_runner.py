@@ -1016,6 +1016,10 @@ class TestOrchestrator:
                     error_msg = str(exc)
 
                 if isinstance(error_body, dict):
+                    # The context-free switchback routes have no context to emit events from, so an
+                    # error response without `events` has none.
+                    if action in SWITCHBACK_ACTIONS and "events" not in error_body:
+                        error_body = dict(error_body, events=[])
                     observations[step_index] = (
                         action,
                         observation_for_step(
