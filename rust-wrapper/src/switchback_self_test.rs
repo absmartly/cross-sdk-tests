@@ -49,7 +49,11 @@ const PERMUTATION_CASES: &[(&str, i64, i64, &[usize])] = &[
 
 /// Runs once (see `SWITCHBACK_SELF_TEST` in main.rs) and fails closed.
 pub fn run() -> bool {
-    match std::panic::catch_unwind(|| check_golden_sample() && check_context_serving()) {
+    run_with(ASSIGN_CASES)
+}
+
+fn run_with(assign_cases: &[(&str, i64, i64, usize, usize)]) -> bool {
+    match std::panic::catch_unwind(|| check_golden_sample(assign_cases) && check_context_serving()) {
         Ok(true) => {
             println!("{} behavioral self-test PASSED", PREFIX);
             true
@@ -62,8 +66,8 @@ pub fn run() -> bool {
     }
 }
 
-fn check_golden_sample() -> bool {
-    for &(unit, period, seed, arms, expected) in ASSIGN_CASES {
+fn check_golden_sample(assign_cases: &[(&str, i64, i64, usize, usize)]) -> bool {
+    for &(unit, period, seed, arms, expected) in assign_cases {
         let actual = assign_switchback(unit, period, seed, arms);
         if actual != Some(expected) {
             println!(
@@ -222,6 +226,32 @@ fn probe_payload() -> String {
             Some(&[("unit_serving", "city")]),
             json!({"holdoutIds": [91]}),
         ),
+        // An assign rule, full-on and a strict audience mismatch win over the
+        // draw (3) with the flags a unit experiment publishes for them.
+        switchback(
+            531,
+            "sb_rule",
+            42,
+            10,
+            Some(&[("unit_serving", "city")]),
+            json!({"assignmentRules": r#"{"rules":[{"type":"assign","environments":[],"variant":7}]}"#}),
+        ),
+        switchback(
+            532,
+            "sb_full_on",
+            42,
+            10,
+            Some(&[("unit_serving", "city")]),
+            json!({"fullOnVariant": 8}),
+        ),
+        switchback(
+            533,
+            "sb_strict_mismatch",
+            42,
+            10,
+            Some(&[("unit_serving", "city")]),
+            json!({"audienceStrict": true, "audience": r#"{"filter":[{"eq":[{"var":"tier"},{"value":"gold"}]}]}"#}),
+        ),
         switchback(513, "sb_payload", 1, 3, Some(&[("unit_serving", "city")]), json!({})),
         unit_baseline.to_string(),
         with_fields.to_string(),
@@ -246,6 +276,9 @@ impl ContextPublisher for Capture {
 type Served = (i64, &'static str, &'static str, i32, [bool; 7]);
 
 const ELIGIBLE: [bool; 7] = [true, true, false, false, false, false, false];
+const RULE: [bool; 7] = [false, true, false, false, false, false, true];
+const FULL_ON: [bool; 7] = [true, true, false, true, false, false, false];
+const STRICT_MISMATCH: [bool; 7] = [false, true, false, false, false, true, false];
 
 fn served_as(actual: &Exposure, expected: &Served) -> bool {
     let (id, name, unit, variant, flags) = expected;
@@ -366,6 +399,14 @@ fn check_context_serving() -> bool {
             "sb_holdout_covered",
             3,
             &[(529, "sb_holdout_covered", "unit_serving", 3, ELIGIBLE)],
+        )
+        && expect("assignment rule", "sb_rule", 7, &[(531, "sb_rule", "unit_serving", 7, RULE)])
+        && expect("full-on", "sb_full_on", 8, &[(532, "sb_full_on", "unit_serving", 8, FULL_ON)])
+        && expect(
+            "strict audience mismatch",
+            "sb_strict_mismatch",
+            0,
+            &[(533, "sb_strict_mismatch", "unit_serving", 0, STRICT_MISMATCH)],
         );
     if !served {
         return false;
@@ -465,4 +506,21 @@ fn check_payload_shape(
         return false;
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passes_on_the_linked_sdk() {
+        assert!(run());
+    }
+
+    #[test]
+    fn fails_closed_on_a_wrong_golden_vector() {
+        let mut cases = ASSIGN_CASES.to_vec();
+        cases[0].4 = 1 - cases[0].4;
+        assert!(!run_with(&cases));
+    }
 }

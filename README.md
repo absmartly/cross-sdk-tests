@@ -62,8 +62,9 @@ across languages.
   with a value serves the raw value as the cluster key of
   `assignSwitchback(key, floorDiv(now - switchbackStartAt, switchbackPeriodMs),
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
-  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java is the only
-  capable SDK, and every other SDK lists `switchback` as a reviewed exception.
+  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`), as does rust-sdk
+  (absmartly/rust-sdk#12); java and rust are the capable SDKs, and every other
+  SDK lists `switchback` as a reviewed exception.
   The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
   the feature-parity range.
 
@@ -164,7 +165,8 @@ across languages.
   a few seconds with `python3 -m pytest orchestrator/tests -q` (needs `pytest`
   and `requests`); CI runs them in `harness-unit-tests` next to `tests/`.
   The java wrapper's switchback endpoint tests run inside the wrapper's
-  `builder` image stage with `gradle test`.
+  `builder` image stage with `gradle test`; the rust wrapper's self-test unit
+  tests run with `cargo test` in `rust-wrapper/`.
 
 - **A live-backend e2e runner** (`orchestrator/e2e_runner.py`) that drives the
   wrappers against a real ABsmartly environment and verifies data arrives.

@@ -249,7 +249,7 @@ def test_switchback_policy_requires_the_holders_and_excepts_every_other_sdk(runn
         if sdk in SWITCHBACK_HOLDERS:
             assert "switchback" not in entry["unsupported"], sdk
         else:
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert entry["unsupported"]["switchback"].endswith("java-sdk and rust-sdk only (R33)"), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 

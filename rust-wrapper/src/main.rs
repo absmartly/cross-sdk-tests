@@ -396,9 +396,9 @@ fn switchback_params(req: &Value, index: &str) -> Result<(String, i64, i64, usiz
     let arm_count = req
         .get("armCount")
         .and_then(Value::as_u64)
-        .filter(|n| *n >= 2)
+        .filter(|n| (2..=i32::MAX as u64).contains(n))
         .and_then(|n| usize::try_from(n).ok())
-        .ok_or("armCount must be an integer of at least 2")?;
+        .ok_or("armCount must be an integer from 2 to 2147483647")?;
     Ok((cluster_unit, i64_param(req, index)?, i64_param(req, "seed")?, arm_count))
 }
 
@@ -1150,4 +1150,31 @@ async fn main() {
     tracing::info!("Rust SDK wrapper listening on port {}", port);
 
     axum::serve(listener, app).await.unwrap();
+}
+
+#[cfg(test)]
+mod switchback_endpoint_tests {
+    use super::*;
+
+    // Values above 2^53 must parse exactly, never through a double.
+    #[test]
+    fn sixty_four_bit_fields_parse_exactly() {
+        for text in ["9007199254740993", "-9007199254740993", "9223372036854775807", "-9223372036854775808"] {
+            let req = json!({ "periodIndex": text });
+            assert_eq!(i64_param(&req, "periodIndex"), Ok(text.parse::<i64>().unwrap()), "{}", text);
+        }
+        for bad in [json!("1.0"), json!("9223372036854775808"), json!(5), json!(" 1"), json!("")] {
+            assert!(i64_param(&json!({ "periodIndex": bad }), "periodIndex").is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn arm_count_is_bounded() {
+        let req = |arms: Value| json!({"clusterUnit": "m", "cycleIndex": "0", "seed": "0", "armCount": arms});
+        assert!(switchback_params(&req(json!(2)), "cycleIndex").is_ok());
+        assert!(switchback_params(&req(json!(2147483647u64)), "cycleIndex").is_ok());
+        for bad in [json!(1), json!(0), json!(-2), json!(2147483648u64), json!(2.5), json!("3")] {
+            assert!(switchback_params(&req(bad.clone()), "cycleIndex").is_err(), "{}", bad);
+        }
+    }
 }
