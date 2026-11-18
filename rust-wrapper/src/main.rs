@@ -208,6 +208,8 @@ struct AppState {
     contexts: RwLock<HashMap<String, Arc<ContextData_>>>,
     payloads: RwLock<HashMap<String, ContextData>>,
     captured_requests: Mutex<HashMap<String, Vec<Value>>>,
+    // Per-app probe injection keeps HTTP tests independent of the process OnceLock.
+    switchback_probe: fn() -> bool,
 }
 
 impl AppState {
@@ -216,6 +218,7 @@ impl AppState {
             contexts: RwLock::new(HashMap::new()),
             payloads: RwLock::new(HashMap::new()),
             captured_requests: Mutex::new(HashMap::new()),
+            switchback_probe: switchback_capability,
         }
     }
 }
@@ -353,7 +356,7 @@ async fn health_handler() -> impl IntoResponse {
     }))
 }
 
-async fn capabilities_handler() -> impl IntoResponse {
+async fn capabilities_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({"diagnostics": true,
         "diagnosticsUtf8": true,
         "attrsSeq": false,
@@ -375,7 +378,7 @@ async fn capabilities_handler() -> impl IntoResponse {
         "xAgentHeader": true,
         "clientRejectsBlankApplication": true,
         "clientAcceptsBlankApplication": false,
-        "switchback": tokio::task::block_in_place(switchback_capability)
+        "switchback": tokio::task::block_in_place(state.switchback_probe)
     }))
 }
 
@@ -1100,13 +1103,8 @@ async fn delete_context_handler(
     Json(json!({ "result": "deleted" }))
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
-
-    let state = Arc::new(AppState::new());
-
-    let app = Router::new()
+fn app(state: Arc<AppState>) -> Router {
+    Router::new()
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
@@ -1149,8 +1147,14 @@ async fn main() {
         .route("/context/{contextId}/finalize", post(finalize_handler))
         .route("/context/{contextId}", delete(delete_context_handler))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state)
+}
 
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let app = app(Arc::new(AppState::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
@@ -1164,7 +1168,70 @@ async fn main() {
 #[cfg(test)]
 mod switchback_endpoint_tests {
     use super::*;
-    use axum::extract::FromRequest;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn post(route: &str, body: &[u8], content_type: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().method("POST").uri(route);
+        if let Some(content_type) = content_type {
+            builder = builder.header("content-type", content_type);
+        }
+        builder.body(Body::from(body.to_vec())).unwrap()
+    }
+
+    // A failed probe turns the capability off over HTTP; the endpoints still
+    // answer with the SDK's real values.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn capability_http_fails_closed_without_masking_the_assigner() {
+        let failing: fn() -> bool = || false;
+        for (probe, expected) in [(failing, false), (switchback_capability as fn() -> bool, true)] {
+            let mut state = AppState::new();
+            state.switchback_probe = probe;
+            let app = app(Arc::new(state));
+            let request = Request::builder().uri("/capabilities").body(Body::empty()).unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response_json(response).await["switchback"], json!(expected));
+
+            for (unit, period, arms, variant) in [("market_1", "0", 2, 0), ("123456789", "0", 2, 1), ("market_1", "10", 3, 2)] {
+                let body = json!({"clusterUnit": unit, "periodIndex": period, "seed": "0", "armCount": arms}).to_string();
+                let response = app
+                    .clone()
+                    .oneshot(post("/switchback/assign", body.as_bytes(), Some("application/json")))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response_json(response).await, json!({"result": variant, "events": []}));
+            }
+        }
+    }
+
+    // Both endpoints answer a body they cannot decode with the JSON error
+    // envelope: truncated JSON, a non-object, and no JSON content type.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn undecodable_bodies_get_the_error_envelope_on_both_endpoints() {
+        let app = app(Arc::new(AppState::new()));
+        let valid = br#"{"clusterUnit":"m","periodIndex":"0","cycleIndex":"0","seed":"0","armCount":2}"#;
+        for route in ["/switchback/assign", "/switchback/permutation"] {
+            for (body, content_type) in [
+                (&br#"{"clusterUnit": "#[..], Some("application/json")),
+                (&b"[1, 2]"[..], Some("application/json")),
+                (&valid[..], None),
+                (&valid[..], Some("text/plain")),
+            ] {
+                let response = app.clone().oneshot(post(route, body, content_type)).await.unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{} {:?}", route, content_type);
+                let json = response_json(response).await;
+                assert!(json["error"].is_string(), "{} {:?}: {}", route, content_type, json);
+            }
+        }
+    }
 
     // Values above 2^53 must parse exactly, never through a double.
     #[test]
@@ -1175,24 +1242,6 @@ mod switchback_endpoint_tests {
         }
         for bad in [json!("1.0"), json!("9223372036854775808"), json!(5), json!(" 1"), json!("")] {
             assert!(i64_param(&json!({ "periodIndex": bad }), "periodIndex").is_err(), "{}", bad);
-        }
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn malformed_json_gets_the_error_envelope() {
-        for body in [&b"{\"clusterUnit\": "[..], &b"[1, 2]"[..]] {
-            let request = axum::http::Request::builder()
-                .method("POST")
-                .uri("/switchback/assign")
-                .header("content-type", "application/json")
-                .body(axum::body::Body::from(body.to_vec()))
-                .unwrap();
-            let rejection = Json::<Value>::from_request(request, &()).await;
-            let response = switchback_assign_handler(rejection.map(|j| j)).await;
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-            let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
-            let json: Value = serde_json::from_slice(&bytes).unwrap();
-            assert!(json["error"].is_string(), "{}", json);
         }
     }
 

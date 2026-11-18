@@ -53,7 +53,8 @@ pub fn run() -> bool {
 }
 
 fn run_with(assign_cases: &[(&str, i64, i64, usize, usize)]) -> bool {
-    match std::panic::catch_unwind(|| check_golden_sample(assign_cases) && check_context_serving()) {
+    match std::panic::catch_unwind(|| check_golden_sample(assign_cases) && check_context_serving())
+    {
         Ok(true) => {
             println!("{} behavioral self-test PASSED", PREFIX);
             true
@@ -135,7 +136,11 @@ fn switchback(
                 .map(|(t, p)| format!("{}:{}", json!(t), json!(p)))
                 .collect::<Vec<_>>()
                 .join(",");
-            format!("{},\"switchbackClusters\":{{{}}}}}", &text[..text.len() - 1], map)
+            format!(
+                "{},\"switchbackClusters\":{{{}}}}}",
+                &text[..text.len() - 1],
+                map
+            )
         }
     }
 }
@@ -252,7 +257,14 @@ fn probe_payload() -> String {
             Some(&[("unit_serving", "city")]),
             json!({"audienceStrict": true, "audience": r#"{"filter":[{"eq":[{"var":"tier"},{"value":"gold"}]}]}"#}),
         ),
-        switchback(513, "sb_payload", 1, 3, Some(&[("unit_serving", "city")]), json!({})),
+        switchback(
+            513,
+            "sb_payload",
+            1,
+            3,
+            Some(&[("unit_serving", "city")]),
+            json!({}),
+        ),
         unit_baseline.to_string(),
         with_fields.to_string(),
     ];
@@ -260,7 +272,11 @@ fn probe_payload() -> String {
     // suppress the covered switchback nor record its own exposure through it.
     let holdout = json!({"id": 91, "name": "sb_probe_holdout", "unitType": "unit_serving", "iteration": 1,
         "seedHi": 1, "seedLo": 2, "split": [1.0, 0.0], "trafficSplit": [0, 1]});
-    format!(r#"{{"experiments":[{}],"holdouts":[{}]}}"#, experiments.join(","), holdout)
+    format!(
+        r#"{{"experiments":[{}],"holdouts":[{}]}}"#,
+        experiments.join(","),
+        holdout
+    )
 }
 
 struct Capture(Arc<Mutex<Vec<PublishParams>>>);
@@ -314,7 +330,10 @@ fn check_context_serving() -> bool {
         .map(|c| c.iter().map(|(t, _)| t.as_str()).collect())
         .unwrap_or_default();
     if order != ["unit_user", "unit_serving"] {
-        println!("{} FAILED: switchbackClusters lost its declared order: {:?}", PREFIX, order);
+        println!(
+            "{} FAILED: switchbackClusters lost its declared order: {:?}",
+            PREFIX, order
+        );
         return false;
     }
 
@@ -325,7 +344,9 @@ fn check_context_serving() -> bool {
         refresh_period: 0,
         event_logger: Some(Arc::new(move |_ctx, event, data| {
             if event == "exposure" {
-                if let Some(exposure) = data.and_then(|d| serde_json::from_value::<Exposure>(d).ok()) {
+                if let Some(exposure) =
+                    data.and_then(|d| serde_json::from_value::<Exposure>(d).ok())
+                {
                     sink.lock().unwrap().push(exposure);
                 }
             }
@@ -370,8 +391,12 @@ fn check_context_serving() -> bool {
         }
         matches
     };
-    let served = expect("agreement", "sb_agree", 3, &[(521, "sb_agree", "unit_serving", 3, ELIGIBLE)])
-        && expect("agreement repeat", "sb_agree", 3, &[])
+    let served = expect(
+        "agreement",
+        "sb_agree",
+        3,
+        &[(521, "sb_agree", "unit_serving", 3, ELIGIBLE)],
+    ) && expect("agreement repeat", "sb_agree", 3, &[])
         && expect(
             "declared order",
             "sb_declared_order",
@@ -400,13 +425,29 @@ fn check_context_serving() -> bool {
             3,
             &[(529, "sb_holdout_covered", "unit_serving", 3, ELIGIBLE)],
         )
-        && expect("assignment rule", "sb_rule", 7, &[(531, "sb_rule", "unit_serving", 7, RULE)])
-        && expect("full-on", "sb_full_on", 8, &[(532, "sb_full_on", "unit_serving", 8, FULL_ON)])
+        && expect(
+            "assignment rule",
+            "sb_rule",
+            7,
+            &[(531, "sb_rule", "unit_serving", 7, RULE)],
+        )
+        && expect(
+            "full-on",
+            "sb_full_on",
+            8,
+            &[(532, "sb_full_on", "unit_serving", 8, FULL_ON)],
+        )
         && expect(
             "strict audience mismatch",
             "sb_strict_mismatch",
             0,
-            &[(533, "sb_strict_mismatch", "unit_serving", 0, STRICT_MISMATCH)],
+            &[(
+                533,
+                "sb_strict_mismatch",
+                "unit_serving",
+                0,
+                STRICT_MISMATCH,
+            )],
         );
     if !served {
         return false;
@@ -414,7 +455,10 @@ fn check_context_serving() -> bool {
     check_payload_shape(&mut context, &exposures, &published)
 }
 
-fn publish_one(context: &mut absmartly::Context, published: &Arc<Mutex<Vec<PublishParams>>>) -> Option<Value> {
+fn publish_one(
+    context: &mut absmartly::Context,
+    published: &Arc<Mutex<Vec<PublishParams>>>,
+) -> Option<Value> {
     let before = published.lock().unwrap().len();
     context.publish().ok()?;
     let published = published.lock().unwrap();
@@ -438,7 +482,9 @@ fn normalised(mut event: Value) -> Value {
 
 fn shape(value: &Value) -> Value {
     match value {
-        Value::Object(map) => Value::Object(map.iter().map(|(k, v)| (k.clone(), shape(v))).collect()),
+        Value::Object(map) => {
+            Value::Object(map.iter().map(|(k, v)| (k.clone(), shape(v))).collect())
+        }
         Value::Array(items) => Value::Array(items.iter().map(shape).collect()),
         _ => Value::Null,
     }
@@ -464,8 +510,12 @@ fn check_payload_shape(
     let with_fields_variant = context.treatment("sb_unit_with_fields");
     let with_fields = publish_one(context, published);
     let emitted: Vec<Exposure> = exposures.lock().unwrap()[before..].to_vec();
-    let (Some(baseline), Some(switchback), Some(with_fields)) = (baseline, switchback, with_fields) else {
-        println!("{} check payload shape FAILED: missing publish events", PREFIX);
+    let (Some(baseline), Some(switchback), Some(with_fields)) = (baseline, switchback, with_fields)
+    else {
+        println!(
+            "{} check payload shape FAILED: missing publish events",
+            PREFIX
+        );
         return false;
     };
     let expected: [Served; 3] = [
@@ -480,9 +530,13 @@ fn check_payload_shape(
         println!("{} check published exposures FAILED: {:?}", PREFIX, emitted);
         return false;
     }
-    for ((event, name), expected) in [(&baseline, "baseline"), (&switchback, "switchback"), (&with_fields, "unit with fields")]
-        .into_iter()
-        .zip(&expected)
+    for ((event, name), expected) in [
+        (&baseline, "baseline"),
+        (&switchback, "switchback"),
+        (&with_fields, "unit with fields"),
+    ]
+    .into_iter()
+    .zip(&expected)
     {
         // The exposure the publisher received, not just the logged one.
         let published_exposure = event["exposures"]
@@ -499,8 +553,14 @@ fn check_payload_shape(
         let hashed = units
             .iter()
             .any(|u| u["type"] == json!("unit_serving") && u["uid"] == json!(SERVING_UNIT_HASH));
-        if event["hashed"] != json!(true) || !hashed || event["exposures"].as_array().map(Vec::len) != Some(1) {
-            println!("{} check publish payload FAILED for {}: {}", PREFIX, name, event);
+        if event["hashed"] != json!(true)
+            || !hashed
+            || event["exposures"].as_array().map(Vec::len) != Some(1)
+        {
+            println!(
+                "{} check publish payload FAILED for {}: {}",
+                PREFIX, name, event
+            );
             return false;
         }
     }
