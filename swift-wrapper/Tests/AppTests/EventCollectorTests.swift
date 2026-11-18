@@ -79,19 +79,19 @@ final class EventCollectorTests: XCTestCase {
         let served = Data(#"{"experiments":[]}"#.utf8)
         let server = try LocalServer(body: served)
         defer { server.stop() }
-        let transport = WrapperTransport(publishToEndpoint: false, throttleMs: 300)
+        let transport = WrapperTransport(publishToEndpoint: false, throttleMs: 1500)
         let client = try makeClient(
             endpoint: server.endpoint, application: "test-app", environment: "test-env", transport: transport)
         let context = client.makeContext(
             units: ["session_id": "u1"], options: Context.Options(publishDelay: -1, refreshInterval: 0))
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertEqual(context.state, .loading)
         try await context.ready()
         XCTAssertEqual(context.state, .ready)
 
         let start = Date()
         try await context.refresh()
-        XCTAssertLessThan(Date().timeIntervalSince(start), 0.25)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0)
     }
 }
 

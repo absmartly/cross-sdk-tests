@@ -549,7 +549,7 @@ func routes(_ app: VaporApplication) throws {
                     endpoint: "http://127.0.0.1:3000", application: clientApplication, environment: clientEnvironment,
                     transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
             context = sdk.context(units: units.strings, options: options, data: contextData)
             try units.apply(to: context)
@@ -564,7 +564,7 @@ func routes(_ app: VaporApplication) throws {
                 sdk = try makeClient(
                     endpoint: endpoint, application: clientApplication, environment: clientEnvironment, transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
             context = sdk.makeContext(units: units.strings, options: options)
             try units.apply(to: context)
@@ -580,7 +580,7 @@ func routes(_ app: VaporApplication) throws {
                     endpoint: "http://127.0.0.1:1", application: clientApplication, environment: clientEnvironment,
                     transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
             context = sdk.makeContext(units: units.strings, options: options)
             try units.apply(to: context)
