@@ -1,5 +1,5 @@
 # Swift SDK 2.x: no third-party dependencies (swift-crypto on Linux only), Swift 6 toolchain.
-FROM swift:6.0-jammy AS sdk-builder
+FROM swift:6.4-jammy AS sdk-builder
 
 COPY swift-sdk /swift-sdk
 
