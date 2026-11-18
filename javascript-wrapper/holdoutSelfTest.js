@@ -649,8 +649,77 @@ async function runHoldoutArmsBattery() {
   return true;
 }
 
+
+// Behavioral self-test for `holdoutIdsDedup` (mirrors the Holdout Conformance duplicate-ids
+// scenario): a holdoutIds list naming one holdout twice is one holdout. treatment fires one holdout
+// exposure, and a refresh that drops the duplicate is not a coverage change, so the covered
+// experiment keeps its exposure state and re-exposes nothing. Gated on the base battery.
+async function runHoldoutIdsDedupBattery() {
+  const prefix = '[holdoutIdsDedup probe]';
+  const experiment = (id, name, unitType, holdoutIds) =>
+    buildExperiment({ id, name, unitType, seedHi: 0, seedLo: 0, split: [0, 1], fullOnVariant: 0, variantNames: ['A', 'B'], holdoutIds });
+  const holdout = (id, name, unitType, seedLo) => ({ id, name, unitType, iteration: 1, seedHi: 1, seedLo, split: [0.5, 0.5] });
+  // None of these holds its unit out: seedHi=1/seedLo=1 puts svk-unit-1 in arm 1 of [0.5, 0.5], and
+  // seedLo 2 and 4 do the same for svk-user-1. The non-adjacent repeat is on its own unit type so
+  // its holdouts' exposures are not already spent by the adjacent one.
+  const holdouts = [holdout(901, 'dedup_holdout', 'session_id', 1), holdout(902, 'dedup_apart_a', 'user_id', 2), holdout(903, 'dedup_apart_b', 'user_id', 4)];
+  const contextData = (adjacent, apart) => ({
+    experiments: [experiment(801, 'dedup_covered', 'session_id', adjacent), experiment(802, 'dedup_apart', 'user_id', apart)],
+    holdouts,
+  });
+  let next = null;
+  class Provider extends absmartly.ContextDataProvider {
+    getContextData() {
+      return Promise.resolve(next);
+    }
+  }
+  const exposureLog = [];
+  const sdk = new absmartly.SDK({
+    endpoint: 'http://dummy',
+    apiKey: 'dummy',
+    application: 'test',
+    environment: 'test',
+    provider: new Provider(),
+    eventLogger: (ctx, eventName, eventData) => {
+      if (eventName === 'exposure' && eventData) {
+        exposureLog.push({ id: eventData.id, name: eventData.name, variant: eventData.variant });
+      }
+    },
+  });
+  const context = sdk.createContextWith(
+    { units: { session_id: 'svk-unit-1', user_id: 'svk-user-1' } },
+    contextData([901, 901], [902, 903, 902, 903]),
+    { publishDelay: -1, refreshPeriod: 0 }
+  );
+  await context.ready();
+  if (
+    !verifyTreatmentAndExposures(prefix, 'adjacent duplicate', context, exposureLog, 'dedup_covered', 1, [
+      { id: 801, name: 'dedup_covered', variant: 1 },
+      { id: 901, name: 'dedup_holdout', variant: 1 },
+    ])
+  )
+    return false;
+  if (
+    !verifyTreatmentAndExposures(prefix, 'non-adjacent duplicate', context, exposureLog, 'dedup_apart', 1, [
+      { id: 802, name: 'dedup_apart', variant: 1 },
+      { id: 902, name: 'dedup_apart_a', variant: 1 },
+      { id: 903, name: 'dedup_apart_b', variant: 1 },
+    ])
+  )
+    return false;
+  next = contextData([901], [902, 903]);
+  await context.refresh();
+  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the adjacent duplicate', context, exposureLog, 'dedup_covered', 1, []))
+    return false;
+  if (!verifyTreatmentAndExposures(prefix, 'refresh dropping the non-adjacent duplicate', context, exposureLog, 'dedup_apart', 1, []))
+    return false;
+  console.log(`${prefix} behavioral self-test PASSED`);
+  return true;
+}
+
 let holdoutsPromise = null;
 let holdoutArmsPromise = null;
+let holdoutIdsDedupPromise = null;
 
 async function runHoldoutsSafely() {
   try {
@@ -690,6 +759,26 @@ function runHoldouts() {
   return holdoutsPromise;
 }
 
+async function runHoldoutIdsDedupSafely() {
+  try {
+    if (!(await runHoldouts())) {
+      console.log('[holdoutIdsDedup probe] skipped: base holdouts battery did not pass');
+      return false;
+    }
+    return await runHoldoutIdsDedupBattery();
+  } catch (err) {
+    console.log('[holdoutIdsDedup probe] behavioral self-test FAILED with error: ' + (err && err.stack ? err.stack : err));
+    return false;
+  }
+}
+
+function runHoldoutIdsDedup() {
+  if (!holdoutIdsDedupPromise) {
+    holdoutIdsDedupPromise = runHoldoutIdsDedupSafely();
+  }
+  return holdoutIdsDedupPromise;
+}
+
 function runHoldoutArms() {
   if (!holdoutArmsPromise) {
     holdoutArmsPromise = runHoldoutArmsSafely();
@@ -697,4 +786,4 @@ function runHoldoutArms() {
   return holdoutArmsPromise;
 }
 
-module.exports = { runHoldouts, runHoldoutArms };
+module.exports = { runHoldouts, runHoldoutArms, runHoldoutIdsDedup };

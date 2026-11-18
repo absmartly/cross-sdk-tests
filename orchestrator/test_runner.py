@@ -287,6 +287,31 @@ def units_match_unordered(actual: Any, expected: Any) -> bool:
     return assign(0, frozenset())
 
 
+def events_in_expected_order(actual: List[Any], expected: List[Any]) -> List[Any]:
+    """`actual` reordered to match `expected` one-to-one (type and data), or unchanged if no
+    ordering matches, so the positional check reports the mismatch."""
+
+    def matches(candidate: Any, event: Any) -> bool:
+        return (
+            isinstance(candidate, dict)
+            and values_match(candidate.get("type", MISSING), event.get("type"))
+            and ("data" not in event or values_match(candidate.get("data", MISSING), event["data"]))
+        )
+
+    def assign(i: int, used: Tuple[int, ...]) -> Optional[Tuple[int, ...]]:
+        if i == len(expected):
+            return used
+        for j, candidate in enumerate(actual):
+            if j not in used and matches(candidate, expected[i]):
+                found = assign(i + 1, used + (j,))
+                if found is not None:
+                    return found
+        return None
+
+    order = assign(0, ())
+    return actual if order is None else [actual[j] for j in order]
+
+
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
     exact = action not in PARTIAL_RESULT_ACTIONS
     if not ordered and action in UNORDERED_RESULT_ACTIONS:
@@ -440,6 +465,8 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
             elif entry["type"] == "publish" and isinstance(data, dict):
                 entry["data"] = _publish_observation(data)
             events_obs.append(entry)
+        if expected.get("unorderedEvents") is True:
+            events_obs.sort(key=lambda e: json.dumps(e, sort_keys=True))
 
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
 
@@ -1253,6 +1280,12 @@ class TestOrchestrator:
                 }
             )
             return failures
+
+        if expected.get("unorderedEvents") is True:
+            # Only the set of events is pinned (e.g. exposures one call queues together, whose order
+            # differs between SDKs and is not part of the contract): match them one-to-one in any
+            # order, then check each pair below as usual.
+            actual_events = events_in_expected_order(actual_events, expected_events)
 
         for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
             if not isinstance(actual_event, dict):

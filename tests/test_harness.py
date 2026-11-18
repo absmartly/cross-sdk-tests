@@ -223,6 +223,32 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.publish_units([a, b, b], [a, b]), ["events[0].data.units (unordered)"])
         self.assertEqual(self.publish_units("x", [a, b]), ["events[0].data.units (unordered)"])
 
+    def exposures(self, actual_ids, expected_ids, unordered=True):
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in actual_ids]}
+        expected = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in expected_ids]}
+        if unordered:
+            expected["unorderedEvents"] = True
+        return self.fields(self.orch.validate_step(0, "variableValue", actual, expected))
+
+    def test_unordered_events_accept_any_order(self):
+        self.assertEqual(self.exposures([2, 1, 3], [1, 2, 3]), [])
+        self.assertEqual(self.exposures([2, 1], [1, 2], unordered=False),
+                         ["events[0].data.id", "events[1].data.id"])
+
+    def test_unordered_events_still_check_values_and_count(self):
+        self.assertEqual(self.exposures([1, 4], [1, 2]), ["events[1].data.id"])
+        self.assertEqual(self.exposures([1, 1], [1, 2]), ["events[1].data.id"])
+        self.assertEqual(self.exposures([1], [1, 2]), ["events.length"])
+
+    def test_unordered_events_observation_ignores_order(self):
+        expected = {"unorderedEvents": True}
+        a = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "exposure", "data": {"id": 2}}]}
+        b = {"result": None, "events": list(reversed(a["events"]))}
+        self.assertEqual(test_runner.observation_for_step("variableValue", a, expected),
+                         test_runner.observation_for_step("variableValue", b, expected))
+        self.assertNotEqual(test_runner.observation_for_step("variableValue", a, {}),
+                            test_runner.observation_for_step("variableValue", b, {}))
+
     def test_event_data_key_absent_vs_null(self):
         actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
         expected = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1, "custom": None}}]}
@@ -454,7 +480,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "go", "java", "javascript", "react", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
