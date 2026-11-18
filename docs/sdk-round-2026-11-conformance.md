@@ -109,10 +109,11 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
-Exception: python3-sdk is pinned to `feat/holdouts` while python3-sdk#17 (holdouts)
-is open, because its lane now requires `holdouts`/`holdout_arms`. The pin follows
-the same rule: keep python3-sdk's
-`feat/holdouts` branch (delete-branch-on-merge **off** for python3-sdk#17) until a
+Exception: python3-sdk is pinned to `feat/switchbacks` while its switchbacks PR
+(stacked on python3-sdk#17, holdouts) is open, because its lane now requires
+`holdouts`, `holdout_arms` and `switchback`; `feat/switchbacks` contains
+`feat/holdouts`. The pin follows the same rule: keep python3-sdk's
+`feat/switchbacks` branch (delete-branch-on-merge **off** for that PR) until a
 follow-up PR here re-pins python3-sdk to `main` and its lane is green; re-run
 this suite after any push to that branch.
 

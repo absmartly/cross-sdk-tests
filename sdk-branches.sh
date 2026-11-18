@@ -26,8 +26,9 @@ declare -A SDK_BRANCHES=(
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"
   ["php-sdk"]="main"
-  # python3-sdk holdouts PR (python3-sdk#17, feat/holdouts) is open; re-pin to main once it merges.
-  ["python3-sdk"]="feat/holdouts"
+  # python3-sdk switchbacks PR (feat/switchbacks, stacked on python3-sdk#17's feat/holdouts) is
+  # open; re-pin to main once both merge.
+  ["python3-sdk"]="feat/switchbacks"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   ["ruby-sdk"]="main"
   ["rust-sdk"]="main"
