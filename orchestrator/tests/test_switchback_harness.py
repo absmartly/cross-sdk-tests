@@ -236,7 +236,6 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-# SDKs whose lane requires `switchback`, each gated by its wrapper's behavioral self-test.
 SWITCHBACK_SDKS = ("java", "php")
 
 

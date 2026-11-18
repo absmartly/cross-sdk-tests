@@ -318,7 +318,7 @@ final class SwitchbackSelfTest
             return false;
         }
 
-        return self::checkPublishPayload($context, $logger, $handler);
+        return self::checkPublishPayload($context, $handler);
     }
 
     /** One publish of the exposures queued since the last; null unless exactly one was sent. */
@@ -360,7 +360,7 @@ final class SwitchbackSelfTest
      * its own, carry the same fields at every depth; and a unit experiment carrying every R33 field publishes the same
      * bytes as the plain unit baseline.
      */
-    private static function checkPublishPayload(Context $context, SwitchbackProbeLogger $logger, SwitchbackProbeHandler $handler): bool
+    private static function checkPublishPayload(Context $context, SwitchbackProbeHandler $handler): bool
     {
         $context->publish();
 

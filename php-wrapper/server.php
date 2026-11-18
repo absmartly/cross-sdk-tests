@@ -219,11 +219,12 @@ function switchbackString($body, string $name): string
 function switchbackLong($body, string $name): int
 {
     $value = switchbackString($body, $name);
-    if (preg_match('/^(-?)0*([0-9]+)$/D', $value, $m) !== 1) {
+    // An optional sign, as Java's Long.parseLong accepts ("+1" is 1).
+    if (preg_match('/^([-+]?)0*([0-9]+)$/D', $value, $m) !== 1) {
         throw new InvalidArgumentException("{$name} must be a signed 64-bit decimal string");
     }
     // Leading zeros and "-0" parse as Java's Long.parseLong does; anything past 64 bits is rejected.
-    $canonical = ($m[2] === '0' ? '' : $m[1]) . $m[2];
+    $canonical = ($m[1] === '-' && $m[2] !== '0' ? '-' : '') . $m[2];
     if ((string) (int) $canonical !== $canonical) {
         throw new InvalidArgumentException("{$name} is out of the signed 64-bit range");
     }
@@ -284,8 +285,6 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             // (HoldoutSelfTest.php), never hard-coded.
             'holdouts' => HoldoutSelfTest::runHoldouts(),
             'holdout_arms' => HoldoutSelfTest::runHoldoutArms(),
-            // Reported from a behavioral self-test against the built php-sdk
-            // (SwitchbackSelfTest.php), never hard-coded.
             'switchback' => SwitchbackSelfTest::run()
         ]);
     }
