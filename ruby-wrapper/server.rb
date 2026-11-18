@@ -414,12 +414,13 @@ end
 # The switchback pure functions (capability `switchback`); 64-bit values arrive as decimal strings.
 # They answer whenever the SDK has an assigner, independent of the self-test verdict.
 LONG_RANGE = (-(2**63))..((2**63) - 1)
-# The arms of one permutation are materialized, so armCount is bounded well below Java's int range.
+# The arms of one permutation are materialized, so this wrapper bounds armCount well below Java's
+# int range (WRAPPER_API_SPEC.md, Switchback assign).
 MAX_ARM_COUNT = 10_000
 
 def switchback_call
   content_type :json
-  halt 501, { error: 'linked SDK has no switchback assigner' }.to_json if SwitchbackSelfTest.assigner.nil?
+  halt 501, { error: 'linked SDK has no switchback assigner', events: [] }.to_json if SwitchbackSelfTest.assigner.nil?
   r = begin
     body_json
   rescue JSON::ParserError
@@ -444,7 +445,7 @@ def switchback_call
 
   { result: yield(r[:clusterUnit], long, arms), events: [] }.to_json
 rescue ArgumentError => e
-  halt 400, { error: e.message }.to_json
+  halt 400, { error: e.message, events: [] }.to_json
 end
 
 post '/switchback/assign' do

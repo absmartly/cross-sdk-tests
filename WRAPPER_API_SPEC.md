@@ -1370,9 +1370,14 @@ Both endpoints are pure functions with no context. Request rules:
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
+- A wrapper may cap `armCount` to bound the permutation it builds; the ruby
+  wrapper accepts at most 10,000 (the golden vectors use 2, 3 and 10). Values
+  above a wrapper's cap are an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
-  lacks the function returns 501.
+  `armCount < 2` or above the wrapper's cap) returns 400 with
+  `{"error": "...", "events": []}`. A wrapper whose SDK lacks the function
+  returns 501 with the same shape. The runner checks `events` on error
+  responses too.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob
