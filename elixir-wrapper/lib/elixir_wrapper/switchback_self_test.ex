@@ -51,10 +51,14 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
   def run(name, fun), do: safely(name, fun)
 
   @doc "Whether the linked SDK has the switchback assigner."
-  def available?, do: Code.ensure_loaded?(@assigner)
+  def available?,
+    do: Application.get_env(:elixir_wrapper, :switchback_available, true) and Code.ensure_loaded?(@assigner)
 
   @doc "assignSwitchback through the SDK."
-  def assign(unit, period, seed, arms), do: apply(@assigner, :assign, [unit, period, seed, arms])
+  def assign(unit, period, seed, arms) do
+    assigner = Application.get_env(:elixir_wrapper, :switchback_assigner, @assigner)
+    apply(assigner, :assign, [unit, period, seed, arms])
+  end
 
   @doc "fisherYatesPermutation(arms, baseHash(unit, cycle, seed)) through the SDK."
   def permutation(unit, cycle, seed, arms) do
@@ -245,15 +249,15 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
 
     # unit_user is listed first, so the declared order, not the units',
     # must pick the serving unit.
-    context_config =
-      ABSmartly.Types.ContextConfig.from_options(%{
-        "units" => %{"unit_user" => "probe-user", "unit_serving" => "serving-9"},
-        "publishDelay" => -1,
-        "refreshPeriod" => 0,
-        "eventHandler" => handler
-      })
+    context_config = %{units: %{"unit_user" => "probe-user", "unit_serving" => "serving-9"}}
 
-    {:ok, ctx} = GenServer.start(ABSmartly.Context, {sdk_config, data, context_config, nil})
+    # The customer path: ABSmartly.SDK.create_context_with/4.
+    {:ok, ctx} =
+      ABSmartly.SDK.create_context_with(%ABSmartly.SDK{config: sdk_config}, context_config.units, data, %{
+        event_handler: handler,
+        publish_delay: -1,
+        refresh_period: 0
+      })
 
     try do
       :ok = ABSmartly.Context.set_attribute(ctx, "city", "market_1")
@@ -276,7 +280,7 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
       with :ok <- run_checks(ctx, checks),
            do: check_payload_shape(ctx)
     after
-      GenServer.stop(ctx)
+      DynamicSupervisor.terminate_child(ABSmartly.ContextSupervisor, ctx)
     end
   end
 

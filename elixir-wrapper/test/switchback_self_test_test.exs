@@ -99,4 +99,44 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     [event] = ElixirWrapper.EventCollector.get_all(collector)
     assert event.data == %{"experiments" => [%{"switchback_clusters" => %{"z_unit" => "a", "a_unit" => "b"}}]}
   end
+
+  defmodule AnswersEverything do
+    @moduledoc false
+    # A regressed assigner that answers even one arm.
+    def assign(_unit, _period, _seed, _arms), do: 0
+  end
+
+  # The wrapper's own 400 contract: armCount < 2 is refused by the wrapper,
+  # so a regressed assigner that answers it cannot turn it into a 200.
+  test "armCount below 2 is a 400 whatever the assigner answers" do
+    Application.put_env(:elixir_wrapper, :switchback_assigner, AnswersEverything)
+    on_exit(fn -> Application.delete_env(:elixir_wrapper, :switchback_assigner) end)
+
+    for arms <- [1, 0, -3] do
+      assert {400, %{"error" => _}} =
+               call(:post, "/switchback/assign", %{
+                 "clusterUnit" => "u",
+                 "periodIndex" => "0",
+                 "seed" => "0",
+                 "armCount" => arms
+               })
+    end
+
+    assert {200, %{"result" => 0}} =
+             call(:post, "/switchback/assign", %{
+               "clusterUnit" => "u",
+               "periodIndex" => "0",
+               "seed" => "0",
+               "armCount" => 2
+             })
+  end
+
+  test "an SDK without the assigner answers 501 on both endpoints" do
+    Application.put_env(:elixir_wrapper, :switchback_available, false)
+    on_exit(fn -> Application.delete_env(:elixir_wrapper, :switchback_available) end)
+
+    body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => 2}
+    assert {501, %{"error" => _}} = call(:post, "/switchback/assign", body)
+    assert {501, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+  end
 end
