@@ -101,8 +101,7 @@ class EventCollector(ContextEventLogger):
         if isinstance(data, PublishEvent):
             # Report a publish as the SDK sends it: its serializer strips
             # nulls, so a null attribute value is not on the wire.
-            return json.loads(bytes(
-                DefaultContextEventSerializer().serialize(data)).decode())
+            return json.loads(DefaultContextEventSerializer().serialize(data))
         try:
             return jsons.dump(data)
         except Exception:

@@ -55,7 +55,6 @@ ASSIGN_CASES = [
     ('market_2', '9223372036854775807', '-9223372036854775808', 10, 2),
     ('market_1', '1', '9223372036854775807', 2, 1),
 ]
-# (clusterUnit, cycleIndex, seed, expectedPermutation)
 PERMUTATION_CASES = [
     ('market_1', '0', '0', [0, 3, 7, 5, 8, 2, 6, 4, 1, 9]),
     ('market_1', '-9223372036854775808', '0', [1, 0]),
@@ -234,8 +233,34 @@ def _publish_one(context, publisher):
 
 
 def _wire(event):
-    return json.loads(bytes(
-        DefaultContextEventSerializer().serialize(event)).decode())
+    return json.loads(DefaultContextEventSerializer().serialize(event))
+
+
+WIRE_EXPOSURE_FIELDS = ('id', 'name', 'unit', 'variant', 'assigned',
+                        'eligible', 'overridden', 'fullOn', 'custom',
+                        'audienceMismatch', 'ruleOverride')
+
+
+def _wire_mismatch(event, expected):
+    """None when the serialized event carries exactly the expected exposure,
+    under the hashed serving unit, with a positive integer exposedAt."""
+    if event.get('hashed') is not True:
+        return f'publish.hashed is {event.get("hashed")!r}'
+    if ['unit_serving', SERVING_UNIT_HASH] not in \
+            [[u.get('type'), u.get('uid')] for u in event.get('units') or []]:
+        return f'publish.units lacks the hashed serving unit: ' \
+               f'{event.get("units")}'
+    exposures = event.get('exposures')
+    if not isinstance(exposures, list) or len(exposures) != 1:
+        return f'publish.exposures is {exposures!r}'
+    actual = tuple(exposures[0].get(field) for field in WIRE_EXPOSURE_FIELDS)
+    if actual != expected or any(type(a) is not type(b)
+                                 for a, b in zip(actual, expected)):
+        return f'publish.exposures[0] is {actual}, expected {expected}'
+    exposed_at = exposures[0].get('exposedAt')
+    if type(exposed_at) is not int or exposed_at <= 0:
+        return f'publish.exposures[0].exposedAt is {exposed_at!r}'
+    return None
 
 
 def _shape(value):
@@ -264,11 +289,12 @@ def _check_publish(context, log, publisher):
               flush=True)
         return False
     baseline_json, switchback_json = _wire(baseline), _wire(switchback)
-    for event in (baseline_json, switchback_json):
-        if not event.get('hashed') or \
-                ['unit_serving', SERVING_UNIT_HASH] not in \
-                [[u.get('type'), u.get('uid')] for u in event.get('units')]:
-            print(f'{PREFIX} check publish units FAILED: {event}', flush=True)
+    for event, record in ((baseline_json, expected[0]),
+                          (switchback_json, expected[1])):
+        mismatch = _wire_mismatch(event, record)
+        if mismatch is not None:
+            print(f'{PREFIX} check publish payload FAILED: {mismatch}',
+                  flush=True)
             return False
     if _shape(baseline_json) != _shape(switchback_json):
         print(f'{PREFIX} check publish shape FAILED: {switchback_json} vs '
