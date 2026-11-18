@@ -17,6 +17,16 @@ use absmartly::{
     utils, Client, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+mod switchback_self_test;
+
+/// The `switchback` capability: a behavioural self-test, run once on first use.
+static SWITCHBACK_SELF_TEST: OnceLock<bool> = OnceLock::new();
+
+fn switchback_capability() -> bool {
+    *SWITCHBACK_SELF_TEST.get_or_init(switchback_self_test::run)
+}
 
 /// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
 /// mode it sends through the SDK's own `ABsmartly::publish` (same request and
@@ -363,7 +373,57 @@ async fn capabilities_handler() -> impl IntoResponse {
         "semverOperators": true,
         "xAgentHeader": true,
         "clientRejectsBlankApplication": true,
-        "clientAcceptsBlankApplication": false
+        "clientAcceptsBlankApplication": false,
+        "switchback": tokio::task::block_in_place(switchback_capability)
+    }))
+}
+
+/// A signed 64-bit request field, sent as a decimal string and parsed exactly.
+fn i64_param(req: &Value, name: &str) -> Result<i64, String> {
+    req.get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{} must be a decimal string", name))?
+        .parse::<i64>()
+        .map_err(|_| format!("{} must be a signed 64-bit decimal string", name))
+}
+
+fn switchback_params(req: &Value, index: &str) -> Result<(String, i64, i64, usize), String> {
+    let cluster_unit = req
+        .get("clusterUnit")
+        .and_then(Value::as_str)
+        .ok_or("clusterUnit must be a string")?
+        .to_string();
+    let arm_count = req
+        .get("armCount")
+        .and_then(Value::as_u64)
+        .filter(|n| *n >= 2)
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or("armCount must be an integer of at least 2")?;
+    Ok((cluster_unit, i64_param(req, index)?, i64_param(req, "seed")?, arm_count))
+}
+
+fn switchback_response(result: Result<Value, String>) -> axum::response::Response {
+    match result {
+        Ok(result) => Json(json!({"result": result, "events": []})).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
+    }
+}
+
+/// POST /switchback/assign: the SDK's assigner over the unchanged cluster unit.
+async fn switchback_assign_handler(Json(req): Json<Value>) -> axum::response::Response {
+    switchback_response(switchback_params(&req, "periodIndex").and_then(|(unit, period, seed, arms)| {
+        absmartly::switchback::assign_switchback(&unit, period, seed, arms)
+            .map(|v| json!(v))
+            .ok_or_else(|| "armCount must be at least 2".to_string())
+    }))
+}
+
+/// POST /switchback/permutation: the SDK's cycle permutation.
+async fn switchback_permutation_handler(Json(req): Json<Value>) -> axum::response::Response {
+    switchback_response(switchback_params(&req, "cycleIndex").and_then(|(unit, cycle, seed, arms)| {
+        absmartly::switchback::fisher_yates_permutation(arms, absmartly::switchback::base_hash(&unit, cycle, seed))
+            .map(|p| json!(p))
+            .ok_or_else(|| "armCount must be at least 2".to_string())
     }))
 }
 
@@ -1041,6 +1101,8 @@ async fn main() {
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
+        .route("/switchback/assign", post(switchback_assign_handler))
+        .route("/switchback/permutation", post(switchback_permutation_handler))
         .route("/context_payload/{payloadId}", put(store_payload_handler).get(get_payload_handler))
         .route("/context_payload/{payloadId}/context", get(mock_api_context_handler).put(mock_api_publish_handler))
         .route("/context_payload/{payloadId}/requests", get(captured_requests_handler))
