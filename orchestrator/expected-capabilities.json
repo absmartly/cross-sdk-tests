@@ -167,13 +167,11 @@
         "readyError",
         "diagnosticsUtf8",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
         "clientAcceptsBlankApplication",
-        "throwsOnMisuse",
         "singleFinalizeEvent",
         "semverNumericOperands"
       ],
@@ -184,7 +182,9 @@
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
-        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "throwsOnMisuse": "php-sdk 1.x keeps the v1.0.3 contract that setAttribute()/setAttributes()/setUnit()/setUnits() are accepted after close() (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the throwing behaviour moves to 2.0 on next/major), so scenarios 148, 149 and 188 would fail; the gate also skips 34, 35, 147, 189 and 201, whose throws php-sdk still makes and pins in its own suite; reviewed PHP exception",
+        "refreshNoOpOnFailedContext": "php-sdk 1.x keeps the v1.0.3 behaviour that refresh() re-fetches and applies data on a context whose initial load failed (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the JS no-op moves to 2.0 on next/major), so scenario 229 differs from JS by design; reviewed PHP exception, as for python"
       }
     },
     "go": {
