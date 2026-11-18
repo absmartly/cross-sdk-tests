@@ -1310,6 +1310,10 @@ Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
 
+The php self-test (`php-wrapper/SwitchbackSelfTest.php`) runs the same checks
+on the same probe payload, decoded with the SDK's own `Client::decode`, plus
+one more: an integral-float attribute (`123456789.0`) gives no cluster value.
+
 The capability also needs the SDK's assignment-rule evaluation for
 switchbacks: scenarios 416 and 424 serve an `assign` rule (416 also before
 the anchor, 424 next to a covering holdout) and expect the exposure to carry `ruleOverride: true` and `assigned: false`. A
@@ -1320,7 +1324,8 @@ Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+written. Revisit the case before such an SDK gains the capability. PHP's
+`json_decode` keeps `3.0` a float, so php-sdk passes it as written.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
