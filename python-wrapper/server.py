@@ -14,6 +14,8 @@ from sdk.context_config import ContextConfig
 from sdk.context_event_logger import ContextEventLogger
 from sdk.context_publisher import ContextPublisher
 from sdk.json.context_data import ContextData
+from sdk.json.publish_event import PublishEvent
+from sdk.default_context_event_serializer import DefaultContextEventSerializer
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
@@ -96,6 +98,11 @@ class EventCollector(ContextEventLogger):
             return len(self.events)
 
     def _serialize(self, data):
+        if isinstance(data, PublishEvent):
+            # Report a publish as the SDK sends it: its serializer strips
+            # nulls, so a null attribute value is not on the wire.
+            return json.loads(bytes(
+                DefaultContextEventSerializer().serialize(data)).decode())
         try:
             return jsons.dump(data)
         except Exception:
