@@ -1,6 +1,7 @@
 // Behavioral self-test for the `holdouts` / `holdout_arms` wrapper
-// capabilities. A port of javascript-wrapper/holdoutSelfTest.js (same fixtures,
-// same checks, mirroring scenarios 203-208, 214-216 and 221): build a real
+// capabilities. A port of javascript-wrapper/holdoutSelfTest.js (same fixtures
+// and checks, mirroring scenarios 203-208, 214-216 and 221, except that check C
+// lists its holdout ids high first to also pin id order): build a real
 // context payload as JSON, parse it with the SDK's own ContextData.fromMap,
 // create a real Context, call getTreatment and require BOTH the returned
 // variant and the exact ordered exposure sequence that call fires.
