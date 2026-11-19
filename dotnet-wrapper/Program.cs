@@ -139,8 +139,11 @@ static string StringParam(JsonElement request, string name) =>
 static long LongParam(JsonElement request, string name)
 {
     var text = StringParam(request, name);
-    if (text.Length == 0 || !text.Select((c, i) => char.IsAsciiDigit(c) || (i == 0 && c == '-')).All(x => x) || text == "-")
-        throw new ArgumentException($"{name} must be a decimal string");
+    // Java's Long.parseLong: an optional '+' or '-', then ASCII digits only.
+    var digits = text.Length > 0 && (text[0] == '-' || text[0] == '+') ? text.AsSpan(1) : text.AsSpan();
+    if (digits.Length == 0) throw new ArgumentException($"{name} must be a decimal string");
+    foreach (var c in digits)
+        if (!char.IsAsciiDigit(c)) throw new ArgumentException($"{name} must be a decimal string");
     return long.Parse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture);
 }
 
@@ -635,8 +638,8 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
         {
             actualValue = jsonElement.ValueKind switch
             {
-                // Boxed per branch: `? l : GetDouble()` would type the whole conditional as double
-                // and pass a whole number such as 4000000002 to the SDK as 4000000002.0.
+                // The token itself, so the SDK reads 3 as an integer, 3.0 as a float and integers past
+                // Int64 exactly.
                 JsonValueKind.Number => jsonElement.Clone(),
                 JsonValueKind.String => jsonElement.GetString(),
                 JsonValueKind.True => true,
@@ -1345,13 +1348,25 @@ public class EventCollector : IContextEventLogger
         }
     }
 
-    // A publish event as the SDK's own serializer sends it (DefaultContextEventSerializer), so the
-    // report shows the wire payload: a null member, such as a null attribute value, is left out, as
-    // in the Java wrapper, and switchback attribute values use their wire form.
+    // A publish event as reported: the event itself, except that an attribute with a null value has
+    // no "value" member, as the SDK publishes it and the Java wrapper reports it. Everything else,
+    // goal property keys included, is reported exactly as logged.
     private static object PublishedForm(PublishEvent publishEvent)
     {
-        var bytes = new ABSmartly.Services.DefaultContextEventSerializer().Serialize(publishEvent);
-        return bytes == null ? publishEvent : JsonDocument.Parse(bytes).RootElement.Clone();
+        if (publishEvent.Attributes == null || publishEvent.Attributes.All(a => a.Value != null)) return publishEvent;
+        return new
+        {
+            publishEvent.Hashed,
+            publishEvent.Units,
+            publishEvent.PublishedAt,
+            publishEvent.Exposures,
+            publishEvent.Goals,
+            Attributes = publishEvent.Attributes
+                .Select(a => a.Value == null
+                    ? (object)new { a.Name, a.SetAt }
+                    : new { a.Name, a.Value, a.SetAt })
+                .ToArray()
+        };
     }
 
     public int GetEventsCount()

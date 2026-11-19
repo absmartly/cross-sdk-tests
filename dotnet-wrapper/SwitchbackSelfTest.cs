@@ -286,7 +286,7 @@ public static class SwitchbackSelfTest
             // baseline's bytes once id, name and timestamps are aligned.
             var serializer = new DefaultContextEventSerializer();
             var baselineJson = Normalized(serializer.Serialize(baseline));
-            if (Normalized(serializer.Serialize(switchback)) != Normalized(serializer.Serialize(baseline)))
+            if (Normalized(serializer.Serialize(switchback)) != baselineJson)
             {
                 Console.WriteLine($"{Prefix} check publish payload FAILED: shape of " +
                                   Encoding.UTF8.GetString(serializer.Serialize(switchback)) + " differs from " +
@@ -323,7 +323,6 @@ public static class SwitchbackSelfTest
         return clusters?.Select(c => c.Key).ToList() ?? new List<string>();
     }
 
-    // Timestamps and the experiment's identity removed, so two publishes compare by everything else.
     private static string Normalized(byte[] json)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
