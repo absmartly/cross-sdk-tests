@@ -452,6 +452,18 @@ def specs():
         "the rule-won experiment is exposed, once; peek queues nothing.",
         [rule_first, rule_second],
         [ie] + READS, requires=["assignmentRules"]))
+    # A full-on experiment covered by a holdout on arm 0 is still held out.
+    held_full_on = experiment(234, "exp_held_out_full_on", ["hfo-control", "hfo-full-on", "hfo-split"],
+                              key="held.full.on.key", full_on=1, holdout_ids=[9])
+    out.append(spec(
+        "A Full-On Candidate Held Out By Holdout Arm 0 Serves Control",
+        "Experiment 234 is full-on variant 1 and covered by holdout 9, whose arm 0 holds the unit "
+        "out. Arm 0 holds out every covered experiment, full-on or not, so the key returns 234's "
+        "control value, not its full-on value. variableValue fires only the holdout's exposure.",
+        [held_full_on],
+        [peek_value("held.full.on.key"), value("held.full.on.key"), value("held.full.on.key"), PENDING],
+        holdouts=[holdout(9, "holdout_shared_key")], requires=[HOLDOUTS]))
+
     # Two held-out candidates, the higher id first in the payload: the lower id's control wins.
     held_low = experiment(232, "exp_held_out_low", ["held-low-control", "held-low-treatment"],
                           key="held.shared.key", holdout_ids=[9])
@@ -590,6 +602,7 @@ MUTANTS = (
     "no_suppressed_fallback",      # a held-out candidate never serves control
     "suppressed_beats_assigned",   # a held-out candidate wins over a later assigned one
     "last_suppressed",             # the last held-out candidate serves control, not the first
+    "full_on_escapes_holdout",     # a full-on experiment is not held out by holdout arm 0
     "switchback_as_unit",          # a switchback is resolved like a unit experiment
     "null_is_default",             # a JSON null variable value returns the default
     "peek_exposes",                # peekVariableValue queues an exposure
@@ -663,7 +676,13 @@ class ReferenceModel:
             return (0, linked in self.units, False, False, False, False, False, False, False)
         suppressed = False
         for holdout_id in exp.get("holdoutIds") or []:
-            if holdout_id in self.holdouts and exp["fullOnVariant"] == 0:
+            holdout = self.holdouts.get(holdout_id)
+            if holdout is None:
+                continue
+            if holdout["split"] != [1.0, 0.0]:
+                raise ValueError(f"{name}: only a two-arm holdout on arm 0 is modelled")
+            # java-sdk isHeldOutBy: arm 0 holds out every covered experiment, full-on or not.
+            if m != "full_on_escapes_holdout" or exp["fullOnVariant"] == 0:
                 suppressed = True
         if suppressed:
             return (0, False, True, False, False, False, mismatch, True, False)

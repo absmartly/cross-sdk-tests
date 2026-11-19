@@ -1,4 +1,4 @@
-"""Shared Variable Key group of test_scenarios_complete.json (340-366,
+"""Shared Variable Key group of test_scenarios_complete.json (340-367,
 generate_shared_variable_key_scenarios.py).
 
 The expectations are recorded from the java-sdk reference through its wrapper, which CI cannot run
@@ -29,9 +29,9 @@ sys.path.insert(0, REPO_ROOT)
 import generate_shared_variable_key_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 
-FIRST, LAST = 340, 366
+FIRST, LAST = 340, 367
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True).
-GROUP_DIGEST = "e4007abf12dcc5c642aa7a577d8a531ebb581e50cd85d8938b493327187b53c0"
+GROUP_DIGEST = "b97cb9de9b92c945bf609513eb90316f69be6ea7a986c1347755cf4e2cf401bf"
 
 
 def digest(scenarios):
@@ -103,6 +103,12 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
     def test_the_model_rejects_fixtures_it_does_not_model(self):
         scenario = json.loads(json.dumps(self.group[0]))
         scenario["contextData"]["experiments"][0]["split"] = [0.5, 0.5]
+        with self.assertRaises(ValueError):
+            generator.observed(scenario)
+
+    def test_the_model_rejects_a_holdout_it_does_not_model(self):
+        scenario = json.loads(json.dumps(next(s for s in self.group if s["name"].startswith("357 - "))))
+        scenario["contextData"]["holdouts"][0]["split"] = [0.0, 1.0]
         with self.assertRaises(ValueError):
             generator.observed(scenario)
 
@@ -214,6 +220,23 @@ class RecordingProvenanceTest(unittest.TestCase):
             self.assertEqual(generator.build_group("http://wrapper.invalid"), group)
 
 
+class ProjectionTest(unittest.TestCase):
+    def test_an_exposure_keeps_every_compared_field_and_drops_the_timestamp(self):
+        data = {"id": 1, "name": "e", "unit": "session_id", "variant": 1, "assigned": True,
+                "eligible": True, "overridden": False, "fullOn": False, "custom": False,
+                "audienceMismatch": False, "ruleOverride": True, "exposedAt": 123}
+        event = {"type": "exposure", "data": data, "timestamp": 123}
+        expected = {k: v for k, v in data.items() if k not in ("ruleOverride", "exposedAt")}
+        self.assertEqual(generator.project_event(event), {"type": "exposure", "data": expected})
+        self.assertEqual(generator.project_event(event, include_rule_override=True),
+                         {"type": "exposure", "data": {**expected, "ruleOverride": True}})
+
+    def test_ready_events_keep_only_experiment_ids_and_names(self):
+        event = {"type": "ready", "data": {"experiments": [{"id": 1, "name": "e", "split": [1]}]}}
+        self.assertEqual(generator.project_event(event),
+                         {"type": "ready", "data": {"experiments": [{"id": 1, "name": "e"}]}})
+
+
 class SdkCommitPinTest(unittest.TestCase):
     """The stacked dotnet-sdk dependency is pinned to an immutable head, and both CI and local setup
     check it out."""
@@ -229,6 +252,13 @@ class SdkCommitPinTest(unittest.TestCase):
         self.assertIn("dotnet-sdk", pins)
         for repo, sha in pins.items():
             self.assertRegex(sha, r"^[0-9a-f]{40}$", repo)
+
+    def test_the_java_wrapper_reports_no_commit_for_a_modified_tree(self):
+        dockerfile = self.read("java-wrapper", "Dockerfile")
+        self.assertIn('if head=$(git rev-parse HEAD 2>/dev/null) && status=$(git status --porcelain 2>/dev/null)',
+                      dockerfile)
+        self.assertIn('&& [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt', dockerfile)
+        self.assertNotIn("--untracked-files=no", dockerfile)
 
     def pin_block(self, text, guard):
         """The lines of the `if <guard>; then ... fi` block, stripped, or None."""

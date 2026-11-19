@@ -1456,7 +1456,7 @@ rule-won candidate wins (even if its selected variant lacks the key, which then
 gives the default); otherwise the first holdout-suppressed candidate's control
 value; otherwise the default with no exposure. Only the winning experiment is
 exposed. A constant `true` is allowed for the SDKs that require it; scenarios
-340-366 verify it.
+340-367 verify it.
 
 ### Capability: `singleFinalizeEvent`
 
