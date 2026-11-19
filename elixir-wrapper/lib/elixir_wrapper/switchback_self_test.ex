@@ -222,7 +222,10 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
   end
 
   @doc false
-  def check_context_serving(payload \\ probe_payload(), decode \\ &ElixirWrapper.OrderedJson.decode/1) do
+  def check_context_serving(
+        payload \\ probe_payload(),
+        decode \\ &ElixirWrapper.OrderedJson.decode_context_data/1
+      ) do
     {:ok, decoded} = decode.(payload)
     data = ABSmartly.Types.ContextData.from_map(decoded)
     declared = Enum.find(data.experiments, &(&1.name == "sb_declared_order")).switchback_clusters

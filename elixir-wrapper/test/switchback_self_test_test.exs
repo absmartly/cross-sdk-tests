@@ -309,14 +309,13 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
                 "value" => %{"switchbackClusters" => %{"country" => "US", "city" => "NY"}}
               }}
 
-    payload = ~s({"data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}})
+    payload = ~s({"data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]},"units":{}})
 
     assert {:ok, %{"data" => %{"experiments" => [%{"switchbackClusters" => clusters}]}}} =
              ElixirWrapper.OrderedJson.decode(payload)
 
     assert clusters == %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
 
-    # Both in one body: only the experiment's map is ordered.
     mixed =
       ~s({"attributes":{"switchbackClusters":{"country":"US"}},) <>
         ~s("data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}})
@@ -326,5 +325,65 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
 
     assert hd(decoded["data"]["experiments"])["switchbackClusters"] ==
              %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
+  end
+
+  test "an attribute value shaped like context data decodes as plain JSON" do
+    body = ~s({"name":"profile","value":{"experiments":[{"switchbackClusters":{"country":"US","z":"1"}}]}})
+    assert ElixirWrapper.OrderedJson.decode(body) == Jason.decode(body)
+  end
+
+  test "only the data member's experiments are ordered" do
+    body =
+      ~s({"data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]},) <>
+        ~s("options":{"experiments":[{"switchbackClusters":{"q":"1","b":"2"}}]}})
+
+    {:ok, decoded} = ElixirWrapper.OrderedJson.decode(body)
+
+    assert hd(decoded["data"]["experiments"])["switchbackClusters"] ==
+             %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
+
+    assert decoded["options"] == Jason.decode!(body)["options"]
+  end
+
+  # Through the router, as a scenario runs it: the attribute route keeps a
+  # context-shaped attribute as plain JSON, so a strict audience reading a
+  # key inside it still matches.
+  test "a strict audience on a context-shaped attribute matches through the router" do
+    experiment = %{
+      "id" => 1,
+      "name" => "exp_strict",
+      "iteration" => 1,
+      "unitType" => "session_id",
+      "seedHi" => 3_603_515,
+      "seedLo" => 233_373_850,
+      "split" => [0.0, 1.0],
+      "trafficSeedHi" => 449_867_249,
+      "trafficSeedLo" => 455_443_629,
+      "trafficSplit" => [0.0, 1.0],
+      "fullOnVariant" => 0,
+      "applications" => [%{"name" => "website"}],
+      "variants" => [%{"name" => "A", "config" => nil}, %{"name" => "B", "config" => nil}],
+      "audienceStrict" => true,
+      "audience" =>
+        ~s({"filter":[{"eq":[{"var":"profile/experiments/0/switchbackClusters/country"},{"value":"US"}]}]})
+    }
+
+    {200, %{"result" => %{"contextId" => id}}} =
+      call(:post, "/context", %{
+        "data" => %{"experiments" => [experiment]},
+        "units" => %{"session_id" => "e791e240fcd3df7d238cfc285f475e8152fcc0ec"}
+      })
+
+    {200, _} =
+      call(:post, "/context/#{id}/attribute", %{
+        "name" => "profile",
+        "value" => %{"experiments" => [%{"switchbackClusters" => %{"country" => "US"}}]}
+      })
+
+    assert {200, %{"result" => 1, "events" => [%{"data" => exposure}]}} =
+             call(:post, "/context/#{id}/treatment", %{"experimentName" => "exp_strict"})
+
+    assert exposure["audienceMismatch"] == false
+    call(:delete, "/context/#{id}")
   end
 end
