@@ -360,7 +360,9 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
     Left out: publishedAt/exposedAt/achievedAt/setAt (clock), sdkVersion, and
     the system attributes (sdk_name, sdk_version, application, environment,
     app_version) whose values name the SDK. An omitted goals/exposures/
-    attributes array is the same as an empty one (JS omits empty arrays).
+    attributes array is the same as an empty one (JS omits empty arrays), and
+    an attribute without a value is the same as one with a null value (Java's
+    serializer omits null fields; the collector reads both as null).
     """
 
     def items(key: str) -> List[Any]:
@@ -386,7 +388,7 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
             for g in items("goals")
         ],
         "attributes": [
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")

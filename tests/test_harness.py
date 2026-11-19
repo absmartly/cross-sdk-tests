@@ -765,6 +765,12 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value and an omitted one are the same (scenario 411: PHP/JS keep null, Java omits it); a
+        # null and a present value are not.
+        self.assertEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None, "setAt": 1}]), "publish"),
+                         obs("publish", dict(base_pub, attributes=[{"name": "v", "setAt": 2}]), "publish"))
+        self.assertNotEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None}]), "publish"),
+                            obs("publish", dict(base_pub, attributes=[{"name": "v", "value": 0}]), "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
