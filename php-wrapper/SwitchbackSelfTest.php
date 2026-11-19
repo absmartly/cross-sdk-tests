@@ -256,8 +256,9 @@ final class SwitchbackSelfTest
     {
         $before = count($logger->exposures);
         $actual = $context->getTreatment($experiment);
-        $emitted = array_map([self::class, 'record'], array_slice($logger->exposures, $before));
-        foreach (array_slice($logger->exposures, $before) as $exposure) {
+        $new = array_slice($logger->exposures, $before);
+        $emitted = array_map([self::class, 'record'], $new);
+        foreach ($new as $exposure) {
             if (!($exposure->exposedAt > 0)) {
                 return self::fail("check {$check} FAILED: exposedAt is " . json_encode($exposure->exposedAt));
             }

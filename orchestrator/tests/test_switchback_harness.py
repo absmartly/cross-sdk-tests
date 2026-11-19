@@ -236,20 +236,10 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-SWITCHBACK_SDKS = ("java", "php")
-
-
 def test_switchback_policy_requires_the_capable_sdks_and_excepts_every_other_sdk(runner):
-    sdks = runner.policy["sdks"]
-    assert "switchback" in runner.policy["capabilities"]
-    for sdk in SWITCHBACK_SDKS:
-        assert "switchback" in sdks[sdk]["required"], sdk
-        assert "switchback" not in sdks[sdk]["unsupported"], sdk
-    for sdk, entry in sdks.items():
-        if sdk not in SWITCHBACK_SDKS:
-            assert "switchback" not in entry["required"], sdk
-            reason = entry["unsupported"]["switchback"]
-            assert isinstance(reason, str) and reason.strip(), sdk
+    # The policy loader already rejects overlapping, missing and blank-reason classifications.
+    required = {sdk for sdk, entry in runner.policy["sdks"].items() if "switchback" in entry["required"]}
+    assert required == {"java", "php"}
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
