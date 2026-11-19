@@ -12,12 +12,15 @@
 # in generate_sdk_round_2026_11_scenarios.py, the reference compute.js records.
 # react-sdk, vue2-sdk and vue3-sdk stay on their open PR branches (react-sdk#31,
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
+# dotnet-sdk is pinned to fix/variable-strict-audience-fallback (dotnet-sdk 1.4.1) until it merges: the
+# Shared Variable Key group (340-364) requires sharedVariableKeys for dotnet, and main (1.4.0) leaks
+# the first candidate's control value when no candidate is assigned.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
-  ["dotnet-sdk"]="main"
+  ["dotnet-sdk"]="fix/variable-strict-audience-fallback"
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"
   ["go-sdk"]="main"

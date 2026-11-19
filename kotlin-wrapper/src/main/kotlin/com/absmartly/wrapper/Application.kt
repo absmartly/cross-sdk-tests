@@ -90,6 +90,7 @@ fun Application.configureRouting() {
                 "throwsOnMisuse" to true,
                 "singleFinalizeEvent" to true,
                 "semverNumericOperands" to true,
+                "sharedVariableKeys" to true,
                 "assignmentRules" to true,
                 "semverOperators" to true,
                 "xAgentHeader" to true,

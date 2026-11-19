@@ -1442,6 +1442,17 @@ reports `false` and lists a reviewed exception; its wrapper returns the SDK's
 result and the logged event unchanged and must not synthesize a 400 from it.
 Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
 
+### Capability: `sharedVariableKeys`
+
+No new endpoint. `true` when `variableValue`/`peekVariableValue` resolve a key
+shared by several experiments as java-sdk's `Context.getVariableAssignment`:
+candidates in ascending experiment id; the first assigned, overridden or
+rule-won candidate wins (even if its selected variant lacks the key, which then
+gives the default); otherwise the first holdout-suppressed candidate's control
+value; otherwise the default with no exposure. Only the winning experiment is
+exposed. A constant `true` is allowed for the SDKs that require it; scenarios
+340-364 verify it.
+
 ### Capability: `singleFinalizeEvent`
 
 No new endpoint. `true` when sealing the context logs exactly one lifecycle
