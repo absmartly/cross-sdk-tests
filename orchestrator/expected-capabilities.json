@@ -389,10 +389,10 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms"
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (R33)",
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
@@ -419,10 +419,10 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms"
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in flutter-sdk (flutter); java-sdk only (R33)",
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }

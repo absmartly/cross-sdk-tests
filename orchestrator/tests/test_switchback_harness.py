@@ -236,14 +236,21 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
+# SDKs whose switchback serving is required (each advertises it from a
+# behavioral self-test); every other SDK has a reviewed exception.
+SWITCHBACK_SDKS = {"java", "dart", "flutter"}
+
+
 def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
     sdks = runner.policy["sdks"]
     assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
+    for sdk in SWITCHBACK_SDKS:
+        assert "switchback" in sdks[sdk]["required"], sdk
+        assert "switchback" not in sdks[sdk]["unsupported"], sdk
     for sdk, entry in sdks.items():
-        if sdk != "java":
+        if sdk not in SWITCHBACK_SDKS:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert "switchback" in entry["unsupported"], sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 

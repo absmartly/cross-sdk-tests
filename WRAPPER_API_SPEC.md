@@ -1306,6 +1306,11 @@ The capability means a behavioral self-test passed. For java it covers:
   depth; and a unit experiment carrying every R33 field publishes the same
   bytes as the plain unit baseline.
 
+The dart and flutter wrappers run the same probe payload and checks
+(`dart-wrapper/switchback_self_test.dart`, copied to
+`flutter-wrapper/lib/`), against the SDK's own assigner and a context created
+with `createContextWith` from the JSON payload parsed by `ContextData.fromMap`.
+
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
@@ -1320,7 +1325,9 @@ Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+written. The dart and flutter lanes run on the Dart VM, which keeps `3.0` a
+double, so they pass it as written; flutter-sdk documents that its web builds
+key `3.0` as `"3"`.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
@@ -1371,8 +1378,9 @@ Both endpoints are pure functions with no context. Request rules:
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
-  lacks the function returns 501.
+  `armCount < 2`) returns 400 with `{"error": "...", "events": []}`, the error
+  envelope of every other endpoint. A wrapper whose SDK lacks the function
+  returns 501 with the same envelope.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob
