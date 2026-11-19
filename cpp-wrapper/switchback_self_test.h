@@ -17,9 +17,10 @@
 #include <absmartly/switchback.h>
 #include <nlohmann/json.hpp>
 
+#include "payload_store.h"
+
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -321,9 +322,26 @@ inline bool check_context_serving() {
     return true;
 }
 
+// The R33 wire fields reach the SDK's fetch unchanged through the payload store (scenario 413's
+// explicit null among them): absent and null both admit every value, so serving alone cannot tell.
+inline bool check_wire_round_trip() {
+    auto payload = ordered_json::parse(probe_payload());
+    payload["experiments"][0]["switchbackClusterValues"] = nullptr;
+    payload["experiments"][0]["switchbackCarryoverDurationMs"] = 0;
+    payload["experiments"][0]["switchbackBurnInDurationMs"] = 0;
+    payload["experiments"][0]["switchbackBurnOutDurationMs"] = 0;
+    const auto served = payload_store::store(payload).wire.dump();
+    if (served != payload.dump()) {
+        std::cout << PREFIX << " check wire round trip FAILED: stored " << payload.dump() << ", served " << served
+                  << std::endl;
+        return false;
+    }
+    return true;
+}
+
 inline bool run_safely() {
     try {
-        if (!check_golden_sample() || !check_context_serving()) return false;
+        if (!check_golden_sample() || !check_wire_round_trip() || !check_context_serving()) return false;
         std::cout << PREFIX << " behavioral self-test PASSED" << std::endl;
         return true;
     } catch (const std::exception& e) {
@@ -336,9 +354,7 @@ inline bool run_safely() {
 }
 
 inline bool switchback() {
-    static std::once_flag once;
-    static bool result = false;
-    std::call_once(once, [] { result = run_safely(); });
+    static const bool result = run_safely();
     return result;
 }
 

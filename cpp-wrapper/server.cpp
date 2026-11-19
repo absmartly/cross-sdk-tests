@@ -16,10 +16,12 @@
 #include <absmartly/default_context_data_provider.h>
 
 #include "holdout_self_test.h"
+#include "payload_store.h"
 #include "switchback_self_test.h"
 
 #include <atomic>
 #include <charconv>
+#include <climits>
 #include <cctype>
 #include <chrono>
 #include <future>
@@ -154,7 +156,7 @@ static std::map<std::string, std::shared_ptr<ContextEntry>> contexts;
 static std::atomic<int> context_counter{0};
 
 static std::mutex payloads_mu;
-static std::map<std::string, absmartly::ContextData> payload_store;
+static std::map<std::string, payload_store::StoredPayload> payload_store_map;
 
 static std::mutex captured_mu;
 static std::map<std::string, json> captured_requests;
@@ -306,25 +308,10 @@ static json make_error_response(const std::string& error,
     return json{{"error", error}, {"events", events_to_json(window_events())}};
 }
 
-// Decoded with the SDK's own ContextData from_json, so every payload field the SDK
-// knows (experiments, holdouts, switchbacks) reaches it as it would from the collector.
-// ordered_json keeps each switchbackClusters map in its declared order, which decides the
-// serving unit; nlohmann::json would sort it.
-static absmartly::ContextData parse_context_data(const nlohmann::ordered_json& j) {
-    if (!j.is_object()) {
-        return {};
-    }
-    nlohmann::ordered_json payload = j;
-    if (!payload.contains("experiments") || !payload["experiments"].is_array()) {
-        payload["experiments"] = nlohmann::ordered_json::array();
-    }
-    return payload.get<absmartly::ContextData>();
-}
-
-static std::optional<absmartly::ContextData> find_payload(const std::string& id) {
+static std::optional<payload_store::StoredPayload> find_payload(const std::string& id) {
     std::lock_guard<std::mutex> lock(payloads_mu);
-    auto it = payload_store.find(id);
-    if (it == payload_store.end()) {
+    auto it = payload_store_map.find(id);
+    if (it == payload_store_map.end()) {
         return std::nullopt;
     }
     return it->second;
@@ -410,13 +397,16 @@ int main() {
                 bad_request("Invalid JSON");
                 return;
             }
+            // Java Long.parseLong: an optional sign ('+' or '-') and ASCII digits, within int64.
             const auto exact_int64 = [&body](const char* field, int64_t& out) {
                 if (!body.is_object() || !body.contains(field) || !body[field].is_string()) return false;
                 const auto& text = body[field].get_ref<const std::string&>();
                 const char* first = text.data();
                 const char* last = first + text.size();
+                if (first != last && *first == '+') ++first;
+                if (first == last || *first == '+') return false;
                 const auto [ptr, ec] = std::from_chars(first, last, out);
-                return ec == std::errc{} && ptr == last && !text.empty();
+                return ec == std::errc{} && ptr == last;
             };
             const char* index_field = permutation ? "cycleIndex" : "periodIndex";
             int64_t index = 0;
@@ -429,8 +419,9 @@ int main() {
                 bad_request(std::string(index_field) + " and seed must be signed 64-bit decimal strings");
                 return;
             }
+            // As java-wrapper's intParam: any int >= 2 (the SDK takes an int).
             if (!body.contains("armCount") || !body["armCount"].is_number_integer() ||
-                body["armCount"].get<int64_t>() < 2 || body["armCount"].get<int64_t>() > 1000000) {
+                body["armCount"].get<int64_t>() < 2 || body["armCount"].get<int64_t>() > INT32_MAX) {
                 bad_request("armCount must be an integer >= 2");
                 return;
             }
@@ -511,14 +502,11 @@ int main() {
                     return;
                 }
 
-                absmartly::ContextData cd;
-                if (body.contains("data")) {
-                    cd = parse_context_data(body["data"]);
-                }
+                payload_store::StoredPayload stored = payload_store::store(body.contains("data") ? body["data"] : nlohmann::ordered_json());
 
                 {
                     std::lock_guard<std::mutex> lock(payloads_mu);
-                    payload_store[payload_id] = cd;
+                    payload_store_map[payload_id] = std::move(stored);
                 }
 
                 json resp = {{"success", true}};
@@ -534,14 +522,13 @@ int main() {
                         std::this_thread::sleep_for(std::chrono::milliseconds(throttle));
                     }
                 }
-                std::optional<absmartly::ContextData> cd = find_payload(payload_id);
-                if (!cd) {
+                std::optional<payload_store::StoredPayload> stored = find_payload(payload_id);
+                if (!stored) {
                     res.status = 404;
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                nlohmann::ordered_json resp = *cd;
-                res.set_content(resp.dump(), "application/json");
+                res.set_content(stored->wire.dump(), "application/json");
             });
 
     // Mock collector `GET {endpoint}/context`, fetched by the SDK's Client. An
@@ -551,21 +538,21 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
                 capture_request(payload_id, req);
-                std::optional<absmartly::ContextData> cd = find_payload(payload_id);
-                if (!cd) {
+                std::optional<payload_store::StoredPayload> stored = find_payload(payload_id);
+                if (!stored) {
                     res.status = 404;
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                nlohmann::ordered_json resp = *cd;
-                res.set_content(resp.dump(), "application/json");
+                res.set_content(stored->wire.dump(), "application/json");
             });
 
     svr.Post("/context",
              [](const httplib::Request& req, httplib::Response& res) {
-                 json body;
+                 // ordered_json keeps an inline payload's switchbackClusters in its served order.
+                 nlohmann::ordered_json body;
                  try {
-                     body = json::parse(req.body);
+                     body = nlohmann::ordered_json::parse(req.body);
                  } catch (...) {
                      res.status = 400;
                      res.set_content(
@@ -769,8 +756,7 @@ int main() {
                      } else {
                          absmartly::ContextData context_data;
                          if (body.contains("data")) {
-                             // Re-read in its served key order (see parse_context_data).
-                             context_data = parse_context_data(nlohmann::ordered_json::parse(req.body)["data"]);
+                             context_data = payload_store::parse_context_data(body["data"]);
                          }
                          sdk_config.context_data_provider = std::make_shared<FailingContextDataProvider>(
                              "cpp-wrapper: an inline-data context has no endpoint to refresh from");

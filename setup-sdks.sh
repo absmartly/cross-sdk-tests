@@ -77,6 +77,16 @@ for repo in $(echo "${!SDK_BRANCHES[@]}" | tr ' ' '\n' | sort); do
   branch="${BRANCH_OVERRIDE:-${SDK_BRANCHES[$repo]}}"
   if ! clone_or_update "$repo" "$branch"; then
     FAILED+=("$repo")
+    continue
+  fi
+  revision="${SDK_REVISIONS[$repo]:-}"
+  if [ -z "$BRANCH_OVERRIDE" ] && [ -n "$revision" ]; then
+    if git -C "$repo" fetch -q --depth 1 origin "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
+      echo "  PIN  $repo @ $revision"
+    else
+      echo "  FAIL $repo: could not check out pinned revision $revision"
+      FAILED+=("$repo")
+    fi
   fi
 done
 

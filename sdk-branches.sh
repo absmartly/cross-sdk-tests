@@ -15,7 +15,9 @@
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
 # cpp-sdk is pinned to feat/switchbacks (absmartly/cpp-sdk switchbacks PR, stacked on the
-# feat/holdouts PR) while those PRs are open; the pin goes back to `main` once both merge.
+# feat/holdouts PR) while those PRs are open, at the exact commit in SDK_REVISIONS below so a later
+# push to that branch cannot change what this commit tests. Both pins go back to `main` once
+# cpp-sdk#5 and #6 merge.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/switchbacks"
@@ -36,4 +38,10 @@ declare -A SDK_BRANCHES=(
   ["swift-sdk"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
+)
+
+# Exact commits for lanes whose branch is still moving. When set, the lane checks out this commit
+# of its branch instead of the branch tip.
+declare -A SDK_REVISIONS=(
+  ["cpp-sdk"]="a0d70df7f148c81d10a4c797954f54542399f265"
 )

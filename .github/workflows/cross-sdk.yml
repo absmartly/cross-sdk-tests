@@ -110,9 +110,16 @@ jobs:
           source cross-sdk-tests/sdk-branches.sh
           for repo in ${{ matrix.repos }}; do
             branch="${SDK_BRANCHES[$repo]:-main}"
-            echo "::group::Cloning absmartly/$repo ($branch)"
-            git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
+            revision="${SDK_REVISIONS[$repo]:-}"
+            echo "::group::Cloning absmartly/$repo ($branch${revision:+ @ $revision})"
+            if [ -n "$revision" ]; then
+              git init -q "$repo"
+              git -C "$repo" fetch -q --depth 1 "https://github.com/absmartly/$repo.git" "$revision"
+              git -C "$repo" checkout -q FETCH_HEAD
+            else
+              git clone --depth 1 --branch "$branch" \
+                "https://github.com/absmartly/$repo.git" "$repo"
+            fi
             echo "::endgroup::"
           done
 
