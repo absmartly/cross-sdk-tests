@@ -1,4 +1,4 @@
-"""Shared Variable Key group of test_scenarios_complete.json (340-364,
+"""Shared Variable Key group of test_scenarios_complete.json (340-365,
 generate_shared_variable_key_scenarios.py).
 
 The expectations are recorded from the java-sdk reference through its wrapper, which CI cannot run
@@ -27,9 +27,9 @@ sys.path.insert(0, REPO_ROOT)
 import generate_shared_variable_key_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 
-FIRST, LAST = 340, 364
+FIRST, LAST = 340, 365
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True).
-GROUP_DIGEST = "a016980e3f26da7c18e7a8a8e54c7f497e67794c0b333a67a485627e1fdb7a76"
+GROUP_DIGEST = "6ffa1714fa649057e0c02c465462a97288fe21b09e96371e31b18b8ad5639c7e"
 
 
 def digest(scenarios):
@@ -73,6 +73,15 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
         killed = generator.killed_by(self.group)["first_candidate_fallback"]
         self.assertIn(f"{FIRST}{generator.GROUP_MARKER}Strict Audience Mismatch On The Only Candidate "
                       "Returns The Default", killed)
+
+    def test_rule_override_mutant_is_killed_by_shared_key_probe(self):
+        probe = next(s for s in self.group if s["name"].startswith("365 - "))
+        self.assertIn("assignmentRules", probe["requires"])
+        self.assertNotEqual(generator.observed(probe, "ignore_rule_override"), generator.recorded(probe))
+        exposure = next(e for st in probe["steps"] for e in st["expect"]["events"]
+                        if e["type"] == "exposure")
+        self.assertFalse(exposure["data"]["assigned"])
+        self.assertTrue(exposure["data"]["ruleOverride"])
 
     def test_peek_queues_nothing(self):
         for scenario in self.group:

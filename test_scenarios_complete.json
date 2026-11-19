@@ -42791,6 +42791,200 @@
     ]
   },
   {
+    "name": "365 - Shared Variable Key - Rule-Won First Candidate Beats An Assigned Second Candidate",
+    "description": "The lower-id experiment 230 has a matching assignment rule and a strict audience that Country=IE fails. The rule wins (assigned=false, ruleOverride=true), so both variable reads return its rule-treatment value, not the later assigned experiment's value. Only the rule-won experiment is exposed, once; peek queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "assignmentRules"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 230,
+          "name": "exp_rule_first",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"rule-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"rule-treatment\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"shared-key-rule\",\"type\":\"assign\",\"variant\":1}]}"
+        },
+        {
+          "id": 231,
+          "name": "exp_after_rule",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 230,
+                    "name": "exp_rule_first"
+                  },
+                  {
+                    "id": 231,
+                    "name": "exp_after_rule"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 230,
+                "name": "exp_rule_first",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
     "name": "400 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
     "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {

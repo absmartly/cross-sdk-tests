@@ -22,8 +22,8 @@ reference (eligible=false, control variant), so it wins and is exposed.
 Expected results are recorded from the java-sdk reference through its cross-sdk wrapper (the
 java-wrapper image built from the sibling ../java-sdk checkout at JAVA_SDK_COMMIT), never written by
 hand. Recording drives the wrapper exactly like the orchestrator (payload endpoint, createContext,
-steps); exposure data drops exposedAt and ruleOverride (no scenario here has assignment rules, and
-SDKs without rules omit the field), and ready/refresh events are projected to experiment id/name.
+steps); exposure data drops exposedAt; ruleOverride is retained for rule probes and omitted
+for ordinary probes (SDKs without rules omit the field), and ready/refresh events are projected to experiment id/name.
 
 The recorded group is then replayed against an independent Python model of the rule (ReferenceModel)
 and against wrong models (MUTANTS) of the bug class: generation fails unless the model reproduces
@@ -436,6 +436,18 @@ def specs():
         "null (the key is present), not the default and not the next candidate's value.",
         [null_value, after_null],
         READS))
+    rule_first = experiment(230, "exp_rule_first", ["rule-control", "rule-treatment"], strict=True,
+                            assignmentRules=json.dumps({"rules": [{"name": "shared-key-rule",
+                                "type": "assign", "variant": 1}]}, separators=(",", ":")))
+    rule_second = experiment(231, "exp_after_rule", ["after-control", "after-treatment"])
+    out.append(spec(
+        "Rule-Won First Candidate Beats An Assigned Second Candidate",
+        "The lower-id experiment 230 has a matching assignment rule and a strict audience that "
+        "Country=IE fails. The rule wins (assigned=false, ruleOverride=true), so both variable "
+        "reads return its rule-treatment value, not the later assigned experiment's value. Only "
+        "the rule-won experiment is exposed, once; peek queues nothing.",
+        [rule_first, rule_second],
+        [ie] + READS, requires=["assignmentRules"]))
     return out
 
 
@@ -455,11 +467,12 @@ def ensure_reference_checkout():
         raise SystemExit(f"java-sdk checkout has uncommitted changes:\n{dirty}")
 
 
-def project_event(event):
+def project_event(event, include_rule_override=False):
     kind = event.get("type")
     data = event.get("data") or {}
     if kind == "exposure":
-        return {"type": "exposure", "data": {k: data[k] for k in EXPOSURE_KEYS}}
+        keys = EXPOSURE_KEYS + (("ruleOverride",) if include_rule_override else ())
+        return {"type": "exposure", "data": {k: data[k] for k in keys}}
     if kind in ("ready", "refresh"):
         return {"type": kind, "data": {"experiments": [{"id": e["id"], "name": e["name"]}
                                                        for e in data.get("experiments", [])]}}
@@ -495,7 +508,7 @@ def record(s, base_url):
         response.raise_for_status()
         got = response.json()
         steps.append({"action": action, "params": params,
-                      "expect": {"result": got["result"], "events": [project_event(e) for e in got["events"]]}})
+                      "expect": {"result": got["result"], "events": [project_event(e, "assignmentRules" in (s["requires"] or [])) for e in got["events"]]}})
     return steps
 
 
@@ -530,6 +543,7 @@ def build_group(base_url):
 # ---------------------------------------------------------------------------
 
 MUTANTS = (
+    "ignore_rule_override",        # shared-key selection omits the RuleOverride win condition
     "first_candidate_fallback",    # dotnet-sdk 1.4.0: no winner -> the first candidate's assignment
     "payload_order",               # candidates in payload order instead of ascending id
     "skip_variant_without_key",    # an assigned candidate whose variant lacks the key falls through
@@ -598,6 +612,12 @@ class ReferenceModel:
             mismatch = self.attributes.get("Country") != "US"
         if name in self.overrides:
             return (self.overrides[name], False, True, True, False, False, False, False, True)
+        if exp.get("assignmentRules"):
+            rules = json.loads(exp["assignmentRules"])["rules"]
+            if len(rules) != 1 or rules[0]["type"] != "assign":
+                raise ValueError(f"{name}: only a single unconditional assign rule is modelled")
+            # Like an explicit override, a rule win is not an ordinary assignment.
+            return (rules[0]["variant"], False, True, False, False, False, False, False, True)
         switchback = exp.get("randomizationType") == "switchback"
         if switchback and m != "switchback_as_unit":
             # The fixtures never set the cluster attribute: with no linked unit the switchback does not
@@ -650,7 +670,8 @@ class ReferenceModel:
             if self.mutant == "override_needs_assignment" and overridden:
                 overridden = False
                 assigned = self.state_without_override(exp)
-            if assigned or overridden:
+            rule_override = bool(exp.get("assignmentRules")) and not overridden
+            if assigned or overridden or (rule_override and self.mutant != "ignore_rule_override"):
                 if self.mutant == "skip_variant_without_key" and key not in self.variables(exp)[variant]:
                     continue
                 return exp, entry

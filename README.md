@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **330 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **331 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -154,7 +154,7 @@ across languages.
   (332 also `requires: semverNumericOperands`). With the parity pins in `sdk-branches.sh` every SDK requires the rules
   and semver capabilities.
 
-  Scenarios 340-364 (Shared Variable Key, `requires: sharedVariableKeys`) pin
+  Scenarios 340-365 (Shared Variable Key, `requires: sharedVariableKeys`) pin
   how `variableValue` and `peekVariableValue` pick an experiment when several
   define the same key, as java-sdk's `Context.getVariableAssignment`: candidates
   in ascending experiment id (not payload order); the first assigned, overridden
@@ -169,10 +169,13 @@ across languages.
   agreeing with `treatment`/`variableKeys`, re-evaluation after `setAttribute`,
   a refresh removing the winner and a JSON `null` value. Expectations are
   recorded from the java-sdk wrapper by `generate_shared_variable_key_scenarios.py`
-  and replayed in CI against a Python model and 15 wrong models
+  and replayed in CI against a Python model and 16 wrong models
   (`--replay`, `orchestrator/tests/test_shared_variable_key_scenarios.py`).
   java, kotlin, dart, flutter and dotnet (pinned to dotnet-sdk 1.4.1's branch)
-  require the capability; every other SDK lists a reviewed exception naming
+  require the capability. The dotnet lane depends on the open
+  [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17); `SDK_COMMITS`
+  pins its approved immutable head (82809280), without merging it. Move the pin
+  when that dependency lands, before deleting its branch. Every other SDK lists a reviewed exception naming
   its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
@@ -320,7 +323,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 330-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 331-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -344,9 +347,9 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 330 scenarios
+├── test_scenarios_complete.json  # 331 scenarios
 ├── generate_shared_variable_key_scenarios.py  # records the Shared Variable
-│                                 #   Key group (340-364) from java-sdk;
+│                                 #   Key group (340-365) from java-sdk;
 │                                 #   --replay checks it without Docker
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (400-425) in place; --check verifies
