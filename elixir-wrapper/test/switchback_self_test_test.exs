@@ -102,7 +102,6 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
 
   defmodule AnswersEverything do
     @moduledoc false
-    # A regressed assigner that answers even one arm.
     def assign(_unit, _period, _seed, _arms), do: 0
   end
 
@@ -295,5 +294,26 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
              })
 
     assert variant in 0..16_383
+  end
+
+  # Only an experiment's own switchbackClusters is ordered: an ordinary
+  # attribute value with a key of that name stays a plain map, so a nested
+  # audience lookup on it still matches.
+  test "an attribute object named switchbackClusters is decoded as a plain map" do
+    attribute = ~s({"name":"profile","value":{"switchbackClusters":{"country":"US","city":"NY"}}})
+
+    assert ElixirWrapper.OrderedJson.decode(attribute) ==
+             {:ok,
+              %{
+                "name" => "profile",
+                "value" => %{"switchbackClusters" => %{"country" => "US", "city" => "NY"}}
+              }}
+
+    payload = ~s({"data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}})
+
+    assert {:ok, %{"data" => %{"experiments" => [%{"switchbackClusters" => clusters}]}}} =
+             ElixirWrapper.OrderedJson.decode(payload)
+
+    assert clusters == %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
   end
 end

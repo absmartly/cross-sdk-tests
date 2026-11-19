@@ -256,7 +256,6 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
     # must pick the serving unit.
     context_config = %{units: %{"unit_user" => "probe-user", "unit_serving" => "serving-9"}}
 
-    # The customer path: ABSmartly.SDK.create_context_with/4.
     {:ok, ctx} =
       ABSmartly.SDK.create_context_with(%ABSmartly.SDK{config: sdk_config}, context_config.units, data, %{
         event_handler: handler,

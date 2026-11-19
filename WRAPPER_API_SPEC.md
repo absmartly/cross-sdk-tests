@@ -1372,8 +1372,10 @@ Both endpoints are pure functions with no context. Request rules:
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "...", "events": []}`. A
-  wrapper whose SDK lacks the function returns 501 with the same shape.
+  `armCount < 2`) returns 400 with `{"error": "...", "events": []}`, the
+  wrapper-wide error envelope. A wrapper whose SDK lacks the function returns
+  501 with the same shape. (The java-wrapper still returns `{"error": "..."}`
+  without `events`; that predates this envelope and is tracked separately.)
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

@@ -10,7 +10,6 @@ defmodule ElixirWrapper.Router do
   plug(Plug.Parsers,
     parsers: [:json],
     pass: ["application/json"],
-    # Keeps switchbackClusters in its JSON order (see OrderedJson).
     json_decoder: ElixirWrapper.OrderedJson
   )
 
@@ -50,7 +49,6 @@ defmodule ElixirWrapper.Router do
       # built from (holdout_self_test.ex); false when it fails.
       holdouts: ElixirWrapper.HoldoutSelfTest.holdouts?(),
       holdout_arms: ElixirWrapper.HoldoutSelfTest.holdout_arms?(),
-      # Measured by a behavioural self-test (switchback_self_test.ex).
       switchback: ElixirWrapper.SwitchbackSelfTest.switchback?()
     })
   end
