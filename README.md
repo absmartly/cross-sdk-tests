@@ -62,8 +62,10 @@ across languages.
   with a value serves the raw value as the cluster key of
   `assignSwitchback(key, floorDiv(now - switchbackStartAt, switchbackPeriodMs),
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
-  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java is the only
-  capable SDK, and every other SDK lists `switchback` as a reviewed exception.
+  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`), as does dotnet-sdk
+  (absmartly/dotnet-sdk#16); java and dotnet are required to support it (each
+  wrapper reports it from a behavioral self-test), and every other SDK lists
+  `switchback` as a reviewed exception.
   The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
   the feature-parity range.
 

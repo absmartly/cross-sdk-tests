@@ -109,9 +109,9 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
-dotnet-sdk is temporarily pinned to `feat/holdouts` (the open dotnet-sdk holdouts
-PR), which turns its `holdouts`/`holdout_arms` capabilities on; the pin goes back
-to `main` once that PR merges.
+dotnet-sdk is temporarily pinned to `feat/switchbacks` (dotnet-sdk#16, stacked on
+the holdouts PR dotnet-sdk#15), which turns its `holdouts`/`holdout_arms` and
+`switchback` capabilities on; the pin goes back to `main` once those PRs merge.
 
 ### Scenario numbering versus open PRs
 
