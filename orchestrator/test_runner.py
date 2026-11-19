@@ -385,8 +385,10 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
             else {"invalid": _canonical(g)}
             for g in items("goals")
         ],
+        # A null attribute value and an omitted one are the same to the Collector: Jackson's NON_NULL
+        # (java) drops the key, JSON.stringify (javascript) and ruby send null.
         "attributes": [
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")
