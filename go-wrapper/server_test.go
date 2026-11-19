@@ -168,19 +168,59 @@ func TestOutOfRangeAttributesAreRejectedBeforeTheContext(t *testing.T) {
 	}
 }
 
-func TestAttributeValueKeepsIntegersApartFromFloats(t *testing.T) {
-	for literal, want := range map[string]interface{}{"3": 3, "3.0": 3.0, "1e1": 10.0, "-7": -7,
-		"9223372036854775808": newWideInteger(9223372036854775808.0, "9223372036854775808"),
-		`[1,2.5,{"a":4}]`:     []interface{}{1, 2.5, map[string]interface{}{"a": 4}}} {
+func TestAttributeValueKeepsTheDigitsThatWereSent(t *testing.T) {
+	for literal, want := range map[string]interface{}{"3": json.Number("3"), "3.0": json.Number("3.0"), "1e1": json.Number("1e1"),
+		"9223372036854775808": json.Number("9223372036854775808"),
+		`[1,2.5,{"a":4}]`:     []interface{}{json.Number("1"), json.Number("2.5"), map[string]interface{}{"a": json.Number("4")}}} {
 		var got, err = attributeValue(json.RawMessage(literal))
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: %#v, %v; want %#v", literal, got, err, want)
 		}
 	}
-	// A wide integer reads back as the digits that were set.
-	var wide, _ = attributeValue(json.RawMessage("123456789012345678901234567890"))
-	if encoded, _ := json.Marshal(wide); string(encoded) != "123456789012345678901234567890" {
-		t.Errorf("wide integer encodes as %s", encoded)
+}
+
+// Each context keeps the digits it was sent: an accepted or rejected write
+// of a value that rounds to the same float64 in another context changes
+// neither its read-back nor its switchback treatment.
+func TestWideIntegersStayWithTheirContext(t *testing.T) {
+	var router = newRouter()
+	var data = experimentJSON(t, map[string]interface{}{"randomizationType": "switchback",
+		"switchbackClusters": map[string]string{"store_id": "store_number"}, "switchbackClusterValues": []string{"9223372036854775808"},
+		"switchbackStartAt": 1704067200000, "switchbackPeriodMs": 1440000000000})
+	var _, created = post(t, router, "/context", `{"data":`+data+`,"units":{"store_id":"s1"},"attributes":{"store_number":9223372036854775808}}`)
+	var a = contextID(t, created)
+	_, created = post(t, router, "/context", `{"data":{"experiments":[]},"units":{"u":"1"}}`)
+	var b = contextID(t, created)
+	post(t, router, "/context/"+b+"/attribute", `{"name":"x","value":9223372036854775809}`)
+	post(t, router, "/context/"+b+"/attribute", `{"name":"y","value":[9223372036854775809,1e309]}`)
+	if _, read := post(t, router, "/context/"+a+"/getAttribute", `{"name":"store_number"}`); read["result"] != float64(9223372036854775808) {
+		t.Fatalf("read-back %v", read["result"])
+	}
+	var recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/context/"+a+"/getAttribute", strings.NewReader(`{"name":"store_number"}`)))
+	if !strings.Contains(recorder.Body.String(), `"result":9223372036854775808`) {
+		t.Fatalf("read-back body %s", recorder.Body.String())
+	}
+	var direct, _ = sbVariant("9223372036854775808")
+	if _, treatment := post(t, router, "/context/"+a+"/treatment", `{"experimentName":"exp"}`); treatment["result"] != float64(direct) ||
+		len(treatment["events"].([]interface{})) != 1 {
+		t.Fatalf("treatment %v, want %d with one exposure", treatment, direct)
+	}
+}
+
+// A numeric semver operand converts like the JS SDK's number through both
+// write paths: 9007199254740993 rounds to 9007199254740992.
+func TestNumericSemverAudienceThroughBothWritePaths(t *testing.T) {
+	var router = newRouter()
+	var audience, _ = json.Marshal(map[string]interface{}{"filter": []interface{}{
+		map[string]interface{}{"semver_eq": []interface{}{map[string]interface{}{"var": "app_version"}, map[string]interface{}{"value": "9007199254740992"}}}}})
+	var data = experimentJSON(t, map[string]interface{}{"split": []float64{0, 1, 0}, "audienceStrict": true, "audience": string(audience)})
+	for _, literal := range []string{"9007199254740993", "9007199254740992", "9007199254740992.0"} {
+		for path, result := range writePaths(t, router, data, "app_version", literal) {
+			if result[0] != float64(1) {
+				t.Errorf("%s via path %d: variant %v, want 1", literal, path, result[0])
+			}
+		}
 	}
 }
 

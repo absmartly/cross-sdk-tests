@@ -744,13 +744,13 @@ func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{},
 	return nil, cd.context.SetAttribute(req.Name, value)
 }
 
-// attributeValue decodes a JSON attribute value the way a Go caller holding
-// the same data would pass it, recursively: an integer literal within int
-// (3, 4000000002) is an int, any other number (3.0, 1.5, 1e1) a float64.
-// A switchback cluster key is a whole-number integer but never a float, so 3
-// and 3.0 must stay apart; encoding/json's default would make both float64.
-// An integer literal beyond int is a wideInteger: a number to the SDK's
-// audience evaluator, and its exact digits as a switchback cluster key.
+// attributeValue decodes a JSON attribute value with UseNumber: every number
+// reaches the SDK as a json.Number holding the digits that were sent. The
+// SDK reads a json.Number as the number it denotes in audiences and semver
+// (as the JS SDK holds JSON numbers), and as a switchback cluster key only
+// when written as an integer, so 3 keys a cluster and 3.0 does not.
+// encoding/json's default would make both float64. A number beyond float64
+// is rejected: the attribute could not be compared or returned as JSON.
 func attributeValue(raw json.RawMessage) (interface{}, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -761,76 +761,34 @@ func attributeValue(raw json.RawMessage) (interface{}, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	return normalizeNumbers(value)
-}
-
-// wideInteger is an integer literal beyond Go's int. It is a float64 kind,
-// so the SDK's audience evaluator (which compares only int and float64
-// numerically) compares it as a number, and its JSON encoding, which the SDK
-// reads for a switchback cluster key and the wrapper returns, is the digits
-// that were sent. A float64 holds no digits, so they are kept in wideDigits,
-// keyed by the value: two literals that round to the same float64 share the
-// most recent digits.
-type wideInteger float64
-
-var (
-	wideDigitsMu sync.Mutex
-	wideDigits   = map[wideInteger]string{}
-)
-
-func newWideInteger(value float64, digits string) wideInteger {
-	var w = wideInteger(value)
-	wideDigitsMu.Lock()
-	wideDigits[w] = digits
-	wideDigitsMu.Unlock()
-	return w
-}
-
-// MarshalJSON writes the digits that were sent.
-func (w wideInteger) MarshalJSON() ([]byte, error) {
-	wideDigitsMu.Lock()
-	defer wideDigitsMu.Unlock()
-	return []byte(wideDigits[w]), nil
-}
-
-// normalizeNumbers converts the json.Numbers in a decoded value. A number
-// beyond float64 range is an error, as it is for encoding/json's default
-// decoding: the attribute could not be returned as JSON afterwards.
-func normalizeNumbers(value interface{}) (interface{}, error) {
-	switch v := value.(type) {
-	case json.Number:
-		text := v.String()
-		f, err := v.Float64()
-		if err != nil {
-			return nil, fmt.Errorf("number %s out of range", text)
-		}
-		if strings.ContainsAny(text, ".eE") {
-			return f, nil
-		}
-		if n, err := v.Int64(); err == nil && int64(int(n)) == n {
-			return int(n), nil
-		}
-		return newWideInteger(f, text), nil
-	case map[string]interface{}:
-		for key, item := range v {
-			normalized, err := normalizeNumbers(item)
-			if err != nil {
-				return nil, err
-			}
-			v[key] = normalized
-		}
-		return v, nil
-	case []interface{}:
-		for i, item := range v {
-			normalized, err := normalizeNumbers(item)
-			if err != nil {
-				return nil, err
-			}
-			v[i] = normalized
-		}
-		return v, nil
+	if err := checkNumbers(value); err != nil {
+		return nil, err
 	}
 	return value, nil
+}
+
+// checkNumbers rejects a json.Number beyond float64 range anywhere in a
+// decoded value.
+func checkNumbers(value interface{}) error {
+	switch v := value.(type) {
+	case json.Number:
+		if _, err := v.Float64(); err != nil {
+			return fmt.Errorf("number %s out of range", v.String())
+		}
+	case map[string]interface{}:
+		for _, item := range v {
+			if err := checkNumbers(item); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			if err := checkNumbers(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func getAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
