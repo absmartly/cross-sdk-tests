@@ -826,8 +826,9 @@ defmodule ElixirWrapper.Router do
   defp arm_count_param!(params) do
     case params["armCount"] do
       # A permutation of that many arms is built in memory, so an arm count
-      # no experiment can have is refused instead of exhausting the wrapper.
-      n when is_integer(n) and n > 65_536 -> raise ArgumentError, "armCount must be at most 65536, got #{n}"
+      # no experiment can have is refused instead of exhausting the wrapper;
+      # at the cap a draw still finishes well inside the harness's 5 s step.
+      n when is_integer(n) and n > 16_384 -> raise ArgumentError, "armCount must be at most 16384, got #{n}"
       n when is_integer(n) and n >= 2 -> n
       n when is_integer(n) -> raise ArgumentError, "armCount must be at least 2, got #{n}"
       _ -> raise ArgumentError, "armCount must be an integer"

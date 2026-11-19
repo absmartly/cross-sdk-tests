@@ -201,7 +201,7 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
   end
 
   test "an armCount no experiment can have is a 400, and the wrapper stays up" do
-    for arms <- [65_537, 2_147_483_647, 2_147_483_648] do
+    for arms <- [16_385, 65_537, 2_147_483_647, 2_147_483_648] do
       body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => arms}
       assert {400, %{"error" => _, "events" => []}} = call(:post, "/switchback/assign", body)
       assert {400, %{"error" => _, "events" => []}} = call(:post, "/switchback/permutation", body)
@@ -283,5 +283,17 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     capture_log(fn ->
       assert {:failed, _, _} = SwitchbackSelfTest.check_context_serving(renamed)
     end)
+  end
+
+  test "an armCount at the cap is served" do
+    assert {200, %{"result" => variant, "events" => []}} =
+             call(:post, "/switchback/assign", %{
+               "clusterUnit" => "u",
+               "periodIndex" => "0",
+               "seed" => "0",
+               "armCount" => 16_384
+             })
+
+    assert variant in 0..16_383
   end
 end

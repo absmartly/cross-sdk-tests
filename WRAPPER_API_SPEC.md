@@ -1366,13 +1366,14 @@ Both endpoints are pure functions with no context. Request rules:
   **decimal strings** and must be parsed exactly (never through a double);
   JSON numbers lose precision above 2^53 in most languages. `seed` is the
   experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
-- `armCount` is a JSON integer, at least 2.
+- `armCount` is a JSON integer, at least 2. A wrapper may refuse an arm count
+  no experiment can have; the elixir wrapper accepts up to 16,384.
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
-  lacks the function returns 501.
+  `armCount < 2`) returns 400 with `{"error": "...", "events": []}`. A
+  wrapper whose SDK lacks the function returns 501 with the same shape.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob
