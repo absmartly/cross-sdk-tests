@@ -205,7 +205,7 @@ func switchbackBattery() error {
 	return switchbackContextBattery(prefix)
 }
 
-func switchbackExperimentJSON(id int, name string, seedHi int, seedLo int, arms int, clusters [][2]string) map[string]interface{} {
+func switchbackExperimentJSON(id int, name string, seedHi int, seedLo int, arms int, servingUnit string) map[string]interface{} {
 	split := make([]float64, arms)
 	variants := make([]map[string]interface{}, arms)
 	for i := range split {
@@ -217,13 +217,13 @@ func switchbackExperimentJSON(id int, name string, seedHi int, seedLo int, arms 
 		"split": split, "trafficSeedHi": 1, "trafficSeedLo": 2, "trafficSplit": []int{0, 1}, "fullOnVariant": 0,
 		"applications": []map[string]string{{"name": "website"}}, "variants": variants, "audienceStrict": false,
 	}
-	if clusters != nil {
+	if servingUnit != "" {
 		experiment["randomizationType"] = "switchback"
 		experiment["switchbackStartAt"] = switchbackProbeAnchor
 		experiment["switchbackPeriodMs"] = switchbackProbePeriodMs
 		experiment["switchbackDesignType"] = "balanced_block"
 		experiment["switchbackEstimand"] = "global_average_treatment_effect"
-		experiment["unitType"] = clusters[0][0]
+		experiment["unitType"] = servingUnit
 	}
 	return experiment
 }
@@ -244,16 +244,16 @@ func switchbackProbePayload() ([]byte, error) {
 		extra      map[string]interface{}
 	}
 	entries := []entry{
-		{switchbackExperimentJSON(521, "sb_agree", 0, 42, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"city","unit_user":"profile/city"}`, "", nil},
-		{switchbackExperimentJSON(522, "sb_declared_order", 0, 42, 10, [][2]string{{"unit_user", ""}}), `{"unit_user":"profile/city","unit_serving":"city"}`, "", nil},
-		{switchbackExperimentJSON(523, "sb_disagree", 0, 42, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"city","unit_user":"profile/zone"}`, "", nil},
-		{switchbackExperimentJSON(524, "sb_whole_number", 0, 42, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"store_number"}`, "", nil},
-		{switchbackExperimentJSON(529, "sb_float_value", 0, 42, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"store_float"}`, "", nil},
-		{switchbackExperimentJSON(528, "sb_allow_empty", 0, 42, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"city"}`, `[]`, nil},
-		{switchbackExperimentJSON(525, "sb_value_filtered", 0, 1, 10, [][2]string{{"unit_serving", ""}}), `{"unit_serving":"city"}`, `["market_2"]`, nil},
-		{switchbackExperimentJSON(526, "sb_phase1e_only", 0, 1, 10, [][2]string{{"unit_serving", ""}}), "", "",
+		{switchbackExperimentJSON(521, "sb_agree", 0, 42, 10, "unit_serving"), `{"unit_serving":"city","unit_user":"profile/city"}`, "", nil},
+		{switchbackExperimentJSON(522, "sb_declared_order", 0, 42, 10, "unit_user"), `{"unit_user":"profile/city","unit_serving":"city"}`, "", nil},
+		{switchbackExperimentJSON(523, "sb_disagree", 0, 42, 10, "unit_serving"), `{"unit_serving":"city","unit_user":"profile/zone"}`, "", nil},
+		{switchbackExperimentJSON(524, "sb_whole_number", 0, 42, 10, "unit_serving"), `{"unit_serving":"store_number"}`, "", nil},
+		{switchbackExperimentJSON(529, "sb_float_value", 0, 42, 10, "unit_serving"), `{"unit_serving":"store_float"}`, "", nil},
+		{switchbackExperimentJSON(528, "sb_allow_empty", 0, 42, 10, "unit_serving"), `{"unit_serving":"city"}`, `[]`, nil},
+		{switchbackExperimentJSON(525, "sb_value_filtered", 0, 1, 10, "unit_serving"), `{"unit_serving":"city"}`, `["market_2"]`, nil},
+		{switchbackExperimentJSON(526, "sb_phase1e_only", 0, 1, 10, "unit_serving"), "", "",
 			map[string]interface{}{"switchbackClusterUnitType": "unit_serving", "switchbackClusterCount": 10, "switchbackClusterAttribute": "city"}},
-		{switchbackExperimentJSON(514, "sb_unit_baseline", -559038737, 1234567890, 3, nil), "", "", nil},
+		{switchbackExperimentJSON(514, "sb_unit_baseline", -559038737, 1234567890, 3, ""), "", "", nil},
 	}
 	experiments := make([]map[string]interface{}, len(entries))
 	for i, e := range entries {
@@ -376,8 +376,6 @@ func switchbackContextBattery(prefix string) error {
 				prefix, c.check, c.treatment, c.exposures, got, emitted)
 		}
 	}
-	// The published batch carries exactly the exposures logged, with no
-	// switchback fields.
 	if err := context.Publish(); err != nil {
 		return fmt.Errorf("%s publish FAILED: %v", prefix, err)
 	}

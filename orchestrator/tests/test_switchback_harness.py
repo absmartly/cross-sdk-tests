@@ -236,7 +236,6 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-# The SDKs whose lanes require switchback; every other SDK carries a reviewed exception.
 SWITCHBACK_SDKS = {"java", "go"}
 
 

@@ -745,11 +745,13 @@ func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{},
 }
 
 // attributeValue decodes a JSON attribute value the way a Go caller holding
-// the same data would pass it: an integer literal (3, 4000000002) is an int,
-// any other number (3.0, 1.5, 1e1) a float64, recursively. A switchback
-// cluster key is a whole-number integer but never a float, so 3 and 3.0 must
-// stay apart; encoding/json's default would make both float64. An integer
-// beyond int64 stays a json.Number, which the SDK keys by its digits.
+// the same data would pass it: an integer literal within int (3, 4000000002)
+// is an int, any other number (3.0, 1.5, 1e1, or an integer beyond int) a
+// float64, recursively. A switchback cluster key is a whole-number integer
+// but never a float, so 3 and 3.0 must stay apart; encoding/json's default
+// would make both float64. An integer beyond int stays a float64, as before,
+// because the SDK's audience evaluator compares only int and float64
+// numerically.
 func attributeValue(raw json.RawMessage) (interface{}, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -778,9 +780,6 @@ func normalizeNumbers(value interface{}) (interface{}, error) {
 		f, err := v.Float64()
 		if err != nil {
 			return nil, fmt.Errorf("number %s out of range", text)
-		}
-		if !strings.ContainsAny(text, ".eE") {
-			return v, nil
 		}
 		return f, nil
 	case map[string]interface{}:
@@ -1010,6 +1009,18 @@ func deleteContextHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	router := newRouter()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+
+	log.Printf("Go SDK wrapper listening on port %s", port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), router))
+}
+
+func newRouter() *mux.Router {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/health", healthHandler).Methods("GET")
@@ -1055,12 +1066,5 @@ func main() {
 	router.HandleFunc("/context/{contextId}/refresh", contextRoute(refresh)).Methods("POST")
 	router.HandleFunc("/context/{contextId}/finalize", contextRoute(finalize)).Methods("POST")
 	router.HandleFunc("/context/{contextId}", deleteContextHandler).Methods("DELETE")
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3000"
-	}
-
-	log.Printf("Go SDK wrapper listening on port %s", port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), router))
+	return router
 }
