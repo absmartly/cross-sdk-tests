@@ -118,6 +118,17 @@ elixir-sdk#5 first, then re-pin `["elixir-sdk"]` to `main` on the companion PR,
 before it merges, and re-run the elixir lane. Never merge the companion PR while
 the pin names a feature branch.
 
+**Switchbacks for elixir-sdk.** The elixir lane also requires `switchback`,
+advertised from a behavioural self-test
+(`elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex`, a port of the
+java-wrapper's `SwitchbackSelfTest`), and serves `/switchback/assign` and
+`/switchback/permutation`. The wrapper decodes request bodies with the SDK's
+order-preserving `ABSmartly.Switchback.Json`, so `switchbackClusters` keeps its
+declared order. `sdk-branches.sh` pins elixir-sdk to `feat/switchbacks`, the
+branch of the switchback PR stacked on elixir-sdk#5. Merge order: elixir-sdk#5,
+then the switchback PR, then re-pin `["elixir-sdk"]` to `main` here and re-run
+the elixir lane before this PR merges.
+
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332

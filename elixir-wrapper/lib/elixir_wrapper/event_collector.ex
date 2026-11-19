@@ -51,6 +51,8 @@ defmodule ElixirWrapper.EventCollector do
   defp convert_structs(%ABSmartly.Types.Exposure{} = e), do: ABSmartly.Types.Exposure.to_map(e)
   defp convert_structs(%ABSmartly.Types.Goal{} = g), do: ABSmartly.Types.Goal.to_map(g)
   defp convert_structs(%ABSmartly.Types.PublishEvent{} = p), do: ABSmartly.Types.PublishEvent.to_map(p)
+  # Encoded as the JSON object it was decoded from, in order.
+  defp convert_structs(%Jason.OrderedObject{} = o), do: o
   defp convert_structs(%{__struct__: _} = s), do: Map.from_struct(s) |> convert_structs()
   defp convert_structs(%{} = map), do: Map.new(map, fn {k, v} -> {k, convert_structs(v)} end)
   defp convert_structs(list) when is_list(list), do: Enum.map(list, &convert_structs/1)

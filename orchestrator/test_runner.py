@@ -407,7 +407,9 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
             for g in items("goals")
         ],
         "attributes": [
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            # A null attribute value is published as `"value": null` (JS) or
+            # left out (java-sdk's @JsonInclude(NON_NULL)); both mean null.
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")
