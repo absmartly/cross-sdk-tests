@@ -25,7 +25,7 @@ RUN cd /build/java-sdk && ./gradlew :core-api:jar :core-api:generatePomFileForRe
 # The java-sdk commit, reported by GET /health; empty when the tree is modified or not a git
 # checkout, so a recording cannot claim a pinned commit it was not built from.
 RUN cd /build/java-sdk && \
-    if git rev-parse HEAD >/dev/null 2>&1 && [ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; \
+    if git rev-parse HEAD >/dev/null 2>&1 && [ -z "$(git status --porcelain 2>/dev/null)" ]; \
     then git rev-parse HEAD; fi > /root/.m2/sdk-commit.txt
 
 FROM gradle:8.5-jdk17 AS builder

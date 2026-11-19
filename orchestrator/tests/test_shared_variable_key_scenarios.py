@@ -17,7 +17,9 @@ import json
 import os
 import re
 import sys
+import subprocess
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCENARIOS_PATH = os.path.join(REPO_ROOT, "test_scenarios_complete.json")
@@ -103,6 +105,93 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
         scenario["contextData"]["experiments"][0]["split"] = [0.5, 0.5]
         with self.assertRaises(ValueError):
             generator.observed(scenario)
+
+    def rule_scenario(self, rule):
+        scenario = json.loads(json.dumps(next(s for s in self.group if s["name"].startswith("365 - "))))
+        scenario["contextData"]["experiments"][0]["assignmentRules"] = json.dumps({"rules": [rule]})
+        return scenario
+
+    def test_the_model_rejects_a_conditional_rule(self):
+        rule = {"name": "us", "type": "assign", "variant": 1,
+                "conditions": {"eq": [{"var": "Country"}, {"value": "US"}]}}
+        with self.assertRaises(ValueError):
+            generator.observed(self.rule_scenario(rule))
+
+    def test_the_model_rejects_a_split_rule(self):
+        # Only the fields of the modelled assign rule, so the type check alone must refuse it.
+        with self.assertRaises(ValueError):
+            generator.observed(self.rule_scenario({"name": "s", "type": "split", "variant": 1}))
+
+    def test_the_model_rejects_more_than_one_rule(self):
+        scenario = self.rule_scenario({"name": "a", "type": "assign", "variant": 1})
+        scenario["contextData"]["experiments"][0]["assignmentRules"] = json.dumps({"rules": [
+            {"name": "a", "type": "assign", "variant": 1}, {"name": "b", "type": "assign", "variant": 0}]})
+        with self.assertRaises(ValueError):
+            generator.observed(scenario)
+
+
+def completed(stdout="", returncode=0, stderr=""):
+    return subprocess.CompletedProcess([], returncode, stdout=stdout, stderr=stderr)
+
+
+class RecordingProvenanceTest(unittest.TestCase):
+    """Recording refuses a reference it cannot prove is the pinned java-sdk."""
+
+    def test_a_checkout_at_another_commit_is_refused(self):
+        # A clean tree, so only the commit check can refuse it.
+        runs = [completed("0" * 40 + "\n"), completed("")]
+        with mock.patch.object(generator.subprocess, "run", side_effect=runs):
+            with self.assertRaises(SystemExit):
+                generator.ensure_reference_checkout()
+
+    def test_a_failing_git_status_is_refused(self):
+        runs = [completed(generator.JAVA_SDK_COMMIT + "\n"), completed("", 128, "not a git repository")]
+        with mock.patch.object(generator.subprocess, "run", side_effect=runs):
+            with self.assertRaises(SystemExit):
+                generator.ensure_reference_checkout()
+
+    def test_a_clean_checkout_at_the_pin_is_accepted(self):
+        runs = [completed(generator.JAVA_SDK_COMMIT + "\n"), completed("")]
+        with mock.patch.object(generator.subprocess, "run", side_effect=runs):
+            generator.ensure_reference_checkout()
+
+    def health(self, body):
+        response = mock.Mock()
+        response.json.return_value = body
+        return mock.patch("requests.get", return_value=response)
+
+    def test_a_wrapper_built_from_another_commit_is_refused(self):
+        for body in ({"sdkCommit": "0" * 40}, {"sdkCommit": None}, {}):
+            with self.subTest(body=body), self.health(body), self.assertRaises(SystemExit):
+                generator.ensure_reference_wrapper("http://wrapper.invalid")
+
+    def test_a_wrapper_built_from_the_pin_is_accepted(self):
+        with self.health({"sdkCommit": generator.JAVA_SDK_COMMIT}):
+            generator.ensure_reference_wrapper("http://wrapper.invalid")
+
+
+class SdkCommitPinTest(unittest.TestCase):
+    """The stacked dotnet-sdk dependency is pinned to an immutable head, and both CI and local setup
+    check it out."""
+
+    def read(self, *path):
+        with open(os.path.join(REPO_ROOT, *path), encoding="utf-8") as f:
+            return f.read()
+
+    def test_pins_are_full_shas(self):
+        block = re.search(r"declare -A SDK_COMMITS=\((.*?)\)", self.read("sdk-branches.sh"), re.S)
+        self.assertIsNotNone(block)
+        pins = dict(re.findall(r'\["([^"]+)"\]="([^"]*)"', block.group(1)))
+        self.assertIn("dotnet-sdk", pins)
+        for repo, sha in pins.items():
+            self.assertRegex(sha, r"^[0-9a-f]{40}$", repo)
+
+    def test_ci_and_local_setup_check_the_pin_out(self):
+        for path in ((".github", "workflows", "cross-sdk.yml"), ("setup-sdks.sh",)):
+            text = self.read(*path)
+            with self.subTest(path="/".join(path)):
+                self.assertIn('fetch --depth 1 origin "${SDK_COMMITS[$repo]}"', text)
+                self.assertIn('checkout --detach "${SDK_COMMITS[$repo]}"', text)
 
 
 if __name__ == "__main__":

@@ -113,15 +113,15 @@ round.
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
-`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
-fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
-then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
+`scenario_groups.py`. Open #20 (context fetch compression, 230-232) numbers from 230
+too; the Shared Variable Key group owns 340-366. This PR lands first; #20
+then merges `main` and renumbers its group after 253 (254-269 and 270-272 are
 free), below the parity range. Both generators own fixed ranges (230 and 300
 are constants, not derived from other scenarios): each keeps scenarios numbered
 outside its range where they are, and fails rather than renumbers when another
-scenario sits inside it. So #16/#20 only need to renumber their own groups to
+scenario sits inside it. So #20 only needs to renumber its own group to
 254+; a missed renumber shows up as a generator error, not a silent shift
-(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
+(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #20 owns its
 groups with a generator, give it a fixed first number the same way. The three
 generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
 and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
@@ -204,7 +204,7 @@ wrapper API. They are listed so the matrix is complete.
 
 | Behaviour change | Source | Status |
 | --- | --- | --- |
-| Shared variable-key resolution (lowest-id wins, fall-through, both exposed, peek queues nothing) | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (`feat/shared-variable-key-conformance`, scenarios 230-245 on that branch). Not duplicated here; this branch is based on `main` and the two groups renumber cleanly when both land. |
+| Shared variable-key resolution | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (scenarios 340-366, `generate_shared_variable_key_scenarios.py`), recorded from java-sdk: lowest id first, only the winner exposed, no fall-through past a winner whose variant lacks the key. SDKs that expose every visited candidate or fall through list a reviewed `sharedVariableKeys` exception. |
 | `getVariableKeys` / `variableKeys` shape (one name per key vs lists vs `*_all`) | php/go/ruby/python | Encoded as the existing `variableKeysMap` per-SDK capability, not a single hard assertion. |
 | Failed `close()`/`finalize()` surfaces the error, keeps the context open and events queued, retries on a second call | php#8, go#10, ruby#39, python#11, kotlin#1, dotnet#8 | Covered by existing scenario 228 (`publishFail`) and the `publishFail` capability. |
 | `refresh()` on a failed context is a no-op | go#10 | Covered by existing scenario 229 (`readyError`, gated on `refreshNoOpOnFailedContext`). python#11 reverted to the v0.2.4 recover-on-refresh behaviour, so python is a reviewed exception here (see the reviewed per-SDK exceptions table). |
