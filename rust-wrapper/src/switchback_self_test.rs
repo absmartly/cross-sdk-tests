@@ -257,6 +257,15 @@ fn probe_payload() -> String {
             Some(&[("unit_serving", "city")]),
             json!({"audienceStrict": true, "audience": r#"{"filter":[{"eq":[{"var":"tier"},{"value":"gold"}]}]}"#}),
         ),
+        // No traffic: a recorded miss under the serving unit, never the draw.
+        switchback(
+            534,
+            "sb_traffic_miss",
+            42,
+            10,
+            Some(&[("unit_serving", "city")]),
+            json!({"trafficSplit": [1, 0]}),
+        ),
         switchback(
             513,
             "sb_payload",
@@ -295,6 +304,7 @@ const ELIGIBLE: [bool; 7] = [true, true, false, false, false, false, false];
 const RULE: [bool; 7] = [false, true, false, false, false, false, true];
 const FULL_ON: [bool; 7] = [true, true, false, true, false, false, false];
 const STRICT_MISMATCH: [bool; 7] = [false, true, false, false, false, true, false];
+const TRAFFIC_MISS: [bool; 7] = [true, false, false, false, false, false, false];
 
 fn served_as(actual: &Exposure, expected: &Served) -> bool {
     let (id, name, unit, variant, flags) = expected;
@@ -448,6 +458,12 @@ fn check_context_serving() -> bool {
                 0,
                 STRICT_MISMATCH,
             )],
+        )
+        && expect(
+            "traffic miss",
+            "sb_traffic_miss",
+            0,
+            &[(534, "sb_traffic_miss", "unit_serving", 0, TRAFFIC_MISS)],
         );
     if !served {
         return false;

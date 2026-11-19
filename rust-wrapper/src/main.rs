@@ -1185,6 +1185,14 @@ mod switchback_endpoint_tests {
         builder.body(Body::from(body.to_vec())).unwrap()
     }
 
+    // The default state probes through the real, once-run self-test.
+    #[test]
+    fn production_state_runs_the_real_self_test() {
+        assert!(std::ptr::fn_addr_eq(AppState::new().switchback_probe, switchback_capability as fn() -> bool));
+        assert!(switchback_capability());
+        assert_eq!(SWITCHBACK_SELF_TEST.get(), Some(&true));
+    }
+
     // A failed probe turns the capability off over HTTP; the endpoints still
     // answer with the SDK's real values.
     #[tokio::test(flavor = "multi_thread")]
