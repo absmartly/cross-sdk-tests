@@ -825,8 +825,9 @@ defmodule ElixirWrapper.Router do
 
   defp arm_count_param!(params) do
     case params["armCount"] do
-      # A Java int, as java-wrapper reads it: a larger value is no arm count.
-      n when is_integer(n) and n > 2_147_483_647 -> raise ArgumentError, "armCount must be a 32-bit integer"
+      # A permutation of that many arms is built in memory, so an arm count
+      # no experiment can have is refused instead of exhausting the wrapper.
+      n when is_integer(n) and n > 65_536 -> raise ArgumentError, "armCount must be at most 65536, got #{n}"
       n when is_integer(n) and n >= 2 -> n
       n when is_integer(n) -> raise ArgumentError, "armCount must be at least 2, got #{n}"
       _ -> raise ArgumentError, "armCount must be an integer"

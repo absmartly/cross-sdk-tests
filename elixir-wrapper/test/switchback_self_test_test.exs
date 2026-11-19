@@ -200,10 +200,12 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
            }) == {200, %{"result" => [6, 0, 3, 8, 9, 7, 2, 4, 5, 1], "events" => []}}
   end
 
-  test "an armCount beyond a 32-bit integer is a 400, and the wrapper stays up" do
-    body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => 2_147_483_648}
-    assert {400, %{"error" => _}} = call(:post, "/switchback/assign", body)
-    assert {400, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+  test "an armCount no experiment can have is a 400, and the wrapper stays up" do
+    for arms <- [65_537, 2_147_483_647, 2_147_483_648] do
+      body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => arms}
+      assert {400, %{"error" => _}} = call(:post, "/switchback/assign", body)
+      assert {400, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+    end
   end
 
   test "the wire-model check rejects a model without R33 fields or with the Phase 1E count" do
@@ -271,6 +273,15 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     capture_log(fn ->
       assert {:failed, "agreement", detail} = SwitchbackSelfTest.check_context_serving(swapped)
       assert detail =~ "unit_user"
+    end)
+  end
+
+  test "context serving fails when the published switchback differs from the baseline" do
+    renamed = String.replace(SwitchbackSelfTest.probe_payload(), ~s("name":"sb_payload"), ~s("name":"sb_payload_renamed"), global: false)
+    refute renamed == SwitchbackSelfTest.probe_payload()
+
+    capture_log(fn ->
+      assert {:failed, _, _} = SwitchbackSelfTest.check_context_serving(renamed)
     end)
   end
 end
