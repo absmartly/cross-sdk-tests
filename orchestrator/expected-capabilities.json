@@ -35,7 +35,7 @@
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
     "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)",
-    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-364): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; only the winner is exposed"
+    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-365): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; only the winner is exposed"
   },
   "sdks": {
     "javascript": {
@@ -345,7 +345,7 @@
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes",
         "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "scala-sdk resolves a shared key to the last candidate and exposes every candidate it visits (24 of 25 scenarios fail); follow-up in scala-sdk"
+        "sharedVariableKeys": "scala-sdk resolves a shared key to the last candidate and exposes every candidate it visits; follow-up in scala-sdk"
       }
     },
     "swift": {
