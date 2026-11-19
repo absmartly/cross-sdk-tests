@@ -2,21 +2,24 @@ package main
 
 // The switchback endpoints and the behavioural self-test behind the
 // `switchback` capability (R33 cluster-defined switchbacks), ported from the
-// java-wrapper's SwitchbackSelfTest. The pure functions come from the go-sdk
-// the wrapper is built with through switchbackFunctions (switchback_sdk.go).
-// The context battery decodes its payload from JSON through the SDK's own
-// deserializer and checks observed treatments and exposures only.
+// java-wrapper's SwitchbackSelfTest. The wrapper builds only against a go-sdk
+// with SwitchbackAssign and SwitchbackPermutation, so the endpoints always
+// answer. The context battery decodes its payload from JSON through the SDK's
+// own deserializer and checks observed treatments, exposures and the
+// published batch, publishing in memory.
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
 	"strconv"
 	"sync"
 
 	"github.com/absmartly/go-sdk/sdk"
+	"github.com/absmartly/go-sdk/sdk/future"
 	"github.com/absmartly/go-sdk/sdk/jsonmodels"
 )
 
@@ -78,8 +81,13 @@ func switchbackArmCount(raw json.RawMessage) (int, error) {
 
 func decodeSwitchbackRequest(w http.ResponseWriter, r *http.Request, index string) (string, int64, int64, int, bool) {
 	var req switchbackAssignRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
 		writeSwitchbackError(w, http.StatusBadRequest, err.Error())
+		return "", 0, 0, 0, false
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		writeSwitchbackError(w, http.StatusBadRequest, "the request body must be a single JSON object")
 		return "", 0, 0, 0, false
 	}
 	indexRaw := req.PeriodIndex
@@ -105,18 +113,14 @@ func decodeSwitchbackRequest(w http.ResponseWriter, r *http.Request, index strin
 	return unit, period, seed, arms, true
 }
 
-// The endpoints answer whenever the SDK has the functions, independent of
-// the self-test verdict, so a regressed assigner reports its actual outputs.
+// The endpoints answer independently of the self-test verdict, so a regressed
+// assigner reports its actual outputs.
 func switchbackAssignHandler(w http.ResponseWriter, r *http.Request) {
-	if switchbackFunctions == nil {
-		writeSwitchbackError(w, http.StatusNotImplemented, "linked SDK has no switchback assigner")
-		return
-	}
 	unit, period, seed, arms, ok := decodeSwitchbackRequest(w, r, "periodIndex")
 	if !ok {
 		return
 	}
-	variant, err := switchbackFunctions.assign(unit, period, seed, arms)
+	variant, err := sdk.SwitchbackAssign(unit, period, seed, arms)
 	if err != nil {
 		writeSwitchbackError(w, http.StatusBadRequest, err.Error())
 		return
@@ -125,15 +129,11 @@ func switchbackAssignHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func switchbackPermutationHandler(w http.ResponseWriter, r *http.Request) {
-	if switchbackFunctions == nil {
-		writeSwitchbackError(w, http.StatusNotImplemented, "linked SDK has no switchback assigner")
-		return
-	}
 	unit, cycle, seed, arms, ok := decodeSwitchbackRequest(w, r, "cycleIndex")
 	if !ok {
 		return
 	}
-	permutation, err := switchbackFunctions.permutation(unit, cycle, seed, arms)
+	permutation, err := sdk.SwitchbackPermutation(unit, cycle, seed, arms)
 	if err != nil {
 		writeSwitchbackError(w, http.StatusBadRequest, err.Error())
 		return
@@ -186,22 +186,19 @@ const (
 
 func switchbackBattery() error {
 	const prefix = "[switchback probe]"
-	if switchbackFunctions == nil {
-		return fmt.Errorf("%s FAILED: linked go-sdk has no switchback assigner", prefix)
-	}
 	for _, c := range switchbackAssignSample {
 		period, _ := strconv.ParseInt(c[1], 10, 64)
 		seed, _ := strconv.ParseInt(c[2], 10, 64)
 		arms, _ := strconv.Atoi(c[3])
 		want, _ := strconv.Atoi(c[4])
-		if got, err := switchbackFunctions.assign(c[0], period, seed, arms); err != nil || got != want {
+		if got, err := sdk.SwitchbackAssign(c[0], period, seed, arms); err != nil || got != want {
 			return fmt.Errorf("%s golden assign FAILED for %v: got %d, %v", prefix, c, got, err)
 		}
 	}
 	for _, c := range switchbackPermutationSample {
 		cycle, _ := strconv.ParseInt(c.cycle, 10, 64)
 		seed, _ := strconv.ParseInt(c.seed, 10, 64)
-		if got, err := switchbackFunctions.permutation(c.unit, cycle, seed, len(c.want)); err != nil || !reflect.DeepEqual(got, c.want) {
+		if got, err := sdk.SwitchbackPermutation(c.unit, cycle, seed, len(c.want)); err != nil || !reflect.DeepEqual(got, c.want) {
 			return fmt.Errorf("%s golden permutation FAILED for %v: got %v, %v", prefix, c, got, err)
 		}
 	}
@@ -258,31 +255,20 @@ func switchbackProbePayload() ([]byte, error) {
 			map[string]interface{}{"switchbackClusterUnitType": "unit_serving", "switchbackClusterCount": 10, "switchbackClusterAttribute": "city"}},
 		{switchbackExperimentJSON(514, "sb_unit_baseline", -559038737, 1234567890, 3, nil), "", "", nil},
 	}
-	var buf bytes.Buffer
-	buf.WriteString(`{"experiments":[`)
+	experiments := make([]map[string]interface{}, len(entries))
 	for i, e := range entries {
 		for k, v := range e.extra {
 			e.experiment[k] = v
 		}
-		raw, err := json.Marshal(e.experiment)
-		if err != nil {
-			return nil, err
-		}
-		raw = raw[:len(raw)-1]
 		if e.clusters != "" {
-			raw = append(raw, []byte(`,"switchbackClusters":`+e.clusters)...)
+			e.experiment["switchbackClusters"] = json.RawMessage(e.clusters)
 		}
 		if e.values != "" {
-			raw = append(raw, []byte(`,"switchbackClusterValues":`+e.values)...)
+			e.experiment["switchbackClusterValues"] = json.RawMessage(e.values)
 		}
-		raw = append(raw, '}')
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		buf.Write(raw)
+		experiments[i] = e.experiment
 	}
-	buf.WriteString(`]}`)
-	return buf.Bytes(), nil
+	return json.Marshal(map[string]interface{}{"experiments": experiments})
 }
 
 type switchbackProbeExposure struct {
@@ -307,6 +293,12 @@ func (l *switchbackExposureLog) HandleEvent(_ sdk.Context, eventType sdk.EventTy
 	}
 }
 
+func (l *switchbackExposureLog) len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.exposures)
+}
+
 func (l *switchbackExposureLog) since(n int) []jsonmodels.Exposure {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -318,7 +310,6 @@ func switchbackContextBattery(prefix string) error {
 	if err != nil {
 		return err
 	}
-	// Through the SDK's default deserializer, as a fetched payload is read.
 	data, err := sdk.DefaultContextDataDeserializer{}.Deserialize(payload)
 	if err != nil {
 		return fmt.Errorf("%s FAILED: payload: %v", prefix, err)
@@ -327,7 +318,9 @@ func switchbackContextBattery(prefix string) error {
 	client := sdk.CreateDefaultClient(sdk.ClientConfig{
 		Endpoint_: "http://localhost", ApiKey_: "probe", Application_: "website", Environment_: "test",
 	})
-	absmartly := sdk.Create(sdk.ABSmartlyConfig{Client_: client, ContextEventLogger_: logger})
+	// Published in memory: /capabilities must not wait on the network.
+	publisher := &switchbackCapturingPublisher{}
+	absmartly := sdk.Create(sdk.ABSmartlyConfig{Client_: client, ContextPublisher_: publisher, ContextEventLogger_: logger})
 	config := sdk.CreateDefaultContextConfig()
 	config.Units_ = map[string]string{"unit_user": "probe-user", "unit_serving": "serving-9"}
 	config.PublishDelay_ = -1
@@ -369,7 +362,7 @@ func switchbackContextBattery(prefix string) error {
 		{"Phase 1E fields only", "sb_phase1e_only", 0, nil},
 		{"unit baseline", "sb_unit_baseline", 1, []switchbackProbeExposure{served(514, "sb_unit_baseline", "unit_serving", 1)}},
 	} {
-		before := len(logger.since(0))
+		before := logger.len()
 		got, err := context.GetTreatment(c.experiment)
 		if err != nil {
 			return fmt.Errorf("%s check %s: %v", prefix, c.check, err)
@@ -383,5 +376,30 @@ func switchbackContextBattery(prefix string) error {
 				prefix, c.check, c.treatment, c.exposures, got, emitted)
 		}
 	}
+	// The published batch carries exactly the exposures logged, with no
+	// switchback fields.
+	if err := context.Publish(); err != nil {
+		return fmt.Errorf("%s publish FAILED: %v", prefix, err)
+	}
+	publisher.mu.Lock()
+	defer publisher.mu.Unlock()
+	if len(publisher.events) != 1 || !reflect.DeepEqual(publisher.events[0].Exposures, logger.since(0)) {
+		return fmt.Errorf("%s publish FAILED: published %+v, logged %+v", prefix, publisher.events, logger.since(0))
+	}
 	return nil
+}
+
+// switchbackCapturingPublisher records publish batches in memory.
+type switchbackCapturingPublisher struct {
+	mu     sync.Mutex
+	events []jsonmodels.PublishEvent
+}
+
+func (p *switchbackCapturingPublisher) Publish(_ sdk.Context, event jsonmodels.PublishEvent) *future.Future {
+	p.mu.Lock()
+	p.events = append(p.events, event)
+	p.mu.Unlock()
+	result, done := future.New()
+	done(nil, nil)
+	return result
 }

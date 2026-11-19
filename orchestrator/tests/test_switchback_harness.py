@@ -254,7 +254,6 @@ def test_switchback_policy_requires_the_ported_sdks_and_excepts_every_other_sdk(
 
 
 def test_go_without_switchback_is_a_policy_violation(runner):
-    # Required capabilities fail closed for go too: not advertising switchback fails the lane.
     assert any("'switchback'" in v for v in runner.policy_violations_for("go", {"switchback": False}))
 
 

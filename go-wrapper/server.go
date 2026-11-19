@@ -460,6 +460,17 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		writeSDKError(w, http.StatusBadRequest, fmt.Errorf("Invalid 'application' in client argument"), nil)
 		return
 	}
+	// Decode every attribute before creating the context, so an invalid one
+	// (a number beyond float64) is rejected without leaving a context behind.
+	attributes := make(map[string]interface{}, len(req.Attributes))
+	for name, raw := range req.Attributes {
+		value, err := attributeValue(raw)
+		if err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, nil)
+			return
+		}
+		attributes[name] = value
+	}
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 
@@ -613,12 +624,8 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for name, raw := range req.Attributes {
-		value, err := attributeValue(raw)
-		if err == nil {
-			err = context.SetAttribute(name, value)
-		}
-		if err != nil {
+	for name, value := range attributes {
+		if err := context.SetAttribute(name, value); err != nil {
 			writeSDKError(w, http.StatusBadRequest, err, eventCollector.SliceFrom(0))
 			return
 		}
@@ -753,33 +760,49 @@ func attributeValue(raw json.RawMessage) (interface{}, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return nil, err
 	}
-	return normalizeNumbers(value), nil
+	return normalizeNumbers(value)
 }
 
-func normalizeNumbers(value interface{}) interface{} {
+// normalizeNumbers converts the json.Numbers in a decoded value. A number
+// beyond float64 range is an error, as it is for encoding/json's default
+// decoding: the attribute could not be returned as JSON afterwards.
+func normalizeNumbers(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case json.Number:
 		text := v.String()
 		if !strings.ContainsAny(text, ".eE") {
 			if n, err := v.Int64(); err == nil && int64(int(n)) == n {
-				return int(n)
+				return int(n), nil
 			}
-			return v
 		}
-		f, _ := v.Float64()
-		return f
+		f, err := v.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("number %s out of range", text)
+		}
+		if !strings.ContainsAny(text, ".eE") {
+			return v, nil
+		}
+		return f, nil
 	case map[string]interface{}:
 		for key, item := range v {
-			v[key] = normalizeNumbers(item)
+			normalized, err := normalizeNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			v[key] = normalized
 		}
-		return v
+		return v, nil
 	case []interface{}:
 		for i, item := range v {
-			v[i] = normalizeNumbers(item)
+			normalized, err := normalizeNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			v[i] = normalized
 		}
-		return v
+		return v, nil
 	}
-	return value
+	return value, nil
 }
 
 func getAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
