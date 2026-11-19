@@ -745,13 +745,12 @@ func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{},
 }
 
 // attributeValue decodes a JSON attribute value the way a Go caller holding
-// the same data would pass it: an integer literal within int (3, 4000000002)
-// is an int, any other number (3.0, 1.5, 1e1, or an integer beyond int) a
-// float64, recursively. A switchback cluster key is a whole-number integer
-// but never a float, so 3 and 3.0 must stay apart; encoding/json's default
-// would make both float64. An integer beyond int stays a float64, as before,
-// because the SDK's audience evaluator compares only int and float64
-// numerically.
+// the same data would pass it, recursively: an integer literal within int
+// (3, 4000000002) is an int, any other number (3.0, 1.5, 1e1) a float64.
+// A switchback cluster key is a whole-number integer but never a float, so 3
+// and 3.0 must stay apart; encoding/json's default would make both float64.
+// An integer literal beyond int is a wideInteger: a number to the SDK's
+// audience evaluator, and its exact digits as a switchback cluster key.
 func attributeValue(raw json.RawMessage) (interface{}, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -765,6 +764,35 @@ func attributeValue(raw json.RawMessage) (interface{}, error) {
 	return normalizeNumbers(value)
 }
 
+// wideInteger is an integer literal beyond Go's int. It is a float64 kind,
+// so the SDK's audience evaluator (which compares only int and float64
+// numerically) compares it as a number, and its JSON encoding, which the SDK
+// reads for a switchback cluster key and the wrapper returns, is the digits
+// that were sent. A float64 holds no digits, so they are kept in wideDigits,
+// keyed by the value: two literals that round to the same float64 share the
+// most recent digits.
+type wideInteger float64
+
+var (
+	wideDigitsMu sync.Mutex
+	wideDigits   = map[wideInteger]string{}
+)
+
+func newWideInteger(value float64, digits string) wideInteger {
+	var w = wideInteger(value)
+	wideDigitsMu.Lock()
+	wideDigits[w] = digits
+	wideDigitsMu.Unlock()
+	return w
+}
+
+// MarshalJSON writes the digits that were sent.
+func (w wideInteger) MarshalJSON() ([]byte, error) {
+	wideDigitsMu.Lock()
+	defer wideDigitsMu.Unlock()
+	return []byte(wideDigits[w]), nil
+}
+
 // normalizeNumbers converts the json.Numbers in a decoded value. A number
 // beyond float64 range is an error, as it is for encoding/json's default
 // decoding: the attribute could not be returned as JSON afterwards.
@@ -772,16 +800,17 @@ func normalizeNumbers(value interface{}) (interface{}, error) {
 	switch v := value.(type) {
 	case json.Number:
 		text := v.String()
-		if !strings.ContainsAny(text, ".eE") {
-			if n, err := v.Int64(); err == nil && int64(int(n)) == n {
-				return int(n), nil
-			}
-		}
 		f, err := v.Float64()
 		if err != nil {
 			return nil, fmt.Errorf("number %s out of range", text)
 		}
-		return f, nil
+		if strings.ContainsAny(text, ".eE") {
+			return f, nil
+		}
+		if n, err := v.Int64(); err == nil && int64(int(n)) == n {
+			return int(n), nil
+		}
+		return newWideInteger(f, text), nil
 	case map[string]interface{}:
 		for key, item := range v {
 			normalized, err := normalizeNumbers(item)

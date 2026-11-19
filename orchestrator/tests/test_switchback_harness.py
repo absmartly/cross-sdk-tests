@@ -248,7 +248,7 @@ def test_switchback_policy_requires_the_ported_sdks_and_excepts_every_other_sdk(
             assert "switchback" not in entry.get("unsupported", {}), sdk
         else:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert entry["unsupported"]["switchback"].startswith("switchback serving not implemented in "), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
