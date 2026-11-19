@@ -382,7 +382,6 @@ int main() {
                 res.set_content(resp.dump(), "application/json");
             });
 
-    // 64-bit fields are exact decimal strings; the cluster unit is passed through unchanged.
     const auto switchback_endpoint = [](bool permutation) {
         return [permutation](const httplib::Request& req, httplib::Response& res) {
             const auto bad_request = [&res](const std::string& message) {

@@ -82,12 +82,17 @@ checkout_revision() {
   [ -d "$repo/.git" ] || git init -q "$repo"
   # origin as a clone would set it, so a later -b override can fetch a branch here.
   git -C "$repo" remote get-url origin >/dev/null 2>&1 || git -C "$repo" remote add origin "$url"
-  if git -C "$repo" fetch -q --depth 1 origin "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
-    echo "  PIN  $repo @ $revision"
-  else
+  if ! git -C "$repo" fetch -q --depth 1 origin "$revision" || ! git -C "$repo" checkout -q FETCH_HEAD; then
     echo "  FAIL $repo: could not check out pinned revision $revision"
     return 1
   fi
+  # A checkout keeps tracked edits that do not conflict; the wrapper builds the working tree, so a
+  # pin only counts when the tracked files match the commit. Local edits are reported, not discarded.
+  if ! git -C "$repo" diff --quiet HEAD --; then
+    echo "  FAIL $repo: tracked files differ from pinned revision $revision (commit or stash local edits)"
+    return 1
+  fi
+  echo "  PIN  $repo @ $revision"
 }
 
 for repo in $(echo "${!SDK_BRANCHES[@]}" | tr ' ' '\n' | sort); do
