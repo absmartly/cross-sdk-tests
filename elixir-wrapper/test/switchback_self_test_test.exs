@@ -315,5 +315,16 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
              ElixirWrapper.OrderedJson.decode(payload)
 
     assert clusters == %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
+
+    # Both in one body: only the experiment's map is ordered.
+    mixed =
+      ~s({"attributes":{"switchbackClusters":{"country":"US"}},) <>
+        ~s("data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}})
+
+    assert {:ok, decoded} = ElixirWrapper.OrderedJson.decode(mixed)
+    assert decoded["attributes"] == %{"switchbackClusters" => %{"country" => "US"}}
+
+    assert hd(decoded["data"]["experiments"])["switchbackClusters"] ==
+             %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
   end
 end
