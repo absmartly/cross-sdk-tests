@@ -41,5 +41,5 @@ declare -A SDK_BRANCHES=(
 )
 
 declare -A SDK_REVISIONS=(
-  ["cpp-sdk"]="a0d70df7f148c81d10a4c797954f54542399f265"
+  ["cpp-sdk"]="043dc5b42614b73c846dc300cb2944903da3fe56"
 )
