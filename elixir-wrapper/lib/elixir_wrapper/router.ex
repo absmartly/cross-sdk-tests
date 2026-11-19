@@ -797,10 +797,10 @@ defmodule ElixirWrapper.Router do
       try do
         send_json(conn, 200, %{result: fun.(conn.body_params), events: []})
       rescue
-        e in ArgumentError -> send_json(conn, 400, %{error: Exception.message(e)})
+        e in ArgumentError -> send_error(conn, 400, Exception.message(e))
       end
     else
-      send_json(conn, 501, %{error: "linked SDK has no switchback assigner"})
+      send_error(conn, 501, "linked SDK has no switchback assigner")
     end
   end
 

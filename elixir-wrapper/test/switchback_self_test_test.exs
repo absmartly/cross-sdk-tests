@@ -75,7 +75,7 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
           Map.put(valid, "armCount", 1),
           Map.put(valid, "armCount", "2")
         ] do
-      assert {400, %{"error" => _}} = call(:post, "/switchback/assign", bad), inspect(bad)
+      assert {400, %{"error" => _, "events" => []}} = call(:post, "/switchback/assign", bad), inspect(bad)
     end
   end
 
@@ -113,7 +113,7 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     on_exit(fn -> Application.delete_env(:elixir_wrapper, :switchback_assigner) end)
 
     for arms <- [1, 0, -3] do
-      assert {400, %{"error" => _}} =
+      assert {400, %{"error" => _, "events" => []}} =
                call(:post, "/switchback/assign", %{
                  "clusterUnit" => "u",
                  "periodIndex" => "0",
@@ -136,8 +136,8 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     on_exit(fn -> Application.delete_env(:elixir_wrapper, :switchback_available) end)
 
     body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => 2}
-    assert {501, %{"error" => _}} = call(:post, "/switchback/assign", body)
-    assert {501, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+    assert {501, %{"error" => _, "events" => []}} = call(:post, "/switchback/assign", body)
+    assert {501, %{"error" => _, "events" => []}} = call(:post, "/switchback/permutation", body)
   end
 
   defmodule WrongAssign do
@@ -203,8 +203,8 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
   test "an armCount no experiment can have is a 400, and the wrapper stays up" do
     for arms <- [65_537, 2_147_483_647, 2_147_483_648] do
       body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => arms}
-      assert {400, %{"error" => _}} = call(:post, "/switchback/assign", body)
-      assert {400, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+      assert {400, %{"error" => _, "events" => []}} = call(:post, "/switchback/assign", body)
+      assert {400, %{"error" => _, "events" => []}} = call(:post, "/switchback/permutation", body)
     end
   end
 
