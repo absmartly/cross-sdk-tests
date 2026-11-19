@@ -139,4 +139,138 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     assert {501, %{"error" => _}} = call(:post, "/switchback/assign", body)
     assert {501, %{"error" => _}} = call(:post, "/switchback/permutation", body)
   end
+
+  defmodule WrongAssign do
+    @moduledoc false
+    # Golden permutations, one wrong assign.
+    defdelegate base_hash(unit, cycle, seed), to: ABSmartly.Switchback.Assigner
+    defdelegate fisher_yates_permutation(arms, base), to: ABSmartly.Switchback.Assigner
+
+    def assign(unit, period, seed, arms) do
+      variant = ABSmartly.Switchback.Assigner.assign(unit, period, seed, arms)
+      if {unit, period} == {"market_2", -11}, do: rem(variant + 1, arms), else: variant
+    end
+  end
+
+  defmodule SwappedPermutation do
+    @moduledoc false
+    # Golden assigns, permutation inputs swapped (cycle <-> seed).
+    defdelegate assign(unit, period, seed, arms), to: ABSmartly.Switchback.Assigner
+    defdelegate fisher_yates_permutation(arms, base), to: ABSmartly.Switchback.Assigner
+    def base_hash(unit, cycle, seed), do: ABSmartly.Switchback.Assigner.base_hash(unit, seed, cycle)
+  end
+
+  defmodule Raising do
+    @moduledoc false
+    def assign(_unit, _period, _seed, _arms), do: raise("broken assigner")
+  end
+
+  defp with_assigner(assigner, fun) do
+    Application.put_env(:elixir_wrapper, :switchback_assigner, assigner)
+
+    try do
+      fun.()
+    after
+      Application.delete_env(:elixir_wrapper, :switchback_assigner)
+    end
+  end
+
+  test "the self-test fails on a wrong golden assign, a swapped permutation or a raising assigner" do
+    capture_log(fn ->
+      for assigner <- [WrongAssign, SwappedPermutation, Raising] do
+        with_assigner(assigner, fn -> refute SwitchbackSelfTest.run(:switchback), inspect(assigner) end)
+      end
+    end)
+
+    with_assigner(WrongAssign, fn ->
+      assert {:failed, "golden assign market_2/-11" <> _, _} = SwitchbackSelfTest.check_golden_sample()
+    end)
+
+    with_assigner(SwappedPermutation, fn ->
+      assert {:failed, "golden permutation market_1/1", _} = SwitchbackSelfTest.check_golden_sample()
+    end)
+  end
+
+  test "/switchback/permutation passes cycleIndex and seed in their own places" do
+    assert call(:post, "/switchback/permutation", %{
+             "clusterUnit" => "market_1",
+             "cycleIndex" => "1",
+             "seed" => "0",
+             "armCount" => 10
+           }) == {200, %{"result" => [6, 0, 3, 8, 9, 7, 2, 4, 5, 1], "events" => []}}
+  end
+
+  test "an armCount beyond a 32-bit integer is a 400, and the wrapper stays up" do
+    body = %{"clusterUnit" => "u", "periodIndex" => "0", "cycleIndex" => "0", "seed" => "0", "armCount" => 2_147_483_648}
+    assert {400, %{"error" => _}} = call(:post, "/switchback/assign", body)
+    assert {400, %{"error" => _}} = call(:post, "/switchback/permutation", body)
+  end
+
+  test "the wire-model check rejects a model without R33 fields or with the Phase 1E count" do
+    assert {:failed, "wire model", _} = SwitchbackSelfTest.check_wire_model([:randomization_type])
+
+    assert {:failed, "wire model", _} =
+             SwitchbackSelfTest.check_wire_model([
+               :randomization_type,
+               :switchback_clusters,
+               :switchback_cluster_values,
+               :switchback_cluster_count
+             ])
+  end
+
+  test "context serving fails when the declared order is lost or an exposure differs" do
+    sorted = String.replace(SwitchbackSelfTest.probe_payload(),
+      ~s("switchbackClusters":{"unit_user":"profile/city","unit_serving":"city"}),
+      ~s("switchbackClusters":{"unit_serving":"city","unit_user":"profile/city"}))
+
+    refute sorted == SwitchbackSelfTest.probe_payload()
+    assert {:failed, "declared order", _} = SwitchbackSelfTest.check_context_serving(sorted)
+
+    # A different seed changes sb_agree's draw, so the agreement check fails.
+    reseeded = String.replace(SwitchbackSelfTest.probe_payload(),
+      ~s("name":"sb_agree","randomizationType":"switchback","seedHi":0,"seedLo":42),
+      ~s("name":"sb_agree","randomizationType":"switchback","seedHi":0,"seedLo":43))
+
+    refute reseeded == SwitchbackSelfTest.probe_payload()
+
+    capture_log(fn ->
+      assert {:failed, "agreement", _} = SwitchbackSelfTest.check_context_serving(reseeded)
+    end)
+
+    # A serving unit published under the wrong type is caught on the
+    # exposure record alone (the treatment is unchanged).
+    retyped = String.replace(SwitchbackSelfTest.probe_payload(),
+      ~s("switchbackClusters":{"unit_user":"profile/city","unit_serving":"city"}),
+      ~s("switchbackClusters":{"unit_serving":"profile/city","unit_user":"city"}))
+
+    refute retyped == SwitchbackSelfTest.probe_payload()
+
+    capture_log(fn ->
+      assert {:failed, label, detail} = SwitchbackSelfTest.check_context_serving(retyped)
+      assert label in ["declared order", "agreement"]
+      assert detail =~ "unit_serving" or detail =~ "order"
+    end)
+  end
+
+  test "context serving fails before serving when a decoder loses the cluster order" do
+    # Plain Jason decodes the two-entry map unordered, so ExperimentData
+    # refuses it and the declared-order check fails first.
+    assert {:failed, "declared order", _} =
+             SwitchbackSelfTest.check_context_serving(SwitchbackSelfTest.probe_payload(), &Jason.decode/1)
+  end
+
+  test "context serving compares the exposure record, not only the treatment" do
+    # sb_agree keeps its treatment (both units hold the same city) but is
+    # then served by unit_user, which only the exposure's unit shows.
+    swapped = String.replace(SwitchbackSelfTest.probe_payload(),
+      ~s({"unit_serving":"city","unit_user":"profile/city"}),
+      ~s({"unit_user":"profile/city","unit_serving":"city"}))
+
+    refute swapped == SwitchbackSelfTest.probe_payload()
+
+    capture_log(fn ->
+      assert {:failed, "agreement", detail} = SwitchbackSelfTest.check_context_serving(swapped)
+      assert detail =~ "unit_user"
+    end)
+  end
 end

@@ -293,6 +293,16 @@ class ValidateStepTests(unittest.TestCase):
         self.assertNotEqual(test_runner.observation_for_step("variableValue", a, {}),
                             test_runner.observation_for_step("variableValue", b, {}))
 
+    def test_publish_observation_treats_an_absent_attribute_value_as_null(self):
+        def publish(attribute):
+            event = {"type": "publish", "data": {"hashed": True, "units": [], "attributes": [attribute]}}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [event]}, {})
+
+        self.assertEqual(publish({"name": "v_null", "value": None, "setAt": 1}),
+                         publish({"name": "v_null", "setAt": 2}))
+        self.assertNotEqual(publish({"name": "v_null", "value": None}), publish({"name": "v_null", "value": ""}))
+        self.assertNotEqual(publish({"name": "v_null"}), publish({"value": None}))
+
     def test_event_data_key_absent_vs_null(self):
         actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
         expected = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1, "custom": None}}]}

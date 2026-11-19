@@ -37,6 +37,7 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
 
   @permutation_cases [
     {"market_1", "0", "0", [0, 3, 7, 5, 8, 2, 6, 4, 1, 9]},
+    {"market_1", "1", "0", [6, 0, 3, 8, 9, 7, 2, 4, 5, 1]},
     {"market_1", "-9223372036854775808", "0", [1, 0]},
     {"market_1", "9223372036854775807", "1", [0, 1]},
     {"123456789", "0", "0", [2, 0, 1]}
@@ -56,15 +57,18 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
 
   @doc "assignSwitchback through the SDK."
   def assign(unit, period, seed, arms) do
-    assigner = Application.get_env(:elixir_wrapper, :switchback_assigner, @assigner)
-    apply(assigner, :assign, [unit, period, seed, arms])
+    apply(assigner(), :assign, [unit, period, seed, arms])
   end
 
   @doc "fisherYatesPermutation(arms, baseHash(unit, cycle, seed)) through the SDK."
   def permutation(unit, cycle, seed, arms) do
-    base = apply(@assigner, :base_hash, [unit, cycle, seed])
-    @assigner |> apply(:fisher_yates_permutation, [arms, base]) |> Tuple.to_list()
+    assigner = assigner()
+    base = apply(assigner, :base_hash, [unit, cycle, seed])
+    assigner |> apply(:fisher_yates_permutation, [arms, base]) |> Tuple.to_list()
   end
+
+  # Tests substitute a regressed assigner to check that the self-test fails.
+  defp assigner, do: Application.get_env(:elixir_wrapper, :switchback_assigner, @assigner)
 
   defp cached(name, fun) do
     key = {__MODULE__, name}
@@ -106,7 +110,8 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
          do: check_context_serving()
   end
 
-  defp check_golden_sample do
+  @doc false
+  def check_golden_sample do
     if available?() do
       Enum.find_value(@assign_cases, :ok, fn {unit, period, seed, arms, expected} ->
         actual = assign(unit, String.to_integer(period), String.to_integer(seed), arms)
@@ -129,9 +134,8 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
 
   # The R33 wire model: switchbackClusters and switchbackClusterValues, and
   # none of the abandoned Phase 1E bucket fields.
-  defp check_wire_model do
-    fields = Map.keys(%ABSmartly.Types.ExperimentData{})
-
+  @doc false
+  def check_wire_model(fields \\ Map.keys(%ABSmartly.Types.ExperimentData{})) do
     if :switchback_clusters in fields and :switchback_cluster_values in fields and
          :randomization_type in fields and :switchback_cluster_count not in fields,
        do: :ok,
@@ -217,8 +221,9 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
     end
   end
 
-  defp check_context_serving do
-    {:ok, decoded} = ElixirWrapper.OrderedJson.decode(probe_payload())
+  @doc false
+  def check_context_serving(payload \\ probe_payload(), decode \\ &ElixirWrapper.OrderedJson.decode/1) do
+    {:ok, decoded} = decode.(payload)
     data = ABSmartly.Types.ContextData.from_map(decoded)
     declared = Enum.find(data.experiments, &(&1.name == "sb_declared_order")).switchback_clusters
 
