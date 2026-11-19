@@ -109,11 +109,12 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
-Exception: go-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
-because its lane now requires `holdouts`, `holdout_arms` and `holdoutIdsDedup`.
-Keep go-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for that
-PR) until a follow-up PR here re-pins go-sdk to `main` and its lane is green;
-re-run this suite after any push to that branch.
+Exception: go-sdk is pinned to `feat/switchbacks` while its holdouts and
+switchbacks PRs are open (`feat/switchbacks` is stacked on `feat/holdouts`),
+because its lane now requires `holdouts`, `holdout_arms`, `holdoutIdsDedup`
+and `switchback`. Keep both go-sdk branches (delete-branch-on-merge **off**
+for those PRs) until a follow-up PR here re-pins go-sdk to `main` and its lane
+is green; re-run this suite after any push to either branch.
 
 ### Scenario numbering versus open PRs
 
