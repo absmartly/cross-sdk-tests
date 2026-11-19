@@ -14,7 +14,7 @@ WORKDIR /app
 COPY cross-sdk-tests/go-wrapper/go.mod ./
 COPY cross-sdk-tests/go-wrapper/*.go ./
 
-RUN go mod tidy && go build -o server .
+RUN go mod tidy && go vet ./... && go test ./... && go build -o server .
 
 EXPOSE 3000
 

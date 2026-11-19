@@ -236,15 +236,24 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
+SWITCHBACK_SDKS = {"java", "go"}
+
+
+def test_switchback_policy_requires_the_ported_sdks_and_excepts_every_other_sdk(runner):
     sdks = runner.policy["sdks"]
     assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
     for sdk, entry in sdks.items():
-        if sdk != "java":
+        if sdk in SWITCHBACK_SDKS:
+            assert "switchback" in entry["required"], sdk
+            assert "switchback" not in entry.get("unsupported", {}), sdk
+        else:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert entry["unsupported"]["switchback"].startswith("switchback serving not implemented in "), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
+
+
+def test_go_without_switchback_is_a_policy_violation(runner):
+    assert any("'switchback'" in v for v in runner.policy_violations_for("go", {"switchback": False}))
 
 
 def test_java_without_switchback_still_runs_the_gated_scenarios(runner):

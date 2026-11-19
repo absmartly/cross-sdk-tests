@@ -1332,7 +1332,10 @@ Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+written. Revisit the case before such an SDK gains the capability. A wrapper
+whose language keeps the two apart must pass attribute values through without
+losing it: the go wrapper decodes `value` with `UseNumber` and hands an
+integer literal to the SDK as an `int` and any other number as a `float64`.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for

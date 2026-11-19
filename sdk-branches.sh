@@ -20,8 +20,9 @@ declare -A SDK_BRANCHES=(
   ["dotnet-sdk"]="main"
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"
-  # go-sdk holdouts PR (go-sdk feat/holdouts) is open; re-pin to main once it merges.
-  ["go-sdk"]="feat/holdouts"
+  # go-sdk switchbacks PR (go-sdk feat/switchbacks, stacked on feat/holdouts) is
+  # open; re-pin to main once both merge.
+  ["go-sdk"]="feat/switchbacks"
   ["java-sdk"]="main"
   ["javascript-sdk"]="main"
   ["kotlin-sdk"]="main"
