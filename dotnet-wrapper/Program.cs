@@ -121,7 +121,8 @@ async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, ob
     try
     {
         using var reader = new StreamReader(httpContext.Request.Body);
-        var request = JsonDocument.Parse(await reader.ReadToEndAsync()).RootElement;
+        using var document = JsonDocument.Parse(await reader.ReadToEndAsync());
+        var request = document.RootElement;
         if (request.ValueKind != JsonValueKind.Object) throw new ArgumentException("request must be an object");
         return Results.Ok(new { result = call(request), events = Array.Empty<object>() });
     }
@@ -139,7 +140,8 @@ static string StringParam(JsonElement request, string name) =>
 static long LongParam(JsonElement request, string name)
 {
     var text = StringParam(request, name);
-    // Java's Long.parseLong: an optional '+' or '-', then ASCII digits only.
+    // Canonical ASCII decimals with an optional sign (Java's Long.parseLong also takes other
+    // Unicode digits; the endpoint contract is ASCII).
     var digits = text.Length > 0 && (text[0] == '-' || text[0] == '+') ? text.AsSpan(1) : text.AsSpan();
     if (digits.Length == 0) throw new ArgumentException($"{name} must be a decimal string");
     foreach (var c in digits)
@@ -640,7 +642,7 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
             {
                 // The token itself, so the SDK reads 3 as an integer, 3.0 as a float and integers past
                 // Int64 exactly.
-                JsonValueKind.Number => jsonElement.Clone(),
+                JsonValueKind.Number => jsonElement,
                 JsonValueKind.String => jsonElement.GetString(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,

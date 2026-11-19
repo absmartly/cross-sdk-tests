@@ -53,7 +53,6 @@ def test_case_distinct_goal_properties_survive_publish():
     _post(context_id, "track", {"goalName": "purchase", "properties": {"OrderID": 1, "orderID": 2, "SKU": 3}})
     raw, data = _publish_data(context_id)
     assert data["goals"][0]["properties"] == {"OrderID": 1, "orderID": 2, "SKU": 3}
-    # No duplicate member in the raw response: each key appears once.
     assert raw.count('"OrderID"') == 1 and raw.count('"orderID"') == 1
 
 
