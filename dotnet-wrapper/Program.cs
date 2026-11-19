@@ -95,8 +95,6 @@ app.MapGet("/capabilities", () => Results.Ok(new
     // scenarios 203-208/221 and 214-216; a build without holdouts reports false.
     holdouts = HoldoutSelfTest.RunHoldouts(),
     holdout_arms = HoldoutSelfTest.RunHoldoutArms(),
-    // Behavioral self-test (SwitchbackSelfTest.cs): golden vectors plus R33 cluster serving
-    // through a real context; a build without switchbacks reports false.
     switchback = SwitchbackSelfTest.Run(),
     assignmentRules = true,
     semverOperators = true,
@@ -1339,10 +1337,21 @@ public class EventCollector : IContextEventLogger
             _events.Add(new EventData
             {
                 Type = EventTypeToString(eventType),
-                Data = data,
+                Data = eventType == EventType.Publish && data is PublishEvent publishEvent
+                    ? PublishedForm(publishEvent)
+                    : data,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             });
         }
+    }
+
+    // A publish event as the SDK's own serializer sends it (DefaultContextEventSerializer), so the
+    // report shows the wire payload: a null member, such as a null attribute value, is left out, as
+    // in the Java wrapper, and switchback attribute values use their wire form.
+    private static object PublishedForm(PublishEvent publishEvent)
+    {
+        var bytes = new ABSmartly.Services.DefaultContextEventSerializer().Serialize(publishEvent);
+        return bytes == null ? publishEvent : JsonDocument.Parse(bytes).RootElement.Clone();
     }
 
     public int GetEventsCount()

@@ -323,8 +323,7 @@ public static class SwitchbackSelfTest
         return clusters?.Select(c => c.Key).ToList() ?? new List<string>();
     }
 
-    // The publish JSON with publishedAt and each exposure's exposedAt removed, plus (for a shape
-    // comparison) id and name blanked.
+    // Timestamps and the experiment's identity removed, so two publishes compare by everything else.
     private static string Normalized(byte[] json)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
@@ -410,10 +409,10 @@ public static class SwitchbackSelfTest
         experiment["randomizationType"] = "switchback";
         if (clusters != null)
         {
-            // Raw JSON keeps the declared key order whatever the serializer does with dictionaries.
-            var map = "{" + string.Join(",", clusters.Select(c =>
-                JsonSerializer.Serialize(c.Type) + ":" + JsonSerializer.Serialize(c.Path))) + "}";
-            experiment["switchbackClusters"] = JsonDocument.Parse(map).RootElement;
+            // A JsonObject writes its keys in insertion order: the declared cluster order.
+            var map = new System.Text.Json.Nodes.JsonObject();
+            foreach (var c in clusters) map[c.Type] = c.Path;
+            experiment["switchbackClusters"] = map;
             experiment["unitType"] = clusters[0].Type;
         }
 
