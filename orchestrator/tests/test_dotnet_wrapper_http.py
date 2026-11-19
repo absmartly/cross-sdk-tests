@@ -83,7 +83,7 @@ def test_integer_attribute_beyond_int64_keys_its_cluster():
 
 
 @pytest.mark.parametrize("route", ["assign", "permutation"])
-def test_switchback_routes_decode_strings_as_java_does(route):
+def test_switchback_routes_accept_signed_ascii_decimals(route):
     index = "periodIndex" if route == "assign" else "cycleIndex"
     base = {"clusterUnit": "market_1", index: "0", "seed": "42", "armCount": 3}
     ok = requests.post(f"{URL}/switchback/{route}", json=dict(base, seed="+42"), timeout=10)
