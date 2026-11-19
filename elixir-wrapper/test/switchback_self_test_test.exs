@@ -386,4 +386,17 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     assert exposure["audienceMismatch"] == false
     call(:delete, "/context/#{id}")
   end
+
+  test "a repeated data member orders only the first, as Jason keeps it" do
+    body = ~s({"data":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]},"data":{"x":1}})
+    {:ok, decoded} = ElixirWrapper.OrderedJson.decode(body)
+
+    assert hd(decoded["data"]["experiments"])["switchbackClusters"] ==
+             %Jason.OrderedObject{values: [{"z", "1"}, {"a", "2"}]}
+  end
+
+  test "a data member without an experiments list decodes as plain JSON" do
+    body = ~s({"data":{"experiments":"x","foo":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}}})
+    assert ElixirWrapper.OrderedJson.decode(body) == Jason.decode(body)
+  end
 end
