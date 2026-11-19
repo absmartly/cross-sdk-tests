@@ -493,10 +493,10 @@ int main() {
                     return;
                 }
 
-                const nlohmann::ordered_json data = body.contains("data") ? body["data"] : nlohmann::ordered_json();
-                // Decoded once here, as before, so a payload the SDK cannot decode still fails at PUT.
-                payload_store::parse_context_data(data);
-                nlohmann::ordered_json stored = payload_store::store(data);
+                nlohmann::ordered_json stored = payload_store::store(
+                    body.contains("data") ? body["data"] : nlohmann::ordered_json());
+                // Validate at PUT so payloads the SDK cannot decode fail before storage.
+                stored.get<absmartly::ContextData>();
 
                 {
                     std::lock_guard<std::mutex> lock(payloads_mu);

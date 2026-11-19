@@ -41,6 +41,8 @@ done
 
 # shellcheck source=sdk-branches.sh
 source "$SCRIPT_DIR/sdk-branches.sh"
+# shellcheck source=sdk-checkout.sh
+source "$SCRIPT_DIR/sdk-checkout.sh"
 
 clone_or_update() {
   local repo="$1"
@@ -82,7 +84,7 @@ checkout_revision() {
   [ -d "$repo/.git" ] || git init -q "$repo"
   # origin as a clone would set it, so a later -b override can fetch a branch here.
   git -C "$repo" remote get-url origin >/dev/null 2>&1 || git -C "$repo" remote add origin "$url"
-  if ! git -C "$repo" fetch -q --depth 1 origin "$revision" || ! git -C "$repo" checkout -q FETCH_HEAD; then
+  if ! fetch_and_checkout_revision "$repo" origin "$revision"; then
     echo "  FAIL $repo: could not check out pinned revision $revision"
     return 1
   fi

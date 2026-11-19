@@ -346,9 +346,8 @@ inline bool check_context_serving() {
     return true;
 }
 
-// The R33 wire fields reach the SDK's fetch unchanged through the payload store (scenario 413's
-// explicit null among them): absent and null both admit every value, so serving alone cannot tell.
-inline bool check_wire_round_trip() {
+// A storage-level check; cpp-wrapper/test_payload_http.py covers the collector HTTP response.
+inline bool check_payload_storage() {
     auto payload = ordered_json::parse(probe_payload());
     payload["experiments"][0]["switchbackClusterValues"] = nullptr;
     payload["experiments"][0]["switchbackCarryoverDurationMs"] = 0;
@@ -356,7 +355,7 @@ inline bool check_wire_round_trip() {
     payload["experiments"][0]["switchbackBurnOutDurationMs"] = 0;
     const auto served = payload_store::store(payload).dump();
     if (served != payload.dump()) {
-        std::cout << PREFIX << " check wire round trip FAILED: stored " << payload.dump() << ", served " << served
+        std::cout << PREFIX << " check payload storage FAILED: stored " << payload.dump() << ", served " << served
                   << std::endl;
         return false;
     }
@@ -365,7 +364,7 @@ inline bool check_wire_round_trip() {
 
 inline bool run_safely() {
     try {
-        if (!check_decimal_parsing() || !check_golden_sample() || !check_wire_round_trip() ||
+        if (!check_decimal_parsing() || !check_golden_sample() || !check_payload_storage() ||
             !check_context_serving()) {
             return false;
         }
