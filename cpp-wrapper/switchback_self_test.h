@@ -4,9 +4,6 @@
 // Context on an R33 payload decoded from JSON text with nlohmann::ordered_json (the way scenario
 // payloads are decoded), so the cluster map's declared order is exercised too. The verdict comes
 // only from observed treatments, exposures and publish payloads.
-//
-// Compiled only against an SDK that has absmartly/switchback.h; without it the capability is
-// false (see server.cpp). Run once per process and cached. Fails closed: any exception is false.
 #pragma once
 
 #include <absmartly/context.h>
@@ -42,7 +39,7 @@ constexpr int64_t ANCHOR_PERIOD_0 = 1704067200000LL;
 // hash_unit("serving-9"): base64url-no-pad MD5, as published in PublishEvent.units.
 inline const char* SERVING_UNIT_HASH = "r5uxZRoi-JuM5yYJa0kmSQ";
 
-// Java Long.parseLong: one optional sign ('+' or '-') and ASCII digits, within int64.
+// Decimal int64 text with at most one leading sign, as Java Long.parseLong reads it (ASCII digits only).
 inline bool parse_exact_int64(const std::string& text, int64_t& out) {
     const char* first = text.data();
     const char* last = first + text.size();
@@ -388,4 +385,4 @@ inline bool switchback() {
     return result;
 }
 
-} // namespace switchback_self_test
+}

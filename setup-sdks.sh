@@ -80,7 +80,9 @@ checkout_revision() {
   local url="https://github.com/absmartly/${repo}.git"
 
   [ -d "$repo/.git" ] || git init -q "$repo"
-  if git -C "$repo" fetch -q --depth 1 "$url" "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
+  # origin as a clone would set it, so a later -b override can fetch a branch here.
+  git -C "$repo" remote get-url origin >/dev/null 2>&1 || git -C "$repo" remote add origin "$url"
+  if git -C "$repo" fetch -q --depth 1 origin "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
     echo "  PIN  $repo @ $revision"
   else
     echo "  FAIL $repo: could not check out pinned revision $revision"

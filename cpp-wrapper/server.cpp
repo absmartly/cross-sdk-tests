@@ -396,7 +396,6 @@ int main() {
                 bad_request("Invalid JSON");
                 return;
             }
-            // Java Long.parseLong: an optional sign ('+' or '-') and ASCII digits, within int64.
             const auto exact_int64 = [&body](const char* field, int64_t& out) {
                 return body.is_object() && body.contains(field) && body[field].is_string() &&
                        switchback_self_test::parse_exact_int64(body[field].get_ref<const std::string&>(), out);

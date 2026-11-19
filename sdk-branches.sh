@@ -40,8 +40,6 @@ declare -A SDK_BRANCHES=(
   ["vue3-sdk"]="fix/jest-config-vue3"
 )
 
-# Exact commits for lanes whose branch is still moving. When set, the lane checks out this commit
-# of its branch instead of the branch tip.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="a0d70df7f148c81d10a4c797954f54542399f265"
 )
