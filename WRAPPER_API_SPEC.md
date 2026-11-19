@@ -1379,9 +1379,8 @@ Both endpoints are pure functions with no context. Request rules:
   sent as their decimal string.
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2`) returns 400 with `{"error": "...", "events": []}`, the error
-  envelope of every other endpoint (the runner treats a missing `events` on
-  these context-free routes as empty). A wrapper whose SDK lacks the function
-  returns 501.
+  envelope of every other endpoint. A wrapper whose SDK lacks the function
+  returns 501 with the same envelope.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob
