@@ -156,7 +156,7 @@ static std::map<std::string, std::shared_ptr<ContextEntry>> contexts;
 static std::atomic<int> context_counter{0};
 
 static std::mutex payloads_mu;
-static std::map<std::string, payload_store::StoredPayload> payload_store_map;
+static std::map<std::string, nlohmann::ordered_json> payload_store_map;
 
 static std::mutex captured_mu;
 static std::map<std::string, json> captured_requests;
@@ -308,7 +308,7 @@ static json make_error_response(const std::string& error,
     return json{{"error", error}, {"events", events_to_json(window_events())}};
 }
 
-static std::optional<payload_store::StoredPayload> find_payload(const std::string& id) {
+static std::optional<nlohmann::ordered_json> find_payload(const std::string& id) {
     std::lock_guard<std::mutex> lock(payloads_mu);
     auto it = payload_store_map.find(id);
     if (it == payload_store_map.end()) {
@@ -382,7 +382,6 @@ int main() {
                 res.set_content(resp.dump(), "application/json");
             });
 
-    // POST /switchback/assign and /switchback/permutation: the SDK's own switchback draw.
     // 64-bit fields are exact decimal strings; the cluster unit is passed through unchanged.
     const auto switchback_endpoint = [](bool permutation) {
         return [permutation](const httplib::Request& req, httplib::Response& res) {
@@ -399,14 +398,8 @@ int main() {
             }
             // Java Long.parseLong: an optional sign ('+' or '-') and ASCII digits, within int64.
             const auto exact_int64 = [&body](const char* field, int64_t& out) {
-                if (!body.is_object() || !body.contains(field) || !body[field].is_string()) return false;
-                const auto& text = body[field].get_ref<const std::string&>();
-                const char* first = text.data();
-                const char* last = first + text.size();
-                if (first != last && *first == '+') ++first;
-                if (first == last || *first == '+') return false;
-                const auto [ptr, ec] = std::from_chars(first, last, out);
-                return ec == std::errc{} && ptr == last;
+                return body.is_object() && body.contains(field) && body[field].is_string() &&
+                       switchback_self_test::parse_exact_int64(body[field].get_ref<const std::string&>(), out);
             };
             const char* index_field = permutation ? "cycleIndex" : "periodIndex";
             int64_t index = 0;
@@ -502,7 +495,10 @@ int main() {
                     return;
                 }
 
-                payload_store::StoredPayload stored = payload_store::store(body.contains("data") ? body["data"] : nlohmann::ordered_json());
+                const nlohmann::ordered_json data = body.contains("data") ? body["data"] : nlohmann::ordered_json();
+                // Decoded once here, as before, so a payload the SDK cannot decode still fails at PUT.
+                payload_store::parse_context_data(data);
+                nlohmann::ordered_json stored = payload_store::store(data);
 
                 {
                     std::lock_guard<std::mutex> lock(payloads_mu);
@@ -522,13 +518,13 @@ int main() {
                         std::this_thread::sleep_for(std::chrono::milliseconds(throttle));
                     }
                 }
-                std::optional<payload_store::StoredPayload> stored = find_payload(payload_id);
+                std::optional<nlohmann::ordered_json> stored = find_payload(payload_id);
                 if (!stored) {
                     res.status = 404;
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                res.set_content(stored->wire.dump(), "application/json");
+                res.set_content(stored->dump(), "application/json");
             });
 
     // Mock collector `GET {endpoint}/context`, fetched by the SDK's Client. An
@@ -538,13 +534,13 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
                 capture_request(payload_id, req);
-                std::optional<payload_store::StoredPayload> stored = find_payload(payload_id);
+                std::optional<nlohmann::ordered_json> stored = find_payload(payload_id);
                 if (!stored) {
                     res.status = 404;
                     res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
                     return;
                 }
-                res.set_content(stored->wire.dump(), "application/json");
+                res.set_content(stored->dump(), "application/json");
             });
 
     svr.Post("/context",

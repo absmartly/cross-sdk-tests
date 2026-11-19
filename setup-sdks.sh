@@ -73,20 +73,28 @@ echo "Working directory: $(pwd)"
 echo ""
 
 FAILED=()
+# A pinned revision is fetched by SHA, as CI does, so it works even once its branch is gone.
+checkout_revision() {
+  local repo="$1"
+  local revision="$2"
+  local url="https://github.com/absmartly/${repo}.git"
+
+  [ -d "$repo/.git" ] || git init -q "$repo"
+  if git -C "$repo" fetch -q --depth 1 "$url" "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
+    echo "  PIN  $repo @ $revision"
+  else
+    echo "  FAIL $repo: could not check out pinned revision $revision"
+    return 1
+  fi
+}
+
 for repo in $(echo "${!SDK_BRANCHES[@]}" | tr ' ' '\n' | sort); do
   branch="${BRANCH_OVERRIDE:-${SDK_BRANCHES[$repo]}}"
-  if ! clone_or_update "$repo" "$branch"; then
-    FAILED+=("$repo")
-    continue
-  fi
   revision="${SDK_REVISIONS[$repo]:-}"
   if [ -z "$BRANCH_OVERRIDE" ] && [ -n "$revision" ]; then
-    if git -C "$repo" fetch -q --depth 1 origin "$revision" && git -C "$repo" checkout -q FETCH_HEAD; then
-      echo "  PIN  $repo @ $revision"
-    else
-      echo "  FAIL $repo: could not check out pinned revision $revision"
-      FAILED+=("$repo")
-    fi
+    checkout_revision "$repo" "$revision" || FAILED+=("$repo")
+  elif ! clone_or_update "$repo" "$branch"; then
+    FAILED+=("$repo")
   fi
 done
 

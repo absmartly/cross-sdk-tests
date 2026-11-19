@@ -19,8 +19,11 @@
 
 #include "payload_store.h"
 
+#include <charconv>
+#include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,6 +41,34 @@ constexpr int64_t ANCHOR_PERIOD_0 = 1704067200000LL;
 
 // hash_unit("serving-9"): base64url-no-pad MD5, as published in PublishEvent.units.
 inline const char* SERVING_UNIT_HASH = "r5uxZRoi-JuM5yYJa0kmSQ";
+
+// Java Long.parseLong: one optional sign ('+' or '-') and ASCII digits, within int64.
+inline bool parse_exact_int64(const std::string& text, int64_t& out) {
+    const char* first = text.data();
+    const char* last = first + text.size();
+    if (first != last && *first == '+') ++first;
+    if (first == last || *first == '+' || (first != text.data() && *first == '-')) return false;
+    const auto [ptr, ec] = std::from_chars(first, last, out);
+    return ec == std::errc{} && ptr == last;
+}
+
+inline bool check_decimal_parsing() {
+    const std::pair<const char*, std::optional<int64_t>> cases[] = {
+        {"1", 1}, {"+1", 1}, {"-1", -1}, {"0", 0}, {"+9223372036854775807", INT64_MAX},
+        {"-9223372036854775808", INT64_MIN}, {"", std::nullopt}, {"+", std::nullopt}, {"-", std::nullopt},
+        {"++1", std::nullopt}, {"+-1", std::nullopt}, {"-+1", std::nullopt}, {"--1", std::nullopt},
+        {" 1", std::nullopt}, {"1.0", std::nullopt}, {"9223372036854775808", std::nullopt},
+    };
+    for (const auto& [text, expected] : cases) {
+        int64_t value = 0;
+        const bool ok = parse_exact_int64(text, value);
+        if (ok != expected.has_value() || (ok && value != *expected)) {
+            std::cout << PREFIX << " decimal parsing FAILED for \"" << text << "\"" << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
 
 struct AssignCase {
     const char* unit;
@@ -185,7 +216,6 @@ public:
     std::vector<json> exposures;
 };
 
-// The exposure fields that reach the wire, apart from exposedAt.
 inline json served(int id, const std::string& name, const std::string& unit_type, int variant) {
     return {{"id", id},           {"name", name},       {"unit", unit_type},   {"variant", variant},
             {"assigned", true},   {"eligible", true},   {"overridden", false}, {"fullOn", false},
@@ -276,8 +306,6 @@ inline bool check_context_serving() {
         expect(context, *log, "float value", "sb_float_value", 0, {});
     if (!serving) return false;
 
-    // Payload shape: a unit baseline and then a switchback on the same unit, each published on
-    // its own, with the same fields at every depth.
     context.publish();
     context.treatment("sb_unit_baseline");
     const auto baseline = context.publish();
@@ -295,7 +323,6 @@ inline bool check_context_serving() {
         return false;
     }
 
-    // A unit experiment carrying every R33 field is served and published like the baseline.
     if (context.treatment("sb_unit_with_fields") != 1) {
         std::cout << PREFIX << " check unit inertness FAILED: sb_unit_with_fields did not serve 1" << std::endl;
         return false;
@@ -330,7 +357,7 @@ inline bool check_wire_round_trip() {
     payload["experiments"][0]["switchbackCarryoverDurationMs"] = 0;
     payload["experiments"][0]["switchbackBurnInDurationMs"] = 0;
     payload["experiments"][0]["switchbackBurnOutDurationMs"] = 0;
-    const auto served = payload_store::store(payload).wire.dump();
+    const auto served = payload_store::store(payload).dump();
     if (served != payload.dump()) {
         std::cout << PREFIX << " check wire round trip FAILED: stored " << payload.dump() << ", served " << served
                   << std::endl;
@@ -341,7 +368,10 @@ inline bool check_wire_round_trip() {
 
 inline bool run_safely() {
     try {
-        if (!check_golden_sample() || !check_wire_round_trip() || !check_context_serving()) return false;
+        if (!check_decimal_parsing() || !check_golden_sample() || !check_wire_round_trip() ||
+            !check_context_serving()) {
+            return false;
+        }
         std::cout << PREFIX << " behavioral self-test PASSED" << std::endl;
         return true;
     } catch (const std::exception& e) {

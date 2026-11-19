@@ -1,6 +1,5 @@
-// Scenario payloads as the wrapper stores them: decoded with the SDK's own ContextData from_json
-// for contexts built in-process, and kept as received for the mock collector, so every wire field
-// (an explicit null included) reaches the SDK's own fetch unchanged.
+// Scenario payloads: decoded with the SDK's own ContextData from_json for contexts built
+// in-process, and stored as received for the mock collector.
 #pragma once
 
 #include <absmartly/models.h>
@@ -21,20 +20,13 @@ inline absmartly::ContextData parse_context_data(const nlohmann::ordered_json& j
     return payload.get<absmartly::ContextData>();
 }
 
-struct StoredPayload {
-    absmartly::ContextData data;
-    nlohmann::ordered_json wire;
-};
-
-inline StoredPayload store(const nlohmann::ordered_json& data) {
-    StoredPayload stored;
-    stored.data = parse_context_data(data);
-    stored.wire = stored.data;
-    if (data.is_object()) {
-        stored.wire = data;
-        if (!stored.wire.contains("experiments") || !stored.wire["experiments"].is_array()) {
-            stored.wire["experiments"] = nlohmann::ordered_json::array();
-        }
+// The payload the mock collector serves: the JSON as received, with a missing or non-array
+// experiments list normalised to [], so every wire field (an explicit null included) reaches the
+// SDK's own fetch unchanged.
+inline nlohmann::ordered_json store(const nlohmann::ordered_json& data) {
+    nlohmann::ordered_json stored = data.is_object() ? data : nlohmann::ordered_json::object();
+    if (!stored.contains("experiments") || !stored["experiments"].is_array()) {
+        stored["experiments"] = nlohmann::ordered_json::array();
     }
     return stored;
 }
