@@ -28,6 +28,11 @@ GET /health
 }
 ```
 
+A wrapper may add `sdkCommit`, the git commit of the SDK checkout it was built
+from (null when the tree was modified). The java-wrapper reports it, and
+`generate_shared_variable_key_scenarios.py` refuses to record from a wrapper
+whose `sdkCommit` is not its pinned `JAVA_SDK_COMMIT`.
+
 ### 2. Create Context
 
 There are two modes for creating a context:

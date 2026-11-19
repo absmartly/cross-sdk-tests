@@ -3,7 +3,8 @@
 
 When two or more experiments define the same variable key, variableValue / peekVariableValue must
 pick the experiment the java-sdk reference picks (core-api Context.getVariableAssignment; the
-javascript-sdk ports the same rule):
+javascript-sdk returns the same values but exposes every candidate it visits and falls through past
+a winner whose variant lacks the key, so it is a reviewed exception):
 
   * candidates are the experiments whose variants define the key, visited in ascending experiment id
     (not payload order);

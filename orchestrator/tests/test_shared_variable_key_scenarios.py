@@ -150,6 +150,12 @@ class RecordingProvenanceTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 generator.ensure_reference_checkout()
 
+    def test_a_dirty_checkout_at_the_pin_is_refused(self):
+        runs = [completed(generator.JAVA_SDK_COMMIT + "\n"), completed(" M core-api/Context.java\n")]
+        with mock.patch.object(generator.subprocess, "run", side_effect=runs):
+            with self.assertRaises(SystemExit):
+                generator.ensure_reference_checkout()
+
     def test_a_clean_checkout_at_the_pin_is_accepted(self):
         runs = [completed(generator.JAVA_SDK_COMMIT + "\n"), completed("")]
         with mock.patch.object(generator.subprocess, "run", side_effect=runs):
@@ -169,6 +175,44 @@ class RecordingProvenanceTest(unittest.TestCase):
         with self.health({"sdkCommit": generator.JAVA_SDK_COMMIT}):
             generator.ensure_reference_wrapper("http://wrapper.invalid")
 
+    def test_build_group_checks_provenance_before_recording(self):
+        for guard in ("ensure_reference_checkout", "ensure_reference_wrapper"):
+            with self.subTest(guard=guard), \
+                    mock.patch.object(generator, "ensure_reference_checkout"), \
+                    mock.patch.object(generator, "ensure_reference_wrapper"), \
+                    mock.patch.object(generator, "record") as record:
+                getattr(generator, guard).side_effect = SystemExit("refused")
+                with self.assertRaises(SystemExit):
+                    generator.build_group("http://wrapper.invalid")
+                record.assert_not_called()
+
+    def test_build_group_refuses_a_recording_the_model_does_not_reproduce(self):
+        with open(SCENARIOS_PATH, encoding="utf-8") as f:
+            recorded = {s["name"].split(generator.GROUP_MARKER, 1)[1]: s["steps"]
+                        for s in generator.group_of(json.load(f))}
+
+        def tampered(spec, base_url):
+            steps = json.loads(json.dumps(recorded[spec["title"]]))
+            if spec["title"].startswith("Strict Audience Mismatch On The Only Candidate"):
+                read = next(st for st in steps if st["action"] == "variableValue")
+                read["expect"]["result"] = "Search food"   # the 1.4.0 leak
+            return steps
+
+        with mock.patch.object(generator, "ensure_reference_checkout"), \
+                mock.patch.object(generator, "ensure_reference_wrapper"), \
+                mock.patch.object(generator, "record", side_effect=tampered):
+            with self.assertRaises(SystemExit):
+                generator.build_group("http://wrapper.invalid")
+
+    def test_build_group_accepts_the_checked_in_recording(self):
+        with open(SCENARIOS_PATH, encoding="utf-8") as f:
+            group = generator.group_of(json.load(f))
+        recorded = {s["name"].split(generator.GROUP_MARKER, 1)[1]: s["steps"] for s in group}
+        with mock.patch.object(generator, "ensure_reference_checkout"), \
+                mock.patch.object(generator, "ensure_reference_wrapper"), \
+                mock.patch.object(generator, "record", side_effect=lambda spec, _: recorded[spec["title"]]):
+            self.assertEqual(generator.build_group("http://wrapper.invalid"), group)
+
 
 class SdkCommitPinTest(unittest.TestCase):
     """The stacked dotnet-sdk dependency is pinned to an immutable head, and both CI and local setup
@@ -186,12 +230,24 @@ class SdkCommitPinTest(unittest.TestCase):
         for repo, sha in pins.items():
             self.assertRegex(sha, r"^[0-9a-f]{40}$", repo)
 
+    def pin_block(self, text, guard):
+        """The lines of the `if <guard>; then ... fi` block, stripped, or None."""
+        match = re.search(r"^\s*if " + re.escape(guard) + r"; then\n(.*?)^\s*fi$", text, re.S | re.M)
+        return [line.strip() for line in match.group(1).splitlines()] if match else None
+
     def test_ci_and_local_setup_check_the_pin_out(self):
-        for path in ((".github", "workflows", "cross-sdk.yml"), ("setup-sdks.sh",)):
-            text = self.read(*path)
+        expected = {
+            (".github", "workflows", "cross-sdk.yml"): ('[ -n "${SDK_COMMITS[$repo]:-}" ]', [
+                'git -C "$repo" fetch --depth 1 origin "${SDK_COMMITS[$repo]}"',
+                'git -C "$repo" checkout --detach "${SDK_COMMITS[$repo]}"']),
+            ("setup-sdks.sh",): ('[ -z "$BRANCH_OVERRIDE" ] && [ -n "${SDK_COMMITS[$repo]:-}" ]', [
+                'git -C "$repo" fetch --depth 1 origin "${SDK_COMMITS[$repo]}" || return 1',
+                'git -C "$repo" checkout --detach "${SDK_COMMITS[$repo]}" || return 1',
+                'echo "  PIN $repo (${SDK_COMMITS[$repo]})"']),
+        }
+        for path, (guard, body) in expected.items():
             with self.subTest(path="/".join(path)):
-                self.assertIn('fetch --depth 1 origin "${SDK_COMMITS[$repo]}"', text)
-                self.assertIn('checkout --detach "${SDK_COMMITS[$repo]}"', text)
+                self.assertEqual(self.pin_block(self.read(*path), guard), body)
 
 
 if __name__ == "__main__":
