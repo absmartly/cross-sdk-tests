@@ -14,14 +14,17 @@ javascript-sdk ports the same rule):
   * otherwise there is no winner: the default is returned and no exposure is queued.
 
 A candidate that is not assigned (a strict audience mismatch, no unit for its unit type, a custom
-assignment on a strict mismatch, an ineligible switchback) must never leak its control value. That
+assignment on a strict mismatch, a switchback with no linked unit) must never leak its control
+value. A switchback whose linked unit is present but has no cluster value is an ineligible cluster:
+the reference records it as assigned (eligible=false), so it wins with control and is never exposed. That
 is the dotnet-sdk 1.4.0 bug this group was written for: its fallback returned the first candidate's
 assignment whenever nothing was assigned. A unit outside the traffic split IS assigned in the
 reference (eligible=false, control variant), so it wins and is exposed.
 
 Expected results are recorded from the java-sdk reference through its cross-sdk wrapper (the
 java-wrapper image built from the sibling ../java-sdk checkout at JAVA_SDK_COMMIT), never written by
-hand. Recording drives the wrapper exactly like the orchestrator (payload endpoint, createContext,
+hand. The wrapper reports the java-sdk commit it was built from (`sdkCommit` on GET /health), and
+recording refuses a wrapper built from any other commit or from a modified tree. Recording drives the wrapper exactly like the orchestrator (payload endpoint, createContext,
 steps); exposure data drops exposedAt; ruleOverride is retained for rule probes and omitted
 for ordinary probes (SDKs without rules omit the field), and ready/refresh events are projected to experiment id/name.
 
@@ -448,6 +451,20 @@ def specs():
         "the rule-won experiment is exposed, once; peek queues nothing.",
         [rule_first, rule_second],
         [ie] + READS, requires=["assignmentRules"]))
+    # Two held-out candidates, the higher id first in the payload: the lower id's control wins.
+    held_low = experiment(232, "exp_held_out_low", ["held-low-control", "held-low-treatment"],
+                          key="held.shared.key", holdout_ids=[9])
+    held_high = experiment(233, "exp_held_out_high", ["held-high-control", "held-high-treatment"],
+                           key="held.shared.key", holdout_ids=[9])
+    out.append(spec(
+        "Two Holdout-Suppressed Candidates - The Lower Id Serves Its Control Value",
+        "Experiments 232 and 233 are both held out and nothing else is assigned; the payload lists "
+        "233 first. The key returns 232's control value (the first suppressed candidate by id, not "
+        "the last and not the first in the payload). variableValue fires only the holdout's "
+        "exposure; peekVariableValue queues nothing.",
+        [held_high, held_low],
+        [peek_value("held.shared.key"), value("held.shared.key"), value("held.shared.key"), PENDING],
+        holdouts=[holdout(9, "holdout_shared_key")], requires=[HOLDOUTS]))
     return out
 
 
@@ -461,10 +478,26 @@ def ensure_reference_checkout():
     if head != JAVA_SDK_COMMIT:
         raise SystemExit(f"java-sdk checkout {JAVA_SDK_PATH} is at {head or '?'}, not {JAVA_SDK_COMMIT}; "
                          "check it out and rebuild the java-wrapper image from it")
-    dirty = subprocess.run(["git", "-C", JAVA_SDK_PATH, "status", "--porcelain"],
-                           capture_output=True, text=True, check=False).stdout.strip()
+    status = subprocess.run(["git", "-C", JAVA_SDK_PATH, "status", "--porcelain"],
+                            capture_output=True, text=True, check=False)
+    if status.returncode != 0:
+        raise SystemExit(f"git status failed in {JAVA_SDK_PATH}: {status.stderr.strip()}")
+    dirty = status.stdout.strip()
     if dirty:
         raise SystemExit(f"java-sdk checkout has uncommitted changes:\n{dirty}")
+
+
+def ensure_reference_wrapper(base_url):
+    """The running wrapper must have been built from JAVA_SDK_COMMIT, from a clean tree: a clean
+    checkout alone does not prove which revision the wrapper at --java-url runs."""
+    import requests
+
+    health = requests.get(f"{base_url}/health", timeout=5)
+    health.raise_for_status()
+    built = health.json().get("sdkCommit")
+    if built != JAVA_SDK_COMMIT:
+        raise SystemExit(f"java-wrapper at {base_url} reports java-sdk {built or 'unknown'}, not "
+                         f"{JAVA_SDK_COMMIT}; rebuild it from the pinned checkout")
 
 
 def project_event(event, include_rule_override=False):
@@ -514,6 +547,7 @@ def record(s, base_url):
 
 def build_group(base_url):
     ensure_reference_checkout()
+    ensure_reference_wrapper(base_url)
     group = []
     for i, s in enumerate(specs()):
         context_data = {"experiments": s["experiments"]}
@@ -554,6 +588,7 @@ MUTANTS = (
     "full_on_ignored",             # fullOnVariant ignored (the split variant is served)
     "no_suppressed_fallback",      # a held-out candidate never serves control
     "suppressed_beats_assigned",   # a held-out candidate wins over a later assigned one
+    "last_suppressed",             # the last held-out candidate serves control, not the first
     "switchback_as_unit",          # a switchback is resolved like a unit experiment
     "null_is_default",             # a JSON null variable value returns the default
     "peek_exposes",                # peekVariableValue queues an exposure
@@ -614,7 +649,8 @@ class ReferenceModel:
             return (self.overrides[name], False, True, True, False, False, False, False, True)
         if exp.get("assignmentRules"):
             rules = json.loads(exp["assignmentRules"])["rules"]
-            if len(rules) != 1 or rules[0]["type"] != "assign":
+            if (len(rules) != 1 or rules[0].get("type") != "assign"
+                    or set(rules[0]) - {"name", "type", "variant"}):
                 raise ValueError(f"{name}: only a single unconditional assign rule is modelled")
             # Like an explicit override, a rule win is not an ordinary assignment.
             return (rules[0]["variant"], False, True, False, False, False, False, False, True)
@@ -678,7 +714,7 @@ class ReferenceModel:
             if is_suppressed:
                 if self.mutant == "suppressed_beats_assigned":
                     return exp, entry
-                if suppressed is None:
+                if suppressed is None or self.mutant == "last_suppressed":
                     suppressed = (exp, entry)
         if suppressed is not None and self.mutant != "no_suppressed_fallback":
             return suppressed

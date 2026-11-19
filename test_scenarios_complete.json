@@ -42985,6 +42985,229 @@
     ]
   },
   {
+    "name": "366 - Shared Variable Key - Two Holdout-Suppressed Candidates - The Lower Id Serves Its Control Value",
+    "description": "Experiments 232 and 233 are both held out and nothing else is assigned; the payload lists 233 first. The key returns 232's control value (the first suppressed candidate by id, not the last and not the first in the payload). variableValue fires only the holdout's exposure; peekVariableValue queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 233,
+          "name": "exp_held_out_high",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"held.shared.key\":\"held-high-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"held.shared.key\":\"held-high-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        },
+        {
+          "id": 232,
+          "name": "exp_held_out_low",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"held.shared.key\":\"held-low-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"held.shared.key\":\"held-low-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 233,
+                    "name": "exp_held_out_high"
+                  },
+                  {
+                    "id": 232,
+                    "name": "exp_held_out_low"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 9,
+                "name": "holdout_shared_key",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
     "name": "400 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
     "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {

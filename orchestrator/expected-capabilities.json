@@ -35,7 +35,7 @@
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
     "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)",
-    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-365): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; only the winner is exposed"
+    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-366): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; only the winner is exposed"
   },
   "sdks": {
     "javascript": {

@@ -1,4 +1,4 @@
-"""Shared Variable Key group of test_scenarios_complete.json (340-365,
+"""Shared Variable Key group of test_scenarios_complete.json (340-366,
 generate_shared_variable_key_scenarios.py).
 
 The expectations are recorded from the java-sdk reference through its wrapper, which CI cannot run
@@ -27,9 +27,9 @@ sys.path.insert(0, REPO_ROOT)
 import generate_shared_variable_key_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 
-FIRST, LAST = 340, 365
+FIRST, LAST = 340, 366
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True).
-GROUP_DIGEST = "6ffa1714fa649057e0c02c465462a97288fe21b09e96371e31b18b8ad5639c7e"
+GROUP_DIGEST = "e4007abf12dcc5c642aa7a577d8a531ebb581e50cd85d8938b493327187b53c0"
 
 
 def digest(scenarios):
