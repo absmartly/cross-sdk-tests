@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:absmartly_sdk/absmartly_sdk.dart';
+import 'package:absmartly_sdk/absmartly.dart';
 
 enum WidgetTestRequestType {
   treatment,
