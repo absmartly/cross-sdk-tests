@@ -24,6 +24,8 @@ RUN cd /build/java-sdk && ./gradlew :core-api:jar :core-api:generatePomFileForRe
     echo "$CORE_API_VERSION" > /root/.m2/core-api.version
 # The java-sdk commit, reported by GET /health; empty when the tree is modified, git status fails
 # or it is not a git checkout, so a recording cannot claim a pinned commit it was not built from.
+# A linked worktree (SDK_SOURCE_DIR) copies only its .git pointer, not the metadata it refers to,
+# so it reports no commit: record shared-variable-key scenarios from a standalone clone.
 RUN cd /build/java-sdk && \
     if head=$(git rev-parse HEAD 2>/dev/null) && status=$(git status --porcelain 2>/dev/null) \
         && [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt

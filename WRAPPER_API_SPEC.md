@@ -1454,9 +1454,11 @@ shared by several experiments as java-sdk's `Context.getVariableAssignment`:
 candidates in ascending experiment id; the first assigned, overridden or
 rule-won candidate wins (even if its selected variant lacks the key, which then
 gives the default); otherwise the first holdout-suppressed candidate's control
-value; otherwise the default with no exposure. Only the winning experiment is
-exposed. A constant `true` is allowed for the SDKs that require it; scenarios
-340-367 verify it.
+value; otherwise the default with no exposure. `variableValue` exposes at most
+one experiment, the selected one; it also fires the applicable holdouts'
+exposures for the candidates it visits (a held-out candidate never exposes
+itself). `peekVariableValue` exposes nothing. A constant `true` is allowed for
+the SDKs that require it; scenarios 340-368 verify it.
 
 ### Capability: `singleFinalizeEvent`
 

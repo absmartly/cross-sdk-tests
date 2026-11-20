@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **333 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **334 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -154,7 +154,7 @@ across languages.
   (332 also `requires: semverNumericOperands`). With the parity pins in `sdk-branches.sh` every SDK requires the rules
   and semver capabilities.
 
-  Scenarios 340-367 (Shared Variable Key, `requires: sharedVariableKeys`) pin
+  Scenarios 340-368 (Shared Variable Key, `requires: sharedVariableKeys`) pin
   how `variableValue` and `peekVariableValue` pick an experiment when several
   define the same key, as java-sdk's `Context.getVariableAssignment`: candidates
   in ascending experiment id (not payload order); the first assigned, overridden
@@ -169,7 +169,7 @@ across languages.
   agreeing with `treatment`/`variableKeys`, re-evaluation after `setAttribute`,
   a refresh removing the winner and a JSON `null` value. Expectations are
   recorded from the java-sdk wrapper by `generate_shared_variable_key_scenarios.py`
-  and replayed in CI against a Python model and 18 wrong models
+  and replayed in CI against a Python model and 19 wrong models
   (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
   the per-mutant kill counts locally).
   java, kotlin, dart, flutter and dotnet (pinned to dotnet-sdk 1.4.1's branch)
@@ -324,7 +324,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 333-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 334-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -348,9 +348,9 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 333 scenarios
+├── test_scenarios_complete.json  # 334 scenarios
 ├── generate_shared_variable_key_scenarios.py  # records the Shared Variable
-│                                 #   Key group (340-367) from java-sdk;
+│                                 #   Key group (340-368) from java-sdk;
 │                                 #   --replay checks it without Docker
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (400-425) in place; --check verifies

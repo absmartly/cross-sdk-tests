@@ -43169,7 +43169,191 @@
     ]
   },
   {
-    "name": "367 - Shared Variable Key - Two Holdout-Suppressed Candidates - The Lower Id Serves Its Control Value",
+    "name": "367 - Shared Variable Key - A Covered Full-On Candidate Without Its Unit Is Not Held Out",
+    "description": "Experiment 235 is full-on variant 1 and covered by holdout 9, but its unit type (user_id) has no unit in the context. The holdout places the unit with the covered experiment's unit type, so with no such unit nothing is held out: 235 is assigned its full-on value and exposed, and the holdout is not. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 235,
+          "name": "exp_covered_full_on_no_unit",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"covered.no.unit.key\":\"cfn-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"covered.no.unit.key\":\"cfn-full-on\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"covered.no.unit.key\":\"cfn-split\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 235,
+                    "name": "exp_covered_full_on_no_unit"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 235,
+                "name": "exp_covered_full_on_no_unit",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "368 - Shared Variable Key - Two Holdout-Suppressed Candidates - The Lower Id Serves Its Control Value",
     "description": "Experiments 232 and 233 are both held out and nothing else is assigned; the payload lists 233 first. The key returns 232's control value (the first suppressed candidate by id, not the last and not the first in the payload). variableValue fires only the holdout's exposure; peekVariableValue queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
     "requires": [
       "sharedVariableKeys",

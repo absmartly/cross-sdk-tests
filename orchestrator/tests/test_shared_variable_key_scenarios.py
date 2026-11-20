@@ -1,4 +1,4 @@
-"""Shared Variable Key group of test_scenarios_complete.json (340-367,
+"""Shared Variable Key group of test_scenarios_complete.json (340-368,
 generate_shared_variable_key_scenarios.py).
 
 The expectations are recorded from the java-sdk reference through its wrapper, which CI cannot run
@@ -29,9 +29,9 @@ sys.path.insert(0, REPO_ROOT)
 import generate_shared_variable_key_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 
-FIRST, LAST = 340, 367
+FIRST, LAST = 340, 368
 # sha256 of json.dumps([group scenarios in file order], sort_keys=True).
-GROUP_DIGEST = "b97cb9de9b92c945bf609513eb90316f69be6ea7a986c1347755cf4e2cf401bf"
+GROUP_DIGEST = "e7b5cc414d5c18bed2fc325988a9d0a92980d4404da057fd8c81377f2beac294"
 
 
 def digest(scenarios):
@@ -107,7 +107,7 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
             generator.observed(scenario)
 
     def test_the_wrong_models_are_the_documented_set(self):
-        self.assertEqual(len(generator.MUTANTS), 18)
+        self.assertEqual(len(generator.MUTANTS), 19)
         self.assertEqual(len(set(generator.MUTANTS)), len(generator.MUTANTS))
         self.assertIn("full_on_escapes_holdout", generator.MUTANTS)
         self.assertIn("ignore_rule_override", generator.MUTANTS)

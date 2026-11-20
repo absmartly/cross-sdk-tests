@@ -2,9 +2,10 @@
 """Generate the Shared Variable Key group of test_scenarios_complete.json (340+).
 
 When two or more experiments define the same variable key, variableValue / peekVariableValue must
-pick the experiment the java-sdk reference picks (core-api Context.getVariableAssignment; the
-javascript-sdk returns the same values but exposes every candidate it visits and falls through past
-a winner whose variant lacks the key, so it is a reviewed exception):
+pick the experiment the java-sdk reference picks (core-api Context.getVariableAssignment). The
+javascript-sdk exposes every candidate it visits and falls through past a winner whose variant lacks
+the key, so where that winner returns the default (scenario 351) it returns a later candidate's
+value; it is a reviewed exception):
 
   * candidates are the experiments whose variants define the key, visited in ascending experiment id
     (not payload order);
@@ -33,6 +34,9 @@ The recorded group is then replayed against an independent Python model of the r
 and against wrong models (MUTANTS) of the bug class: generation fails unless the model reproduces
 every recorded read and exposure and every mutant fails at least one scenario. The same replay runs
 in CI without Docker (orchestrator/tests/test_shared_variable_key_scenarios.py).
+
+Record from a standalone java-sdk clone: a linked worktree built through SDK_SOURCE_DIR has no
+usable git metadata in the image, so its wrapper reports no sdkCommit and recording is refused.
 
 Usage:
     docker compose up -d java-sdk          # java-wrapper built from ../java-sdk at JAVA_SDK_COMMIT
@@ -464,6 +468,21 @@ def specs():
         [peek_value("held.full.on.key"), value("held.full.on.key"), value("held.full.on.key"), PENDING],
         holdouts=[holdout(9, "holdout_shared_key")], requires=[HOLDOUTS]))
 
+    # The same covered full-on experiment, but the context has no unit of its unit type.
+    no_unit_full_on = experiment(235, "exp_covered_full_on_no_unit", ["cfn-control", "cfn-full-on", "cfn-split"],
+                                 key="covered.no.unit.key", unit_type=OTHER_UNIT_TYPE, full_on=1,
+                                 holdout_ids=[9])
+    out.append(spec(
+        "A Covered Full-On Candidate Without Its Unit Is Not Held Out",
+        "Experiment 235 is full-on variant 1 and covered by holdout 9, but its unit type (user_id) "
+        "has no unit in the context. The holdout places the unit with the covered experiment's unit "
+        "type, so with no such unit nothing is held out: 235 is assigned its full-on value and "
+        "exposed, and the holdout is not.",
+        [no_unit_full_on],
+        [peek_value("covered.no.unit.key"), value("covered.no.unit.key"), value("covered.no.unit.key"),
+         PENDING],
+        holdouts=[holdout(9, "holdout_shared_key")], requires=[HOLDOUTS]))
+
     # Two held-out candidates, the higher id first in the payload: the lower id's control wins.
     held_low = experiment(232, "exp_held_out_low", ["held-low-control", "held-low-treatment"],
                           key="held.shared.key", holdout_ids=[9])
@@ -603,6 +622,7 @@ MUTANTS = (
     "suppressed_beats_assigned",   # a held-out candidate wins over a later assigned one
     "last_suppressed",             # the last held-out candidate serves control, not the first
     "full_on_escapes_holdout",     # a full-on experiment is not held out by holdout arm 0
+    "holdout_without_unit",        # a holdout holds an experiment out though the unit lacks its type
     "switchback_as_unit",          # a switchback is resolved like a unit experiment
     "null_is_default",             # a JSON null variable value returns the default
     "peek_exposes",                # peekVariableValue queues an exposure
@@ -675,7 +695,10 @@ class ReferenceModel:
             linked = next(iter(exp["switchbackClusters"]))
             return (0, linked in self.units, False, False, False, False, False, False, False)
         suppressed = False
-        for holdout_id in exp.get("holdoutIds") or []:
+        # A holdout places the unit with the covered experiment's unit type: with no such unit there
+        # is no holdout arm, so nothing is held out (java-sdk getHoldoutAssignment).
+        has_unit = exp["unitType"] in self.units or m == "holdout_without_unit"
+        for holdout_id in (exp.get("holdoutIds") or []) if has_unit else []:
             holdout = self.holdouts.get(holdout_id)
             if holdout is None:
                 continue
