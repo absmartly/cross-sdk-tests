@@ -170,7 +170,8 @@ across languages.
   a refresh removing the winner and a JSON `null` value. Expectations are
   recorded from the java-sdk wrapper by `generate_shared_variable_key_scenarios.py`
   and replayed in CI against a Python model and 18 wrong models
-  (`--replay`, `orchestrator/tests/test_shared_variable_key_scenarios.py`).
+  (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
+  the per-mutant kill counts locally).
   java, kotlin, dart, flutter and dotnet (pinned to dotnet-sdk 1.4.1's branch)
   require the capability. The dotnet lane depends on the open
   [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17); `SDK_COMMITS`
