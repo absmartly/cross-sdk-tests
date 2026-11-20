@@ -14,11 +14,13 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
-# cpp-sdk is pinned to feat/holdouts (the absmartly/cpp-sdk holdouts PR) while that
-# PR is open; the pin goes back to `main` once it merges.
+# cpp-sdk is pinned to feat/switchbacks (absmartly/cpp-sdk switchbacks PR, stacked on the
+# feat/holdouts PR) while those PRs are open, at the exact commit in SDK_REVISIONS below so a later
+# push to that branch cannot change what this commit tests. Both pins go back to `main` once
+# cpp-sdk#5 and #6 merge.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
-  ["cpp-sdk"]="feat/holdouts"
+  ["cpp-sdk"]="feat/switchbacks"
   ["dotnet-sdk"]="main"
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"
@@ -36,4 +38,8 @@ declare -A SDK_BRANCHES=(
   ["swift-sdk"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
+)
+
+declare -A SDK_REVISIONS=(
+  ["cpp-sdk"]="45ed81223e594d491ec74dc9529e055ea04e6606"
 )

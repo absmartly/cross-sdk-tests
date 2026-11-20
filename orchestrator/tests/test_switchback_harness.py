@@ -23,6 +23,7 @@ import generate_switchback_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 from test_runner import SWITCHBACK_ACTIONS  # noqa: E402
 from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
+from test_runner import _publish_observation  # noqa: E402
 
 
 @pytest.fixture
@@ -236,14 +237,19 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
+SWITCHBACK_SDKS = {"java", "cpp"}
+
+
+def test_switchback_policy_requires_evidenced_sdks_and_excepts_every_other_sdk(runner):
     sdks = runner.policy["sdks"]
     assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
+    for sdk in SWITCHBACK_SDKS:
+        assert "switchback" in sdks[sdk]["required"], sdk
+        assert "switchback" not in sdks[sdk]["unsupported"], sdk
     for sdk, entry in sdks.items():
-        if sdk != "java":
+        if sdk not in SWITCHBACK_SDKS:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert entry["unsupported"]["switchback"].strip(), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
@@ -620,3 +626,13 @@ def test_multi_unit_publishes_pin_every_hashed_unit_as_a_set():
                 assert data["hashed"] is True, scenario["name"]
                 assert data["units"] == [{"type": t, "uid": generator.hash_unit(u)} for t, u in units.items()]
                 assert event.get("unorderedUnits", False) is (len(units) > 1), scenario["name"]
+
+
+def test_publish_observation_treats_an_omitted_attribute_value_as_null():
+    # java-sdk serializes attributes NON_NULL (an attribute set to null has no "value"); the C++
+    # and JS SDKs send "value": null. The collector reads both as null (scenario 411's v_null).
+    omitted = {"hashed": True, "attributes": [{"name": "v_null", "setAt": 1}]}
+    explicit = {"hashed": True, "attributes": [{"name": "v_null", "value": None, "setAt": 2}]}
+    assert _publish_observation(omitted) == _publish_observation(explicit)
+    other = {"hashed": True, "attributes": [{"name": "v_null", "value": 0, "setAt": 2}]}
+    assert _publish_observation(omitted) != _publish_observation(other)
