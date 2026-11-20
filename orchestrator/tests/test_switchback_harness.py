@@ -545,7 +545,7 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 # The 279 scenarios of main this group follows (the 2026-11 SDK round 230-253 and the feature-parity
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
 # legitimately changes them.
-MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
+MAIN_SHA256 = "d4edcb4f3a200ebc32f1e99a3b3c45db5dc2cb737f22a6452158a9eccc550cee"
 
 
 def test_main_scenarios_are_untouched():

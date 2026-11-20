@@ -58,8 +58,9 @@ NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 # this group was appended. Update ONLY when another group legitimately changes the non-group
 # scenarios (e.g. a group lands before this one and this one is renumbered). Last changed when the
 # finalize and misuse scenarios were gated on singleFinalizeEvent/throwsOnMisuse and scenario 35 listed
-# the ruby-sdk/php-sdk wordings (PR #21 review).
-KEPT_DIGEST = "9963fb6a8d9f9d05e9bb0efd5cc3a690e8507f61bcc81652ae723e62df2f7412"
+# the ruby-sdk/php-sdk wordings (PR #21 review), then when scenario 35 listed the released dart-sdk
+# wording for absmartly_sdk 2.2.0.
+KEPT_DIGEST = "5956180f67ae231123519b79ed716bd55711c3dc08184661ccace3c63f89201d"
 KEPT_COUNT = 240
 GROUP_SIZE = 6
 

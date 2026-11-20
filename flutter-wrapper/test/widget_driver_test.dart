@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:absmartly_sdk/absmartly_sdk.dart';
+import 'package:absmartly_sdk/absmartly.dart';
 
 import 'widget_driver.dart';
 
