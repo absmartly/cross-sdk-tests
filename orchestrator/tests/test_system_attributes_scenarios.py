@@ -48,10 +48,12 @@ sys.path.insert(0, REPO_ROOT)
 import scenario_groups  # noqa: E402
 
 GROUP_MARKER = scenario_groups.ROUND_SYSATTR
-# Groups appended after this one (generate_parity_round_scenarios.py, 300+, then the Switchback
-# group from generate_switchback_scenarios.py, 400+). They are neither "kept" scenarios for the
+# Groups appended after this one (generate_parity_round_scenarios.py, 300+, the Shared Variable Key
+# group from generate_shared_variable_key_scenarios.py, 340+, then the Switchback group from
+# generate_switchback_scenarios.py, 400+). They are neither "kept" scenarios for the
 # digest nor part of this group; this group must directly precede them.
-LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK,)
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SHARED_VARIABLE_KEY,
+                                                        scenario_groups.SWITCHBACK)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before

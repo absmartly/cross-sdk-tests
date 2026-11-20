@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 305-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 334-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -113,6 +113,10 @@ jobs:
             echo "::group::Cloning absmartly/$repo ($branch)"
             git clone --depth 1 --branch "$branch" \
               "https://github.com/absmartly/$repo.git" "$repo"
+            if [ -n "${SDK_COMMITS[$repo]:-}" ]; then
+              git -C "$repo" fetch --depth 1 origin "${SDK_COMMITS[$repo]}"
+              git -C "$repo" checkout --detach "${SDK_COMMITS[$repo]}"
+            fi
             echo "::endgroup::"
           done
 

@@ -34,7 +34,8 @@
     "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
     "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
-    "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)"
+    "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)",
+    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-368): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; variableValue exposes at most the selected experiment (plus the applicable holdouts of the candidates it visits), peekVariableValue nothing"
   },
   "sdks": {
     "javascript": {
@@ -64,7 +65,8 @@
       "unsupported": {
         "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)",
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "javascript-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in javascript-sdk"
       }
     },
     "python": {
@@ -94,7 +96,8 @@
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
         "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip"
+        "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip",
+        "sharedVariableKeys": "python3-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in python3-sdk"
       }
     },
     "ruby": {
@@ -124,7 +127,8 @@
         "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
-        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "ruby-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in ruby-sdk"
       }
     },
     "liquid": {
@@ -154,7 +158,8 @@
         "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
         "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
-        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "wraps ruby-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in ruby-sdk"
       }
     },
     "php": {
@@ -184,7 +189,8 @@
         "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
-        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "sharedVariableKeys": "php-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in php-sdk"
       }
     },
     "go": {
@@ -214,7 +220,8 @@
         "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
-        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "sharedVariableKeys": "go-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in go-sdk"
       }
     },
     "rust": {
@@ -244,7 +251,8 @@
         "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "rust-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 343, 347-351, 356, 361-362); follow-up in rust-sdk"
       }
     },
     "java": {
@@ -271,7 +279,8 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
@@ -297,7 +306,8 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -334,7 +344,8 @@
         "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes",
-        "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "scala-sdk resolves a shared key to the last candidate and exposes every candidate it visits; follow-up in scala-sdk"
       }
     },
     "swift": {
@@ -364,7 +375,8 @@
         "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
+        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "sharedVariableKeys": "swift-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in swift-sdk"
       }
     },
     "dart": {
@@ -387,7 +399,8 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
@@ -417,7 +430,8 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -445,7 +459,8 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "singleFinalizeEvent",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
@@ -484,7 +499,8 @@
         "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
         "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally",
-        "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "cpp-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in cpp-sdk"
       }
     },
     "elixir": {
@@ -514,7 +530,8 @@
         "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)",
         "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
-        "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "sharedVariableKeys": "elixir-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 347-351, 356, 361-362); follow-up in elixir-sdk"
       }
     },
     "react": {
@@ -544,7 +561,8 @@
       "unsupported": {
         "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk"
       }
     },
     "vue2": {
@@ -574,7 +592,8 @@
       "unsupported": {
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk"
       }
     },
     "vue3": {
@@ -604,7 +623,8 @@
       "unsupported": {
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk"
       }
     },
     "angular": {
@@ -634,7 +654,8 @@
       "unsupported": {
         "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk"
       }
     }
   }

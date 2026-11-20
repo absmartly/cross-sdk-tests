@@ -62,6 +62,11 @@ clone_or_update() {
       return 1
     fi
   fi
+  if [ -z "$BRANCH_OVERRIDE" ] && [ -n "${SDK_COMMITS[$repo]:-}" ]; then
+    git -C "$repo" fetch --depth 1 origin "${SDK_COMMITS[$repo]}" || return 1
+    git -C "$repo" checkout --detach "${SDK_COMMITS[$repo]}" || return 1
+    echo "  PIN $repo (${SDK_COMMITS[$repo]})"
+  fi
 }
 
 if [ -n "$BRANCH_OVERRIDE" ]; then

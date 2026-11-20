@@ -22,6 +22,13 @@ RUN cd /build/java-sdk && ./gradlew :core-api:jar :core-api:generatePomFileForRe
     cp /build/java-sdk/core-api/build/libs/core-api.jar "$DEST/core-api-${CORE_API_VERSION}.jar" && \
     cp "$POM" "$DEST/core-api-${CORE_API_VERSION}.pom" && \
     echo "$CORE_API_VERSION" > /root/.m2/core-api.version
+# The java-sdk commit, reported by GET /health; empty when the tree is modified, git status fails
+# or it is not a git checkout, so a recording cannot claim a pinned commit it was not built from.
+# A linked worktree (SDK_SOURCE_DIR) copies only its .git pointer, not the metadata it refers to,
+# so it reports no commit: record shared-variable-key scenarios from a standalone clone.
+RUN cd /build/java-sdk && \
+    if head=$(git rev-parse HEAD 2>/dev/null) && status=$(git status --porcelain 2>/dev/null) \
+        && [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt
 
 FROM gradle:8.5-jdk17 AS builder
 
@@ -29,6 +36,8 @@ WORKDIR /build
 
 COPY --from=sdk-builder /root/.m2 /root/.m2
 COPY cross-sdk-tests/java-wrapper /build/java-wrapper
+RUN mkdir -p /build/java-wrapper/src/main/resources && \
+    cp /root/.m2/sdk-commit.txt /build/java-wrapper/src/main/resources/sdk-commit.txt
 RUN cd /build/java-wrapper && gradle test bootJar --no-daemon
 
 # core-api's own tests run on the JDK that can build it, not the wrapper's.

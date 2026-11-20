@@ -37937,6 +37937,5645 @@
     ]
   },
   {
+    "name": "340 - Shared Variable Key - Strict Audience Mismatch On The Only Candidate Returns The Default",
+    "description": "The reported case: experiment 175 is the only experiment defining the key, has audienceStrict and the unit fails its audience (Country=IE). It is not assigned, so variableValue and peekVariableValue return the caller's default, not the control value, and no exposure is queued for the key. treatment() still exposes the mismatch (variant 0, assigned=false, audienceMismatch=true). Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_search_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "341 - Shared Variable Key - Strict Mismatch On The First Candidate - The Assigned Second Candidate Wins",
+    "description": "Experiment 175 (strict, mismatched) has the lower id; experiment 176 is assigned. The key resolves to 176's variant 1 value and the exposure goes to 176 only. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 176,
+                "name": "exp_search_assigned",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "342 - Shared Variable Key - Non-Strict Audience Mismatch Is Still Assigned And Serves Its Value",
+    "description": "With audienceStrict false a mismatched unit is still assigned: the key returns the assigned variant's value and the exposure has audienceMismatch=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_loose",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_loose"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_loose",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "343 - Shared Variable Key - Variable Keys Still List Every Experiment Sharing The Key",
+    "description": "A strict mismatch on one candidate does not remove it from the key index: variableKeys lists the key and variableKeysMap lists both experiments. Listing keys queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "variableKeysMap"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableKeys",
+        "params": {},
+        "expect": {
+          "result": [
+            "homePage.searchBar.button.text"
+          ],
+          "events": []
+        }
+      },
+      {
+        "action": "variableKeysMap",
+        "params": {},
+        "expect": {
+          "result": {
+            "homePage.searchBar.button.text": [
+              "exp_search_strict",
+              "exp_search_assigned"
+            ]
+          },
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "344 - Shared Variable Key - Override On The Strict-Mismatched Candidate Still Wins",
+    "description": "An override on experiment 175 (strict, mismatched) makes it the winner over the assigned 176: the key returns 175's overridden variant 1 value and the exposure is overridden=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_search_strict",
+          "variant": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "345 - Shared Variable Key - Traffic-Excluded Only Candidate Is Assigned And Serves Control",
+    "description": "A unit outside the traffic split is assigned in the reference (assigned=true, eligible=false, variant 0): the key returns the control value and variableValue exposes it with eligible=false. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 180,
+          "name": "exp_traffic_excluded",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            1,
+            0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 180,
+                    "name": "exp_traffic_excluded"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 180,
+                "name": "exp_traffic_excluded",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "346 - Shared Variable Key - Traffic-Excluded First Candidate Beats An Assigned Second Candidate",
+    "description": "The traffic-excluded experiment 180 is assigned (eligible=false), so it wins over 181 with its control value; 181 is never exposed. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 180,
+          "name": "exp_traffic_excluded",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            1,
+            0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 181,
+          "name": "exp_after_excluded",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 180,
+                    "name": "exp_traffic_excluded"
+                  },
+                  {
+                    "id": 181,
+                    "name": "exp_after_excluded"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 180,
+                "name": "exp_traffic_excluded",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": false,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "347 - Shared Variable Key - Missing Unit On The Only Candidate Returns The Default",
+    "description": "The only candidate's unit type (user_id) has no unit in the context, so it is not assigned: the key returns the default and no exposure is queued. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 185,
+          "name": "exp_no_unit",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"no-unit-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"no-unit-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 185,
+                    "name": "exp_no_unit"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "348 - Shared Variable Key - Missing Unit On The First Candidate - The Assigned Second Candidate Wins",
+    "description": "Experiment 185 has no unit and is not assigned; 186 is assigned and wins. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 185,
+          "name": "exp_no_unit",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"no-unit-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"no-unit-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 186,
+          "name": "exp_after_no_unit",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 185,
+                    "name": "exp_no_unit"
+                  },
+                  {
+                    "id": 186,
+                    "name": "exp_after_no_unit"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 186,
+                "name": "exp_after_no_unit",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "349 - Shared Variable Key - Both Candidates Strict-Mismatched Return The Default With No Exposure",
+    "description": "Experiments 175 and 176 are both strict and mismatched: variableValue and peekVariableValue return the default and nothing is queued. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_strict_too",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_strict_too"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "350 - Shared Variable Key - Candidates Are Visited In Experiment Id Order, Not Payload Order",
+    "description": "Both experiments are assigned; the payload lists id 191 first. The lower id (190) wins. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 191,
+          "name": "exp_high_id",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"high-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"high-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 190,
+          "name": "exp_low_id",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"low-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"low-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 191,
+                    "name": "exp_high_id"
+                  },
+                  {
+                    "id": 190,
+                    "name": "exp_low_id"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "low-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "low-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 190,
+                "name": "exp_low_id",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "low-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "351 - Shared Variable Key - Assigned First Candidate Whose Variant Lacks The Key Returns The Default",
+    "description": "Experiment 195 defines the key only in variant 0 and the unit is assigned variant 1. It still wins: the key returns the default (the second candidate's value is NOT used) and the exposure goes to 195. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 195,
+          "name": "exp_variant_lacks_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"lacks-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"other.key\":\"x\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 196,
+          "name": "exp_after_lacks_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 195,
+                    "name": "exp_variant_lacks_key"
+                  },
+                  {
+                    "id": 196,
+                    "name": "exp_after_lacks_key"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 195,
+                "name": "exp_variant_lacks_key",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "352 - Shared Variable Key - Non-Strict Mismatch On The First Candidate Still Wins Over The Second",
+    "description": "Experiment 175 is non-strict and mismatched, so it is assigned and wins over 176; the exposure has audienceMismatch=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_loose",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_loose"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_loose",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "353 - Shared Variable Key - Full-On First Candidate Serves Its Full-On Value",
+    "description": "Experiment 200 is full-on variant 1 (its split would give variant 2): the full-on value wins over 201, exposed with fullOn=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 200,
+          "name": "exp_full_on",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"fo-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"fo-full-on\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"homePage.searchBar.button.text\":\"fo-split\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 201,
+          "name": "exp_after_full_on",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 200,
+                    "name": "exp_full_on"
+                  },
+                  {
+                    "id": 201,
+                    "name": "exp_after_full_on"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "fo-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "fo-full-on",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 200,
+                "name": "exp_full_on",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "fo-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "354 - Shared Variable Key - Override To Control On The Strict-Mismatched Candidate Wins",
+    "description": "An override to variant 0 on the strict-mismatched 175 wins over the assigned 176: the key returns 175's control value with overridden=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_search_strict",
+          "variant": 0
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search food",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search food",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search food",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "355 - Shared Variable Key - Override To Control On The Traffic-Excluded Candidate Wins",
+    "description": "An override to variant 0 on the traffic-excluded 180 wins over 181 with overridden=true. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 180,
+          "name": "exp_traffic_excluded",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            1,
+            0
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"excluded-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 181,
+          "name": "exp_after_excluded",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 180,
+                    "name": "exp_traffic_excluded"
+                  },
+                  {
+                    "id": 181,
+                    "name": "exp_after_excluded"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "override",
+        "params": {
+          "experimentName": "exp_traffic_excluded",
+          "variant": 0
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 180,
+                "name": "exp_traffic_excluded",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": true,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "excluded-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "356 - Shared Variable Key - Custom Assignment On A Strict-Mismatched Candidate Does Not Make It Win",
+    "description": "A custom assignment does not bypass a strict audience: 175 stays unassigned (variant 0), so the assigned 176 wins. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "customAssignment",
+        "params": {
+          "experimentName": "exp_search_strict",
+          "variant": 1
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 176,
+                "name": "exp_search_assigned",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_search_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "357 - Shared Variable Key - Holdout-Suppressed Only Candidate Serves Its Control Value",
+    "description": "Experiment 205 is held out by holdout 9 and nothing else is assigned: the key returns 205's control value (the reference's suppressed fallback). variableValue fires only the holdout's exposure; peekVariableValue queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 205,
+          "name": "exp_held_out",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"held-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"held-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 205,
+                    "name": "exp_held_out"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 9,
+                "name": "holdout_shared_key",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "358 - Shared Variable Key - Holdout-Suppressed First Candidate - The Assigned Second Candidate Wins",
+    "description": "Experiment 205 is held out; 206 is assigned and wins. variableValue fires the holdout's exposure while visiting 205 and exposes 206. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 205,
+          "name": "exp_held_out",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"held-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"held-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        },
+        {
+          "id": 206,
+          "name": "exp_after_held_out",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 205,
+                    "name": "exp_held_out"
+                  },
+                  {
+                    "id": 206,
+                    "name": "exp_after_held_out"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 9,
+                "name": "holdout_shared_key",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            },
+            {
+              "type": "exposure",
+              "data": {
+                "id": 206,
+                "name": "exp_after_held_out",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "359 - Shared Variable Key - A Switchback With No Linked Unit Returns The Default Or Yields To The Next",
+    "description": "A switchback whose only cluster unit type (store_id) has no unit in the context does not apply and is not assigned: on its own its key returns the default with no exposure; sharing a key with an assigned unit experiment, the unit experiment wins and is exposed. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "switchback"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 210,
+          "name": "exp_sb_no_linked_unit",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb.only.key\":\"sb-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb.only.key\":\"sb-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "store_zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 211,
+          "name": "exp_sb_no_linked_unit_first",
+          "iteration": 1,
+          "unitType": "store_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb.shared.key\":\"sbf-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb.shared.key\":\"sbf-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "store_id": "store_zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 212,
+          "name": "exp_after_sb",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb.shared.key\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb.shared.key\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 210,
+                    "name": "exp_sb_no_linked_unit"
+                  },
+                  {
+                    "id": 211,
+                    "name": "exp_sb_no_linked_unit_first"
+                  },
+                  {
+                    "id": 212,
+                    "name": "exp_after_sb"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "sb.only.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "sb.only.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "sb.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "sb.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "after-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 212,
+                "name": "exp_after_sb",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "360 - Shared Variable Key - An Ineligible Switchback Cluster Wins Silently With Its Control Value",
+    "description": "A switchback (id 208) whose linked unit (session_id) is present but has no cluster value is an ineligible cluster: the reference records it as assigned with eligible=false and never exposes it. As the lowest id it wins the shared key over the unit experiment 212 with its control value, and nothing is queued. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "switchback"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 208,
+          "name": "exp_sb_ineligible_cluster",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb.shared.key\":\"sbi-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb.shared.key\":\"sbi-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "randomizationType": "switchback",
+          "switchbackClusters": {
+            "session_id": "store_zone"
+          },
+          "switchbackStartAt": 1704067200000,
+          "switchbackPeriodMs": 1440000000000,
+          "switchbackCarryoverDurationMs": 0,
+          "switchbackBurnInDurationMs": 0,
+          "switchbackBurnOutDurationMs": 0,
+          "switchbackDesignType": "balanced_block",
+          "switchbackEstimand": "global_average_treatment_effect"
+        },
+        {
+          "id": 212,
+          "name": "exp_after_sb",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"sb.shared.key\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"sb.shared.key\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 208,
+                    "name": "exp_sb_ineligible_cluster"
+                  },
+                  {
+                    "id": 212,
+                    "name": "exp_after_sb"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "sb.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "sbi-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "sb.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "sbi-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_sb_ineligible_cluster"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "361 - Shared Variable Key - Treatment, Variable Reads And Variable Keys Agree",
+    "description": "For the strict-mismatched 175 and the assigned 176: peek(175) is 0, the variable reads give 176's value, variableValue queues exactly one exposure (176), repeated reads queue nothing, variableKeys lists the key, and treatment(175) then queues 175's own mismatch exposure. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peek",
+        "params": {
+          "experimentName": "exp_search_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 176,
+                "name": "exp_search_assigned",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "variableKeys",
+        "params": {},
+        "expect": {
+          "result": [
+            "homePage.searchBar.button.text"
+          ],
+          "events": []
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_search_strict"
+        },
+        "expect": {
+          "result": 0,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "treatment",
+        "params": {
+          "experimentName": "exp_search_assigned"
+        },
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "362 - Shared Variable Key - An Attribute Change That Matches The Strict Audience Flips The Winner",
+    "description": "With Country=IE the assigned 176 wins. Setting Country=US makes the strict 175 assigned: the key flips to 175's value and 175's exposure is queued once; repeated reads queue nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 175,
+          "name": "exp_search_strict",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search food\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Find food\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null
+        },
+        {
+          "id": 176,
+          "name": "exp_search_assigned",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"Search\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"Search now\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 175,
+                    "name": "exp_search_strict"
+                  },
+                  {
+                    "id": 176,
+                    "name": "exp_search_assigned"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Search now",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 176,
+                "name": "exp_search_assigned",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "US"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 175,
+                "name": "exp_search_strict",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "Find food",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "363 - Shared Variable Key - Refresh That Removes The Winner Falls To The Next Candidate Or The Default",
+    "description": "215 wins the shared key and is the only experiment with solo.key. A refresh that removes 215 makes the shared key resolve to 216 (exposed) and solo.key return the default. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 215,
+          "name": "exp_refresh_winner",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"solo.key\":\"solo-control\",\"homePage.searchBar.button.text\":\"w-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"solo.key\":\"solo-treatment\",\"homePage.searchBar.button.text\":\"w-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 216,
+          "name": "exp_refresh_runner_up",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"r-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"r-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 215,
+                    "name": "exp_refresh_winner"
+                  },
+                  {
+                    "id": 216,
+                    "name": "exp_refresh_runner_up"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "w-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 215,
+                "name": "exp_refresh_winner",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "solo.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "solo-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "refresh",
+        "params": {
+          "newData": {
+            "experiments": [
+              {
+                "id": 216,
+                "name": "exp_refresh_runner_up",
+                "iteration": 1,
+                "unitType": "session_id",
+                "seedHi": 0,
+                "seedLo": 0,
+                "split": [
+                  0.0,
+                  1.0
+                ],
+                "trafficSeedHi": 0,
+                "trafficSeedLo": 0,
+                "trafficSplit": [
+                  0,
+                  1
+                ],
+                "fullOnVariant": 0,
+                "applications": [
+                  {
+                    "name": "website"
+                  }
+                ],
+                "variants": [
+                  {
+                    "name": "A",
+                    "config": "{\"homePage.searchBar.button.text\":\"r-control\"}"
+                  },
+                  {
+                    "name": "B",
+                    "config": "{\"homePage.searchBar.button.text\":\"r-treatment\"}"
+                  }
+                ],
+                "audience": null,
+                "audienceStrict": false,
+                "customFieldValues": null
+              }
+            ]
+          }
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "refresh",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 216,
+                    "name": "exp_refresh_runner_up"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "r-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "r-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 216,
+                "name": "exp_refresh_runner_up",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "solo.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "caller-default",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 2,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "364 - Shared Variable Key - A Variant Defining The Key As JSON Null Returns Null",
+    "description": "The winning experiment 220's variant 1 defines the key as JSON null: the reference returns null (the key is present), not the default and not the next candidate's value. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 220,
+          "name": "exp_null_value",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"null-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":null}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        },
+        {
+          "id": 221,
+          "name": "exp_after_null",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 220,
+                    "name": "exp_null_value"
+                  },
+                  {
+                    "id": 221,
+                    "name": "exp_after_null"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": null,
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 220,
+                "name": "exp_null_value",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "365 - Shared Variable Key - Rule-Won First Candidate Beats An Assigned Second Candidate",
+    "description": "The lower-id experiment 230 has a matching assignment rule and a strict audience that Country=IE fails. The rule wins (assigned=false, ruleOverride=true), so both variable reads return its rule-treatment value, not the later assigned experiment's value. Only the rule-won experiment is exposed, once; peek queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "assignmentRules"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 230,
+          "name": "exp_rule_first",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"rule-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"rule-treatment\"}"
+            }
+          ],
+          "audience": "{\"filter\":[{\"eq\":[{\"var\":\"Country\"},{\"value\":\"US\"}]}]}",
+          "audienceStrict": true,
+          "customFieldValues": null,
+          "assignmentRules": "{\"rules\":[{\"name\":\"shared-key-rule\",\"type\":\"assign\",\"variant\":1}]}"
+        },
+        {
+          "id": 231,
+          "name": "exp_after_rule",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"homePage.searchBar.button.text\":\"after-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"homePage.searchBar.button.text\":\"after-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 230,
+                    "name": "exp_rule_first"
+                  },
+                  {
+                    "id": 231,
+                    "name": "exp_after_rule"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "attribute",
+        "params": {
+          "name": "Country",
+          "value": "IE"
+        },
+        "expect": {
+          "result": null,
+          "events": []
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 230,
+                "name": "exp_rule_first",
+                "unit": "session_id",
+                "variant": 1,
+                "assigned": false,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false,
+                "ruleOverride": true
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "homePage.searchBar.button.text",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "rule-treatment",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "366 - Shared Variable Key - A Full-On Candidate Held Out By Holdout Arm 0 Serves Control",
+    "description": "Experiment 234 is full-on variant 1 and covered by holdout 9, whose arm 0 holds the unit out. Arm 0 holds out every covered experiment, full-on or not, so the key returns 234's control value, not its full-on value. variableValue fires only the holdout's exposure. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 234,
+          "name": "exp_held_out_full_on",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"held.full.on.key\":\"hfo-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"held.full.on.key\":\"hfo-full-on\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"held.full.on.key\":\"hfo-split\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 234,
+                    "name": "exp_held_out_full_on"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "held.full.on.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "hfo-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.full.on.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "hfo-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 9,
+                "name": "holdout_shared_key",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.full.on.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "hfo-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "367 - Shared Variable Key - A Covered Full-On Candidate Without Its Unit Is Not Held Out",
+    "description": "Experiment 235 is full-on variant 1 and covered by holdout 9, but its unit type (user_id) has no unit in the context. The holdout places the unit with the covered experiment's unit type, so with no such unit nothing is held out: 235 is assigned its full-on value and exposed, and the holdout is not. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 235,
+          "name": "exp_covered_full_on_no_unit",
+          "iteration": 1,
+          "unitType": "user_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 1,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"covered.no.unit.key\":\"cfn-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"covered.no.unit.key\":\"cfn-full-on\"}"
+            },
+            {
+              "name": "C",
+              "config": "{\"covered.no.unit.key\":\"cfn-split\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 235,
+                    "name": "exp_covered_full_on_no_unit"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 235,
+                "name": "exp_covered_full_on_no_unit",
+                "unit": "user_id",
+                "variant": 1,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": true,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "covered.no.unit.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "cfn-full-on",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
+    "name": "368 - Shared Variable Key - Two Holdout-Suppressed Candidates - The Lower Id Serves Its Control Value",
+    "description": "Experiments 232 and 233 are both held out and nothing else is assigned; the payload lists 233 first. The key returns 232's control value (the first suppressed candidate by id, not the last and not the first in the payload). variableValue fires only the holdout's exposure; peekVariableValue queues nothing. Expected results recorded from java-sdk 07807b51 (core-api Context.getVariableAssignment).",
+    "requires": [
+      "sharedVariableKeys",
+      "holdouts"
+    ],
+    "contextData": {
+      "experiments": [
+        {
+          "id": 233,
+          "name": "exp_held_out_high",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"held.shared.key\":\"held-high-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"held.shared.key\":\"held-high-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        },
+        {
+          "id": 232,
+          "name": "exp_held_out_low",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            0.0,
+            1.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [
+            {
+              "name": "website"
+            }
+          ],
+          "variants": [
+            {
+              "name": "A",
+              "config": "{\"held.shared.key\":\"held-low-control\"}"
+            },
+            {
+              "name": "B",
+              "config": "{\"held.shared.key\":\"held-low-treatment\"}"
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutIds": [
+            9
+          ]
+        }
+      ],
+      "holdouts": [
+        {
+          "id": 9,
+          "name": "holdout_shared_key",
+          "iteration": 1,
+          "unitType": "session_id",
+          "seedHi": 0,
+          "seedLo": 0,
+          "split": [
+            1.0,
+            0.0
+          ],
+          "trafficSeedHi": 0,
+          "trafficSeedLo": 0,
+          "trafficSplit": [
+            0,
+            1
+          ],
+          "fullOnVariant": 0,
+          "applications": [],
+          "variants": [
+            {
+              "name": "A",
+              "config": null
+            },
+            {
+              "name": "B",
+              "config": null
+            }
+          ],
+          "audience": null,
+          "audienceStrict": false,
+          "customFieldValues": null,
+          "holdoutType": "full"
+        }
+      ]
+    },
+    "steps": [
+      {
+        "action": "createContextWith",
+        "params": {
+          "units": {
+            "session_id": "shared-key-unit-1"
+          },
+          "options": {
+            "publishDelay": -1,
+            "refreshPeriod": 0
+          }
+        },
+        "expect": {
+          "result": {
+            "ready": true,
+            "failed": false,
+            "finalized": false
+          },
+          "events": [
+            {
+              "type": "ready",
+              "data": {
+                "experiments": [
+                  {
+                    "id": 233,
+                    "name": "exp_held_out_high"
+                  },
+                  {
+                    "id": 232,
+                    "name": "exp_held_out_low"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "peekVariableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": []
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": [
+            {
+              "type": "exposure",
+              "data": {
+                "id": 9,
+                "name": "holdout_shared_key",
+                "unit": "session_id",
+                "variant": 0,
+                "assigned": true,
+                "eligible": true,
+                "overridden": false,
+                "fullOn": false,
+                "custom": false,
+                "audienceMismatch": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "action": "variableValue",
+        "params": {
+          "key": "held.shared.key",
+          "defaultValue": "caller-default"
+        },
+        "expect": {
+          "result": "held-low-control",
+          "events": []
+        }
+      },
+      {
+        "action": "pending",
+        "params": {},
+        "expect": {
+          "result": 1,
+          "events": []
+        }
+      }
+    ]
+  },
+  {
     "name": "400 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
     "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
     "contextData": {

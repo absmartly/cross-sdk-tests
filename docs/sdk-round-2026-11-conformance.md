@@ -67,7 +67,7 @@ real on every SDK.
 
 ### Reviewed per-SDK exceptions recorded this round
 
-Two further `requires` capabilities encode **owner-approved** behavioural
+Four further `requires` capabilities encode **owner-approved** behavioural
 differences from the JS reference as reviewed per-SDK exceptions, using the same
 `orchestrator/expected-capabilities.json` mechanism. They are advertised `true`
 by every wrapper that honours the JS behaviour and listed as a reviewed
@@ -81,6 +81,19 @@ are unchanged.
 | `publishThrowsOnFailure` | a direct `publish()` whose collector/transport fails surfaces the failure to the caller by throwing; pending events are preserved and an error event is logged | 193 | **php** — php-sdk `publish()`/`flush()` log the collector failure and return instead of throwing (owner decision: Marcio approved logging and returning for v1.0.3 compatibility; only `close()` throws), so a direct `publish()` failure does not surface to the caller |
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
+
+### Pending owner decision: `sharedVariableKeys`
+
+Unlike the exceptions above, these are **not** owner-approved differences. The Shared Variable Key
+group (340-368) is new and takes its expectations from java-sdk rather than the JS reference. Java
+exposes only the selected experiment (plus the applicable holdouts of the candidates visited),
+while the 2026-11-06 shared-variable-key decision exposed every visited candidate. The SDKs that
+follow that earlier rule are gated here so their lanes skip the group until the owner records one
+contract; then either they or the SDKs that require the capability change.
+
+| capability | meaning | gated scenarios | gated SDKs (divergence) |
+| --- | --- | --- | --- |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). **Owner follow-up is pending.** This group follows java-sdk, while the 2026-11-06 shared-variable-key decision exposed every visited candidate; once one contract is recorded, either these SDKs or java/kotlin/dart/flutter/dotnet change. Required for java, kotlin, dart, flutter and dotnet (pinned to the open dotnet-sdk#17). |
 
 Two more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
@@ -113,20 +126,21 @@ round.
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
-`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
-fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
-then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
+`scenario_groups.py`. Open #20 (context fetch compression, 230-232) numbers from 230
+too; the Shared Variable Key group owns 340-368. This PR lands first; #20
+then merges `main` and renumbers its group after 253 (254-269 and 270-272 are
 free), below the parity range. Both generators own fixed ranges (230 and 300
 are constants, not derived from other scenarios): each keeps scenarios numbered
 outside its range where they are, and fails rather than renumbers when another
-scenario sits inside it. So #16/#20 only need to renumber their own groups to
+scenario sits inside it. So #20 only needs to renumber its own group to
 254+; a missed renumber shows up as a generator error, not a silent shift
-(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
-groups with a generator, give it a fixed first number the same way. The three
-generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
-and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
-`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
-outside all three.
+(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #20 owns its
+groups with a generator, give it a fixed first number the same way. The four
+generated ranges are fixed: 230-253 (this round), 300-339 (parity, now 300-332),
+340-399 (the Shared Variable Key group of `generate_shared_variable_key_scenarios.py`,
+now 340-368, `SHARED_VARIABLE_KEY_FIRST_NUMBER`) and 400+ (the Switchback group of
+`generate_switchback_scenarios.py`, `SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`);
+a new group takes free ids outside all four.
 
 ## Coverage matrix
 
@@ -204,7 +218,7 @@ wrapper API. They are listed so the matrix is complete.
 
 | Behaviour change | Source | Status |
 | --- | --- | --- |
-| Shared variable-key resolution (lowest-id wins, fall-through, both exposed, peek queues nothing) | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (`feat/shared-variable-key-conformance`, scenarios 230-245 on that branch). Not duplicated here; this branch is based on `main` and the two groups renumber cleanly when both land. |
+| Shared variable-key resolution | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (scenarios 340-368, `generate_shared_variable_key_scenarios.py`), recorded from java-sdk: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key. SDKs that expose every visited candidate or fall through list a reviewed `sharedVariableKeys` exception. |
 | `getVariableKeys` / `variableKeys` shape (one name per key vs lists vs `*_all`) | php/go/ruby/python | Encoded as the existing `variableKeysMap` per-SDK capability, not a single hard assertion. |
 | Failed `close()`/`finalize()` surfaces the error, keeps the context open and events queued, retries on a second call | php#8, go#10, ruby#39, python#11, kotlin#1, dotnet#8 | Covered by existing scenario 228 (`publishFail`) and the `publishFail` capability. |
 | `refresh()` on a failed context is a no-op | go#10 | Covered by existing scenario 229 (`readyError`, gated on `refreshNoOpOnFailedContext`). python#11 reverted to the v0.2.4 recover-on-refresh behaviour, so python is a reviewed exception here (see the reviewed per-SDK exceptions table). |

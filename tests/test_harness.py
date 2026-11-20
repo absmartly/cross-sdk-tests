@@ -1319,7 +1319,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity
         existing = self.load()
-        intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
+        intruder = dict(existing[0], name="335 - Somebody Else - Appended Into The Parity Range")
         with self.assertRaises(SystemExit):
             parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
 

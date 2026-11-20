@@ -1,9 +1,10 @@
 """Group markers and stable placement of the generated scenario groups in test_scenarios_complete.json.
 
 One definition for the generators and their tests: generate_sdk_round_2026_11_scenarios.py owns the
-ROUND groups (230-253), generate_parity_round_scenarios.py the PARITY groups (300+), which stay
-after the round groups, and generate_switchback_scenarios.py the SWITCHBACK group (400+), which
-stays after the parity groups.
+ROUND groups (230-253), generate_parity_round_scenarios.py the PARITY groups (300-339), which stay
+after the round groups, generate_shared_variable_key_scenarios.py the SHARED_VARIABLE_KEY group
+(340+), which stays after the parity groups, and generate_switchback_scenarios.py the SWITCHBACK
+group (400+), which stays after both.
 """
 
 ROUND_RULES = " - Custom Assignment Rules - "
@@ -17,6 +18,9 @@ PARITY_SEMVER = " - Semver Comparison - "
 PARITY_XAGENT = " - X-Agent - "
 PARITY_CLIENT_APP = " - Client Application - "
 PARITY_MARKERS = (PARITY_RULES, PARITY_SEMVER, PARITY_XAGENT, PARITY_CLIENT_APP)
+
+SHARED_VARIABLE_KEY = " - Shared Variable Key - "
+SHARED_VARIABLE_KEY_FIRST_NUMBER = 340
 
 SWITCHBACK = " - Switchback "
 SWITCHBACK_FIRST_NUMBER = 400
