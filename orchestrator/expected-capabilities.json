@@ -59,11 +59,11 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "xAgentHeader"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)",
-        "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
       }
     },

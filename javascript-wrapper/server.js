@@ -200,8 +200,8 @@ app.get('/capabilities', async (req, res) => {
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,
-    // The SDK sends X-Agent without a version (absmartly-javascript-sdk).
-    xAgentHeader: false,
+    // javascript-sdk 1.14.0 sends X-Agent: absmartly-javascript-sdk/<version>.
+    xAgentHeader: true,
     holdouts,
     holdout_arms: holdoutArms,
     assignmentRules,
