@@ -67,7 +67,7 @@ real on every SDK.
 
 ### Reviewed per-SDK exceptions recorded this round
 
-Further `requires` capabilities encode **owner-approved** behavioural
+Four further `requires` capabilities encode **owner-approved** behavioural
 differences from the JS reference as reviewed per-SDK exceptions, using the same
 `orchestrator/expected-capabilities.json` mechanism. They are advertised `true`
 by every wrapper that honours the JS behaviour and listed as a reviewed
@@ -81,6 +81,18 @@ are unchanged.
 | `publishThrowsOnFailure` | a direct `publish()` whose collector/transport fails surfaces the failure to the caller by throwing; pending events are preserved and an error event is logged | 193 | **php** — php-sdk `publish()`/`flush()` log the collector failure and return instead of throwing (owner decision: Marcio approved logging and returning for v1.0.3 compatibility; only `close()` throws), so a direct `publish()` failure does not surface to the caller |
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
+
+### Pending owner decision: `sharedVariableKeys`
+
+Unlike the exceptions above, these are **not** owner-approved differences. The Shared Variable Key
+group (340-368) is new and takes its expectations from java-sdk rather than the JS reference. Java
+exposes only the selected experiment (plus the applicable holdouts of the candidates visited),
+while the 2026-11-06 shared-variable-key decision exposed every visited candidate. The SDKs that
+follow that earlier rule are gated here so their lanes skip the group until the owner records one
+contract; then either they or the SDKs that require the capability change.
+
+| capability | meaning | gated scenarios | gated SDKs (divergence) |
+| --- | --- | --- | --- |
 | `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). **Owner follow-up is pending.** This group follows java-sdk, while the 2026-11-06 shared-variable-key decision exposed every visited candidate; once one contract is recorded, either these SDKs or java/kotlin/dart/flutter/dotnet change. Required for java, kotlin, dart, flutter and dotnet (pinned to the open dotnet-sdk#17). |
 
 Two more reviewed exceptions replace wrapper code that used to hide an SDK
