@@ -106,6 +106,20 @@ class SharedVariableKeyGroupTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             generator.observed(scenario)
 
+    def test_the_wrong_models_are_the_documented_set(self):
+        self.assertEqual(len(generator.MUTANTS), 18)
+        self.assertEqual(len(set(generator.MUTANTS)), len(generator.MUTANTS))
+        self.assertIn("full_on_escapes_holdout", generator.MUTANTS)
+        self.assertIn("ignore_rule_override", generator.MUTANTS)
+        self.assertIn("last_suppressed", generator.MUTANTS)
+
+    def test_an_unknown_holdout_id_does_not_hold_the_experiment_out(self):
+        # As java-sdk: a holdoutIds entry with no matching holdout is ignored.
+        scenario = json.loads(json.dumps(next(s for s in self.group if s["name"].startswith("357 - "))))
+        scenario["contextData"]["experiments"][0]["holdoutIds"] = [404]
+        reads = [r[1] for r in generator.observed(scenario) if r[0] in (1, 2)]
+        self.assertEqual(reads, ["held-treatment", "held-treatment"])
+
     def test_the_model_rejects_a_holdout_it_does_not_model(self):
         scenario = json.loads(json.dumps(next(s for s in self.group if s["name"].startswith("357 - "))))
         scenario["contextData"]["holdouts"][0]["split"] = [0.0, 1.0]
