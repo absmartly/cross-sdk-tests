@@ -585,7 +585,7 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["dotnet", "go", "java", "javascript", "php", "python", "ruby", "rust"])
+        self.assertEqual(holders, ["dart", "dotnet", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
@@ -991,6 +991,17 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
 
+    def test_publish_attribute_null_value_matches_an_omitted_value(self):
+        # Java's Attribute is @JsonInclude(NON_NULL), so it omits a null value
+        # that JS and Dart send; the two are the same observation. A real
+        # value still differs from null.
+        def obs(attribute):
+            data = {"hashed": True, "units": [], "attributes": [attribute]}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [{"type": "publish", "data": data}]}, {})
+
+        self.assertEqual(obs({"name": "x", "value": None}), obs({"name": "x"}))
+        self.assertNotEqual(obs({"name": "x", "value": None}), obs({"name": "x", "value": 0}))
+
     def test_error_response_events_observed(self):
         orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
         import requests
@@ -1238,7 +1249,7 @@ class StaticRepoChecks(unittest.TestCase):
             with open(os.path.join(REPO_ROOT, path)) as src:
                 lines = src.read().splitlines()
             for line in skip:
-                lines.remove(line)  # first occurrence only; a missing line fails
+                lines.remove(line)
             return lines
 
         dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
@@ -1246,6 +1257,26 @@ class StaticRepoChecks(unittest.TestCase):
             "flutter-wrapper/lib/holdout_self_test.dart",
             [
                 "// Copy of dart-wrapper/holdout_self_test.dart; only the import differs.",
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+            ],
+        )
+        self.assertEqual(flutter, dart)
+
+    def test_flutter_switchback_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's switchback
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                lines = src.read().splitlines()
+            for line in skip:
+                lines.remove(line)
+            return lines
+
+        dart = body("dart-wrapper/switchback_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
+        flutter = body(
+            "flutter-wrapper/lib/switchback_self_test.dart",
+            [
+                "// Copy of dart-wrapper/switchback_self_test.dart; only the import differs.",
                 "import 'package:absmartly_sdk/absmartly_sdk.dart';",
             ],
         )

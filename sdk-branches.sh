@@ -32,8 +32,8 @@ declare -A SDK_BRANCHES=(
   ["dotnet-sdk"]="feat/switchbacks"
   # elixir-sdk#5 (holdouts, feat/holdouts) is open; re-pin to main once it merges.
   ["elixir-sdk"]="feat/holdouts"
-  # Temporary: flutter-sdk#11 (holdouts); back to main once it merges.
-  ["flutter-sdk"]="feat/holdouts"
+  # Temporary: flutter-sdk#13 (switchbacks, stacked on #11 holdouts); back to main once both merge.
+  ["flutter-sdk"]="feat/switchbacks"
   # go-sdk switchbacks PR (go-sdk feat/switchbacks, stacked on feat/holdouts) is
   # open; re-pin to main once both merge.
   ["go-sdk"]="feat/switchbacks"

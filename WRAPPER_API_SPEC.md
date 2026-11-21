@@ -1338,6 +1338,11 @@ The capability means a behavioral self-test passed. For java and ruby (`ruby-wra
   depth; and a unit experiment carrying every R33 field publishes the same
   bytes as the plain unit baseline.
 
+The dart and flutter wrappers run the same probe payload and checks
+(`dart-wrapper/switchback_self_test.dart`, copied to
+`flutter-wrapper/lib/`), against the SDK's own assigner and a context created
+with `createContextWith` from the JSON payload parsed by `ContextData.fromMap`.
+
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
@@ -1359,10 +1364,12 @@ from `3` (JavaScript, for one) sees the integer `3`, which it keys as `"3"`.
 Such an SDK advertises `integralFloatAttributes: false` and lists it as a
 reviewed exception (owner decision 2026-11-17); it still runs 411, which
 covers every other non-value. Ruby tells them apart, PHP's `json_decode`
-keeps `3.0` a float, and rust-sdk's serde_json reads `3.0` as a float. A
-wrapper whose language keeps the two apart must pass attribute values through
-without losing it: the go wrapper decodes `value` with `UseNumber` and hands an
-integer literal to the SDK as an `int` and any other number as a `float64`.
+keeps `3.0` a float, rust-sdk's serde_json reads `3.0` as a float, and the
+dart and flutter lanes run on the Dart VM, which keeps `3.0` a double
+(flutter-sdk documents that its web builds key `3.0` as `"3"`). A wrapper whose
+language keeps the two apart must pass attribute values through without losing
+it: the go wrapper decodes `value` with `UseNumber` and hands an integer literal
+to the SDK as an `int` and any other number as a `float64`.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
@@ -1416,14 +1423,13 @@ Both endpoints are pure functions with no context. Request rules:
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - A wrapper may cap `armCount` to bound the permutation it builds; the ruby
-  wrapper accepts at most 10,000 (the golden vectors use 2, 3 and 10). Values
-  above a wrapper's cap are an invalid request.
+  wrapper accepts at most 10,000 and the javascript and java wrappers at most
+  1,000 (the golden vectors use 2, 3 and 10). Values above a wrapper's cap are
+  an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2` or above the wrapper's cap) returns 400 with
-  `{"error": "..."}`. A wrapper whose SDK lacks the function returns 501. The
-  runner checks `events` on an error response a scenario expects, so the ruby
-  wrapper also sends `"events": []` with both; no scenario expects either
-  error yet.
+  `{"error": "...", "events": []}`, the error envelope of every other endpoint.
+  A wrapper whose SDK lacks the function returns 501 with the same envelope.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

@@ -210,6 +210,19 @@ def verify_reference(golden: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def invalid_request_steps(action: str, index_field: str) -> list:
+    """Invalid requests the endpoint must answer with HTTP 400 and an error, never a value."""
+    valid = {"clusterUnit": "market_1", index_field: "0", "seed": "0", "armCount": 2}
+    invalid = [
+        dict(valid, armCount=1),
+        dict(valid, **{index_field: "1.5"}),
+        dict(valid, seed="9223372036854775808"),
+        {k: v for k, v in valid.items() if k != "clusterUnit"},
+    ]
+    return [{"action": action, "params": params, "expect": {"status": 400, "errorContains": "", "events": []}}
+            for params in invalid]
+
+
 def golden_scenarios(golden: dict) -> list:
     """One scenario per (function, armCount): 294 assign and 168 permutation steps each."""
     scenarios = []
@@ -225,11 +238,15 @@ def golden_scenarios(golden: dict) -> list:
             },
             "expect": {"result": c["expectedVariant"], "events": []},
         } for c in cases]
+        if arm_count == 2:
+            steps += invalid_request_steps("switchbackAssign", "periodIndex")
         scenarios.append({
             "name": f"Golden Vectors - assignSwitchback - {arm_count} Arms",
-            "description": (f"Every {arm_count}-arm assignSwitchback case ({len(steps)}) of the platform golden "
+            "description": (f"Every {arm_count}-arm assignSwitchback case ({len(cases)}) of the platform golden "
                             "vectors, driven through POST /switchback/assign. 64-bit values travel as decimal "
-                            "strings; integer cluster units are sent as their decimal string."),
+                            "strings; integer cluster units are sent as their decimal string."
+                            + (" Invalid requests (armCount < 2, a non-decimal or out-of-range 64-bit value, a "
+                               "missing field) answer HTTP 400." if arm_count == 2 else "")),
             "contextData": {"experiments": []},
             "steps": steps,
             "requires": [CAPABILITY],
@@ -246,11 +263,14 @@ def golden_scenarios(golden: dict) -> list:
             },
             "expect": {"result": c["expectedPermutation"], "orderedResult": True, "events": []},
         } for c in cases]
+        if arm_count == 2:
+            steps += invalid_request_steps("switchbackPermutation", "cycleIndex")
         scenarios.append({
             "name": f"Golden Vectors - fisherYatesPermutation - {arm_count} Arms",
-            "description": (f"Every {arm_count}-arm fisherYatesPermutation case ({len(steps)}) of the platform "
+            "description": (f"Every {arm_count}-arm fisherYatesPermutation case ({len(cases)}) of the platform "
                             "golden vectors, driven through POST /switchback/permutation. The permutation is "
-                            "compared positionally."),
+                            "compared positionally."
+                            + (" Invalid requests answer HTTP 400." if arm_count == 2 else "")),
             "contextData": {"experiments": []},
             "steps": steps,
             "requires": [CAPABILITY],

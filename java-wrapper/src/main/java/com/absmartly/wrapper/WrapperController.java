@@ -184,7 +184,7 @@ public class WrapperController {
     private ResponseEntity<?> switchbackCall(Supplier<Object> call) {
         if (!switchback.isAvailable()) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-                .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
+                .body(errorBody("linked SDK has no switchback assigner", Collections.emptyList()));
         }
         try {
             Map<String, Object> response = new HashMap<>();
@@ -193,7 +193,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", String.valueOf(e.getMessage())));
+                .body(errorBody(String.valueOf(e.getMessage()), Collections.emptyList()));
         }
     }
 

@@ -38950,7 +38950,7 @@
   },
   {
     "name": "400 - Switchback - Golden Vectors - assignSwitchback - 2 Arms",
-    "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string.",
+    "description": "Every 2-arm assignSwitchback case (294) of the platform golden vectors, driven through POST /switchback/assign. 64-bit values travel as decimal strings; integer cluster units are sent as their decimal string. Invalid requests (armCount < 2, a non-decimal or out-of-range 64-bit value, a missing field) answer HTTP 400.",
     "contextData": {
       "experiments": []
     },
@@ -42774,6 +42774,61 @@
         },
         "expect": {
           "result": 0,
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackAssign",
+        "params": {
+          "clusterUnit": "market_1",
+          "periodIndex": "0",
+          "seed": "0",
+          "armCount": 1
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackAssign",
+        "params": {
+          "clusterUnit": "market_1",
+          "periodIndex": "1.5",
+          "seed": "0",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackAssign",
+        "params": {
+          "clusterUnit": "market_1",
+          "periodIndex": "0",
+          "seed": "9223372036854775808",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackAssign",
+        "params": {
+          "periodIndex": "0",
+          "seed": "0",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
           "events": []
         }
       }
@@ -50452,7 +50507,7 @@
   },
   {
     "name": "403 - Switchback - Golden Vectors - fisherYatesPermutation - 2 Arms",
-    "description": "Every 2-arm fisherYatesPermutation case (168) of the platform golden vectors, driven through POST /switchback/permutation. The permutation is compared positionally.",
+    "description": "Every 2-arm fisherYatesPermutation case (168) of the platform golden vectors, driven through POST /switchback/permutation. The permutation is compared positionally. Invalid requests answer HTTP 400.",
     "contextData": {
       "experiments": []
     },
@@ -53310,6 +53365,61 @@
             1
           ],
           "orderedResult": true,
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackPermutation",
+        "params": {
+          "clusterUnit": "market_1",
+          "cycleIndex": "0",
+          "seed": "0",
+          "armCount": 1
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackPermutation",
+        "params": {
+          "clusterUnit": "market_1",
+          "cycleIndex": "1.5",
+          "seed": "0",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackPermutation",
+        "params": {
+          "clusterUnit": "market_1",
+          "cycleIndex": "0",
+          "seed": "9223372036854775808",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
+          "events": []
+        }
+      },
+      {
+        "action": "switchbackPermutation",
+        "params": {
+          "cycleIndex": "0",
+          "seed": "0",
+          "armCount": 2
+        },
+        "expect": {
+          "status": 400,
+          "errorContains": "",
           "events": []
         }
       }
