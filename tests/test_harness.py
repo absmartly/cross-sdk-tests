@@ -573,7 +573,7 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["dotnet", "java", "php", "python", "ruby"])
+        self.assertEqual(holders, ["dotnet", "java", "javascript", "php", "python", "ruby"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
@@ -968,6 +968,13 @@ class ConsistencyTests(unittest.TestCase):
                          obs("publish", dict(base_pub, attributes=[{"name": "v", "setAt": 2}]), "publish"))
         self.assertNotEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None}]), "publish"),
                             obs("publish", dict(base_pub, attributes=[{"name": "v", "value": 0}]), "publish"))
+        # A null attribute value published explicitly or omitted is the same record; other values differ.
+        null_explicit = dict(base_pub, attributes=[{"name": "x", "value": None, "setAt": 1}])
+        null_omitted = dict(base_pub, attributes=[{"name": "x", "setAt": 2}])
+        self.assertEqual(obs("publish", null_explicit, "publish"), obs("publish", null_omitted, "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "y"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", base_pub, "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))

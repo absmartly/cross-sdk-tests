@@ -49,7 +49,7 @@ def canonical():
 # The group owns 400+, after main's scenarios (the feature-parity round ends at 332).
 KEPT_COUNT = 279
 FIRST_ID = scenario_groups.SWITCHBACK_FIRST_NUMBER
-GROUP_SIZE = 26
+GROUP_SIZE = 27
 
 
 @pytest.fixture(scope="module")
@@ -227,19 +227,19 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
     assert len(gated) == len(built_group) - 1 == GROUP_SIZE - 1
 
-    # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
-    reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
-    runner.capabilities = {"javascript": {"switchback": False}}
+    reason = runner.policy["sdks"]["kotlin"]["unsupported"]["switchback"]
+    runner.capabilities = {"kotlin": {"switchback": False}}
     for scenario in gated:
-        result = runner.run_and_validate_sdk("javascript", "http://sdk.invalid", scenario)
-        assert result == {"passed": True, "skipped": True, "reason": f"reviewed exception: switchback ({reason})"}
+        result = runner.run_and_validate_sdk("kotlin", "http://sdk.invalid", scenario)
+        assert result["skipped"] is True and result["passed"] is True
+        assert result["reason"].startswith(f"reviewed exception: switchback ({reason})")
     assert calls == []
 
 
 def test_switchback_policy_requires_the_capable_sdks_and_excepts_every_other_sdk(runner):
     # The policy loader already rejects overlapping, missing and blank-reason classifications.
     required = {sdk for sdk, entry in runner.policy["sdks"].items() if "switchback" in entry["required"]}
-    assert required == {"dotnet", "java", "php", "python", "ruby"}
+    assert required == {"dotnet", "java", "javascript", "php", "python", "ruby"}
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 

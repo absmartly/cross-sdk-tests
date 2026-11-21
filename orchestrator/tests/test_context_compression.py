@@ -176,13 +176,15 @@ def test_place_group_rejects_a_split_group():
                                     generator.build_group, first_number=270)
 
 
-# sha256 of test_scenarios_complete.json at ae86279 (#20): main's 305 scenarios plus 270-272. The
-# file with the br scenarios (273 up to, not including, 300) removed must render to exactly those
-# bytes: the only change the br follow-up may make is that insertion after 272.
-BEFORE_BR_SHA256 = "80dcd7b66b8a0a53d82a1ec66e8beef18566bf5faba5f7469154ad1d49e1d8a0"
-BEFORE_BR_COUNT = 308
-# Groups that landed after the br follow-up; they are not part of that snapshot.
-LATER_GROUP_MARKERS = (scenario_groups.HOLDOUT_CONFORMANCE,)
+# sha256 of test_scenarios_complete.json at ae86279 (#20), main's 305 scenarios plus 270-272, without
+# the Switchback group (400+). The file with the br scenarios (273 up to, not including, 300) and the
+# generator-owned groups below removed must render to exactly those bytes: the only change the br
+# follow-up may make is that insertion after 272.
+BEFORE_BR_SHA256 = "69f1d3b0c94694fb8253ac47aa94b51133adf77e96207aed3abef5868d0424a6"
+BEFORE_BR_COUNT = 282
+# Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
+# verified by its own --check, and the Holdout Conformance group, which landed after the br follow-up.
+LATER_GROUP_MARKERS = (scenario_groups.SWITCHBACK, scenario_groups.HOLDOUT_CONFORMANCE)
 
 
 def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():

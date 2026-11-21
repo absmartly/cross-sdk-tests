@@ -13,6 +13,7 @@
     "`measuredCapabilities` are not read from the wrapper: the orchestrator measures them (here, the Accept-Encoding the SDK sends to the context server) and checks the result against this policy exactly like an advertised capability, so a reviewed exception that starts measuring true fails the run until it is moved to `required`."
   ],
   "capabilities": {
+    "integralFloatAttributes": "the SDK's JSON layer tells the attribute value 3.0 from 3, so a switchback cluster attribute of 3.0 gives no value (scenario 426); JavaScript parses both as one number and keys 3.0 as \"3\" (owner decision 2026-11-17)",
     "switchback": "R33 cluster-defined switchback serving (ordered switchbackClusters, switchbackClusterValues) through a context, plus POST /switchback/assign and /switchback/permutation, advertised from a behavioral self-test",
     "diagnostics": "POST /diagnostic hashUnit, computed by the SDK's own hashing",
     "diagnosticsUtf8": "POST /diagnostic utf8Bytes, computed by the SDK's own UTF-8 encoder",
@@ -68,12 +69,13 @@
         "throwsOnMisuse",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "switchback",
         "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in javascript-sdk",
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
@@ -106,6 +108,7 @@
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
         "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
         "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip",
+        "integralFloatAttributes": "switchback serving not implemented in python3-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "observed: requests/urllib3 adds br only when the `brotli`/`brotlicffi` package is installed; the SDK does not depend on it, so it sends `gzip, deflate`"
       }
     },
@@ -138,6 +141,7 @@
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in ruby-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "observed: Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder; the SDK's Faraday stack adds none"
       }
     },
@@ -170,6 +174,7 @@
         "switchback": "switchback serving not implemented in liquid (ruby-sdk)",
         "holdout_arms": "depends on holdouts, which the liquid wrapper does not advertise",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in liquid (ruby-sdk); java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "observed: wraps ruby-sdk; Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder"
       }
     },
@@ -201,6 +206,7 @@
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
         "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in php-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: php-sdk ReactHttpClient (the wrapper's injected client) sends no Accept-Encoding and does not decode gzip; the default curl HTTPClient sets no CURLOPT_ENCODING either; fix pending",
         "contextFetchBrotli": "observed: the wrapper's ReactHttpClient sends no Accept-Encoding and decodes nothing; the curl default sets no CURLOPT_ENCODING"
       }
@@ -233,6 +239,7 @@
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "switchback": "switchback serving not implemented in go-sdk",
         "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in go-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",
         "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
       }
@@ -265,6 +272,7 @@
         "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in rust-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: rust-sdk builds reqwest 0.12 without the gzip feature, so no Accept-Encoding is sent and gzip is not decoded; fix pending",
         "contextFetchBrotli": "observed: rust-sdk builds reqwest 0.12 with only the `json` feature: no Accept-Encoding, no br decoder (needs the reqwest `brotli` feature)"
       }
@@ -293,7 +301,8 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "integralFloatAttributes"
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
@@ -329,6 +338,7 @@
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
         "clientNoEnvironment": "kotlin-sdk's Client has a private constructor and a non-null environment, and Context.create is internal, so the wrapper cannot build a no-environment client black-box; kotlin-sdk's own ContextSystemAttributesTest covers the no-environment case via an internal Context.create(environment=null)",
         "clientAcceptsBlankApplication": "kotlin-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in kotlin-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: kotlin-sdk DefaultHTTPClient (HttpURLConnection) sends no Accept-Encoding and does not decode gzip; fix pending",
         "contextFetchBrotli": "observed: kotlin-sdk HttpURLConnection sends no Accept-Encoding and decodes nothing; br is not in the JDK (needs org.brotli:dec or brotli4j)"
       }
@@ -362,6 +372,7 @@
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes",
         "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in scala-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "from code (lane not built here, repo.scala-sbt.org unreachable): sttp basicRequest sends `gzip, deflate` and HttpURLConnectionBackend throws on any other coding"
       }
     },
@@ -394,7 +405,8 @@
         "switchback": "switchback serving not implemented in swift-sdk",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
+        "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "integralFloatAttributes": "switchback serving not implemented in swift-sdk; java-sdk and javascript-sdk only (R33)"
       }
     },
     "dart": {
@@ -426,6 +438,7 @@
         "switchback": "switchback serving not implemented in flutter-sdk (dart)",
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in flutter-sdk (dart); java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io"
       }
     },
@@ -458,6 +471,7 @@
         "switchback": "switchback serving not implemented in flutter-sdk (flutter)",
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in flutter-sdk (flutter); java-sdk and javascript-sdk only (R33)",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only"
       }
     },
@@ -489,6 +503,7 @@
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07', which parses as version core '1E' with pre-release '07' and compares greater than '0.0000001' (semver_eq misses, semver_gt wrongly matches); a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk's SemverComparator (scenario 332 skips until then)",
+        "integralFloatAttributes": "switchback serving not implemented in dotnet-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "from code (the lane cannot build in the sandbox, nuget.org unreachable): the wrapper injects its own HttpClient and the SDK's handler sets no AutomaticDecompression, so no Accept-Encoding is sent; fix pending",
         "contextFetchBrotli": "from code (lane not built here, nuget.org unreachable): no AutomaticDecompression on the SDK's handler or the wrapper's HttpClient, so no Accept-Encoding; needs DecompressionMethods.Brotli (built into .NET Core 3.0+)"
       }
@@ -521,6 +536,7 @@
         "switchback": "switchback serving not implemented in cpp-sdk",
         "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in cpp-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: cpp-sdk DefaultHTTPClient (libcurl) sets no CURLOPT_ACCEPT_ENCODING, so none is sent and gzip is not decoded; fix pending",
         "contextFetchBrotli": "observed: cpp-sdk libcurl handle sets no CURLOPT_ACCEPT_ENCODING, so none is sent and nothing decoded; `\"\"` would enable every coding the system libcurl has"
       }
@@ -553,6 +569,7 @@
         "switchback": "switchback serving not implemented in elixir-sdk",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
         "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "integralFloatAttributes": "switchback serving not implemented in elixir-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "from code (the lane cannot build in the sandbox, hex.pm unreachable): elixir-sdk calls HTTPoison/hackney without auto_decompress, so no Accept-Encoding is sent; fix pending",
         "contextFetchBrotli": "from code (lane not built here, hex.pm unreachable): HTTPoison/hackney sends no Accept-Encoding; br is not in OTP (needs a NIF such as the `brotli` hex package)"
       }
@@ -586,6 +603,7 @@
         "switchback": "switchback serving not implemented in react (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
@@ -618,6 +636,7 @@
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
@@ -650,6 +669,7 @@
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
@@ -682,6 +702,7 @@
         "switchback": "switchback serving not implemented in angular (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     }
