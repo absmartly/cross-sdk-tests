@@ -236,18 +236,10 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_ruby_and_excepts_every_other_sdk(runner):
-    sdks = runner.policy["sdks"]
-    assert "switchback" in runner.policy["capabilities"]
-    capable = {"java", "ruby"}
-    for sdk in capable:
-        assert "switchback" in sdks[sdk]["required"], sdk
-        assert "switchback" not in sdks[sdk]["unsupported"], sdk
-    for sdk, entry in sdks.items():
-        if sdk not in capable:
-            assert "switchback" not in entry["required"], sdk
-            reason = entry["unsupported"]["switchback"]
-            assert reason.endswith("java-sdk and ruby-sdk serve it (R33)") or "self-test" in reason, sdk
+def test_switchback_policy_requires_the_capable_sdks_and_excepts_every_other_sdk(runner):
+    # The policy loader already rejects overlapping, missing and blank-reason classifications.
+    required = {sdk for sdk, entry in runner.policy["sdks"].items() if "switchback" in entry["required"]}
+    assert required == {"java", "php", "ruby"}
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 

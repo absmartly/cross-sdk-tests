@@ -152,6 +152,13 @@ on ruby-sdk#43, holdouts) while both are open, because its lane now requires
 builds that branch too but advertises neither). Keep ruby-sdk's
 `feat/switchbacks` branch until a follow-up PR here re-pins ruby-sdk to `main` and
 its lane is green; re-run this suite after any push to that branch.
+Exception: php-sdk is pinned to `feat/switchbacks` while its switchbacks PR
+(stacked on php-sdk#11, `feat/holdouts`) is open, because its lane now requires
+`holdouts`/`holdout_arms` and `switchback`. `feat/switchbacks` contains
+`feat/holdouts`, so the one pin covers both. The pin follows the same rule:
+keep php-sdk's `feat/switchbacks` branch (delete-branch-on-merge is **off** for
+php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its lane is
+green; re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 
