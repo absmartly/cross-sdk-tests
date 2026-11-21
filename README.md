@@ -114,6 +114,11 @@ across languages.
 
   The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
   switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
+  The go lane pins `go-sdk` to its switchback branch (`feat/switchbacks`) until
+  it merges. The go wrapper decodes attribute values with `UseNumber`, so a
+  JSON integer reaches the SDK as an integer and `3.0` as a float (scenario
+  411), and advertises `switchback` from a behavioural self-test
+  (`go-wrapper/switchback.go`) that fails closed on a sorted cluster map.
 
   Scenarios 501-507 (Holdout Conformance, H2-H8) add the holdout cases every
   SDK holdout port must agree on, beyond 203-227 and 305. They require

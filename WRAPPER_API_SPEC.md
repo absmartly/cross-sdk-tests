@@ -1352,15 +1352,7 @@ the anchor, 424 next to a covering holdout) and expect the exposure to carry `ru
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-Integral floats: scenario 426 sends the attribute value `3.0` and expects no
-cluster value (a float never keys a cluster). It also requires
-`integralFloatAttributes`, because an SDK whose JSON layer cannot tell `3.0`
-from `3` (JavaScript, for one) sees the integer `3`, which it keys as `"3"`.
-Such an SDK advertises `integralFloatAttributes: false` and lists it as a
-reviewed exception (owner decision 2026-11-17); it still runs 411, which
-covers every other non-value. Ruby tells them apart, and PHP's `json_decode`
-keeps `3.0` a float.
-
+ours+GO
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
 decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the

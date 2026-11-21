@@ -573,7 +573,7 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["dotnet", "java", "javascript", "php", "python", "ruby"])
+        self.assertEqual(holders, ["dotnet", "go", "java", "javascript", "php", "python", "ruby"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))

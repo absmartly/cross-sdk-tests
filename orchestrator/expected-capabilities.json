@@ -233,11 +233,11 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms"
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
-        "switchback": "switchback serving not implemented in go-sdk",
         "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
         "integralFloatAttributes": "switchback serving not implemented in go-sdk; java-sdk and javascript-sdk only (R33)",
         "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",

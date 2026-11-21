@@ -163,6 +163,12 @@ green; re-run this suite after any push to that branch.
 dotnet-sdk is temporarily pinned to `feat/switchbacks` (dotnet-sdk#16, stacked on
 the holdouts PR dotnet-sdk#15), which turns its `holdouts`/`holdout_arms` and
 `switchback` capabilities on; the pin goes back to `main` once those PRs merge.
+Exception: go-sdk is pinned to `feat/switchbacks` while its holdouts and
+switchbacks PRs are open (`feat/switchbacks` is stacked on `feat/holdouts`),
+because its lane now requires `holdouts`, `holdout_arms`, `holdoutIdsDedup`
+and `switchback`. Keep both go-sdk branches (delete-branch-on-merge **off**
+for those PRs) until a follow-up PR here re-pins go-sdk to `main` and its lane
+is green; re-run this suite after any push to either branch.
 
 ### Scenario numbering versus open PRs
 

@@ -31,8 +31,9 @@ declare -A SDK_BRANCHES=(
   ["elixir-sdk"]="feat/holdouts"
   # Temporary: flutter-sdk#11 (holdouts); back to main once it merges.
   ["flutter-sdk"]="feat/holdouts"
-  # go-sdk holdouts PR (go-sdk feat/holdouts) is open; re-pin to main once it merges.
-  ["go-sdk"]="feat/holdouts"
+  # go-sdk switchbacks PR (go-sdk feat/switchbacks, stacked on feat/holdouts) is
+  # open; re-pin to main once both merge.
+  ["go-sdk"]="feat/switchbacks"
   ["java-sdk"]="main"
   ["javascript-sdk"]="feat/switchbacks"
   ["kotlin-sdk"]="main"
