@@ -131,12 +131,12 @@
         "throwsOnMisuse",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
         "contextFetchCompression"
       ],
       "unsupported": {
-        "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "contextFetchBrotli": "observed: Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder; the SDK's Faraday stack adds none"
       }
@@ -166,9 +166,9 @@
         "contextFetchCompression"
       ],
       "unsupported": {
-        "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
+        "holdouts": "the liquid wrapper has no holdout self-test yet, so it does not advertise holdouts (the ruby lane covers ruby-sdk's holdout resolution)",
         "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
+        "holdout_arms": "depends on holdouts, which the liquid wrapper does not advertise",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "contextFetchBrotli": "observed: wraps ruby-sdk; Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder"
       }

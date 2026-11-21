@@ -16,6 +16,7 @@ require 'context_publisher'
 require 'default_context_publisher'
 require 'context_event_logger'
 require 'hashing'
+require_relative 'holdout_self_test'
 
 set :port, 3000
 set :bind, '0.0.0.0'
@@ -246,6 +247,8 @@ get '/capabilities' do
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,
     assignmentRules: true,
+    holdouts: HoldoutSelfTest.holdouts?,
+    holdout_arms: HoldoutSelfTest.holdout_arms?,
     semverOperators: true,
     xAgentHeader: true }.to_json
 end

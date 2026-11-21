@@ -30,7 +30,8 @@ declare -A SDK_BRANCHES=(
   # python3-sdk holdouts PR (python3-sdk#17, feat/holdouts) is open; re-pin to main once it merges.
   ["python3-sdk"]="feat/holdouts"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-  ["ruby-sdk"]="main"
+  # ruby-sdk holdouts PR (ruby-sdk#43, feat/holdouts) is open; re-pin to main once it merges.
+  ["ruby-sdk"]="feat/holdouts"
   ["rust-sdk"]="main"
   ["scala-sdk"]="main"
   ["swift-sdk"]="main"

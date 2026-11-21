@@ -115,6 +115,11 @@ the same rule: keep python3-sdk's
 `feat/holdouts` branch (delete-branch-on-merge **off** for python3-sdk#17) until a
 follow-up PR here re-pins python3-sdk to `main` and its lane is green; re-run
 this suite after any push to that branch.
+Exception: ruby-sdk is pinned to `feat/holdouts` while ruby-sdk#43 (holdouts) is
+open, because its lane now requires `holdouts`/`holdout_arms` (the liquid lane,
+which wraps ruby-sdk, builds that branch too but does not advertise holdouts).
+Keep ruby-sdk's `feat/holdouts` branch until a follow-up PR here re-pins ruby-sdk
+to `main` and its lane is green; re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 
