@@ -401,11 +401,22 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
+  # Negotiating context server: every wrapper's SDK fetches GET {endpoint}/context
+  # from here in the Context Fetch Compression scenarios, so the response encoding
+  # is decided, and the request's Accept-Encoding recorded, in one place.
+  context-server:
+    build:
+      context: .
+      dockerfile: context-server/Dockerfile
+    ports:
+      - "8080"
+
   orchestrator:
     build:
       context: .
       dockerfile: orchestrator/Dockerfile
     depends_on:
+      - context-server
       - javascript-sdk
       - python-sdk
       - ruby-sdk
@@ -431,3 +442,4 @@ services:
       - ./test-results:/results
     environment:
       - PYTHONUNBUFFERED=1
+      - CONTEXT_SERVER_URL=http://context-server:8080

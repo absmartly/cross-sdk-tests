@@ -113,20 +113,22 @@ round.
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
-`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
-fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
-then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
-free), below the parity range. Both generators own fixed ranges (230 and 300
-are constants, not derived from other scenarios): each keeps scenarios numbered
-outside its range where they are, and fails rather than renumbers when another
-scenario sits inside it. So #16/#20 only need to renumber their own groups to
+`scenario_groups.py`. Open #16 (shared variable keys, 230-245) numbers from 230
+too; it merges `main` and renumbers its group to 254-269, the free slot after
+253 and below the parity range. #20 (context fetch compression) has landed at
+270-272: `generate_context_compression_scenarios.py` owns the group from the
+fixed `CONTEXT_FETCH_FIRST_NUMBER` (270) in `scenario_groups.py`, between the
+round groups and the parity range. The generators own fixed ranges (230, 270
+and 300 are constants, not derived from other scenarios): each keeps scenarios
+numbered outside its range where they are, and fails rather than renumbers when
+another scenario sits inside it. So #16 only needs to renumber its own group to
 254+; a missed renumber shows up as a generator error, not a silent shift
-(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
-groups with a generator, give it a fixed first number the same way. The three
+(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16 owns its group
+with a generator, give it a fixed first number the same way. The three
 generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
 and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
 `SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
-outside all three.
+outside all three, as #20 did with 270-272.
 
 ## Coverage matrix
 

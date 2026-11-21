@@ -663,6 +663,110 @@ class WrapperSkipTests(unittest.TestCase):
             self.assertIn("orchestrator/test_runner.py", src.read())
 
 
+
+class VerifySdkScriptTests(unittest.TestCase):
+    """verify_sdk.sh's orchestrator block, run as the script runs it (docker steps left out)."""
+
+    SCENARIOS = [
+        {"name": "ungated", "steps": [{"action": "isReady", "expect": {"result": True}}]},
+        {"name": "gated", "requires": ["contextFetchCompression"],
+         "steps": [{"action": "isReady", "expect": {"result": True}}]},
+    ]
+
+    def run_script(self, measurement_failed=None, scenario_result=None):
+        """Exec the heredoc of verify_sdk.sh; return (exit code, stdout)."""
+        with open(os.path.join(REPO_ROOT, "verify_sdk.sh")) as src:
+            script = src.read()
+        block = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        policy = {
+            "capabilities": {"contextFetchCompression": "measured"},
+            "measuredCapabilities": ["contextFetchCompression"],
+            "sdks": {"alpha": {"required": ["contextFetchCompression"], "unsupported": {}}},
+        }
+        orch_cls = TestOrchestrator
+
+        def wait_for_services(orch):
+            if measurement_failed:
+                orch.measurement_failed["alpha"] = dict(measurement_failed)
+            orch.capabilities["alpha"] = {}
+            return dict(orch.sdks), []
+
+        def run_and_validate_sdk(orch, sdk_name, base_url, scenario):
+            gate = orch.capability_gate(sdk_name, scenario)
+            if gate:
+                return {"passed": True, "skipped": True, "reason": gate}
+            return dict(scenario_result or {"passed": True, "failures": []})
+
+        out = io.StringIO()
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(REPO_ROOT)
+            try:
+                with mock.patch.object(test_runner, "load_capability_policy", return_value=policy), \
+                        mock.patch.object(test_runner, "load_scenarios",
+                                          return_value=(self.SCENARIOS, [], [])), \
+                        mock.patch.object(orch_cls, "wait_for_services", wait_for_services), \
+                        mock.patch.object(orch_cls, "run_and_validate_sdk", run_and_validate_sdk), \
+                        mock.patch.object(orch_cls, "generate_report",
+                                          self.report_into(tmp, orch_cls.generate_report)), \
+                        mock.patch.dict(os.environ, {"SDK_URLS": "alpha=http://alpha;"}), \
+                        mock.patch("builtins.open", self.redirect_open(tmp)), \
+                        contextlib.redirect_stdout(out):
+                    with self.assertRaises(SystemExit) as raised:
+                        exec(compile(block, "verify_sdk.sh", "exec"), {"__name__": "__main__"})
+            finally:
+                os.chdir(cwd)
+        return raised.exception.code, out.getvalue()
+
+    @staticmethod
+    def report_into(tmp, real):
+        def generate_report(orch, output_file, failed_sdks=None):
+            return real(orch, os.path.join(tmp, output_file), failed_sdks)
+        return generate_report
+
+    @staticmethod
+    def redirect_open(tmp):
+        real_open = open
+
+        def patched(path, *args, **kwargs):
+            if path == "test-results/report.json":
+                path = os.path.join(tmp, path)
+            return real_open(path, *args, **kwargs)
+        return patched
+
+    def status_line(self, out):
+        return next(line for line in out.splitlines() if line.startswith("alpha: "))
+
+    def test_measurement_failure_is_not_printed_as_pass(self):
+        code, out = self.run_script(measurement_failed={"contextFetchCompression": "context server down"})
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 2/2 MEASURE FAIL")
+        self.assertIn("  - MEASURE FAIL contextFetchCompression :: context server down", out)
+
+    def test_clean_run_still_prints_pass(self):
+        code, out = self.run_script()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.status_line(out), "alpha: 2/2 PASS")
+
+    def test_measurement_failure_with_a_scenario_failure(self):
+        failure = {"passed": False, "failures": [{"step": 0, "field": "result"}]}
+        code, out = self.run_script({"contextFetchCompression": "x"}, failure)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 1/2 FAIL + MEASURE FAIL")
+
+    def test_harness_only_result_is_still_harness_error(self):
+        harness = {"passed": False, "harness_error": "step 0 (createContext): reset", "failures": []}
+        code, out = self.run_script(scenario_result=harness)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 0/2 HARNESS ERROR")
+        self.assertIn("  - HARNESS ERROR ungated :: step 0 (createContext): reset", out)
+
+    def test_down_service_is_down(self):
+        lines = results_aggregator.verify_status_lines(
+            {"sdk_stats": {"alpha": {"service_failed": True, "measurement_failed": {"c": "x"}}}, "results": []},
+            "alpha", 2)
+        self.assertEqual(lines, ["\nalpha: DOWN"])
+
 class ScenarioLoaderTests(unittest.TestCase):
     def test_repo_scenarios_valid(self):
         policy = test_runner.load_capability_policy()
@@ -962,8 +1066,27 @@ class AggregatorTests(unittest.TestCase):
     def test_capability_policy_violation_flag(self):
         self.assert_forced("capability_policy_violations", ["v"], "CAPS POLICY")
 
+    def test_measurement_failed_flag(self):
+        stats = {"measurement_failed": {"contextFetchCompression": "context server down"}, "passed": 10, "failed": 0}
+        self.assertEqual(results_aggregator.run_level_status(stats), "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchCompression": "x"}, "MEASURE FAIL")
+
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
+
+    def test_harness_error_does_not_hide_sdk_failures(self):
+        row = self.load(dict(self.base, passed=8, failed=1, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertTrue(results_aggregator.print_results_table({}, {"x": row}, ["x"], False, True))
+        self.assertIn("8/9 FAIL + HARNESS ERROR", re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()))
+
+    def test_harness_error_flag_is_distinct_from_sdk_failure(self):
+        row = self.load(dict(self.base, passed=9, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        self.assertEqual(row["failed"], 0)
+        self.assert_forced("harness_errors", 1, "HARNESS ERROR")
 
     def test_existing_flags(self):
         self.assert_forced("service_failed", True, "DOWN")
@@ -1015,15 +1138,32 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes."""
+        the wrappers fails here rather than in all 20 lanes. `measuredCapabilities` are exempt: the
+        orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
+        measured = set(policy.get("measuredCapabilities") or [])
         self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
         for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
             with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
                 source = src.read()
             for cap in policy["sdks"][sdk]["required"]:
+                if cap in measured:
+                    continue
                 with self.subTest(sdk=sdk, capability=cap):
                     self.assertRegex(source, rf"\b{re.escape(cap)}\b", f"{path} never names {cap}")
+
+    def test_no_wrapper_reports_a_measured_capability(self):
+        """A measured capability is never self-reported: the orchestrator would drop the value, so a
+        wrapper naming one is dead code that suggests the opposite."""
+        policy = test_runner.load_capability_policy()
+        measured = policy.get("measuredCapabilities") or []
+        self.assertTrue(measured)
+        for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                source = src.read()
+            for cap in measured:
+                with self.subTest(sdk=sdk, capability=cap):
+                    self.assertNotRegex(source, rf"\b{re.escape(cap)}\b", f"{path} reports measured {cap}")
 
     def test_finalize_scenarios_require_single_finalize_event(self):
         """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on

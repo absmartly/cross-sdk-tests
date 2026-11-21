@@ -172,7 +172,7 @@ if [ "$SKIP_BUILD" = false ]; then
     BUILD_SERVICES="$BUILD_SERVICES $(get_unit_service_names)"
   fi
   if [ "$UNIT_ONLY" = false ] || [ "$E2E" = true ]; then
-    BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names) orchestrator"
+    BUILD_SERVICES="$BUILD_SERVICES $(get_cross_service_names) context-server orchestrator"
   fi
   echo "Building images for:$BUILD_SERVICES"
   docker compose build $BUILD_SERVICES
