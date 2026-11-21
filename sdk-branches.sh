@@ -36,8 +36,9 @@ declare -A SDK_BRANCHES=(
   ["liquid-sdk"]="main"
   # php-sdk switchbacks PR (stacked on php-sdk#11, feat/holdouts) is open; re-pin to main once both merge.
   ["php-sdk"]="feat/switchbacks"
-  # python3-sdk holdouts PR (python3-sdk#17, feat/holdouts) is open; re-pin to main once it merges.
-  ["python3-sdk"]="feat/holdouts"
+  # python3-sdk switchbacks PR (feat/switchbacks, stacked on python3-sdk#17's feat/holdouts) is
+  # open; re-pin to main once both merge.
+  ["python3-sdk"]="feat/switchbacks"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   # ruby-sdk switchbacks PR (feat/switchbacks, stacked on holdouts ruby-sdk#43) is open;
   # re-pin to main once both merge.
