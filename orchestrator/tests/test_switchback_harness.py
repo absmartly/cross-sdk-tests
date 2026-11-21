@@ -239,7 +239,7 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
 def test_switchback_policy_requires_the_capable_sdks_and_excepts_every_other_sdk(runner):
     # The policy loader already rejects overlapping, missing and blank-reason classifications.
     required = {sdk for sdk, entry in runner.policy["sdks"].items() if "switchback" in entry["required"]}
-    assert required == {"java", "php", "ruby"}
+    assert required == {"dotnet", "java", "php", "ruby"}
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 

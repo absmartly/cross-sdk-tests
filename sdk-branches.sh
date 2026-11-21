@@ -18,10 +18,12 @@
 # back to main.
 # cpp-sdk is pinned to feat/holdouts (the absmartly/cpp-sdk holdouts PR) while that
 # PR is open; the pin goes back to `main` once it merges.
+# dotnet-sdk is on feat/switchbacks (dotnet-sdk#16, stacked on the holdouts PR #15)
+# until those PRs merge, then back to main.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/holdouts"
-  ["dotnet-sdk"]="feat/holdouts"
+  ["dotnet-sdk"]="feat/switchbacks"
   # elixir-sdk#5 (holdouts, feat/holdouts) is open; re-pin to main once it merges.
   ["elixir-sdk"]="feat/holdouts"
   # Temporary: flutter-sdk#11 (holdouts); back to main once it merges.

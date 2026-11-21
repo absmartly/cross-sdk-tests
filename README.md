@@ -64,9 +64,8 @@ across languages.
   `assignSwitchback(key, floorDiv(now - switchbackStartAt, switchbackPeriodMs),
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
   implements it (absmartly/java-sdk#15, `SWITCHBACK.md`). The SDKs required to
-  support it are listed under `required` in `orchestrator/expected-capabilities.json`
-  (java, plus each lane whose wrapper reports it from a behavioral self-test, such
-  as `ruby-wrapper/switchback_self_test.rb` and `php-wrapper/SwitchbackSelfTest.php`);
+  support it are listed under `required` in `orchestrator/expected-capabilities.json`;
+  each of their wrappers (java aside) reports it from a behavioral self-test, and
   every other SDK lists `switchback` as a reviewed exception.
   The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
   the feature-parity range.

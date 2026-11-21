@@ -164,6 +164,20 @@ jobs:
             orchestrator python3 test_runner.py
           test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
 
+      # Live HTTP regressions for the dotnet wrapper's input and report boundaries, against the
+      # wrapper the suite just ran (orchestrator/tests/test_dotnet_wrapper_http.py).
+      - name: Dotnet wrapper HTTP regressions
+        if: matrix.sdk == 'dotnet'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          docker compose run --rm --no-deps \
+            -v "$PWD/orchestrator/tests:/app/tests:ro" \
+            -e "DOTNET_WRAPPER_URL=http://dotnet-sdk:3000" \
+            orchestrator sh -c "pip install --quiet pytest && python -m pytest -q tests/test_dotnet_wrapper_http.py"
+
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4

@@ -159,6 +159,9 @@ Exception: php-sdk is pinned to `feat/switchbacks` while its switchbacks PR
 keep php-sdk's `feat/switchbacks` branch (delete-branch-on-merge is **off** for
 php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its lane is
 green; re-run this suite after any push to that branch.
+dotnet-sdk is temporarily pinned to `feat/switchbacks` (dotnet-sdk#16, stacked on
+the holdouts PR dotnet-sdk#15), which turns its `holdouts`/`holdout_arms` and
+`switchback` capabilities on; the pin goes back to `main` once those PRs merge.
 
 ### Scenario numbering versus open PRs
 
