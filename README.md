@@ -223,7 +223,8 @@ across languages.
   and `pip install -r orchestrator/requirements-test.txt`, which adds the
   test-only `brotli` pin); CI runs them in `harness-unit-tests` next to `tests/`.
   The java wrapper's switchback endpoint tests run inside the wrapper's
-  `builder` image stage with `gradle test`.
+  `builder` image stage with `gradle test`; the rust wrapper's self-test unit
+  tests run with `cargo test` in `rust-wrapper/`.
 
 - **A live-backend e2e runner** (`orchestrator/e2e_runner.py`) that drives the
   wrappers against a real ABsmartly environment and verifies data arrives.

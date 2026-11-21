@@ -169,6 +169,9 @@ because its lane now requires `holdouts`, `holdout_arms`, `holdoutIdsDedup`
 and `switchback`. Keep both go-sdk branches (delete-branch-on-merge **off**
 for those PRs) until a follow-up PR here re-pins go-sdk to `main` and its lane
 is green; re-run this suite after any push to either branch.
+rust-sdk is pinned to `feat/switchbacks` (rust-sdk#12) while its switchback
+port is open: the rust wrapper links `absmartly::switchback`, which rust-sdk
+`main` does not have yet. The pin goes back to `main` once rust-sdk#12 merges.
 
 ### Scenario numbering versus open PRs
 

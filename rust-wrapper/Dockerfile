@@ -12,6 +12,8 @@ COPY cross-sdk-tests/rust-wrapper/src ./src
 RUN sed -i 's|path = "../../rust-sdk"|path = "/rust-sdk"|g' Cargo.toml
 
 RUN cargo build --release
+# The wrapper's own tests (switchback endpoints and self-test) gate the image.
+RUN cargo test --release
 
 FROM builder AS tester
 WORKDIR /rust-sdk

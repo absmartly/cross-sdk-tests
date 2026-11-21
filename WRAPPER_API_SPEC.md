@@ -1315,7 +1315,7 @@ cluster key, or whose assigner drifts from the golden vectors, must report
 `false`. An SDK whose experiment model still has `switchbackClusterCount` (the
 Phase 1E bucket design) must report `false`.
 
-The capability means a behavioral self-test passed. For java and ruby (`ruby-wrapper/switchback_self_test.rb`, the same payload and expected values, plus a float value, a second unit serving, a rule win and a traffic miss) it covers:
+The capability means a behavioral self-test passed. For java and ruby (`ruby-wrapper/switchback_self_test.rb`, the same payload and expected values, plus a float value, a second unit serving, a rule win and a traffic miss) it covers the list below; the rust wrapper's (`rust-wrapper/src/switchback_self_test.rs`) mirrors java's, and also checks that a `3.0` attribute keys no cluster, that a covering holdout neither suppresses a switchback nor fires through it, and that an `assign` rule, full-on and a strict audience mismatch keep their unit-experiment exposure flags. The checks:
 
 - the SDK's experiment model has `switchbackClusters` and
   `switchbackClusterValues` and does not have `switchbackClusterCount`;
@@ -1352,7 +1352,18 @@ the anchor, 424 next to a covering holdout) and expect the exposure to carry `ru
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-ours+GO
+Integral floats: scenario 426 sends the attribute value `3.0` and expects no
+cluster value (a float never keys a cluster). It also requires
+`integralFloatAttributes`, because an SDK whose JSON layer cannot tell `3.0`
+from `3` (JavaScript, for one) sees the integer `3`, which it keys as `"3"`.
+Such an SDK advertises `integralFloatAttributes: false` and lists it as a
+reviewed exception (owner decision 2026-11-17); it still runs 411, which
+covers every other non-value. Ruby tells them apart, PHP's `json_decode`
+keeps `3.0` a float, and rust-sdk's serde_json reads `3.0` as a float. A
+wrapper whose language keeps the two apart must pass attribute values through
+without losing it: the go wrapper decodes `value` with `UseNumber` and hands an
+integer literal to the SDK as an `int` and any other number as a `float64`.
+
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
 decades: `switchbackPeriodMs` is 400,000 h (1,440,000,000,000 ms) and the

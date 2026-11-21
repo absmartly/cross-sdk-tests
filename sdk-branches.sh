@@ -23,6 +23,9 @@
 # javascript-sdk is pinned to feat/switchbacks (javascript-sdk#69) only while that PR is
 # open: repin it to main in the same change that merges #69, before the branch is deleted,
 # or this lane's clone fails. The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
+# rust-sdk is pinned to feat/switchbacks (rust-sdk#12, stacked on the holdouts
+# PR rust-sdk#11) for its switchback lane; the pin goes back to main once
+# rust-sdk#12 merges.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/holdouts"
@@ -47,7 +50,7 @@ declare -A SDK_BRANCHES=(
   # ruby-sdk switchbacks PR (feat/switchbacks, stacked on holdouts ruby-sdk#43) is open;
   # re-pin to main once both merge.
   ["ruby-sdk"]="feat/switchbacks"
-  ["rust-sdk"]="main"
+  ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
   # swift-sdk holdouts PR (swift-sdk feat/holdouts) is open; re-pin to main once it merges.
   ["swift-sdk"]="feat/holdouts"

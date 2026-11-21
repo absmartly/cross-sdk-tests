@@ -46,6 +46,18 @@ def quiet():
     return contextlib.redirect_stdout(io.StringIO())
 
 
+class PublishObservationTests(unittest.TestCase):
+    def test_null_and_omitted_attribute_values_compare_equal(self):
+        with_null = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": None, "setAt": 1}]}
+        omitted = {"hashed": True, "units": [], "attributes": [{"name": "v", "setAt": 2}]}
+        self.assertEqual(test_runner._publish_observation(with_null), test_runner._publish_observation(omitted))
+        for value in (0, "", "<missing>", "null", False):
+            other = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": value, "setAt": 2}]}
+            self.assertNotEqual(
+                test_runner._publish_observation(with_null), test_runner._publish_observation(other), value
+            )
+
+
 class ValuesMatchTests(unittest.TestCase):
     def test_bool_is_not_a_number(self):
         self.assertFalse(values_match(1, True))
@@ -573,7 +585,7 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["dotnet", "go", "java", "javascript", "php", "python", "ruby"])
+        self.assertEqual(holders, ["dotnet", "go", "java", "javascript", "php", "python", "ruby", "rust"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))

@@ -264,12 +264,12 @@
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "switchback"
       ],
       "unsupported": {
-        "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in rust-sdk",
-        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
+        "holdouts": "the rust wrapper does not advertise holdouts yet (rust-sdk holdouts are in rust-sdk#11 and on the pinned branch; the wrapper self-test lands with the holdouts companion PR)",
+        "holdout_arms": "depends on holdouts, which the rust wrapper does not advertise yet",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "switchback serving not implemented in rust-sdk; java-sdk and javascript-sdk only (R33)",
