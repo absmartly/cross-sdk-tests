@@ -126,11 +126,13 @@ numbered outside its range where they are, and fails rather than renumbers when
 another scenario sits inside it. So #16 only needs to renumber its own group to
 254+; a missed renumber shows up as a generator error, not a silent shift
 (`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16 owns its group
-with a generator, give it a fixed first number the same way. The three
-generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
-and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
-`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
-outside all three, as #20 did with 270-272 (extended to 270-274 for br).
+with a generator, give it a fixed first number the same way. The generated
+ranges are fixed: 230-253 (this round), 270-274 (Context Fetch Compression),
+300-399 (parity, now 300-332), 400-499 (the Switchback group of
+`generate_switchback_scenarios.py`, `SWITCHBACK_FIRST_NUMBER` in
+`scenario_groups.py`, now 400-425) and 501+ (the Holdout Conformance group of
+`generate_holdout_conformance_scenarios.py`, `HOLDOUT_CONFORMANCE_FIRST_NUMBER`,
+now 501-507; 500 is left unused); a new group takes free ids outside all of them.
 
 ## Coverage matrix
 

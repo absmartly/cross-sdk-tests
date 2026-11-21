@@ -181,11 +181,13 @@ def test_place_group_rejects_a_split_group():
 # bytes: the only change the br follow-up may make is that insertion after 272.
 BEFORE_BR_SHA256 = "80dcd7b66b8a0a53d82a1ec66e8beef18566bf5faba5f7469154ad1d49e1d8a0"
 BEFORE_BR_COUNT = 308
+# Groups that landed after the br follow-up; they are not part of that snapshot.
+LATER_GROUP_MARKERS = (scenario_groups.HOLDOUT_CONFORMANCE,)
 
 
 def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():
     import hashlib
-    scenarios = canonical()
+    scenarios = [s for s in canonical() if not any(m in s["name"] for m in LATER_GROUP_MARKERS)]
     numbers = [scenario_groups.number(s) for s in scenarios]
     inserted = [i for i, n in enumerate(numbers) if 273 <= n < 300]
     # Contiguous from 273, right after 272 and before 300, all in the Context Fetch group.
@@ -200,10 +202,11 @@ def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_af
     assert hashlib.sha256(rendered).hexdigest() == BEFORE_BR_SHA256
     with open(generator.CANONICAL, "rb") as src:
         text = src.read()
-    # Byte-level too: the file is the old bytes with one block inserted.
+    # Byte-level too: the file is the old bytes with one block inserted (and any later groups
+    # appended after the old tail).
     head = rendered[:rendered.index(b'\n  {\n    "name": "300 - ')]
     tail = rendered[len(head):]
-    assert text.startswith(head) and text.endswith(tail)
+    assert text.startswith(head) and generator.render(scenarios).encode("utf-8").endswith(tail)
 
 
 # -- policy ------------------------------------------------------------------

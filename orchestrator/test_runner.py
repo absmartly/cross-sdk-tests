@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from collections import Counter
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 import requests
@@ -362,6 +362,27 @@ def units_match_unordered(actual: Any, expected: Any) -> bool:
     return assign(0, frozenset())
 
 
+def events_in_expected_order(
+    actual: List[Any], expected: List[Any], matches: Callable[[Any, Any, int], bool]
+) -> List[Any]:
+    """`actual` reordered so each event `matches` the expected one at its position (passed as the
+    third argument), one-to-one, or unchanged if no ordering does, so the positional check reports
+    the mismatch."""
+
+    def assign(i: int, used: Tuple[int, ...]) -> Optional[Tuple[int, ...]]:
+        if i == len(expected):
+            return used
+        for j, candidate in enumerate(actual):
+            if j not in used and matches(candidate, expected[i], i):
+                found = assign(i + 1, used + (j,))
+                if found is not None:
+                    return found
+        return None
+
+    order = assign(0, ())
+    return actual if order is None else [actual[j] for j in order]
+
+
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
     exact = action not in PARTIAL_RESULT_ACTIONS
     if not ordered and action in UNORDERED_RESULT_ACTIONS:
@@ -515,6 +536,8 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
             elif entry["type"] == "publish" and isinstance(data, dict):
                 entry["data"] = _publish_observation(data)
             events_obs.append(entry)
+        if expected.get("unorderedEvents") is True:
+            events_obs.sort(key=lambda e: json.dumps(e, sort_keys=True))
 
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
 
@@ -1841,10 +1864,10 @@ class TestOrchestrator:
             )
             return failures
 
-        for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
+        def check_event(i: int, actual_event: Any, expected_event: Any, fail: Callable[[str, Any, Any], None]) -> None:
             if not isinstance(actual_event, dict):
                 fail(f"events[{i}]", expected_event, actual_event)
-                continue
+                return
 
             actual_type = actual_event.get("type", MISSING)
             if not values_match(actual_type, expected_event.get("type")):
@@ -1889,6 +1912,20 @@ class TestOrchestrator:
                             fail(f"events[{i}].data.{key}", expected_value, actual_value)
                 elif not values_match(actual_data, expected_data):
                     fail(f"events[{i}].data", expected_data, actual_data)
+
+        if expected.get("unorderedEvents") is True:
+            # Only the set of events is pinned (e.g. exposures one call queues together, whose order
+            # differs between SDKs and is not part of the contract): pair them one-to-one in any
+            # order by the same per-event check, then check each pair below as usual.
+            def pairs(actual_event: Any, expected_event: Any, i: int) -> bool:
+                mismatches: List[str] = []
+                check_event(i, actual_event, expected_event, lambda *args: mismatches.append(args[0]))
+                return not mismatches
+
+            actual_events = events_in_expected_order(actual_events, expected_events, pairs)
+
+        for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
+            check_event(i, actual_event, expected_event, fail)
 
         return failures
 
