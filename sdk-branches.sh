@@ -14,9 +14,11 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
+# cpp-sdk is pinned to feat/holdouts (the absmartly/cpp-sdk holdouts PR) while that
+# PR is open; the pin goes back to `main` once it merges.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
-  ["cpp-sdk"]="main"
+  ["cpp-sdk"]="feat/holdouts"
   ["dotnet-sdk"]="main"
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"

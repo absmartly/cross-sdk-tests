@@ -15,6 +15,8 @@
 #include <absmartly/default_context_publisher.h>
 #include <absmartly/default_context_data_provider.h>
 
+#include "holdout_self_test.h"
+
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -302,12 +304,17 @@ static json make_error_response(const std::string& error,
     return json{{"error", error}, {"events", events_to_json(window_events())}};
 }
 
+// Decoded with the SDK's own ContextData from_json, so every payload field the SDK
+// knows (experiments, holdouts) reaches it as it would from the collector.
 static absmartly::ContextData parse_context_data(const json& j) {
-    absmartly::ContextData cd;
-    if (j.contains("experiments") && j["experiments"].is_array()) {
-        cd.experiments = j["experiments"].get<std::vector<absmartly::ExperimentData>>();
+    if (!j.is_object()) {
+        return {};
     }
-    return cd;
+    json payload = j;
+    if (!payload.contains("experiments") || !payload["experiments"].is_array()) {
+        payload["experiments"] = json::array();
+    }
+    return payload.get<absmartly::ContextData>();
 }
 
 static std::optional<absmartly::ContextData> find_payload(const std::string& id) {
@@ -375,6 +382,8 @@ int main() {
                     {"singleFinalizeEvent", true},
                     {"semverNumericOperands", true},
                     {"assignmentRules", true}, {"semverOperators", true},
+                    {"holdouts", holdout_self_test::holdouts()},
+                    {"holdout_arms", holdout_self_test::holdout_arms()},
                     {"xAgentHeader", true},
                     {"clientRejectsBlankApplication", true},
                     {"clientAcceptsBlankApplication", false}};
