@@ -141,6 +141,11 @@ open, because its lane now requires `holdouts`/`holdout_arms`. The pin follows
 the same rule: keep php-sdk's `feat/holdouts` branch (delete-branch-on-merge is
 **off** for php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its
 lane is green; re-run this suite after any push to that branch.
+Exception: go-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
+because its lane now requires `holdouts`, `holdout_arms` and `holdoutIdsDedup`.
+Keep go-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for that
+PR) until a follow-up PR here re-pins go-sdk to `main` and its lane is green;
+re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 

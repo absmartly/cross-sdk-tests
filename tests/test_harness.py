@@ -525,7 +525,7 @@ class CapabilityPolicyTests(unittest.TestCase):
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
         # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
-        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "java", "javascript", "php", "python", "react", "ruby", "swift", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "react", "ruby", "swift", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )

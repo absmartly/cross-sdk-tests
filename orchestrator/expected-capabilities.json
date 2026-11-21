@@ -225,13 +225,14 @@
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "holdoutIdsDedup"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
-        "holdouts": "pinned go-sdk branch has no holdout resolution; wrapper does not advertise it",
         "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned go-sdk branch lacks",
         "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
         "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",
         "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
