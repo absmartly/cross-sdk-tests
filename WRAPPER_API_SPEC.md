@@ -1315,7 +1315,12 @@ cluster key, or whose assigner drifts from the golden vectors, must report
 `false`. An SDK whose experiment model still has `switchbackClusterCount` (the
 Phase 1E bucket design) must report `false`.
 
-The capability means a behavioral self-test passed. For java it covers:
+The capability means a behavioral self-test passed. The rust wrapper's
+(`rust-wrapper/src/switchback_self_test.rs`) mirrors java's below, and also
+checks that a `3.0` attribute keys no cluster, that a covering holdout
+neither suppresses a switchback nor fires through it, and that an `assign`
+rule, full-on and a strict audience mismatch keep their unit-experiment
+exposure flags. For java it covers:
 
 - the SDK's experiment model has `switchbackClusters` and
   `switchbackClusterValues` and does not have `switchbackClusterCount`;
@@ -1352,7 +1357,9 @@ Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+written. rust-sdk, the second capable SDK, tells them apart (serde_json reads
+`3.0` as a float), so the case stands as written; revisit it before an SDK
+that cannot gains the capability.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for

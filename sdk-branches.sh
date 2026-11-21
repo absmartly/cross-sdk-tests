@@ -14,6 +14,9 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
+# rust-sdk is pinned to feat/switchbacks (rust-sdk#12, stacked on the holdouts
+# PR rust-sdk#11) for its switchback lane; the pin goes back to main once
+# rust-sdk#12 merges.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
@@ -29,7 +32,7 @@ declare -A SDK_BRANCHES=(
   ["python3-sdk"]="main"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
   ["ruby-sdk"]="main"
-  ["rust-sdk"]="main"
+  ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
   ["swift-sdk"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"

@@ -236,14 +236,19 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
+SWITCHBACK_HOLDERS = {"java", "rust"}
+
+
+def test_switchback_policy_requires_the_holders_and_excepts_every_other_sdk(runner):
     sdks = runner.policy["sdks"]
     assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
+    holders = {sdk for sdk, entry in sdks.items() if "switchback" in entry["required"]}
+    assert holders == SWITCHBACK_HOLDERS
     for sdk, entry in sdks.items():
-        if sdk != "java":
-            assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+        if sdk in SWITCHBACK_HOLDERS:
+            assert "switchback" not in entry["unsupported"], sdk
+        else:
+            assert entry["unsupported"]["switchback"].endswith("java-sdk and rust-sdk only (R33)"), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
