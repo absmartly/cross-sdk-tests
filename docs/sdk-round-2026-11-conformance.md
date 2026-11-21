@@ -136,6 +136,11 @@ green; re-run this suite after any push to that branch.
 elixir-sdk#5 first, then re-pin `["elixir-sdk"]` to `main` on the companion PR,
 before it merges, and re-run the elixir lane. Never merge the companion PR while
 the pin names a feature branch.
+Exception: php-sdk is pinned to `feat/holdouts` while php-sdk#11 (holdouts) is
+open, because its lane now requires `holdouts`/`holdout_arms`. The pin follows
+the same rule: keep php-sdk's `feat/holdouts` branch (delete-branch-on-merge is
+**off** for php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its
+lane is green; re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 

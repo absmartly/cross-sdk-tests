@@ -31,7 +31,8 @@ declare -A SDK_BRANCHES=(
   ["javascript-sdk"]="main"
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"
-  ["php-sdk"]="main"
+  # php-sdk holdouts PR (php-sdk#11, feat/holdouts) is open; re-pin to main once it merges.
+  ["php-sdk"]="feat/holdouts"
   # python3-sdk holdouts PR (python3-sdk#17, feat/holdouts) is open; re-pin to main once it merges.
   ["python3-sdk"]="feat/holdouts"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
