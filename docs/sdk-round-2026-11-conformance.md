@@ -123,6 +123,11 @@ to `main` and its lane is green; re-run this suite after any push to that branch
 dotnet-sdk is temporarily pinned to `feat/holdouts` (the open dotnet-sdk holdouts
 PR), which turns its `holdouts`/`holdout_arms` capabilities on; the pin goes back
 to `main` once that PR merges.
+Exception: swift-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
+because its lane now requires `holdouts`/`holdout_arms`. The pin follows the same
+rule: keep swift-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for
+that PR) until a follow-up PR here re-pins swift-sdk to `main` and its lane is
+green; re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 

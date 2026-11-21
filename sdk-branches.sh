@@ -36,7 +36,8 @@ declare -A SDK_BRANCHES=(
   ["ruby-sdk"]="feat/holdouts"
   ["rust-sdk"]="main"
   ["scala-sdk"]="main"
-  ["swift-sdk"]="main"
+  # swift-sdk holdouts PR (swift-sdk feat/holdouts) is open; re-pin to main once it merges.
+  ["swift-sdk"]="feat/holdouts"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
 )
