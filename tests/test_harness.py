@@ -524,7 +524,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "javascript", "python", "react", "ruby", "swift", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "flutter", "java", "javascript", "python", "react", "ruby", "swift", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
