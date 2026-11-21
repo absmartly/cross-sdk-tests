@@ -5,8 +5,13 @@ Stdlib only. The single source of these rules: imported by the context server
 its image copies this file next to test_runner.py), so the server's choice and
 the orchestrator's reading of a recorded request cannot drift apart.
 
-The server produces gzip or identity only. br and zstd are never served: the
-orchestrator only reports whether an SDK's Accept-Encoding lists them.
+Each payload declares the codings the server may serve, in preference order
+(`encodings`): DEFAULT_PREFERENCE for the gzip group (270-272 and the
+contextFetchCompression probe, never br), BR_PREFERENCE for the br payloads
+(273+ and the contextFetchBrotli probe). zstd is never served, only reported.
+
+This module stays stdlib only so the orchestrator can import it without the
+`brotli` package; only the server encodes br (context-server/requirements.txt).
 
 Parsing choices (RFC 9110 section 12.5.3 leaves some of these open):
   * codings are case-insensitive and surrounding whitespace is ignored;
@@ -19,9 +24,14 @@ Parsing choices (RFC 9110 section 12.5.3 leaves some of these open):
 
 from typing import Dict, Iterable, Optional, Sequence
 
-# What the context server can serve, in its default preference order.
-CODINGS = ("gzip", "identity")
+# What the context server can serve.
+CODINGS = ("br", "gzip", "identity")
+# The gzip group's payloads (270-272) and a payload stored without `encodings`:
+# never br, so every SDK sees what it saw before br existed.
 DEFAULT_PREFERENCE = ["gzip", "identity"]
+# The br group's payloads: Cloudflare's order among the codings served here
+# (Cloudflare puts zstd first).
+BR_PREFERENCE = ["br", "gzip", "identity"]
 ALIASES = {"x-gzip": "gzip"}
 
 

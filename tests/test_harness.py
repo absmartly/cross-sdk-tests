@@ -671,6 +671,8 @@ class VerifySdkScriptTests(unittest.TestCase):
         {"name": "ungated", "steps": [{"action": "isReady", "expect": {"result": True}}]},
         {"name": "gated", "requires": ["contextFetchCompression"],
          "steps": [{"action": "isReady", "expect": {"result": True}}]},
+        {"name": "gated br", "requires": ["contextFetchBrotli"],
+         "steps": [{"action": "isReady", "expect": {"result": True}}]},
     ]
 
     def run_script(self, measurement_failed=None, scenario_result=None):
@@ -679,9 +681,9 @@ class VerifySdkScriptTests(unittest.TestCase):
             script = src.read()
         block = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         policy = {
-            "capabilities": {"contextFetchCompression": "measured"},
-            "measuredCapabilities": ["contextFetchCompression"],
-            "sdks": {"alpha": {"required": ["contextFetchCompression"], "unsupported": {}}},
+            "capabilities": {"contextFetchCompression": "measured", "contextFetchBrotli": "measured"},
+            "measuredCapabilities": ["contextFetchCompression", "contextFetchBrotli"],
+            "sdks": {"alpha": {"required": ["contextFetchCompression", "contextFetchBrotli"], "unsupported": {}}},
         }
         orch_cls = TestOrchestrator
 
@@ -740,25 +742,37 @@ class VerifySdkScriptTests(unittest.TestCase):
     def test_measurement_failure_is_not_printed_as_pass(self):
         code, out = self.run_script(measurement_failed={"contextFetchCompression": "context server down"})
         self.assertEqual(code, 1)
-        self.assertEqual(self.status_line(out), "alpha: 2/2 MEASURE FAIL")
+        self.assertEqual(self.status_line(out), "alpha: 3/3 MEASURE FAIL")
         self.assertIn("  - MEASURE FAIL contextFetchCompression :: context server down", out)
+
+    def test_brotli_measurement_failure_is_shown_like_compression(self):
+        code, out = self.run_script(measurement_failed={"contextFetchBrotli": "served 'gzip' for 'br'"})
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 3/3 MEASURE FAIL")
+        self.assertIn("  - MEASURE FAIL contextFetchBrotli :: served 'gzip' for 'br'", out)
+
+    def test_both_measurement_failures_are_listed(self):
+        code, out = self.run_script(measurement_failed={"contextFetchBrotli": "b", "contextFetchCompression": "c"})
+        self.assertEqual(code, 1)
+        self.assertIn("  - MEASURE FAIL contextFetchBrotli :: b", out)
+        self.assertIn("  - MEASURE FAIL contextFetchCompression :: c", out)
 
     def test_clean_run_still_prints_pass(self):
         code, out = self.run_script()
         self.assertEqual(code, 0)
-        self.assertEqual(self.status_line(out), "alpha: 2/2 PASS")
+        self.assertEqual(self.status_line(out), "alpha: 3/3 PASS")
 
     def test_measurement_failure_with_a_scenario_failure(self):
         failure = {"passed": False, "failures": [{"step": 0, "field": "result"}]}
         code, out = self.run_script({"contextFetchCompression": "x"}, failure)
         self.assertEqual(code, 1)
-        self.assertEqual(self.status_line(out), "alpha: 1/2 FAIL + MEASURE FAIL")
+        self.assertEqual(self.status_line(out), "alpha: 1/3 FAIL + MEASURE FAIL")
 
     def test_harness_only_result_is_still_harness_error(self):
         harness = {"passed": False, "harness_error": "step 0 (createContext): reset", "failures": []}
         code, out = self.run_script(scenario_result=harness)
         self.assertEqual(code, 1)
-        self.assertEqual(self.status_line(out), "alpha: 0/2 HARNESS ERROR")
+        self.assertEqual(self.status_line(out), "alpha: 0/3 HARNESS ERROR")
         self.assertIn("  - HARNESS ERROR ungated :: step 0 (createContext): reset", out)
 
     def test_down_service_is_down(self):
@@ -1070,6 +1084,7 @@ class AggregatorTests(unittest.TestCase):
         stats = {"measurement_failed": {"contextFetchCompression": "context server down"}, "passed": 10, "failed": 0}
         self.assertEqual(results_aggregator.run_level_status(stats), "MEASURE FAIL")
         self.assert_forced("measurement_failed", {"contextFetchCompression": "x"}, "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchBrotli": "x"}, "MEASURE FAIL")
 
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")

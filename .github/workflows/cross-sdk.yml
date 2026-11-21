@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 308-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 310-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -64,8 +64,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install orchestrator requirements
-        run: pip install -r orchestrator/requirements.txt
+      - name: Install harness test requirements
+        # requirements-test.txt = requirements.txt + brotli (the br tests import
+        # it at module level, so without it they fail, never skip).
+        run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
         run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
@@ -134,7 +136,8 @@ jobs:
           mkdir -p test-results
           rm -f test-results/report.json
           # context-server: the negotiating GET /context server the SDK fetches
-          # from in the Context Fetch Compression scenarios (270-272).
+          # from in the Context Fetch Compression scenarios (270-274: gzip 270-272,
+          # br 273-274).
           docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \

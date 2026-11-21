@@ -50,8 +50,8 @@ def server_url():
 def wrapper_factory():
     made = []
 
-    def make(mode):
-        wrapper = FakeWrapper(mode)
+    def make(mode, **kwargs):
+        wrapper = FakeWrapper(mode, **kwargs)
         made.append(wrapper)
         return wrapper
 
@@ -188,7 +188,8 @@ def test_probe_handles_a_non_object_wrapper_body(server_url, wrapper_factory):
         return bad if url.endswith("/context") else real_post(url, *args, **kwargs)
 
     with mock.patch.object(test_runner.requests, "post", side_effect=post):
-        outcome = orch._probe_context_fetch(wrapper.url, generator.context_data(), None, None, 5)
+        outcome = orch._probe_context_fetch(wrapper.url, generator.context_data(), None, None, 5,
+                                           encodings=test_runner.negotiation.DEFAULT_PREFERENCE)
     assert "non-object body" in outcome["error"]
     assert outcome["requests"] == []
 
@@ -205,14 +206,193 @@ def test_conforming_sdk_passes_the_group(server_url, wrapper_factory, group):
     wrapper = wrapper_factory("gzip")
     orch = orchestrator_for(wrapper)
     orch.capabilities["fake"] = {CAP: True}
-    for scenario in group:
+    for scenario in group[:4]:  # 274 needs br
         result = run(orch, scenario)
         assert result["passed"], (scenario["name"], result["failures"])
     # Refresh in a contextServer scenario sends the wrapper no data.
-    assert wrapper.refresh_bodies == [{}, {}]
+    assert wrapper.refresh_bodies == [{}, {}, {}]
     fetches = orch.context_fetches[group[0]["name"]]["fake"]
     assert [f["action"] for f in fetches] == ["createContext", "refresh"]
     assert [r["served"] for f in fetches for r in f["requests"]] == ["gzip", "gzip"]
+    # A gzip-only SDK offered br (273) negotiates gzip and loads it identically.
+    fetches = orch.context_fetches[group[3]["name"]]["fake"]
+    assert [r["served"] for f in fetches for r in f["requests"]] == ["gzip", "gzip"]
+
+
+# -- br: the contextFetchBrotli probe and scenarios 273-274 ---------------------
+
+BR = "contextFetchBrotli"
+
+
+def br_orchestrator_for(wrapper, required=True):
+    """Both measured capabilities, br required (or excepted), gzip required."""
+    caps = {CAP: "measured", BR: "measured"}
+    entry = ({"required": [CAP, BR], "unsupported": {}} if required
+             else {"required": [CAP], "unsupported": {BR: "x"}})
+    policy = {"capabilities": caps, "measuredCapabilities": [CAP, BR], "sdks": {"fake": entry}}
+    return TestOrchestrator({"fake": wrapper.url}, capability_policy=policy)
+
+
+def test_br_probe_measures_a_br_sdk(server_url, wrapper_factory, tmp_path):
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    with mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert orch.capabilities["fake"][BR] is True and orch.capabilities["fake"][CAP] is True
+    assert "fake" not in orch.measurement_failed and "fake" not in orch.capability_policy_violations
+    probe = orch.context_fetch_brotli_probe["fake"]
+    assert probe["acceptEncoding"] == ["br, gzip", "br, gzip"] and probe["served"] == ["br", "br"]
+    assert probe["decoded"] is True and probe["refreshDecoded"] is True
+    # The gzip probe never serves br, even to a br-advertising SDK.
+    assert orch.context_fetch_probe["fake"]["served"] == ["gzip", "gzip"]
+    # CI consumers read the br probe from report.json.
+    report_path = tmp_path / "report.json"
+    with mock.patch("builtins.print"):
+        orch.generate_report(str(report_path), [])
+    report = json.loads(report_path.read_text())
+    assert report["context_fetch_brotli_probe"]["fake"]["contextFetchBrotli"] is True
+    # The measurement is over the context server's plain http: Node's undici, for one, adds br
+    # only for https URLs, so the evidence must say which transport it saw.
+    assert report["context_fetch_brotli_probe"]["fake"]["transport"] == "http"
+
+
+def test_br_probe_evidence_names_the_http_transport(server_url, wrapper_factory):
+    """A Node-like `gzip, deflate` over http is reported as observed over http, not as a general fact."""
+    wrapper = wrapper_factory("gzip")
+    orch = br_orchestrator_for(wrapper, required=False)
+    with mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert orch.capabilities["fake"][BR] is False
+    assert orch.measured_evidence["fake"][BR].startswith("observed over http Accept-Encoding ['gzip', 'gzip']")
+
+
+@pytest.mark.parametrize("mode, failed", [
+    ("gzip", "no br advertised"),
+    ("br-q0", "no br advertised"),          # br;q=0 is a refusal, served gzip
+    ("br-strip", "no br advertised"),       # the wrapper strips the header on refresh
+    ("br-stale", "refresh data not used"),  # refetches br but keeps the old data
+    ("br-skip-fetch", "refresh not fetched"),  # refresh never refetches
+    ("br-undecodable", "not decoded"),         # advertises br, cannot decode the br body
+])
+def test_br_probe_rejects_an_sdk_without_br(server_url, wrapper_factory, mode, failed):
+    wrapper = wrapper_factory(mode)
+    orch = br_orchestrator_for(wrapper)
+    with mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert orch.capabilities["fake"][BR] is False
+    [violation] = [v for v in orch.capability_policy_violations["fake"] if BR in v]
+    assert "measured false" in violation and failed in violation
+
+
+def test_br_q0_is_served_gzip_by_the_probe(server_url, wrapper_factory):
+    wrapper = wrapper_factory("br-q0")
+    orch = br_orchestrator_for(wrapper, required=False)
+    with mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert orch.context_fetch_brotli_probe["fake"]["served"] == ["gzip", "gzip"]
+    assert orch.capabilities["fake"][BR] is False and "fake" not in orch.capability_policy_violations
+
+
+def test_br_sdk_passes_the_whole_group(server_url, wrapper_factory, group):
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True, BR: True}
+    for scenario in group:
+        result = run(orch, scenario)
+        assert result["passed"], (scenario["name"], result["failures"])
+    served = {s["name"]: [r["served"] for f in orch.context_fetches[s["name"]]["fake"] for r in f["requests"]]
+              for s in group if "contextServer" in s}
+    # 270 and 272 never serve br, even to an SDK that advertises it; 273 and 274 do.
+    assert served == {group[0]["name"]: ["gzip", "gzip"], group[2]["name"]: ["gzip", "gzip"],
+                      group[3]["name"]: ["br", "br"], group[4]["name"]: ["br", "br"]}
+
+
+@pytest.mark.parametrize("mode", ["none", "gzip", "br-q0"])
+def test_sdk_without_br_passes_273_and_fails_only_the_br_check_of_274(server_url, wrapper_factory, group, mode):
+    wrapper = wrapper_factory(mode)
+    orch = br_orchestrator_for(wrapper)
+    assert run(orch, group[3])["passed"]
+    fields = {f.get("field") for f in run(orch, group[4])["failures"]}
+    assert fields == {"contextFetch.acceptEncoding[br]"}
+
+
+def test_header_stripped_on_refresh_fails_274(server_url, wrapper_factory, group):
+    wrapper = wrapper_factory("br-strip")
+    result = run(br_orchestrator_for(wrapper), group[4])
+    refresh = [s["action"] for s in group[4]["steps"]].index("refresh")
+    assert [(f["step"], f["field"]) for f in result["failures"]] == [(refresh, "contextFetch.acceptEncoding[br]")]
+
+
+def test_stale_br_refresh_fails_the_post_refresh_assertion(server_url, wrapper_factory, group):
+    wrapper = wrapper_factory("br-stale")
+    for scenario in (group[3], group[4]):
+        result = run(br_orchestrator_for(wrapper), scenario)
+        after_refresh = [s["action"] for s in scenario["steps"]].index("refresh") + 1
+        assert {f["step"] for f in result["failures"]} == {after_refresh}
+
+
+@pytest.mark.parametrize("header, served", [
+    ("br, gzip", "gzip"),   # gzip served on a br-preferred request
+    ("gzip", "br"),         # br served when br was not advertised
+    ("gzip, br;q=0", "br"),  # br;q=0 ignored
+])
+def test_wrong_br_negotiation_is_a_harness_error_in_scenarios(server_url, wrapper_factory, group, header, served):
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    records = [{"status": 200, "acceptEncoding": header, "served": served}]
+    with pytest.raises(test_runner.HarnessError) as exc:
+        orch.check_context_fetches(0, "createContext", group[3]["contextServer"], records, 0)
+    assert exc.value.served_fault is True and "negotiation chooses" in str(exc.value)
+
+
+def test_br_served_to_the_gzip_group_is_a_harness_error(server_url, wrapper_factory, group, serve_wrong_encoding):
+    """A br payload served to a 270-272 scenario: br where the gzip negotiation chooses gzip."""
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True, BR: True}
+    serve_wrong_encoding("br", 1)
+    with mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    assert "served 'br'" in result["harness_error"] and "negotiation chooses 'gzip'" in result["harness_error"]
+    assert result["failures"] == []
+
+
+@pytest.mark.parametrize("coding", ["gzip", "identity"])
+def test_br_probe_served_the_wrong_coding_is_a_measurement_failure(server_url, wrapper_factory, coding):
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    real = context_server.choose_encoding
+
+    def choose(header, preference, force=None):
+        # Break only the br probe's fetches.
+        return coding if preference == ["br", "gzip", "identity"] else real(header, preference, force)
+
+    with mock.patch.object(context_server, "choose_encoding", side_effect=choose), mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert "would not choose" in orch.measurement_failed["fake"][BR]
+    assert BR not in orch.capabilities["fake"] and orch.capabilities["fake"][CAP] is True
+    assert "fake" not in orch.capability_policy_violations
+    assert "measurement of contextFetchBrotli failed" in orch.capability_gate("fake", {"requires": [BR]})
+    assert orch.capability_gate("fake", {"requires": [CAP]}) is None
+
+
+def test_self_claimed_brotli_does_not_survive_a_failed_measurement(server_url, wrapper_factory):
+    wrapper = wrapper_factory("br")
+    orch = br_orchestrator_for(wrapper)
+    real_get = test_runner.requests.get
+
+    def get(url, *args, **kwargs):
+        if url.endswith("/capabilities"):
+            return mock.Mock(status_code=200, json=mock.Mock(return_value={BR: True, CAP: True}))
+        return real_get(url, *args, **kwargs)
+
+    with mock.patch.object(orch, "measure_context_fetch_brotli", side_effect=test_runner.MeasurementError("down")), \
+            mock.patch.object(test_runner.requests, "get", side_effect=get), mock.patch("builtins.print"):
+        orch.fetch_capabilities("fake", wrapper.url)
+    assert BR not in orch.capabilities["fake"]
+    assert orch.measurement_failed["fake"] == {BR: "down"}
+    assert "measurement of contextFetchBrotli failed" in orch.capability_gate("fake", {"requires": [BR]})
 
 
 def test_stale_refresh_fails_the_post_refresh_assertion(server_url, wrapper_factory, group):
@@ -446,10 +626,51 @@ def test_require_advertised_failure_survives_a_wrong_encoding(
     assert_report(orch, tmp_path, failed=1)
 
 
+@pytest.mark.parametrize("step", ["createContext", "refresh"])
+def test_unreadable_recorder_on_an_http_error_keeps_the_response_diagnostics(
+        server_url, wrapper_factory, group, tmp_path, step):
+    """HTTP-error path, recorder unreadable (served_fault=False): nothing says the server was wrong,
+    so the wrapper's error response is still validated and its detail kept next to the harness error.
+
+    The server is correct here (no serve_wrong_encoding): the SDK advertises gzip, is served gzip
+    as negotiated, and then genuinely fails on this step's fetch, so the SDK FAIL is the SDK's."""
+    # The SDK fails on this step's fetch; the wrapper answers it with HTTP 500.
+    wrapper = wrapper_factory("broken-http", break_from=FETCH_OF_STEP[step])
+    orch = orchestrator_for(wrapper)
+    orch.capabilities["fake"] = {CAP: True}
+    real_call = orch._context_server_call
+    reads = []
+    hidden = []  # what the recorder held when the orchestrator's read was made to fail
+
+    def call(m, path, **kwargs):
+        if m == "GET" and "/requests/" in path:
+            reads.append(path)
+            if len(reads) == FETCH_OF_STEP[step]:
+                hidden.extend(real_call(m, path, **kwargs).json()["requests"])
+                raise test_runner.requests.ConnectionError("context server reset")
+        return real_call(m, path, **kwargs)
+
+    with mock.patch.object(orch, "_context_server_call", side_effect=call), mock.patch("builtins.print"):
+        orch.run_scenario(group[0])
+    result = orch.results[0]["sdks"]["fake"]
+    step_index = [s["action"] for s in group[0]["steps"]].index(step)
+    # The server did its job: every fetch so far advertised gzip and was served gzip, as negotiated.
+    assert [(r["acceptEncoding"], r["served"]) for r in hidden] == [("gzip", "gzip")] * FETCH_OF_STEP[step]
+    assert result["harness_error"].startswith(f"step {step_index} ({step}): ")
+    assert "context server reset" in result["harness_error"]
+    assert "negotiation chooses" not in result["harness_error"]
+    errors = [f for f in result["failures"] if f["step"] == step_index]
+    assert any("SDK bug: cannot parse context" in str(f.get("error")) for f in errors), result["failures"]
+    # ... and then the harness error stops the scenario: no later step ran.
+    assert all(f["step"] <= step_index for f in result["failures"]), result["failures"]
+    assert orch.scenario_outcomes[group[0]["name"]]["fake"] == "fail"
+    assert wrapper.contexts == {}
+
+
 @pytest.mark.parametrize("mutate, reason", [
     (lambda s: s.update(directData=False), "'directData' must be true"),
     (lambda s: s.update(directData=True, contextServer={}), "cannot be combined"),
-    (lambda s: s.update(contextServer={"encodings": ["br"]}), "contextServer:"),
+    (lambda s: s.update(contextServer={"encodings": ["zstd"]}), "contextServer:"),
 ])
 def test_invalid_direct_data_and_context_server_are_rejected(group, mutate, reason):
     scenario = copy.deepcopy(group[1])

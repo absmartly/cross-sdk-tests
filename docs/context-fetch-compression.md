@@ -15,8 +15,11 @@ zstd > br > gzip, picked from the request's `Accept-Encoding`. On a large tenant
 
 How it was measured: the negotiating context server (`context-server/`) records
 the `Accept-Encoding` and `User-Agent` of every `GET /context` per payload and
-serves gzip when the request advertised it, identity otherwise (it never serves
-br or zstd; whether an SDK lists them is only reported). The orchestrator probes
+serves gzip when the request advertised it, identity otherwise. That holds for
+the gzip payloads (270-272 and the `contextFetchCompression` probe), which never
+serve br. The br payloads (273-274 and the `contextFetchBrotli` probe; see the
+Brotli section) allow br > gzip > identity. zstd is never served, only
+reported. The orchestrator probes
 each SDK once at startup (create, then a refresh after the server's data
 changed, both negotiated) and scenarios 270 and 272 check every fetch. A second,
 REPORT-ONLY "forced gzip" probe makes the server send gzip whatever the request
@@ -111,7 +114,7 @@ stated.
   `SocketsHttpHandler` (net8/9) or `HttpClientHandler` (netstandard2.0), and neither
   sets `AutomaticDecompression`. The fetch is `ABSmartlyService.cs:126`.
 - **The wrapper injects its own transport**: `DummyHttpClientFactory` and
-  `DummyHttpClient` wrap a bare `new HttpClient()` (`dotnet-wrapper/Program.cs:1299-1340`).
+  `DummyHttpClient` wrap a bare `new HttpClient()` (`dotnet-wrapper/Program.cs:1390-1405`).
   The lane therefore shows .NET's `HttpClient` default, not the SDK's DI handler.
   Both send nothing, so the result would be the same here.
 - Accept-Encoding, **from code**: none. `HttpClient` adds it only when the handler's
@@ -249,18 +252,20 @@ stated.
 
 - Client: global `fetch` (Node's undici in the node:24 image), else `node-fetch`
   (`src/fetch.ts:22-27`). Fetch at `src/client.ts:98-107`/`:194`.
-- Accept-Encoding: **observed `gzip, deflate`** on javascript, vue2, vue3 and angular
+- Accept-Encoding: **observed `gzip, deflate`** over the context server's http on javascript, vue2, vue3 and angular
   (User-Agent `node`). react: lane not built here (yarn registry unreachable); same SDK and runtime,
   so react is `required` too and its CI lane proves it.
 - Decodes: gzip, br and zstd. **Observed** in the lane image (Node v24.22.3,
   undici 7.30.2) with a local server forcing each coding: global `fetch`
-  advertises only `gzip, deflate` but decoded all three. Forced gzip (requested),
-  **observed** in the probe: decoded and loaded. Advertising br/zstd needs an
-  explicit `Accept-Encoding` header, since undici's default does not list them.
+  decoded all three. Forced gzip (requested), **observed** in the probe: decoded
+  and loaded. What undici advertises depends on the URL scheme
+  (`lib/web/fetch/index.js:1523-1528` in 7.30.2): **observed** in the lane image,
+  `gzip, deflate` over http (the harness's context server) and
+  `br, gzip, deflate` over https (no zstd in 7.30.2).
 - Browsers: the browser sets `Accept-Encoding` itself (zstd/br/gzip in current browsers).
 - Fix: none.
 
-## Summary of the gate (`contextFetchCompression`)
+## Summary of the gzip gate (`contextFetchCompression`)
 
 Required, observed or from code; CI proves it. Observed on a lane here:
 javascript, python, ruby, liquid, swift, vue2, vue3, angular. From code: scala,
@@ -279,3 +284,212 @@ scenarios that require the capability. Inside scenarios 270-272, a failing conte
 encoding the negotiation would not choose is a harness error: the run fails,
 but the scenario is not counted as an SDK failure (an SDK failure already
 found earlier in that scenario is still counted, and shown next to it).
+
+## Brotli (`contextFetchBrotli`, scenarios 273-274)
+
+Measured 2026-11-17 on this branch (stacked on #20, ae86279) with the same SDK
+pins as above. Cloudflare's order is zstd > br > gzip; on the 441-experiment
+tenant br is 321 KB against gzip's 420 KB (-24%), and zstd 234 KB (-44%).
+
+**How it is measured.** The context server encodes br with the pinned
+`brotli==1.2.0` wheel (`context-server/requirements.txt`). The br payloads allow
+`br`, `gzip`, `identity` in that order, honouring q-values (`br;q=0` refuses br;
+`*` does not revive it). A second startup probe, like the gzip one but on a br
+payload, sets `contextFetchBrotli` true only when create and refresh both
+advertise br, are served br, and their bodies are used. Probe and scenarios run
+over the context server's plain **http**, recorded as `transport` in the
+evidence and `report.json`, so a client that picks its `Accept-Encoding` by
+scheme is measured on http only (see javascript below). Failed measurements and
+wrong served codings are handled as for gzip (above); a MEASURE FAIL gates only
+274. 273 is ungated: whatever an SDK negotiates, it must match the twin 271 and
+use the refreshed data. 274 requires `contextFetchBrotli`.
+
+**Observed on the 14 lanes built here** (`report.json`, `context_fetch_brotli_probe`):
+
+| lane | Accept-Encoding on the br probe (create, refresh) | served | `contextFetchBrotli` | 273 | 274 |
+|---|---|---|---|---|---|
+| swift | `deflate, gzip, br, zstd` (both) | br, br | **true** | pass (br) | **pass (br)** |
+| javascript, angular, vue2, vue3 | `gzip, deflate` (http; `br, gzip, deflate` over https, see below) | gzip | false (http artefact) | pass (gzip) | skip (exception) |
+| python | `gzip, deflate` | gzip | false | pass (gzip) | skip |
+| ruby, liquid | `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` | gzip | false | pass (gzip) | skip |
+| java, kotlin, go, rust, cpp, php | none | identity | false | pass (identity) | skip |
+
+Not built here (registries unreachable: nuget.org, hex.pm, repo.scala-sbt.org,
+pub.dev, registry.yarnpkg.com): dotnet, elixir, scala, dart, flutter, react.
+Their rows below are **from code**; CI proves them.
+
+Policy: `required` for swift (observed); every other SDK is a reviewed
+exception in `orchestrator/expected-capabilities.json` naming what is missing.
+An exception that starts measuring true fails the run until it is moved.
+
+### Per SDK: native br today, the minimal change, and its cost
+
+"Native today" is the SDK's own fetch at the pinned commit, unmodified.
+
+- **swift** (swift-sdk b67a2a9). Native: **observed** advertises
+  `deflate, gzip, br, zstd` and decodes br (274 passes). `URLSession`
+  (`Sources/ABSmartly/DefaultHTTPClient.swift:29-33`); on Linux
+  swift-corelibs-foundation sets libcurl `CURLOPT_ACCEPT_ENCODING ""`, and the
+  lane's libcurl links libbrotlidec and libzstd (**observed**, `ldd`). Apple
+  platforms: `URLSession` sends `gzip, deflate, br` and decodes them (platform
+  handles it). Change: none.
+- **cpp** (cpp-sdk 9ea8669). Native: **observed** no Accept-Encoding, nothing
+  decoded. libcurl easy handle with no encoding option
+  (`src/default_http_client.cpp:21-34`). The lane image's libcurl links
+  libbrotlidec, libzstd and zlib (**observed**, `ldd`). Change (flag):
+  `curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "")` in `get`; curl then
+  advertises and decodes every coding it was built with (gzip, and br/zstd when
+  present). Cost: none in the SDK; br depends on the system libcurl build (true
+  on Debian/Ubuntu, Homebrew, vcpkg with the `brotli` feature). Safe: yes, and the
+  same line fixes gzip.
+- **php** (php-sdk 80a5ec6). Native: **observed** none with the wrapper's
+  injected `ReactHttpClient` (`src/Http/ReactHttpClient.php:38`); the default
+  curl client sets no `CURLOPT_ENCODING` (`src/Http/HTTPClient.php:212-219`).
+  Change (flag), curl client: `CURLOPT_ENCODING => ''`. **Observed** in the
+  php lane image (libcurl 8.14.1, `CURL_VERSION_BROTLI` set): that option sends
+  `deflate, gzip, br, zstd`, is served br by the context server and decodes it.
+  Cost: none (ext-curl is already required). ReactHttpClient: ReactPHP's
+  `Browser` does not decode; br there needs the PECL `brotli` extension (not in
+  the image) plus a manual header and decode: not worth it, gzip via
+  `gzdecode` is the sensible fix there.
+- **dotnet** (dotnet-sdk fd564d2), from code. Native: none; neither primary
+  handler sets `AutomaticDecompression`
+  (`src/ABSmartly.Sdk/DependencyInjection/ServiceCollectionExtensions.cs:50-60`
+  `SocketsHttpHandler`, `:68-73` `HttpClientHandler`). Change (flag):
+  `AutomaticDecompression = DecompressionMethods.All` (gzip, deflate, br) on the
+  net8/net9 `SocketsHttpHandler`; `DecompressionMethods.Brotli` is built into
+  .NET Core 3.0+ (System.IO.Compression), no package. The netstandard2.0 target
+  (`ABSmartly.Sdk.csproj:19`) has no Brotli member: gzip/deflate only there.
+  Cost: none. Safe: yes. Note the wrapper injects a bare `HttpClient`
+  (`dotnet-wrapper/Program.cs:1390-1405`), so the lane would also need the
+  wrapper to use the SDK's handler to show it.
+- **rust** (rust-sdk 7c26910). Native: **observed** none; reqwest 0.12 with
+  only `json` (`Cargo.toml:26`). Change (flag): `features = ["json", "gzip",
+  "brotli"]`. reqwest then sends `Accept-Encoding: gzip, br` and decodes both
+  (reqwest 0.12 `Cargo.toml`: `brotli = ["dep:async-compression",
+  "async-compression?/brotli", ...]`, backed by the pure-Rust `brotli` crate,
+  BSD-3-Clause/MIT). Cost: pure Rust, no system library, a few hundred KB of
+  code in the binary (the static dictionary is ~120 KB). Safe: yes. (`zstd`
+  feature links C libzstd via zstd-sys, built from source.)
+- **javascript** (javascript-sdk 311cfca) and **react, vue2, vue3, angular**
+  (wrap it; react from code). Client on Node: global `fetch` (undici); the
+  `node-fetch` fallback runs only when `globalThis.fetch` is missing
+  (`src/fetch.ts:19-33`, `lib/fetch.js:61-69` in the lane image's
+  `node_modules/@absmartly/javascript-sdk`). **Observed** in the javascript lane
+  image: the SDK's exported fetch is the bound global `fetch`, User-Agent `node`.
+  The SDK sets no Accept-Encoding (`src/client.ts:184-191`), so undici's default
+  applies, and it is scheme-dependent (`lib/web/fetch/index.js:1523-1528`).
+  **Observed** in the lane image (Node v24.22.3, undici 7.30.2), with the SDK's
+  own fetch against local servers: over http (the context server) it sends
+  `gzip, deflate`; over https it sends `br, gzip, deflate` and decodes a br body.
+  So `contextFetchBrotli` = false for this family is an artefact of the
+  harness's http transport. The `node-fetch` 2.6.8 fallback sends a
+  fixed `gzip,deflate` (`lib/index.js:1360`) whatever the scheme. Change: none
+  needed on Node >= 24.22.3 over https (observed); undici's source has the same
+  https-only br branch from 5.0.0, Node 18's line, on (read in the 5.0.0,
+  5.10.0, 5.20.0, 5.28.4, 6.0.0 and 6.21.0 tarballs, not run). Verify that the
+  SDK keeps using global fetch rather than `node-fetch`.
+  Browsers set `Accept-Encoding` themselves (current ones send
+  `gzip, deflate, br, zstd`): browser handles it.
+- **python** (python3-sdk 80daada). Native: **observed** `gzip, deflate`
+  (requests 2.34.2, urllib3 2.8.0 in the lane). urllib3 appends `br` only when
+  `brotli` or `brotlicffi` is importable (`urllib3/util/request.py:22-31` in
+  2.8.0); the SDK depends only on `requests >= 2.28.1` (`pyproject.toml:21`).
+  Change (dependency): `brotli` (or `brotlicffi`). **Observed** in the python
+  lane image: after `pip install brotli==1.2.0`, `requests` sends
+  `gzip, deflate, br`, is served br and decodes it, with no SDK code change.
+  Cost: MIT; binary wheels (checked here: cp311 manylinux x86_64 1.43 MB,
+  cp311/cp314 manylinux aarch64 ~1.5 MB, cp311 macOS x86_64 0.45 MB); where no
+  wheel exists it builds a C extension from a 7.4 MB sdist (needs a compiler).
+  `brotlicffi` (MIT) is the PyPy-friendly alternative. Safe: as an optional
+  extra (`absmartly[brotli]`) yes; as a hard dependency acceptable but it adds a
+  native wheel to every install.
+- **go** (go-sdk 54b4e8a). Native: **observed** none; `DisableCompression: true`
+  (`sdk/DefaultHttpClient.go:50`). br is not in the Go standard library, and
+  Go's transport only adds and decodes gzip by itself. Change (dependency):
+  `github.com/andybalholm/brotli` (v1.3.0, pure Go, MIT, no cgo), plus a manual
+  `Accept-Encoding: br, gzip` and a decode on `Content-Encoding: br` (setting
+  the header by hand turns off Go's transparent gzip, so gzip must be decoded
+  too; resty already gunzips). Cost: pure Go (no cgo), so every Go platform;
+  small binary growth. Safe: yes, but it is code in the SDK, not a flag.
+  Dropping `DisableCompression` (the gzip fix) is the first step.
+- **ruby** (ruby-sdk c3a0e08) and **liquid** (liquid-sdk e38f9c6). Native:
+  **observed** `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` (Net::HTTP); no br
+  decoder. Faraday stack: `lib/default_http_client.rb:24-31`. Change
+  (dependency): the `faraday-gzip` middleware (3.0.4, MIT) plus the `brotli`
+  gem; the middleware advertises `gzip,deflate,br` and decodes br only when the
+  `brotli` gem loads (`lib/faraday/gzip/middleware.rb:24-31`, `:114`). Cost:
+  `brotli` is a C extension compiled at install: needs a compiler and slows
+  installs, and C extensions do not load on JRuby. Safe as an
+  optional gem the SDK uses when present; not as a hard dependency.
+- **java** (java-sdk 07807b5). Native: **observed** none (httpclient5 async,
+  `core-api/src/main/java/com/absmartly/sdk/DefaultHTTPClient.java:53`; 5.1.3,
+  `gradle/sdk-module.gradle:10`). Change (dependency + bump): httpclient5 5.6,
+  whose async transport decompresses transparently, plus the optional codec its
+  pom lists: `com.aayushatharva.brotli4j:brotli4j` (optional in the
+  httpclient5 5.6 pom; `zstd-jni` likewise). Cost: brotli4j is Apache-2.0 but
+  native (per-platform `native-*` jars; 1.18.0's linux-x86_64 one is 427 KB), so
+  platform coverage is whatever brotli4j ships; 5.6 needs Java 8, so not
+  `core-api-java6`. Alternative: `org.brotli:dec` 0.1.2 (Google, MIT, pure
+  Java, 98 KB, last released 2017) with a manual header and
+  `BrotliInputStream`. Safe: optional dependency on `core-api` only.
+- **kotlin** (kotlin-sdk bb7181f). Native: **observed** none
+  (`HttpURLConnection`, `src/main/kotlin/com/absmartly/sdk/DefaultHTTPClient.kt:64`);
+  no br in the JDK. Change (dependency): `org.brotli:dec` (pure Java, MIT, 98 KB)
+  with `Accept-Encoding: br, gzip` and a `BrotliInputStream`/`GZIPInputStream`
+  wrap by `contentEncoding`. Cost: small, pure JVM, but an unmaintained artifact
+  (2017). Safe: yes, though gzip (JDK only) gets most of the win.
+- **scala** (scala-sdk 4d38c20), from code. Native: sttp `basicRequest` sends
+  `gzip, deflate` and `HttpURLConnectionBackend` throws
+  `UnsupportedEncodingException` on any other coding (sttp 3.9.2,
+  `HttpURLConnectionBackend.scala:283-291`). Change: a custom backend or
+  response handler with `org.brotli:dec`, or a different sttp backend
+  (`HttpClientFutureBackend` has no br either). Not worth it.
+- **dart, flutter** (flutter-sdk 86b7911), from code. Native: dart:io sends
+  `gzip` and decodes gzip only (`sdk/lib/_http/http_impl.dart:2367`, `:615-621`).
+  Change: a manual header plus a pure-Dart Brotli decoder package (not
+  verified here, pub.dev unreachable) and turning off `autoUncompress`. Flutter
+  web: the browser handles it. Not worth it.
+- **elixir** (elixir-sdk ea4fecb), from code. Native: none
+  (HTTPoison/hackney, `lib/absmartly/http/client.ex:48`, options `:101`); OTP
+  has no Brotli. Change: a NIF dependency (Rust or C) plus manual header and
+  decode; not verified here (hex.pm unreachable). Native build per platform:
+  not worth it.
+
+### Recommendation (ranked)
+
+1. **Already done**: swift (observed, `required`).
+2. **(Almost) free, a flag or one header, no new dependency**: cpp
+   (`CURLOPT_ACCEPT_ENCODING ""`, also fixes gzip), php curl default
+   (`CURLOPT_ENCODING ''`, observed to work in the lane image), dotnet
+   (`DecompressionMethods.All` on net8/9), rust (reqwest `brotli` feature, pure
+   Rust). The javascript family needs none on Node >= 24.22.3 over https
+   (observed, see above); only its http measurement here is false.
+3. **Needs a dependency**: python (`brotli` wheel as an extra; zero code),
+   go (`andybalholm/brotli`, pure Go, plus header/decode code), ruby/liquid
+   (`faraday-gzip` + C-extension `brotli` gem), java `core-api` (httpclient5 5.6
+   + brotli4j, native), kotlin (`org.brotli:dec`, pure but unmaintained).
+4. **Not worth it**: scala, dart/flutter (non-web), elixir, java
+   `core-api-java6`, php ReactHttpClient. gzip already captures most of the
+   saving (1.55 MB -> 420 KB); br adds a further ~100 KB on the largest tenant.
+
+**zstd readiness.** zstd is Cloudflare's first preference (234 KB on the large
+tenant). Python 3.14 ships `compression.zstd`, and urllib3 2.x appends `zstd`
+to its default `Accept-Encoding` on 3.14 with no extra package
+(`urllib3/util/request.py:33-41`; observed in a 3.14 venv). Swift on Linux
+already advertises zstd (observed), as does any libcurl client with
+`CURLOPT_ACCEPT_ENCODING ""` on images whose libcurl links libzstd (cpp, php,
+observed via `ldd`); Node's undici 7.30.2 decodes zstd (observed, see
+javascript above) but advertises it on neither scheme; newer undici
+adds zstd over https (`br, gzip, deflate, zstd` observed with Node 26 / undici
+8.11.2 in review). .NET, Go, the JDK, dart:io and OTP have no zstd decoder; reqwest's `zstd` feature and Java's zstd-jni are native builds.
+The context server does not serve zstd: covering it needs a zstd encoder on the
+server (stdlib on Python 3.14, or the `zstandard` wheel on 3.11) and a third
+preference list, a separate follow-up.
+
+**Follow-up: https transport.** Every `contextFetchBrotli` (and
+`contextFetchCompression`) measurement here is an http measurement, so
+scheme-dependent clients (Node's undici today) measure false although they
+advertise br over https. Serving the context server over https too (a
+self-signed certificate each lane's SDK trusts) would measure the production
+transport; not done in this change.

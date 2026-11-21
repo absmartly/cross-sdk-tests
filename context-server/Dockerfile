@@ -1,9 +1,12 @@
-# Negotiating context server (see server.py). Stdlib only: it serves gzip or
-# identity, so it shares the orchestrator's base image and needs no pip install.
-# Readiness: the orchestrator waits on GET /health before its first probe.
+# Negotiating context server (see server.py). It serves br, gzip or identity;
+# br needs the pinned `brotli` wheel (context-server/requirements.txt), the
+# only package it installs. Readiness: the orchestrator waits on GET /health
+# before its first probe.
 FROM python:3.11-slim
 
 WORKDIR /app
+COPY context-server/requirements.txt ./
+RUN pip install --no-cache-dir --only-binary=:all: -r requirements.txt
 COPY context-server/negotiation.py context-server/server.py ./
 
 ENV PYTHONUNBUFFERED=1
