@@ -146,6 +146,12 @@ because its lane now requires `holdouts`/`holdout_arms`.
 Keep go-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for that
 PR) until a follow-up PR here re-pins go-sdk to `main` and its lane is green;
 re-run this suite after any push to that branch.
+Exception: ruby-sdk is pinned to `feat/switchbacks` (the switchbacks PR, stacked
+on ruby-sdk#43, holdouts) while both are open, because its lane now requires
+`holdouts`/`holdout_arms` and `switchback` (the liquid lane, which wraps ruby-sdk,
+builds that branch too but advertises neither). Keep ruby-sdk's
+`feat/switchbacks` branch until a follow-up PR here re-pins ruby-sdk to `main` and
+its lane is green; re-run this suite after any push to that branch.
 
 ### Scenario numbering versus open PRs
 

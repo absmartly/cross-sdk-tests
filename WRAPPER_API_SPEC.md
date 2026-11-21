@@ -1315,7 +1315,7 @@ cluster key, or whose assigner drifts from the golden vectors, must report
 `false`. An SDK whose experiment model still has `switchbackClusterCount` (the
 Phase 1E bucket design) must report `false`.
 
-The capability means a behavioral self-test passed. For java it covers:
+The capability means a behavioral self-test passed. For java and ruby (`ruby-wrapper/switchback_self_test.rb`, the same payload and expected values, plus a float value, a second unit serving, a rule win and a traffic miss) it covers:
 
 - the SDK's experiment model has `switchbackClusters` and
   `switchbackClusterValues` and does not have `switchbackClusterCount`;
@@ -1352,7 +1352,7 @@ Known limit for other languages: scenario 411 sends the attribute value `3.0`
 and expects no cluster value (a float never keys a cluster). An SDK whose JSON
 layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
 which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+written. Ruby, the second capable SDK, tells them apart and passes it.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
@@ -1402,9 +1402,15 @@ Both endpoints are pure functions with no context. Request rules:
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
+- A wrapper may cap `armCount` to bound the permutation it builds; the ruby
+  wrapper accepts at most 10,000 (the golden vectors use 2, 3 and 10). Values
+  above a wrapper's cap are an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
-  lacks the function returns 501.
+  `armCount < 2` or above the wrapper's cap) returns 400 with
+  `{"error": "..."}`. A wrapper whose SDK lacks the function returns 501. The
+  runner checks `events` on an error response a scenario expects, so the ruby
+  wrapper also sends `"events": []` with both; no scenario expects either
+  error yet.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

@@ -570,6 +570,11 @@ class CapabilityPolicyTests(unittest.TestCase):
         required = {"assignmentRules", "semverOperators", "switchback"}
         self.assertEqual(required & set(policy["sdks"]["java"]["required"]), required)
 
+    def test_switchback_required_only_where_evidenced(self):
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
+        self.assertEqual(holders, ["java", "ruby"])
+
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
         bad = make_policy({"alpha": {"required": ["diagnostics"], "unsupported": {}}})
@@ -953,6 +958,10 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value equals an omitted one (Jackson NON_NULL drops it); other values still differ.
+        null_attr = dict(base_pub, attributes=[{"name": "x", "value": None}])
+        self.assertEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))

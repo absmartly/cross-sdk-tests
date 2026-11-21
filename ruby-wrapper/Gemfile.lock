@@ -1,0 +1,38 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    base64 (0.3.0)
+    json (3.1.0)
+    minitest (5.27.0)
+    mustermann (3.1.1)
+    nio4r (2.7.5)
+    puma (6.6.1)
+      nio4r (~> 2.0)
+    rack (2.2.25)
+    rack-protection (3.2.0)
+      base64 (>= 0.1.0)
+      rack (~> 2.2, >= 2.2.4)
+    rackup (1.0.1)
+      rack (< 3)
+      webrick
+    sinatra (3.2.0)
+      mustermann (~> 3.0)
+      rack (~> 2.2, >= 2.2.4)
+      rack-protection (= 3.2.0)
+      tilt (~> 2.0)
+    tilt (2.9.0)
+    webrick (1.9.2)
+
+PLATFORMS
+  aarch64-linux-gnu
+  ruby
+
+DEPENDENCIES
+  json
+  minitest (~> 5.0)
+  puma (~> 6.0)
+  rackup (~> 1.0)
+  sinatra (~> 3.0)
+
+BUNDLED WITH
+   2.6.7

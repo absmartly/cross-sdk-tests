@@ -15,9 +15,11 @@ WORKDIR /app
 COPY cross-sdk-tests/ruby-wrapper/Gemfile* ./
 RUN bundle install
 
-COPY cross-sdk-tests/ruby-wrapper/server.rb cross-sdk-tests/ruby-wrapper/holdout_self_test.rb ./
+COPY cross-sdk-tests/ruby-wrapper/server.rb cross-sdk-tests/ruby-wrapper/holdout_self_test.rb cross-sdk-tests/ruby-wrapper/switchback_self_test.rb cross-sdk-tests/ruby-wrapper/server_test.rb ./
 
 ENV RUBYLIB=/ruby-sdk/lib:$RUBYLIB
+
+RUN ruby server_test.rb
 
 EXPOSE 3000
 
