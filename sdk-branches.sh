@@ -19,7 +19,8 @@ declare -A SDK_BRANCHES=(
   ["cpp-sdk"]="main"
   ["dotnet-sdk"]="main"
   ["elixir-sdk"]="main"
-  ["flutter-sdk"]="main"
+  # Temporary: flutter-sdk#11 (holdouts); back to main once it merges.
+  ["flutter-sdk"]="feat/holdouts"
   ["go-sdk"]="main"
   ["java-sdk"]="main"
   ["javascript-sdk"]="main"
