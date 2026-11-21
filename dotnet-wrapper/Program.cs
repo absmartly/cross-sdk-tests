@@ -91,6 +91,10 @@ app.MapGet("/capabilities", () => Results.Ok(new
     throwsOnMisuse = true,
     singleFinalizeEvent = true,
     semverNumericOperands = false,
+    // Behavioral self-tests (HoldoutSelfTest.cs): true only when the linked SDK reproduces
+    // scenarios 203-208/221 and 214-216; a build without holdouts reports false.
+    holdouts = HoldoutSelfTest.RunHoldouts(),
+    holdout_arms = HoldoutSelfTest.RunHoldoutArms(),
     assignmentRules = true,
     semverOperators = true,
     xAgentHeader = true,

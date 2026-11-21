@@ -120,6 +120,9 @@ open, because its lane now requires `holdouts`/`holdout_arms` (the liquid lane,
 which wraps ruby-sdk, builds that branch too but does not advertise holdouts).
 Keep ruby-sdk's `feat/holdouts` branch until a follow-up PR here re-pins ruby-sdk
 to `main` and its lane is green; re-run this suite after any push to that branch.
+dotnet-sdk is temporarily pinned to `feat/holdouts` (the open dotnet-sdk holdouts
+PR), which turns its `holdouts`/`holdout_arms` capabilities on; the pin goes back
+to `main` once that PR merges.
 
 ### Scenario numbering versus open PRs
 

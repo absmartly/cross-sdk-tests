@@ -33,10 +33,9 @@ across languages.
   starts advertising an excepted capability also fails the run until the
   policy moves it to `required`. Scenarios 203-208 require the `holdouts`
   capability. The SDKs that must support it are listed under `required` in
-  `orchestrator/expected-capabilities.json` (java, javascript and its wrappers,
-  dart and flutter); their wrappers report it from a behavioral self-test, so a
-  failing self-test fails the lane. The other SDKs list it as a reviewed
-  exception. Scenario
+  `orchestrator/expected-capabilities.json`; their wrappers report it from a
+  behavioral self-test, so a failing self-test fails the lane. The other SDKs
+  list it as a reviewed exception. Scenario
   209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 214-220
   require the `holdout_arms` capability and are skipped by SDKs that have not
