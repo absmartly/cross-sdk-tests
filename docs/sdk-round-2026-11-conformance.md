@@ -128,6 +128,14 @@ because its lane now requires `holdouts`/`holdout_arms`. The pin follows the sam
 rule: keep swift-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for
 that PR) until a follow-up PR here re-pins swift-sdk to `main` and its lane is
 green; re-run this suite after any push to that branch.
+**Holdouts for elixir-sdk.** The elixir lane requires `holdouts` and
+`holdout_arms`, advertised from a behavioural self-test
+(`elixir-wrapper/lib/elixir_wrapper/holdout_self_test.ex`, a port of
+`javascript-wrapper/holdoutSelfTest.js`), so `sdk-branches.sh` pins elixir-sdk to
+`feat/holdouts`, the branch of the open elixir-sdk#5. Merge order: merge
+elixir-sdk#5 first, then re-pin `["elixir-sdk"]` to `main` on the companion PR,
+before it merges, and re-run the elixir lane. Never merge the companion PR while
+the pin names a feature branch.
 
 ### Scenario numbering versus open PRs
 
