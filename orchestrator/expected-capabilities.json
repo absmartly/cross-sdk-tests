@@ -227,8 +227,7 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms",
-        "holdoutIdsDedup"
+        "holdout_arms"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",

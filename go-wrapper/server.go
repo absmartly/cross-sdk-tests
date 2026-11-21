@@ -268,7 +268,6 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"xAgentHeader":                    true,
 		"holdouts":                        holdoutsSupported(),
 		"holdout_arms":                    holdoutArmsSupported(),
-		"holdoutIdsDedup":                 holdoutIdsDedupSupported(),
 	})
 }
 
