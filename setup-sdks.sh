@@ -41,6 +41,8 @@ done
 
 # shellcheck source=sdk-branches.sh
 source "$SCRIPT_DIR/sdk-branches.sh"
+# shellcheck source=sdk-checkout.sh
+source "$SCRIPT_DIR/sdk-checkout.sh"
 
 clone_or_update() {
   local repo="$1"
@@ -73,9 +75,34 @@ echo "Working directory: $(pwd)"
 echo ""
 
 FAILED=()
+# A pinned revision is fetched by SHA, as CI does, so it works even once its branch is gone.
+checkout_revision() {
+  local repo="$1"
+  local revision="$2"
+  local url="https://github.com/absmartly/${repo}.git"
+
+  [ -d "$repo/.git" ] || git init -q "$repo"
+  # origin as a clone would set it, so a later -b override can fetch a branch here.
+  git -C "$repo" remote get-url origin >/dev/null 2>&1 || git -C "$repo" remote add origin "$url"
+  if ! fetch_and_checkout_revision "$repo" origin "$revision"; then
+    echo "  FAIL $repo: could not check out pinned revision $revision"
+    return 1
+  fi
+  # A checkout keeps tracked edits that do not conflict; the wrapper builds the working tree, so a
+  # pin only counts when the tracked files match the commit. Local edits are reported, not discarded.
+  if ! git -C "$repo" diff --quiet HEAD --; then
+    echo "  FAIL $repo: tracked files differ from pinned revision $revision (commit or stash local edits)"
+    return 1
+  fi
+  echo "  PIN  $repo @ $revision"
+}
+
 for repo in $(echo "${!SDK_BRANCHES[@]}" | tr ' ' '\n' | sort); do
   branch="${BRANCH_OVERRIDE:-${SDK_BRANCHES[$repo]}}"
-  if ! clone_or_update "$repo" "$branch"; then
+  revision="${SDK_REVISIONS[$repo]:-}"
+  if [ -z "$BRANCH_OVERRIDE" ] && [ -n "$revision" ]; then
+    checkout_revision "$repo" "$revision" || FAILED+=("$repo")
+  elif ! clone_or_update "$repo" "$branch"; then
     FAILED+=("$repo")
   fi
 done

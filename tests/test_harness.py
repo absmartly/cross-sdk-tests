@@ -585,7 +585,7 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["dart", "dotnet", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
+        self.assertEqual(holders, ["cpp", "dart", "dotnet", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
