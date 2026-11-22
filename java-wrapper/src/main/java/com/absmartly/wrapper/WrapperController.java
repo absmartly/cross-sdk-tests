@@ -430,7 +430,9 @@ public class WrapperController {
             boolean failLoad = contextJson == null && endpoint == null && Boolean.TRUE.equals(request.get("failLoad"));
             Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
             boolean fetchOverHttp = contextJson == null && endpoint != null;
-            WrapperTransport transport = new WrapperTransport(fetchOverHttp, publishToEndpoint || fetchOverHttp,
+            // Publishes stay in memory unless publishToEndpoint asks for the SDK's own PUT, as in the 1.x
+            // wrapper: an endpoint that serves the context (the context server) need not accept a publish.
+            WrapperTransport transport = new WrapperTransport(fetchOverHttp, publishToEndpoint,
                 failLoad, fetchOverHttp ? payloadThrottle : 0);
             String clientEndpoint = endpoint != null ? translateEndpoint(endpoint) : "http://localhost";
 
