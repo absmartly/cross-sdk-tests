@@ -1433,9 +1433,8 @@ Both endpoints are pure functions with no context. Request rules:
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2` or above the wrapper's cap) returns 400 with
   `{"error": "...", "events": []}`, the wrapper-wide error envelope. A wrapper
-  whose SDK lacks the function returns 501 with the same shape. (The java-wrapper
-  still returns `{"error": "..."}` without `events`; that predates this envelope
-  and is tracked separately.)
+  whose SDK lacks the function returns 501 with the same shape. Scenarios 400
+  and 403 send invalid requests and check both the 400 and the `events` member.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

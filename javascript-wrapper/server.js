@@ -869,12 +869,12 @@ app.post('/diagnostic', (req, res) => {
 function switchbackCall(res, exportName, call) {
   const functions = switchbackSelfTest.loadFunctions();
   if (functions == null || typeof functions[exportName] !== 'function') {
-    return res.status(501).json({ error: `linked SDK has no switchback ${exportName}` });
+    return res.status(501).json({ error: `linked SDK has no switchback ${exportName}`, events: [] });
   }
   try {
     return res.json({ result: call(functions[exportName]), events: [] });
   } catch (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({ error: error.message, events: [] });
   }
 }
 
