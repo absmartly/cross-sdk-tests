@@ -410,7 +410,7 @@ fn switchback_params(req: &Value, index: &str) -> Result<(String, i64, i64, usiz
 fn switchback_response(result: Result<Value, String>) -> axum::response::Response {
     match result {
         Ok(result) => Json(json!({"result": result, "events": []})).into_response(),
-        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e, "events": []}))).into_response(),
     }
 }
 
@@ -1238,6 +1238,7 @@ mod switchback_endpoint_tests {
                 assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{} {:?}", route, content_type);
                 let json = response_json(response).await;
                 assert!(json["error"].is_string(), "{} {:?}: {}", route, content_type, json);
+                assert_eq!(json["events"], json!([]), "{} {:?}: {}", route, content_type, json);
             }
         }
     }

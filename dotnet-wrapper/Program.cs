@@ -119,7 +119,7 @@ app.MapPost("/switchback/permutation", async Task<IResult> (HttpContext httpCont
 async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, object> call)
 {
     if (!SwitchbackAssignerAccess.IsAvailable)
-        return Results.Json(new { error = "linked SDK has no switchback assigner" }, statusCode: 501);
+        return Results.Json(new { error = "linked SDK has no switchback assigner", events = Array.Empty<object>() }, statusCode: 501);
     try
     {
         using var reader = new StreamReader(httpContext.Request.Body);
@@ -130,7 +130,7 @@ async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, ob
     }
     catch (Exception e) when (e is ArgumentException or JsonException or FormatException or OverflowException or InvalidOperationException)
     {
-        return Results.BadRequest(new { error = e.Message });
+        return Results.BadRequest(new { error = e.Message, events = Array.Empty<object>() });
     }
 }
 

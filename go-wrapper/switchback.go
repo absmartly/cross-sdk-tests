@@ -34,7 +34,7 @@ type switchbackAssignRequest struct {
 func writeSwitchbackError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	json.NewEncoder(w).Encode(map[string]interface{}{"error": message, "events": []interface{}{}})
 }
 
 // switchbackString reads a JSON string field.

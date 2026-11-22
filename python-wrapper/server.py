@@ -941,7 +941,7 @@ def _switchback_call(compute):
     # Answers whenever the assigner exists, independent of the self-test
     # verdict, so a regressed assigner reports its actual outputs.
     if switchback_self_test.assigner() is None:
-        return jsonify({'error': 'python3-sdk has no switchback assigner'}), 501
+        return jsonify({'error': 'python3-sdk has no switchback assigner', 'events': []}), 501
     try:
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
@@ -956,7 +956,7 @@ def _switchback_call(compute):
                              f'got {arm_count!r}')
         result = compute(body, cluster_unit, arm_count)
     except ValueError as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e), 'events': []}), 400
     return jsonify({'result': result, 'events': []})
 
 

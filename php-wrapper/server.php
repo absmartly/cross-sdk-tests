@@ -320,7 +320,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
     // regressed assigner reports its actual outputs.
     if ($method === 'POST' && ($path === '/switchback/assign' || $path === '/switchback/permutation')) {
         if (!SwitchbackSelfTest::isAvailable()) {
-            return jsonResponse(501, ['error' => 'linked SDK has no switchback assigner']);
+            return jsonResponse(501, ['error' => 'linked SDK has no switchback assigner', 'events' => []]);
         }
         $body = parseJsonBodyPreserveObjects($request);
         try {
@@ -338,7 +338,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
                 : SwitchbackSelfTest::permutation($clusterUnit, switchbackLong($body, 'cycleIndex'), $seed, $armCount);
             return jsonResponse(200, ['result' => $result, 'events' => []]);
         } catch (InvalidArgumentException $e) {
-            return jsonResponse(400, ['error' => $e->getMessage()]);
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => []]);
         }
     }
 

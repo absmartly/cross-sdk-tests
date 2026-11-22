@@ -98,3 +98,4 @@ def test_switchback_routes_accept_signed_ascii_decimals(route):
                              headers={"Content-Type": "application/json"}, timeout=10)
     assert response.status_code == 400
     assert "error" in response.json()
+    assert response.json()["events"] == []
