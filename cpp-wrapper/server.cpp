@@ -370,6 +370,7 @@ int main() {
                     {"publishThrowsOnFailure", true}, {"trackRejectsNonObjectProperties", true},
                     {"refreshNoOpOnFailedContext", true},
                     {"throwsOnMisuse", true},
+                    {"rejectsSettersAfterFinalize", true},
                     {"singleFinalizeEvent", true},
                     {"semverNumericOperands", true},
                     {"assignmentRules", true}, {"semverOperators", true},

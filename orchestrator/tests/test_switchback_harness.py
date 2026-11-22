@@ -558,7 +558,8 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
 # legitimately changes them. The Context Fetch Compression group (270-274) is not one of main's
 # scenarios, so it is excluded from the kept set alongside this group.
-MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
+# Last changed when 148, 149 and 188 moved to the rejectsSettersAfterFinalize gate (php-sdk#12).
+MAIN_SHA256 = "f5dd19e78cd800309012b6dfbeaf4d2db6263f8911d9f51c00c2c501ee756099"
 
 
 def test_main_scenarios_are_untouched():

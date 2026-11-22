@@ -15653,7 +15653,7 @@
       }
     ],
     "requires": [
-      "throwsOnMisuse",
+      "rejectsSettersAfterFinalize",
       "singleFinalizeEvent"
     ]
   },
@@ -15712,7 +15712,7 @@
       }
     ],
     "requires": [
-      "throwsOnMisuse",
+      "rejectsSettersAfterFinalize",
       "singleFinalizeEvent"
     ]
   },
@@ -18976,7 +18976,7 @@
       }
     ],
     "requires": [
-      "throwsOnMisuse",
+      "rejectsSettersAfterFinalize",
       "singleFinalizeEvent"
     ]
   },

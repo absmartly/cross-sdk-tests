@@ -371,6 +371,7 @@ async fn capabilities_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
         "trackRejectsNonObjectProperties": true,
         "refreshNoOpOnFailedContext": true,
         "throwsOnMisuse": true,
+        "rejectsSettersAfterFinalize": true,
         "singleFinalizeEvent": true,
         "semverNumericOperands": true,
         "assignmentRules": true,

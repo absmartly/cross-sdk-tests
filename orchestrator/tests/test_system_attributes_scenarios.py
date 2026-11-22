@@ -60,9 +60,9 @@ NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
 # this group was appended. Update ONLY when another group legitimately changes the non-group
 # scenarios (e.g. a group lands before this one and this one is renumbered). Last changed when the
-# finalize and misuse scenarios were gated on singleFinalizeEvent/throwsOnMisuse and scenario 35 listed
-# the ruby-sdk/php-sdk wordings (PR #21 review).
-KEPT_DIGEST = "9963fb6a8d9f9d05e9bb0efd5cc3a690e8507f61bcc81652ae723e62df2f7412"
+# post-finalize setter scenarios 148, 149 and 188 moved from throwsOnMisuse to the narrower
+# rejectsSettersAfterFinalize gate (php-sdk#12 keeps v1.0.3's accepted setters after close).
+KEPT_DIGEST = "45c794d6aab1bb26f978912b52d4f24bd2e637669c9675113f48252ca1b1572a"
 KEPT_COUNT = 240
 GROUP_SIZE = 6
 

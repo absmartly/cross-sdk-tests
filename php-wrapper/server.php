@@ -231,6 +231,27 @@ function switchbackLong($body, string $name): int
     return (int) $canonical;
 }
 
+// php-sdk 1.1 keeps the 1.0.3 setAttribute(string, string) and track(string, ?object) signatures and adds
+// setAttributeValue()/trackWithProperties() for typed values and array properties; older builds took mixed
+// values through the original methods. Call whichever real SDK method takes the value as given.
+function setContextAttribute(Context $context, string $name, $value): void
+{
+    if (!is_string($value) && method_exists($context, 'setAttributeValue')) {
+        $context->setAttributeValue($name, $value);
+        return;
+    }
+    $context->setAttribute($name, $value);
+}
+
+function trackContextGoal(Context $context, string $goalName, $properties): void
+{
+    if (method_exists($context, 'trackWithProperties')) {
+        $context->trackWithProperties($goalName, $properties);
+        return;
+    }
+    $context->track($goalName, $properties);
+}
+
 function translateEndpoint(string $endpoint): string
 {
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
@@ -271,8 +292,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             //    of throwing; only close() surfaces the error (scenario 193).
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
-            'refreshNoOpOnFailedContext' => true,
+            // php-sdk 1.x keeps v1.0.3's accepted post-close attribute/unit setters (rejectsSettersAfterFinalize)
+            // and failed-context refresh recovery (php-sdk#12): reviewed exceptions in
+            // orchestrator/expected-capabilities.json. Its other misuse errors still throw (throwsOnMisuse).
+            'refreshNoOpOnFailedContext' => false,
             'throwsOnMisuse' => true,
+            'rejectsSettersAfterFinalize' => false,
             'singleFinalizeEvent' => true,
             'semverNumericOperands' => true,
             'clientNoEnvironment' => true,
@@ -436,7 +461,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             return $sdk->createContextAsync($contextConfig)->then(
                 function($context) use ($contextId, $eventCollector, $sdk, $body, &$contexts) {
                     foreach ((array)($body->attributes ?? []) as $name => $value) {
-                        $context->setAttribute($name, $value);
+                        setContextAttribute($context, $name, $value);
                     }
 
                     $contexts[$contextId] = [
@@ -709,7 +734,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $context->setAttribute($body['name'], $body['value']);
+            setContextAttribute($context, $body['name'], $body['value']);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
@@ -851,7 +876,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $rawProps = (is_object($bodyObj) && property_exists($bodyObj, 'properties')) ? $bodyObj->properties : null;
 
         try {
-            $context->track($body['goalName'], $rawProps);
+            trackContextGoal($context, $body['goalName'], $rawProps);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);

@@ -175,6 +175,7 @@ def capabilities():
         'trackRejectsNonObjectProperties': False,
         'refreshNoOpOnFailedContext': False,
         'throwsOnMisuse': True,
+        'rejectsSettersAfterFinalize': True,
         'singleFinalizeEvent': False,
         'semverNumericOperands': True,
         'clientNoEnvironment': True,

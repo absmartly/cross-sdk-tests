@@ -89,6 +89,7 @@ app.MapGet("/capabilities", () => Results.Ok(new
     trackRejectsNonObjectProperties = true,
     refreshNoOpOnFailedContext = true,
     throwsOnMisuse = true,
+    rejectsSettersAfterFinalize = true,
     singleFinalizeEvent = true,
     semverNumericOperands = false,
     // Behavioral self-tests (HoldoutSelfTest.cs): true only when the linked SDK reproduces

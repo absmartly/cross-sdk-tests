@@ -301,10 +301,10 @@ final class SwitchbackSelfTest
         if (!$context->isReady() || $context->isFailed()) {
             return self::fail('FAILED: context not ready');
         }
-        $context->setAttribute('city', 'market_1');
-        $context->setAttribute('profile', ['city' => 'market_1', 'zone' => 'market_2']);
-        $context->setAttribute('store_number', 123456789);
-        $context->setAttribute('store_float', 123456789.0);
+        setContextAttribute($context, 'city', 'market_1');
+        setContextAttribute($context, 'profile', ['city' => 'market_1', 'zone' => 'market_2']);
+        setContextAttribute($context, 'store_number', 123456789);
+        setContextAttribute($context, 'store_float', 123456789.0);
 
         $served = self::expect($context, $logger, 'agreement', 'sb_agree', 3, self::served(521, 'sb_agree', 'unit_serving', 3))
             && self::expect($context, $logger, 'agreement repeat', 'sb_agree', 3)
