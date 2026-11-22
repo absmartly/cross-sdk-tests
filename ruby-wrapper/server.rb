@@ -12,8 +12,8 @@ require 'context_config'
 require 'context_data_provider'
 require 'default_context_data_provider'
 require 'default_context_data_deserializer'
-require 'context_publisher'
-require 'default_context_publisher'
+require 'context_event_handler'
+require 'default_context_event_handler'
 require 'context_event_logger'
 require 'hashing'
 require_relative 'holdout_self_test'
@@ -116,10 +116,10 @@ class DeferredDataProvider < ContextDataProvider
 end
 
 # Test contexts publish nowhere: a publish succeeds without sending anything.
-# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextEventHandler
 # as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
 # Either way /publishFail arms a one-shot failure of the next publish.
-class CustomPublisher < ContextPublisher
+class CustomPublisher < ContextEventHandler
   attr_accessor :should_fail
 
   def initialize(event_collector, sdk_publisher = nil)
@@ -346,7 +346,7 @@ post '/context' do
     sdk_config.client = client
     # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
     if req_data[:publishToEndpoint] && req_data[:endpoint]
-      publisher = CustomPublisher.new(collector, DefaultContextPublisher.new(client))
+      publisher = CustomPublisher.new(collector, DefaultContextEventHandler.new(client))
       sdk_config.context_event_handler = publisher
     end
     if throttle > 0
