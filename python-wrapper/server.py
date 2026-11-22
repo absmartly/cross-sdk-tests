@@ -186,7 +186,9 @@ def capabilities():
         'xAgentHeader': True,
         'holdouts': holdout_self_test.run_holdouts(),
         'holdout_arms': holdout_self_test.run_holdout_arms(),
-        'switchback': switchback_self_test.run()
+        'switchback': switchback_self_test.run(),
+        # The switchback battery checks that a whole float keys no cluster (switchback_self_test.py).
+        'integralFloatAttributes': switchback_self_test.run()
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])

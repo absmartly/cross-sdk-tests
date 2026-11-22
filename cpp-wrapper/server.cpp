@@ -377,6 +377,8 @@ int main() {
                     {"holdouts", holdout_self_test::holdouts()},
                     {"holdout_arms", holdout_self_test::holdout_arms()},
                     {"switchback", switchback_self_test::switchback()},
+                    // The switchback battery checks that a 3.0 attribute keys no cluster.
+                    {"integralFloatAttributes", switchback_self_test::switchback()},
                     {"xAgentHeader", true},
                     {"clientRejectsBlankApplication", true},
                     {"clientAcceptsBlankApplication", false}};

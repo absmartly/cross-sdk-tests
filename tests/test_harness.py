@@ -1299,6 +1299,77 @@ class StaticRepoChecks(unittest.TestCase):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
 
+    # Each switchback wrapper's /switchback handler: (path, first line, end line, error-response marker).
+    # Scenarios 400 and 403 check the wrapper-wide error envelope, so every error response the handler
+    # builds must carry `events`.
+    SWITCHBACK_HANDLERS = {
+        "javascript-wrapper/server.js": ("function switchbackCall(", "\n}\n", "error:"),
+        "python-wrapper/server.py": ("def _switchback_call(", "\n\n\n", "'error'"),
+        "go-wrapper/switchback.go": ("func writeSwitchbackError(", "\n}\n", '"error"'),
+        "php-wrapper/server.php": ("$path === '/switchback/assign'", "\n    }\n", "'error'"),
+        "dotnet-wrapper/Program.cs": ("async Task<IResult> SwitchbackCall(", "\n}\n", "error ="),
+        "rust-wrapper/src/main.rs": ("fn switchback_response(", "\n}\n", '"error"'),
+        "ruby-wrapper/server.rb": ("halt 501, { error: 'linked SDK has no switchback assigner'", "\n", "error:"),
+    }
+
+    def test_switchback_error_responses_carry_events(self):
+        for path, (start, end, marker) in self.SWITCHBACK_HANDLERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                self.assertIn(start, text)
+                body = text[text.index(start):]
+                body = body[:body.index(end) + len(end)]
+                errors = [line for line in body.splitlines() if marker in line]
+                self.assertTrue(errors, "no error response found")
+                for line in errors:
+                    self.assertIn("events", line)
+
+    def test_python_dockerfile_copies_every_local_module_the_server_imports(self):
+        wrapper = os.path.join(REPO_ROOT, "python-wrapper")
+        local = {name[:-3] for name in os.listdir(wrapper) if name.endswith(".py") and not name.startswith("test_")}
+        with open(os.path.join(wrapper, "server.py"), encoding="utf-8") as src:
+            imported = set(re.findall(r"^(?:import|from) (\w+)", src.read(), re.M)) & local
+        with open(os.path.join(wrapper, "Dockerfile"), encoding="utf-8") as src:
+            dockerfile = src.read()
+        self.assertTrue(imported)
+        for module in sorted(imported):
+            with self.subTest(module=module):
+                self.assertIn(f"cross-sdk-tests/python-wrapper/{module}.py", dockerfile)
+
+    # What each lane must build this round (sdk-branches.sh). A pin that moves back to `main` before its
+    # SDK PR merges would silently drop the lane's holdouts/switchback coverage; update this table in
+    # the change that re-pins.
+    EXPECTED_PINS = {
+        "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
+        "dotnet-sdk": ("feat/switchbacks", None),
+        "elixir-sdk": ("feat/switchbacks", None),
+        "flutter-sdk": ("feat/switchbacks", None),
+        "go-sdk": ("feat/switchbacks", None),
+        "java-sdk": ("next/major", None),
+        "java-sdk-v1": ("v1.9.0", None),
+        "javascript-sdk": ("feat/switchbacks", None),
+        "php-sdk": ("feat/switchbacks", None),
+        "python3-sdk": ("feat/switchbacks", None),
+        "ruby-sdk": ("feat/switchbacks", None),
+        "rust-sdk": ("feat/switchbacks", None),
+        "swift-sdk": ("feat/swift-2.0", None),
+        "swift-sdk-v1": ("feat/holdouts", "caa804ebc7a87a2f545da708c2d368802884d2d7"),
+    }
+
+    def test_round_pins_match_the_expected_table(self):
+        def pins(name):
+            script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+            out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True,
+                                 check=True).stdout
+            return dict(line.split("=", 1) for line in out.splitlines() if line)
+        branches, revisions = pins("SDK_BRANCHES"), pins("SDK_REVISIONS")
+        for repo, (branch, revision) in self.EXPECTED_PINS.items():
+            with self.subTest(repo=repo):
+                self.assertEqual(branches.get(repo), branch)
+                self.assertEqual(revisions.get(repo), revision)
+        self.assertEqual(set(revisions), {r for r, (_, rev) in self.EXPECTED_PINS.items() if rev})
+
     def test_flutter_holdout_self_test_matches_dart_copy(self):
         # The flutter wrapper keeps a copy of the dart wrapper's holdout
         # self-test; only the header comment and the SDK import may differ.

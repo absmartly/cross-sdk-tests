@@ -40,7 +40,7 @@
 # SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
 # what this commit tests.
 declare -A SDK_REVISIONS=(
-  ["cpp-sdk"]="45ed81223e594d491ec74dc9529e055ea04e6606"
+  ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["swift-sdk-v1"]="caa804ebc7a87a2f545da708c2d368802884d2d7"
 )
 

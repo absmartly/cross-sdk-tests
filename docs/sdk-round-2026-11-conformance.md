@@ -111,8 +111,8 @@ scenario rather than rewritten by the ruby, liquid and php wrappers.
 ## Branch pins (sdk-branches.sh)
 
 `sdk-branches.sh` is what CI builds, so it must only name refs that stay put.
-Every SDK PR of this round has merged, so every SDK of the round is pinned to
-`main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
+Every SDK PR of the 2026-11 parity round has merged, so those SDKs were pinned
+to `main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
 kotlin#4, php#10, python3#14, ruby#41, rust#9, scala#4, swift#10); java-sdk `main`
 also carries switchback (java-sdk#15). `PINNED_COMMIT` in
 `generate_sdk_round_2026_11_scenarios.py` is javascript-sdk `main` at the #68

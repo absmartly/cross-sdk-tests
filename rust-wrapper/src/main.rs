@@ -379,7 +379,9 @@ async fn capabilities_handler(State(state): State<Arc<AppState>>) -> impl IntoRe
         "xAgentHeader": true,
         "clientRejectsBlankApplication": true,
         "clientAcceptsBlankApplication": false,
-        "switchback": tokio::task::block_in_place(state.switchback_probe)
+        "switchback": tokio::task::block_in_place(state.switchback_probe),
+        // The switchback battery checks that a 3.0 attribute keys no cluster (switchback_self_test.rs).
+        "integralFloatAttributes": tokio::task::block_in_place(state.switchback_probe)
     }))
 }
 

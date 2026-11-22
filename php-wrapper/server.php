@@ -310,7 +310,9 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             // (HoldoutSelfTest.php), never hard-coded.
             'holdouts' => HoldoutSelfTest::runHoldouts(),
             'holdout_arms' => HoldoutSelfTest::runHoldoutArms(),
-            'switchback' => SwitchbackSelfTest::run()
+            'switchback' => SwitchbackSelfTest::run(),
+            // The switchback battery checks that a whole float keys no cluster (SwitchbackSelfTest.php).
+            'integralFloatAttributes' => SwitchbackSelfTest::run()
         ]);
     }
 

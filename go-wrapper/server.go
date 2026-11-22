@@ -271,6 +271,8 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"holdouts":                        holdoutsSupported(),
 		"holdout_arms":                    holdoutArmsSupported(),
 		"switchback":                      switchbackSupported(),
+		// The switchback battery checks that a float attribute keys no cluster (switchback.go).
+		"integralFloatAttributes": switchbackSupported(),
 	})
 }
 

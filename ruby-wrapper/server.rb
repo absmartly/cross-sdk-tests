@@ -253,6 +253,8 @@ get '/capabilities' do
     holdouts: HoldoutSelfTest.holdouts?,
     holdout_arms: HoldoutSelfTest.holdout_arms?,
     switchback: SwitchbackSelfTest.switchback?,
+    # The switchback battery checks that a 3.0 attribute keys no cluster (switchback_self_test.rb).
+    integralFloatAttributes: SwitchbackSelfTest.switchback?,
     semverOperators: true,
     xAgentHeader: true }.to_json
 end

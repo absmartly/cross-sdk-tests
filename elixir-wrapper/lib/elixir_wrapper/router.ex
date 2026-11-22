@@ -50,7 +50,9 @@ defmodule ElixirWrapper.Router do
       # built from (holdout_self_test.ex); false when it fails.
       holdouts: ElixirWrapper.HoldoutSelfTest.holdouts?(),
       holdout_arms: ElixirWrapper.HoldoutSelfTest.holdout_arms?(),
-      switchback: ElixirWrapper.SwitchbackSelfTest.switchback?()
+      switchback: ElixirWrapper.SwitchbackSelfTest.switchback?(),
+      # The switchback battery checks that a 3.0 attribute keys no cluster (switchback_self_test.ex).
+      integralFloatAttributes: ElixirWrapper.SwitchbackSelfTest.switchback?()
     })
   end
 
