@@ -1,38 +1,65 @@
 import Vapor
-import ABSmartly
+@_spi(Diagnostics) import ABsmartly
 import Foundation
-#if canImport(CryptoKit)
-import CryptoKit
-#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-import PromiseKit
 
 typealias HTTPResponse = Vapor.Response
 typealias VaporApplication = Vapor.Application
-typealias ABSmartlyApplication = ABSmartly.Application
 
-extension Promise {
-    func asyncValue() async throws -> T {
-        return try await withCheckedThrowingContinuation { continuation in
-            firstly {
-                self
-            }.done(on: DispatchQueue.global()) { value in
-                continuation.resume(returning: value)
-            }.catch(on: DispatchQueue.global()) { error in
-                continuation.resume(throwing: error)
-            }
-        }
+// MARK: - JSON helpers
+
+/// A JSON value as Foundation objects, for JSONSerialization.
+func jsonToAny(_ value: JSONValue?) -> Any {
+    guard let value = value else { return NSNull() }
+    switch value {
+    case .null: return NSNull()
+    case .bool(let b): return b
+    case .int(let i): return i
+    case .double(let d): return d
+    case .string(let s): return s
+    case .array(let items): return items.map { jsonToAny($0) }
+    case .object(let object): return object.mapValues { jsonToAny($0) }
     }
 }
 
-// Keeps every event for the context's lifetime. Handlers slice the new events
-// with `suffix(from: eventsBefore)`, so the array must only ever grow: evicting
-// old events would shift indices and return the wrong window (or trap once
-// `eventsBefore` exceeds the count). Memory is bounded by ContextManager, which
-// caps live contexts and drops a context's collector with it.
-class EventCollector: ContextEventLogger {
+/// An SDK model as Foundation objects, through its own Encodable conformance.
+func encodedToAny<T: Encodable>(_ value: T) -> Any {
+    guard let data = try? JSONEncoder().encode(value),
+          let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
+        return NSNull()
+    }
+    return object
+}
+
+// An unknown experiment exposes with no unit; the wire contract carries that as an explicit null,
+// not an omitted member.
+func exposureToAny(_ exposure: Exposure) -> Any {
+    var dict = encodedToAny(exposure) as? [String: Any] ?? [:]
+    if dict["unit"] == nil { dict["unit"] = NSNull() }
+    return dict
+}
+
+func goalToAny(_ goal: Goal) -> Any {
+    encodedToAny(goal)
+}
+
+func publishToAny(_ event: PublishEvent) -> Any {
+    var dict = encodedToAny(event) as? [String: Any] ?? [:]
+    dict["units"] = event.units.map { encodedToAny($0) }
+    dict["exposures"] = event.exposures.map { exposureToAny($0) }
+    dict["goals"] = event.goals.map { goalToAny($0) }
+    dict["attributes"] = event.attributes.map { encodedToAny($0) }
+    return dict
+}
+
+// MARK: - Event collection
+
+// Keeps every event for the context's lifetime. Handlers slice the new events with
+// `suffix(from: eventsBefore)`, so the array must only ever grow. Memory is bounded by
+// ContextManager, which caps live contexts and drops a context's collector with it.
+final class EventCollector: @unchecked Sendable {
     private var storedEvents: [[String: Any]] = []
     private let lock = NSLock()
 
@@ -42,188 +69,62 @@ class EventCollector: ContextEventLogger {
         return storedEvents
     }
 
-    func handleEvent(context: Context, event: ContextEventLoggerEvent) {
-        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
-        var eventRecord: [String: Any]
+    var logger: EventLogger {
+        EventLogger { [self] _, event in self.handle(event) }
+    }
 
+    func handle(_ event: Context.Event) {
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let record: [String: Any]
         switch event {
         case .ready(let data):
-            eventRecord = [
-                "type": "ready",
-                "data": convertContextDataToDict(data),
-                "timestamp": timestamp
-            ]
+            record = ["type": "ready", "data": encodedToAny(data), "timestamp": timestamp]
         case .refresh(let data):
-            eventRecord = [
-                "type": "refresh",
-                "data": convertContextDataToDict(data),
-                "timestamp": timestamp
-            ]
+            record = ["type": "refresh", "data": encodedToAny(data), "timestamp": timestamp]
         case .publish(let publishEvent):
-            eventRecord = [
-                "type": "publish",
-                "data": convertPublishEventToDict(publishEvent),
-                "timestamp": timestamp
-            ]
+            record = ["type": "publish", "data": publishToAny(publishEvent), "timestamp": timestamp]
         case .exposure(let exposure):
-            eventRecord = [
-                "type": "exposure",
-                "data": convertExposureToDict(exposure),
-                "timestamp": timestamp
-            ]
+            record = ["type": "exposure", "data": exposureToAny(exposure), "timestamp": timestamp]
         case .goal(let goal):
-            eventRecord = [
-                "type": "goal",
-                "data": convertGoalToDict(goal),
-                "timestamp": timestamp
-            ]
+            record = ["type": "goal", "data": goalToAny(goal), "timestamp": timestamp]
         case .close:
-            // The swift-sdk's real enum case is `.close` (`.finalize` is only a
-            // static alias and cannot be matched as a switch pattern). Emit the
-            // cross-SDK event name "finalize", like the other wrappers.
-            eventRecord = [
-                "type": "finalize",
-                "data": NSNull(),
-                "timestamp": timestamp
-            ]
+            // The SDK's close event is the cross-SDK "finalize" event.
+            record = ["type": "finalize", "data": NSNull(), "timestamp": timestamp]
         case .error(let error):
-            eventRecord = [
-                "type": "error",
-                "data": ["message": error.localizedDescription],
-                "timestamp": timestamp
-            ]
+            record = ["type": "error", "data": ["message": error.localizedDescription], "timestamp": timestamp]
         }
-
         lock.lock()
-        storedEvents.append(eventRecord)
+        storedEvents.append(record)
         lock.unlock()
-    }
-
-    private func convertContextDataToDict(_ data: ContextData) -> [String: Any] {
-        var dict: [String: Any] = [:]
-        dict["experiments"] = data.experiments.map { exp in
-            convertExperimentToDict(exp)
-        }
-        return dict
-    }
-
-    private func convertExperimentToDict(_ exp: Experiment) -> [String: Any] {
-        var dict: [String: Any] = [:]
-        dict["id"] = exp.id
-        dict["name"] = exp.name
-        dict["unitType"] = exp.unitType
-        dict["iteration"] = exp.iteration
-        dict["seedHi"] = exp.seedHi
-        dict["seedLo"] = exp.seedLo
-        dict["split"] = exp.split
-        dict["trafficSeedHi"] = exp.trafficSeedHi
-        dict["trafficSeedLo"] = exp.trafficSeedLo
-        dict["trafficSplit"] = exp.trafficSplit
-        dict["fullOnVariant"] = exp.fullOnVariant
-        dict["applications"] = exp.applications?.map { app in
-            ["name": app.name as Any? ?? NSNull()]
-        }
-        dict["variants"] = exp.variants.map { variant in
-            ["name": variant.name as Any? ?? NSNull(), "config": variant.config as Any? ?? NSNull()]
-        }
-        dict["audience"] = exp.audience
-        dict["audienceStrict"] = exp.audienceStrict
-        if let customFieldValues = exp.customFieldValues {
-            dict["customFieldValues"] = customFieldValues.map { cfv in
-                ["name": cfv.name as Any? ?? NSNull(), "type": cfv.type as Any? ?? NSNull(), "value": cfv.value as Any? ?? NSNull()]
-            }
-        }
-        return dict
-    }
-
-    private func convertPublishEventToDict(_ event: PublishEvent) -> [String: Any] {
-        var dict: [String: Any] = [:]
-        dict["hashed"] = event.hashed
-        dict["publishedAt"] = event.publishedAt
-        dict["units"] = event.units.map { unit in
-            ["type": unit.type as Any? ?? NSNull(), "uid": unit.uid as Any? ?? NSNull()]
-        }
-        dict["exposures"] = event.exposures.map { exp in
-            convertExposureToDict(exp)
-        }
-        dict["goals"] = event.goals.map { goal in
-            convertGoalToDict(goal)
-        }
-        dict["attributes"] = event.attributes.map { attr in
-            ["name": attr.name as Any? ?? NSNull(), "value": jsonToAny(attr.value), "setAt": attr.setAt]
-        }
-        return dict
-    }
-
-    private func convertExposureToDict(_ exposure: Exposure) -> [String: Any] {
-        var dict: [String: Any] = [:]
-        dict["id"] = exposure.id
-        dict["name"] = exposure.name
-        // An unknown experiment exposes with no unit; the wire contract carries
-        // that as an explicit null, not an omitted member.
-        dict["unit"] = exposure.unit as Any? ?? NSNull()
-        dict["variant"] = exposure.variant
-        dict["exposedAt"] = exposure.exposedAt
-        dict["assigned"] = exposure.assigned
-        dict["eligible"] = exposure.eligible
-        dict["overridden"] = exposure.overridden
-        dict["fullOn"] = exposure.fullOn
-        dict["custom"] = exposure.custom
-        dict["audienceMismatch"] = exposure.audienceMismatch
-        dict["ruleOverride"] = exposure.ruleOverride
-        return dict
-    }
-
-    private func convertGoalToDict(_ goal: GoalAchievement) -> [String: Any] {
-        var dict: [String: Any] = [:]
-        dict["name"] = goal.name
-        dict["achievedAt"] = goal.achievedAt
-        if let properties = goal.properties {
-            var propsDict: [String: Any] = [:]
-            for (key, value) in properties {
-                propsDict[key] = jsonToAny(value)
-            }
-            dict["properties"] = propsDict
-        }
-        return dict
-    }
-
-    private func jsonToAny(_ json: JSON?) -> Any {
-        guard let json = json else { return NSNull() }
-
-        if let dict = json.dictionary {
-            var result: [String: Any] = [:]
-            for (key, value) in dict {
-                result[key] = jsonToAny(value)
-            }
-            return result
-        } else if let array = json.array {
-            return array.map { jsonToAny($0) }
-        } else if let string = json.string {
-            return string
-        } else if let bool = json.bool {
-            return bool
-        } else if let number = json.number {
-            return number
-        } else if json.null != nil {
-            return NSNull()
-        }
-
-        return NSNull()
     }
 }
 
-// The ContextPublisher the SDK invokes. `/publishFail` arms a one-shot failure;
-// otherwise the publish goes to `delegate` (the SDK's DefaultContextPublisher in
-// e2e mode) or, in mock mode where there is no collector, succeeds without
-// sending anything.
-class CustomPublisher: ContextPublisher {
-    private let lock = NSLock()
-    private var shouldFail: Bool = false
-    private let delegate: ContextPublisher?
+// MARK: - Transport
 
-    init(delegate: ContextPublisher? = nil) {
-        self.delegate = delegate
+/// The SDK's own URLSessionTransport, plus the wrapper's test controls:
+/// - `/publishFail` arms a one-shot publish failure: the next publish fails, including the SDK's own
+///   retries of it (they resend the same body), so the SDK sees one failed publish, as 1.x's
+///   publisher hook did;
+/// - without `publishToEndpoint` there is no collector, so publishes succeed without being sent;
+/// - `payloadThrottle` delays the first context fetch;
+/// - inline-data contexts have no endpoint, so a refresh fetches an empty context, as 1.x's
+///   DummyContextDataProvider did.
+final class WrapperTransport: Transport, @unchecked Sendable {
+    private let inner: URLSessionTransport
+    private let lock = NSLock()
+    private var shouldFail = false
+    private var failingBody: Data?
+    private var throttled: Bool
+    private let throttleMs: Int
+    private let publishToEndpoint: Bool
+    private let inlineData: Bool
+
+    init(publishToEndpoint: Bool, throttleMs: Int = 0, inlineData: Bool = false) {
+        self.inner = URLSessionTransport(timeout: 3)
+        self.publishToEndpoint = publishToEndpoint
+        self.throttleMs = throttleMs
+        self.throttled = throttleMs > 0
+        self.inlineData = inlineData
     }
 
     func setShouldFail(_ value: Bool) {
@@ -232,83 +133,67 @@ class CustomPublisher: ContextPublisher {
         shouldFail = value
     }
 
-    func publish(event: PublishEvent) -> Promise<Void> {
-        lock.lock()
-        let failNow = shouldFail
-        if failNow { shouldFail = false }
-        lock.unlock()
-        if failNow {
-            return Promise(error: NSError(domain: "ABSmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Publish failed"]))
-        }
-        if let delegate = delegate {
-            return delegate.publish(event: event)
-        }
-        return Promise.value(())
-    }
-}
-
-class DummyContextDataProvider: ContextDataProvider {
-    func getContextData() -> Promise<ContextData> {
-        return Promise.value(ContextData(experiments: []))
-    }
-}
-
-// Delays the SDK's own data provider by `throttleMs` for the initial load, then
-// lets it fetch. The fetch itself (URL `{endpoint}/context`, query, decoding,
-// HTTP errors) is the SDK's DefaultClient path, exactly as in the unthrottled
-// endpoint mode. Later fetches (refresh) are not delayed.
-class DeferredContextDataProvider: ContextDataProvider {
-    private let inner: ContextDataProvider
-    private let throttleMs: Int
-    private let lock = NSLock()
-    private var delayed = false
-
-    init(inner: ContextDataProvider, throttleMs: Int) {
-        self.inner = inner
-        self.throttleMs = throttleMs
-    }
-
-    func getContextData() -> Promise<ContextData> {
-        lock.lock()
-        let delayThisCall = !delayed
-        delayed = true
-        lock.unlock()
-        if !delayThisCall {
-            return inner.getContextData()
-        }
-        return Promise { seal in
-            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(self.throttleMs)) {
-                self.inner.getContextData().done(on: DispatchQueue.global()) { data in
-                    seal.fulfill(data)
-                }.catch(on: DispatchQueue.global()) { error in
-                    seal.reject(error)
-                }
+    func send(_ request: HTTPRequest) async throws -> ABsmartly.HTTPResponse {
+        if request.method == "GET" {
+            if inlineData {
+                return ABsmartly.HTTPResponse(statusCode: 200, body: Data(#"{"experiments":[]}"#.utf8))
             }
+            let delay = lock.withLock { () -> Bool in
+                let delay = throttled
+                throttled = false
+                return delay
+            }
+            if delay {
+                try await Task.sleep(nanoseconds: UInt64(throttleMs) * 1_000_000)
+            }
+            return try await inner.send(request)
         }
+
+        let failNow = lock.withLock { () -> Bool in
+            if shouldFail {
+                shouldFail = false
+                failingBody = request.body
+                return true
+            }
+            if let failing = failingBody {
+                if failing == request.body {
+                    return true
+                }
+                failingBody = nil
+            }
+            return false
+        }
+        if failNow {
+            throw NSError(domain: "ABsmartly", code: -1, userInfo: [NSLocalizedDescriptionKey: "Publish failed"])
+        }
+        if publishToEndpoint {
+            return try await inner.send(request)
+        }
+        return ABsmartly.HTTPResponse(statusCode: 200, body: Data("{}".utf8))
     }
 }
 
-class ContextStorage {
+// MARK: - Storage
+
+final class ContextStorage: @unchecked Sendable {
     let context: Context
     let eventCollector: EventCollector
-    let sdk: ABSmartlySDK
-    let publisher: CustomPublisher?
+    let transport: WrapperTransport
 
-    init(context: Context, eventCollector: EventCollector, sdk: ABSmartlySDK, publisher: CustomPublisher? = nil) {
+    init(context: Context, eventCollector: EventCollector, transport: WrapperTransport) {
         self.context = context
         self.eventCollector = eventCollector
-        self.sdk = sdk
-        self.publisher = publisher
+        self.transport = transport
     }
 }
 
-class ContextManager {
+final class ContextManager: @unchecked Sendable {
     private var contexts: [String: ContextStorage] = [:]
     private var contextOrder: [String] = []
     private let lock = NSLock()
     private let maxContexts = 50
 
-    func store(contextId: String, context: Context, collector: EventCollector, sdk: ABSmartlySDK, publisher: CustomPublisher? = nil) {
+    func store(contextId: String, storage: ContextStorage) {
         var toEvict: [ContextStorage] = []
 
         lock.lock()
@@ -318,15 +203,13 @@ class ContextManager {
                 toEvict.append(oldStorage)
             }
         }
-        contexts[contextId] = ContextStorage(context: context, eventCollector: collector, sdk: sdk, publisher: publisher)
+        contexts[contextId] = storage
         contextOrder.append(contextId)
         lock.unlock()
 
-        for storage in toEvict {
-            if !storage.context.isClosed() {
-                _ = storage.context.close()
-            }
-            _ = storage.sdk.close()
+        for storage in toEvict where storage.context.state != .closed {
+            let context = storage.context
+            Task { try? await context.close() }
         }
     }
 
@@ -344,16 +227,10 @@ class ContextManager {
             contextOrder.remove(at: index)
         }
     }
-
-    var count: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return contexts.count
-    }
 }
 
 // Vapor serves requests on several event loops, so the payload map needs a lock.
-class PayloadStore {
+final class PayloadStore: @unchecked Sendable {
     private var payloads: [String: Data] = [:]
     private let lock = NSLock()
 
@@ -372,7 +249,7 @@ class PayloadStore {
 }
 
 // Locked like PayloadStore.
-class CapturedRequests {
+final class CapturedRequests: @unchecked Sendable {
     private var requests: [String: [[String: Any]]] = [:]
     private let lock = NSLock()
 
@@ -399,10 +276,11 @@ let capturedRequests = CapturedRequests()
 
 let payloadNotFoundBody: [String: Any] = ["error": "payload not found"]
 
+// MARK: - Request helpers
 
-func requestBody(_ req: Request) throws -> JSON {
-    guard let buffer = req.body.data, buffer.readableBytes > 0 else { return JSON([String: Any]()) }
-    return try JSON(data: Data(buffer.readableBytesView))
+func requestBody(_ req: Request) throws -> JSONValue {
+    guard let buffer = req.body.data, buffer.readableBytes > 0 else { return .object([:]) }
+    return try JSONDecoder().decode(JSONValue.self, from: Data(buffer.readableBytesView))
 }
 
 func reply(_ object: [String: Any], status: HTTPResponseStatus = .ok) throws -> HTTPResponse {
@@ -422,10 +300,10 @@ func call(_ storage: ContextStorage, _ body: () async throws -> Any?) async thro
     do {
         let value = try await body()
         let events = Array(storage.eventCollector.events.suffix(from: before))
-        return try reply(["result": sanitizeForJSON(value), "events": sanitizeForJSON(events)])
+        return try reply(["result": value ?? NSNull(), "events": events])
     } catch {
         let events = Array(storage.eventCollector.events.suffix(from: before))
-        return try reply(["error": error.localizedDescription, "events": sanitizeForJSON(events)], status: .badRequest)
+        return try reply(["error": error.localizedDescription, "events": events], status: .badRequest)
     }
 }
 
@@ -433,32 +311,79 @@ func errorReply(_ message: String, status: HTTPResponseStatus = .badRequest) thr
     return try reply(["error": message, "events": [] as [Any]], status: status)
 }
 
-func makeConfig(_ request: JSON, logger: EventCollector) -> ContextConfig {
-    let config = ContextConfig()
-    for (unitType, uid) in request["units"].dictionaryValue {
-        config.setUnit(unitType: unitType, value: uid)
+/// The scenario's units: string UIDs go to context creation, numeric ones are set right after it
+/// with `setUnit(_:to:)` (Int when integral, else Double), which keeps them numbers.
+struct ScenarioUnits {
+    var strings: [UnitType: String] = [:]
+    var numbers: [(UnitType, JSONValue)] = []
+
+    init(_ units: JSONValue?) {
+        for (unitType, uid) in units?.objectValue ?? [:] {
+            switch uid {
+            case .string(let s): strings[UnitType(unitType)] = s
+            case .int, .double: numbers.append((UnitType(unitType), uid))
+            default: strings[UnitType(unitType)] = uid.description
+            }
+        }
     }
-    config.eventLogger = logger
-    config.publishDelay = request["options"]["publishDelay"].double ?? -1
-    config.refreshInterval = request["options"]["refreshPeriod"].double ?? 0
-    return config
+
+    func apply(to context: Context) throws {
+        for (unitType, uid) in numbers {
+            try setNumericUnit(context, unitType, uid)
+        }
+    }
+}
+
+func setNumericUnit(_ context: Context, _ unitType: UnitType, _ uid: JSONValue) throws {
+    switch uid {
+    case .int(let i):
+        if let int = Int(exactly: i) { try context.setUnit(unitType, to: int) } else { try context.setUnit(unitType, to: Double(i)) }
+    case .double(let d):
+        try context.setUnit(unitType, to: d)
+    default:
+        break
+    }
+}
+
+func contextOptions(_ request: JSONValue, logger: EventCollector) -> Context.Options {
+    Context.Options(
+        publishDelay: request["options"]?["publishDelay"]?.doubleValue ?? -1,
+        refreshInterval: request["options"]?["refreshPeriod"]?.doubleValue ?? 0,
+        eventLogger: logger.logger)
 }
 
 func contextResult(_ contextId: String, _ context: Context, _ collector: EventCollector) throws -> HTTPResponse {
+    let state = context.state
+    var failed = false
+    if case .failed = state { failed = true }
     return try reply([
         "result": [
             "contextId": contextId,
-            "ready": context.isReady(),
-            "failed": context.isFailed(),
-            "finalized": context.isFinalized()
+            "ready": state.isSettled,
+            "failed": failed,
+            "finalized": state == .closed,
         ],
-        "events": sanitizeForJSON(collector.events)
+        "events": collector.events,
     ])
 }
 
+func makeClient(
+    endpoint: String, application: String, environment: String, transport: WrapperTransport, apiKey: String = "test-api-key"
+) throws -> ABsmartlyClient {
+    guard let url = URL(string: endpoint) else {
+        throw Abort(.badRequest, reason: "wrapper: endpoint is not a valid URL: \(endpoint)")
+    }
+    var configuration = ABsmartlyClient.Configuration(
+        endpoint: url, apiKey: apiKey, application: application, environment: .init(rawValue: environment))
+    configuration.transport = transport
+    return try ABsmartlyClient(configuration: configuration)
+}
+
+// MARK: - Routes
+
 func routes(_ app: VaporApplication) throws {
     app.get("health") { _ -> HTTPResponse in
-        return try reply(["status": "healthy", "sdk": "swift", "version": "1.0.0"])
+        return try reply(["status": "healthy", "sdk": "swift", "version": "2.0.0"])
     }
 
     app.get("capabilities") { _ -> HTTPResponse in
@@ -485,22 +410,24 @@ func routes(_ app: VaporApplication) throws {
             "xAgentHeader": true,
             "clientRejectsBlankApplication": true,
             "clientAcceptsBlankApplication": false,
-            "holdouts": HoldoutSelfTest.runHoldouts(),
-            "holdout_arms": HoldoutSelfTest.runHoldoutArms()
         ])
     }
 
     app.post("diagnostic") { req -> HTTPResponse in
         let request = try requestBody(req)
-        let value = request["value"]
+        let value = request["value"] ?? .null
         let result: Any
-        switch request["operation"].stringValue {
+        switch request["operation"]?.stringValue ?? "" {
         case "hashUnit":
-            result = value.type == .number ? Hashing.hash(value.doubleValue) : Hashing.hash(value.stringValue)
+            if let number = value.doubleValue {
+                result = Diagnostics.hashUnit(number)
+            } else {
+                result = Diagnostics.hashUnit(value.stringValue ?? "")
+            }
         case "utf8Bytes":
-            result = Hashing.utf8Bytes(value.stringValue).map(Int.init)
+            result = Diagnostics.utf8Bytes(value.stringValue ?? "").map(Int.init)
         default:
-            return try errorReply("Unsupported diagnostic operation: \(request["operation"].stringValue)")
+            return try errorReply("Unsupported diagnostic operation: \(request["operation"]?.stringValue ?? "")")
         }
         return try reply(["result": result, "events": [] as [Any]])
     }
@@ -508,7 +435,7 @@ func routes(_ app: VaporApplication) throws {
     app.put("context_payload", ":payloadId") { req -> HTTPResponse in
         guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
         let request = try requestBody(req)
-        payloadStore[payloadId] = try request["data"].rawData()
+        payloadStore[payloadId] = try JSONEncoder().encode(request["data"] ?? .null)
         return try reply(["success": true])
     }
 
@@ -546,8 +473,10 @@ func routes(_ app: VaporApplication) throws {
         let request = try requestBody(req)
         let contextId = "ctx-\(Date().timeIntervalSince1970)-\(UUID().uuidString)"
         let eventCollector = EventCollector()
+        let units = ScenarioUnits(request["units"])
+        let options = contextOptions(request, logger: eventCollector)
 
-        if request["mode"].string == "e2e" {
+        if request["mode"]?.stringValue == "e2e" {
             let env = ProcessInfo.processInfo.environment
             guard let e2eEndpoint = env["ABSMARTLY_E2E_ENDPOINT"],
                   let e2eApiKey = env["ABSMARTLY_E2E_API_KEY"],
@@ -555,129 +484,114 @@ func routes(_ app: VaporApplication) throws {
                   let e2eEnv = env["ABSMARTLY_E2E_ENVIRONMENT"] else {
                 return try errorReply("e2e mode not configured", status: .notImplemented)
             }
-            let client = try DefaultClient(config: ClientConfig(
-                apiKey: e2eApiKey, application: e2eApp, endpoint: e2eEndpoint, environment: e2eEnv))
-            let publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
-            let sdk = try ABSmartlySDK(config: ABSmartlyConfig(
-                contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
-                variableParser: nil, scheduler: nil, client: client))
-            let config = makeConfig(request, logger: eventCollector)
-            config.publishDelay = -1
-            config.refreshInterval = 0
-            let context = sdk.createContext(config: config)
-            _ = try await context.waitUntilReady().asyncValue()
-            for (key, value) in request["attributes"].dictionaryValue {
-                do { try context.setAttribute(name: key, value: value) } catch {
-                    return try reply(["error": error.localizedDescription, "events": sanitizeForJSON(eventCollector.events)], status: .badRequest)
-                }
+            let transport = WrapperTransport(publishToEndpoint: true)
+            let client = try makeClient(
+                endpoint: e2eEndpoint, application: e2eApp, environment: e2eEnv, transport: transport, apiKey: e2eApiKey)
+            var e2eOptions = options
+            e2eOptions.publishDelay = -1
+            e2eOptions.refreshInterval = 0
+            let context = client.makeContext(units: units.strings, options: e2eOptions)
+            try units.apply(to: context)
+            try? await context.ready()
+            for (key, value) in request["attributes"]?.objectValue ?? [:] {
+                context.setAttribute(key, to: value)
             }
-            contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: sdk, publisher: publisher)
+            contextManager.store(
+                contextId: contextId, storage: ContextStorage(context: context, eventCollector: eventCollector, transport: transport))
             return try contextResult(contextId, context, eventCollector)
         }
 
-        // publishToEndpoint: the SDK's own DefaultContextPublisher (wired in below
-        // once the endpoint's client exists) sends PUT {endpoint}/context.
-        let publishToEndpoint = request["publishToEndpoint"].boolValue && request["endpoint"].string != nil
-        var publisher = CustomPublisher()
-        let config = makeConfig(request, logger: eventCollector)
-        let payloadThrottle = request["options"]["payloadThrottle"].intValue
-        // Optional client config (the 2026-11 system-attributes round): a scenario can
-        // set the application/environment names so audiences can target them. When the
-        // `client` field is omitted, the fixed test-app/test-env defaults keep every
-        // pre-2026-11 scenario unchanged. An explicitly supplied application is
-        // forwarded as-is so the SDK validates it; only an omitted one falls back to
-        // the default. swift-sdk's DefaultClient throws on an empty environment, so
-        // the no-environment case (clientNoEnvironment) is a reviewed exception and SKIPs.
+        // Optional client config (the 2026-11 system-attributes round): a scenario can set the
+        // application/environment names so audiences can target them. When the `client` field is
+        // omitted, the fixed test-app/test-env defaults keep every pre-2026-11 scenario unchanged.
+        // An explicitly supplied application is forwarded as-is so the SDK validates it. The SDK
+        // rejects an empty environment, so the no-environment case (clientNoEnvironment) is a
+        // reviewed exception and SKIPs.
+        let client = request["client"]
         let clientApplication: String
-        if request["client"]["application"].exists() {
-            guard let value = request["client"]["application"].string else {
+        if let value = client?["application"] {
+            guard let name = value.stringValue else {
                 return try errorReply("Invalid 'application' in client argument")
             }
-            clientApplication = value
+            clientApplication = name
         } else {
             clientApplication = "test-app"
         }
         let clientEnvironment: String
-        if let value = request["client"]["environment"].string, !value.isEmpty {
+        if let value = client?["environment"]?.stringValue, !value.isEmpty {
             clientEnvironment = value
-        } else if request["client"].exists() && request["client"].type != .null {
+        } else if let client = client, !client.isNull {
             return try errorReply("client.environment is required by swift-sdk; no-environment contexts are not supported")
         } else {
             clientEnvironment = "test-env"
         }
-        let context: Context
-        let sdk: ABSmartlySDK
 
-        if request["data"].exists() && request["data"].type != .null {
+        let publishToEndpoint = request["publishToEndpoint"]?.boolValue == true && request["endpoint"]?.stringValue != nil
+        let payloadThrottle = request["options"]?["payloadThrottle"]?.intValue ?? 0
+        let context: Context
+        let transport: WrapperTransport
+
+        if let data = request["data"], !data.isNull {
             if payloadThrottle > 0 {
                 return try errorReply("payloadThrottle needs an endpoint, not inline data")
             }
             let contextData: ContextData
             do {
-                contextData = try JSONDecoder().decode(ContextData.self, from: try request["data"].rawData())
+                contextData = try JSONDecoder().decode(ContextData.self, from: try JSONEncoder().encode(data))
             } catch {
                 return try errorReply("Invalid context data: \(error.localizedDescription)")
             }
-            // Honour the requested client config for inline-data contexts too, so
-            // an audience on application/environment matches here as it does in
-            // endpoint mode (finding 1). The SDK reads these names from the config
-            // client; inline data never fetches, so the endpoint is a dummy.
-            let dataClient: DefaultClient
+            // The requested client names apply to inline-data contexts too, so an audience on
+            // application/environment matches here as in endpoint mode. Inline data never fetches.
+            transport = WrapperTransport(publishToEndpoint: false, inlineData: true)
+            let sdk: ABsmartlyClient
             do {
-                dataClient = try DefaultClient(config: ClientConfig(
-                    apiKey: "test-api-key", application: clientApplication,
-                    endpoint: "http://127.0.0.1:3000", environment: clientEnvironment))
+                sdk = try makeClient(
+                    endpoint: "http://127.0.0.1:3000", application: clientApplication, environment: clientEnvironment,
+                    transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
-            sdk = try ABSmartlySDK(config: ABSmartlyConfig(
-                contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
-                contextEventLogger: eventCollector, variableParser: nil, scheduler: nil, client: dataClient))
-            context = sdk.createContextWithData(config: config, contextData: contextData)
-        } else if var endpoint = request["endpoint"].string {
+            context = sdk.context(units: units.strings, options: options, data: contextData)
+            try units.apply(to: context)
+        } else if var endpoint = request["endpoint"]?.stringValue {
             if let range = endpoint.range(of: "localhost:\\d+", options: .regularExpression) {
                 endpoint = endpoint.replacingCharacters(in: range, with: "127.0.0.1:3000")
             }
-            // The SDK's DefaultClient fetches `GET {endpoint}/context`; a throttle only delays that fetch.
-            let client: DefaultClient
+            // The SDK fetches `GET {endpoint}/context` itself; a throttle only delays that fetch.
+            transport = WrapperTransport(publishToEndpoint: publishToEndpoint, throttleMs: payloadThrottle)
+            let sdk: ABsmartlyClient
             do {
-                client = try DefaultClient(config: ClientConfig(
-                    apiKey: "test-api-key", application: clientApplication, endpoint: endpoint, environment: clientEnvironment))
+                sdk = try makeClient(
+                    endpoint: endpoint, application: clientApplication, environment: clientEnvironment, transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
-            if publishToEndpoint {
-                publisher = CustomPublisher(delegate: DefaultContextPublisher(client: client))
-            }
-            let provider: ContextDataProvider? = payloadThrottle > 0
-                ? DeferredContextDataProvider(inner: DefaultContextDataProvider(client: client), throttleMs: payloadThrottle)
-                : nil
-            sdk = try ABSmartlySDK(config: ABSmartlyConfig(
-                contextDataProvider: provider, contextPublisher: publisher, contextEventLogger: eventCollector,
-                variableParser: nil, scheduler: nil, client: client))
-            context = sdk.createContext(config: config)
+            context = sdk.makeContext(units: units.strings, options: options)
+            try units.apply(to: context)
             if payloadThrottle == 0 {
-                _ = try await context.waitUntilReady().asyncValue()
+                try? await context.ready()
             }
-        } else if request["failLoad"].boolValue {
-            // A real fetch failure: the SDK's own client against a port nothing listens on.
-            let client: DefaultClient
+        } else if request["failLoad"]?.boolValue == true {
+            // A real fetch failure: the SDK's own transport against a port nothing listens on.
+            transport = WrapperTransport(publishToEndpoint: false)
+            let sdk: ABsmartlyClient
             do {
-                client = try DefaultClient(config: ClientConfig(
-                    apiKey: "test-api-key", application: clientApplication, endpoint: "http://127.0.0.1:1", environment: clientEnvironment))
+                sdk = try makeClient(
+                    endpoint: "http://127.0.0.1:1", application: clientApplication, environment: clientEnvironment,
+                    transport: transport)
             } catch {
-                return try errorReply(error.localizedDescription)
+                return try errorReply((error as? Abort)?.reason ?? error.localizedDescription)
             }
-            sdk = try ABSmartlySDK(config: ABSmartlyConfig(
-                contextDataProvider: nil, contextPublisher: publisher, contextEventLogger: eventCollector,
-                variableParser: nil, scheduler: nil, client: client))
-            context = sdk.createContext(config: config)
-            _ = try await context.waitUntilReady().asyncValue()
+            context = sdk.makeContext(units: units.strings, options: options)
+            try units.apply(to: context)
+            try? await context.ready()
         } else {
             return try errorReply("Either data or endpoint must be provided")
         }
 
-        contextManager.store(contextId: contextId, context: context, collector: eventCollector, sdk: sdk, publisher: publisher)
+        contextManager.store(
+            contextId: contextId, storage: ContextStorage(context: context, eventCollector: eventCollector, transport: transport))
         return try contextResult(contextId, context, eventCollector)
     }
 
@@ -685,7 +599,13 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            try storage.context.setUnit(unitType: request["unitType"].stringValue, value: request["uid"])
+            let unitType = UnitType(request["unitType"]?.stringValue ?? "")
+            let uid = request["uid"] ?? .null
+            if uid.doubleValue != nil {
+                try setNumericUnit(storage.context, unitType, uid)
+            } else {
+                try storage.context.setUnit(unitType, to: uid.stringValue ?? "")
+            }
             return nil
         }
     }
@@ -694,20 +614,22 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            storage.context.getUnitValue(unitType: request["unitType"].stringValue).map(jsonToAnyHelper)
+            storage.context.unitValues[UnitType(request["unitType"]?.stringValue ?? "")].map { jsonToAny($0) }
         }
     }
 
     app.post("context", ":contextId", "getUnits") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.getUnitValues().mapValues(jsonToAnyHelper) }
+        return try await call(storage) {
+            Dictionary(uniqueKeysWithValues: storage.context.unitValues.map { ($0.key.rawValue, jsonToAny($0.value)) })
+        }
     }
 
     app.post("context", ":contextId", "attribute") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            try storage.context.setAttribute(name: request["name"].stringValue, value: request["value"])
+            storage.context.setAttribute(request["name"]?.stringValue ?? "", to: request["value"] ?? .null)
             return nil
         }
     }
@@ -715,62 +637,61 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "getAttribute") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { storage.context.getAttribute(name: request["name"].stringValue).map(jsonToAnyHelper) }
+        return try await call(storage) { storage.context.attribute(request["name"]?.stringValue ?? "").map { jsonToAny($0) } }
     }
 
     app.post("context", ":contextId", "getAttributes") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.getAttributes().mapValues(jsonToAnyHelper) }
+        return try await call(storage) { storage.context.attributes.mapValues { jsonToAny($0) } }
     }
 
     app.post("context", ":contextId", "treatment") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.getTreatment(request["experimentName"].stringValue) }
+        return try await call(storage) { storage.context.treatment(for: request["experimentName"]?.stringValue ?? "") }
     }
 
     app.post("context", ":contextId", "peek") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        return try await call(storage) { try storage.context.peekTreatment(request["experimentName"].stringValue) }
+        return try await call(storage) {
+            storage.context.treatment(for: request["experimentName"]?.stringValue ?? "", exposing: false)
+        }
     }
 
     app.post("context", ":contextId", "variableValue") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
         return try await call(storage) {
-            try storage.context.getVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
+            jsonToAny(storage.context.variableValue(request["key"]?.stringValue ?? "") ?? request["defaultValue"])
         }
     }
 
     app.post("context", ":contextId", "peekVariableValue") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        let defaultValue: JSON? = request["defaultValue"].exists() ? request["defaultValue"] : nil
         return try await call(storage) {
-            try storage.context.peekVariableValue(request["key"].stringValue, defaultValue: defaultValue).map(jsonToAnyHelper)
+            jsonToAny(storage.context.variableValue(request["key"]?.stringValue ?? "", exposing: false) ?? request["defaultValue"])
         }
     }
 
     app.post("context", ":contextId", "track") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         let request = try requestBody(req)
-        let goalName = request["goalName"].stringValue
-        let properties = request["properties"]
-        var props: [String: JSON]? = nil
-        switch properties.type {
-        case .dictionary:
-            props = properties.dictionaryValue
-        case .null, .unknown:
+        let goalName = request["goalName"]?.stringValue ?? ""
+        let props: [String: JSONValue]?
+        switch request["properties"] {
+        case .object(let object)?:
+            props = object
+        case .null?, nil:
             props = nil
         default:
-            // track(_:properties: [String: JSON]?) cannot take a non-object; the JSON
-            // value is rejected at the type boundary with the SDK-wide message.
+            // track(_:properties: [String: JSONValue]?) cannot take a non-object; the value is
+            // rejected at the type boundary with the SDK-wide message.
             return try errorReply("Goal '\(goalName)' properties must be of type object.")
         }
         return try await call(storage) {
-            try storage.context.track(goalName, properties: props)
+            storage.context.track(goalName, properties: props)
             return nil
         }
     }
@@ -779,7 +700,7 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            storage.context.setOverride(experimentName: request["experimentName"].stringValue, variant: request["variant"].intValue)
+            storage.context.overrides[request["experimentName"]?.stringValue ?? ""] = request["variant"]?.intValue ?? 0
             return nil
         }
     }
@@ -790,7 +711,7 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            try storage.context.setCustomAssignment(experimentName: request["experimentName"].stringValue, variant: request["variant"].intValue)
+            storage.context.customAssignments[request["experimentName"]?.stringValue ?? ""] = request["variant"]?.intValue ?? 0
             return nil
         }
     }
@@ -801,7 +722,9 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            try storage.context.getCustomFieldValue(experimentName: request["experimentName"].stringValue, key: request["fieldName"].stringValue)
+            storage.context.customFieldValue(
+                request["fieldName"]?.stringValue ?? "", in: request["experimentName"]?.stringValue ?? ""
+            ).map { jsonToAny($0) }
         }
     }
 
@@ -809,63 +732,69 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            try storage.context.getCustomFieldValueType(experimentName: request["experimentName"].stringValue, key: request["fieldName"].stringValue)
+            storage.context.customFieldType(request["fieldName"]?.stringValue ?? "", in: request["experimentName"]?.stringValue ?? "")
         }
     }
 
     app.post("context", ":contextId", "variableKeys") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { Array(try storage.context.getVariableKeys().keys) }
+        return try await call(storage) { Array(storage.context.variableKeys.keys) }
     }
 
     app.post("context", ":contextId", "variableKeysMap") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { try storage.context.getVariableKeys() }
+        return try await call(storage) { storage.context.variableKeys }
     }
 
     let customFieldKeysHandler: @Sendable (Request) async throws -> HTTPResponse = { req in
         let storage = try lookup(req)
-        return try await call(storage) { Array(try storage.context.getCustomFieldKeys()).sorted() }
+        return try await call(storage) { Array(storage.context.customFieldKeys).sorted() }
     }
     app.post("context", ":contextId", "customFieldKeys", use: customFieldKeysHandler)
     app.post("context", ":contextId", "globalCustomFieldKeys", use: customFieldKeysHandler)
 
     app.get("context", ":contextId", "pending") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.getPendingCount() }
+        return try await call(storage) { storage.context.pendingEventCount }
     }
 
     app.get("context", ":contextId", "isFinalized") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.isFinalized() }
+        return try await call(storage) { storage.context.state == .closed }
     }
 
     app.get("context", ":contextId", "isReady") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.isReady() }
+        return try await call(storage) { storage.context.state.isSettled }
     }
 
     app.get("context", ":contextId", "isFailed") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { storage.context.isFailed() }
+        return try await call(storage) {
+            if case .failed = storage.context.state { return true }
+            return false
+        }
     }
 
     app.get("context", ":contextId", "experiments") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) { try storage.context.getExperiments() }
+        return try await call(storage) { storage.context.experiments }
     }
 
     app.post("context", ":contextId", "readyError") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            storage.context.readyError().map { ["isError": true, "message": $0.localizedDescription] as [String: Any] }
+            if case .failed(let error) = storage.context.state {
+                return ["isError": true, "message": error.localizedDescription] as [String: Any]
+            }
+            return nil
         }
     }
 
     app.post("context", ":contextId", "publishFail") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            storage.publisher?.setShouldFail(true)
+            storage.transport.setShouldFail(true)
             return nil
         }
     }
@@ -873,7 +802,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "publish") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            try await storage.context.publish().asyncValue()
+            try await storage.context.publish()
             return nil
         }
     }
@@ -881,7 +810,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "refresh") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            try await storage.context.refresh().asyncValue()
+            try await storage.context.refresh()
             return nil
         }
     }
@@ -889,7 +818,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "finalize") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            try await storage.context.finalize().asyncValue()
+            try await storage.context.close()
             return nil
         }
     }
@@ -901,121 +830,14 @@ func routes(_ app: VaporApplication) throws {
         }
         let before = storage.eventCollector.events.count
         var closeError: Error?
-        if !storage.context.isFinalized() {
-            do { try await storage.context.finalize().asyncValue() } catch { closeError = error }
+        if storage.context.state != .closed {
+            do { try await storage.context.close() } catch { closeError = error }
         }
-        _ = try? await storage.sdk.close().asyncValue()
         contextManager.remove(contextId: contextId)
-        let events = sanitizeForJSON(Array(storage.eventCollector.events.suffix(from: before)))
+        let events = Array(storage.eventCollector.events.suffix(from: before))
         if let closeError = closeError {
             return try reply(["error": closeError.localizedDescription, "events": events], status: .badRequest)
         }
         return try reply(["result": "deleted", "events": events])
     }
-}
-
-func sanitizeForJSON(_ value: Any?) -> Any {
-    guard let v = value else { return NSNull() }
-
-    if v is NSNull {
-        return NSNull()
-    }
-
-    if let num = v as? NSNumber {
-        // Check if NSNumber is actually a boolean
-        let objCType = String(cString: num.objCType)
-        if objCType == "c" || objCType == "B" {
-            return num.boolValue
-        }
-        return num
-    }
-
-    if let str = v as? String {
-        return str
-    }
-
-    if let nsStr = v as? NSString {
-        return nsStr as String
-    }
-
-    if let bool = v as? Bool {
-        return bool
-    }
-
-    if let int = v as? Int {
-        return int
-    }
-
-    if let double = v as? Double {
-        return double
-    }
-
-    if let arr = v as? [Any] {
-        return arr.map { sanitizeForJSON($0) }
-    }
-
-    if let nsArr = v as? NSArray {
-        var result: [Any] = []
-        for item in nsArr {
-            result.append(sanitizeForJSON(item))
-        }
-        return result
-    }
-
-    if let dict = v as? [String: Any] {
-        return dict.mapValues { sanitizeForJSON($0) }
-    }
-
-    if let nsDict = v as? NSDictionary {
-        var result: [String: Any] = [:]
-        for (key, value) in nsDict {
-            if let keyStr = key as? String {
-                result[keyStr] = sanitizeForJSON(value)
-            }
-        }
-        return result
-    }
-
-    if let json = v as? JSON {
-        return jsonToAnyHelper(json)
-    }
-
-    let mirror = Mirror(reflecting: v)
-    if mirror.displayStyle == .optional {
-        if let unwrapped = mirror.children.first?.value {
-            return sanitizeForJSON(unwrapped)
-        }
-        return NSNull()
-    }
-
-    let typeName = String(describing: type(of: v))
-    if typeName.contains("JSON") {
-        if let json = v as? JSON {
-            return jsonToAnyHelper(json)
-        }
-    }
-
-    return String(describing: v)
-}
-
-func jsonToAnyHelper(_ json: JSON) -> Any {
-    if let dict = json.dictionary {
-        var result: [String: Any] = [:]
-        for (key, value) in dict {
-            result[key] = jsonToAnyHelper(value)
-        }
-        return sanitizeForJSON(result)
-    } else if let array = json.array {
-        return sanitizeForJSON(array.map { jsonToAnyHelper($0) })
-    } else if let string = json.string {
-        return string
-    } else if let bool = json.bool {
-        return bool
-    } else if let number = json.number {
-        return number
-    } else if json.null != nil {
-        return NSNull()
-    }
-
-    return NSNull()
 }

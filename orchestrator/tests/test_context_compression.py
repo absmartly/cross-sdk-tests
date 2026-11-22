@@ -223,20 +223,20 @@ def test_required_where_observed_or_read_from_code():
     assert policy["measuredCapabilities"] == [CAP, "contextFetchBrotli"]
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
     assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
-                        "scala", "swift", "vue2", "vue3"]
+                        "scala", "swift", "swift-v1", "vue2", "vue3"]
     excepted = {sdk: e["unsupported"][CAP] for sdk, e in policy["sdks"].items() if CAP in e["unsupported"]}
     assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "java-v1", "kotlin", "php", "rust"]
     assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 
 
 def test_brotli_required_where_observed_or_read_from_code():
-    """contextFetchBrotli: only swift is required; the other 20 are reviewed exceptions with provenance."""
+    """contextFetchBrotli: only swift and swift-v1 are required; the other 20 are reviewed exceptions with provenance."""
     policy = test_runner.load_capability_policy()
     br = "contextFetchBrotli"
     required = sorted(sdk for sdk, e in policy["sdks"].items() if br in e["required"])
-    assert required == ["swift"]
+    assert required == ["swift", "swift-v1"]
     excepted = {sdk: e["unsupported"][br] for sdk, e in policy["sdks"].items() if br in e["unsupported"]}
-    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift"})
+    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift", "swift-v1"})
     assert len(excepted) == 20
     assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 

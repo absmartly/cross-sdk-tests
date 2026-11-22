@@ -30,17 +30,25 @@
 #   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
 #   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
 #   rust-sdk       feat/switchbacks  rust-sdk#12 (holdouts rust-sdk#11 merged)
-#   swift-sdk      feat/holdouts     swift-sdk#12 (its lane requires holdouts only)
+#   swift-sdk      feat/swift-2.0    swift-sdk#13 (2.0); the `swift` lane runs the 2.x wrapper. 2.0 has no
+#                                    holdouts yet, so `swift` lists them as reviewed exceptions.
+#   swift-sdk-v1   feat/holdouts     swift-sdk#12 (holdouts, on the 1.5.0 line), at the SDK_REVISIONS
+#                                    commit: the `swift-v1` lane (swift-v1-wrapper, cloned from
+#                                    absmartly/swift-sdk) requires holdouts. swift-sdk main becomes 2.0
+#                                    when #13 merges, so this lane never tracks main: re-pin it to
+#                                    release/1.x once that is cut and carries #12.
 # SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
 # what this commit tests.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="45ed81223e594d491ec74dc9529e055ea04e6606"
+  ["swift-sdk-v1"]="caa804ebc7a87a2f545da708c2d368802884d2d7"
 )
 
 # Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
 # absmartly/<repo> it is cloned from. Directories not listed are cloned from the repo of the same name.
 declare -A SDK_REPO_SOURCES=(
   ["java-sdk-v1"]="java-sdk"
+  ["swift-sdk-v1"]="swift-sdk"
 )
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
@@ -64,7 +72,8 @@ declare -A SDK_BRANCHES=(
   ["ruby-sdk"]="feat/switchbacks"
   ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
-  ["swift-sdk"]="feat/holdouts"
+  ["swift-sdk"]="feat/swift-2.0"
+  ["swift-sdk-v1"]="feat/holdouts"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
 )

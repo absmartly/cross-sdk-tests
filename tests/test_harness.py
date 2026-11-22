@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -547,7 +548,7 @@ class CapabilityPolicyTests(unittest.TestCase):
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
         # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
-        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift", "vue2", "vue3"])
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift-v1", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
@@ -1085,6 +1086,52 @@ class ConsistencyTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
 
+    def test_hyphenated_lanes_map_to_an_agent_language(self):
+        """A lane named <lang>-<suffix> (e.g. swift-v1) sends X-Agent absmartly-<lang>-sdk/..., so the
+        X-Agent scenarios need SDK_AGENT_LANGUAGE to map it, or they fail with `{lang}` = the lane."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            matrix = json.loads(re.search(r"matrix='(.*?)'", src.read(), re.DOTALL).group(1))
+        for lane in matrix["include"]:
+            if "-" in lane["sdk"]:
+                with self.subTest(lane=lane["sdk"]):
+                    self.assertIn(lane["sdk"], test_runner.SDK_AGENT_LANGUAGE)
+
+    def test_lane_checkouts_resolve_through_sdk_repo_sources(self):
+        """Checkout dirs that are not repo names (java-sdk-v1, swift-sdk-v1) are cloned through
+        SDK_REPO_SOURCES in both CI and setup-sdks.sh; and every lane repo has a pin."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            workflow = src.read()
+        with open(os.path.join(REPO_ROOT, "setup-sdks.sh")) as src:
+            setup = src.read()
+        self.assertIn('source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"', workflow)
+        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git'), 2)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
+        pins = self.sdk_pins("SDK_BRANCHES")
+        for lane in matrix["include"]:
+            for repo in lane["repos"].split():
+                with self.subTest(repo=repo):
+                    self.assertIn(repo, pins)
+        self.assertEqual(self.sdk_pins("SDK_REPO_SOURCES"),
+                         {"java-sdk-v1": "java-sdk", "swift-sdk-v1": "swift-sdk"})
+
+    @staticmethod
+    def sdk_pins(name):
+        """An associative array as sdk-branches.sh defines it (sourced by bash)."""
+        script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+        out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+        return dict(line.split("=", 1) for line in out.splitlines() if line)
+
+    def test_swift_v1_lane_is_pinned_to_an_immutable_1x_ref(self):
+        """swift-sdk main becomes 2.0 when swift-sdk#13 merges, so the 1.x lane must never track main:
+        it is pinned to a full commit SHA (SDK_REVISIONS), a v1.* tag, or a release/1.* branch."""
+        revision = self.sdk_pins("SDK_REVISIONS").get("swift-sdk-v1")
+        branch = self.sdk_pins("SDK_BRANCHES").get("swift-sdk-v1")
+        self.assertIsNotNone(branch, "swift-sdk-v1 has no pin, so CI would fall back to main")
+        if revision is not None:
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+        else:
+            self.assertRegex(branch, r"^(?:v1\.[0-9.]+|release/1\.[0-9x.]*)$")
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()
@@ -1095,8 +1142,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 21)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 21)
+        self.assertEqual(len(matrix["include"]), 22)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 22)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -1312,7 +1359,7 @@ class StaticRepoChecks(unittest.TestCase):
         "java-v1": "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
         "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
         "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
-        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "swift-v1": "swift-v1-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
         "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
         "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
     }
@@ -1320,7 +1367,7 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 21 lanes. `measuredCapabilities` are exempt: the
+        the wrappers fails here rather than in all 22 lanes. `measuredCapabilities` are exempt: the
         orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
         measured = set(policy.get("measuredCapabilities") or [])
