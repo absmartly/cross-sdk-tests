@@ -126,33 +126,38 @@ final class SwitchbackSelfTest {
             ArrayNode experiments = data.putArray("experiments");
             experiments.add(switchback(mapper, 531, "sb_float", 0, 1, 10, new String[][] {{"unit_serving", "v_float"}}));
             experiments.add(switchback(mapper, 532, "sb_integer", 0, 1, 10, new String[][] {{"unit_serving", "v_int"}}));
-            ContextData contextData = mapper.readValue(mapper.writeValueAsString(data), ContextData.class);
 
-            List<Exposure> exposures = new CopyOnWriteArrayList<>();
-            ContextEventLogger logger = (context, type, event) -> {
-                if (type == ContextEventLogger.EventType.Exposure && event instanceof Exposure exposure) {
-                    exposures.add(exposure);
+            List<ExposurePayload> exposures = new CopyOnWriteArrayList<>();
+            com.absmartly.sdk.event.EventListener listener = event -> {
+                if (event.type() == ContextEvent.Type.EXPOSURE) {
+                    exposures.add(payload(((ExposureEvent) event).exposure()));
                 }
             };
-            ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                .setContextDataProvider(new DummyContextDataProvider())
-                .setContextEventHandler((context, event) -> CompletableFuture.completedFuture(null))
-                .setContextEventLogger(logger);
-            Context context = ABSmartly.create(sdkConfig).createContextWith(ContextConfig.create()
-                .setUnit("unit_serving", "serving-9").setPublishDelay(-1).setRefreshInterval(0), contextData);
-            context.waitUntilReady();
+            ABsmartlyClient client = SdkSupport.inMemoryClient();
             try {
-                // The attribute values exactly as POST /context/{id}/attribute decodes them.
-                Map<?, ?> values = mapper.readValue("{\"f\": 3.0, \"i\": 3}", Map.class);
-                context.setAttribute("v_float", values.get("f"));
-                context.setAttribute("v_int", values.get("i"));
-                boolean passed = expect(context, exposures, "integral float", "sb_float", 0)
-                    && expect(context, exposures, "integer", "sb_integer", 5,
-                        new Exposure(532, "sb_integer", "unit_serving", 5, 0, true, true, false, false, false, false));
-                System.out.println("[integralFloatAttributes probe] " + (passed ? "PASSED" : "FAILED"));
-                return passed;
+                Context context = SdkSupport.context(client, ContextData.fromJson(mapper.writeValueAsString(data)),
+                    Map.of("unit_serving", "serving-9"), listener);
+                if (context.state() != ContextState.READY) {
+                    System.out.println("[integralFloatAttributes probe] FAILED: context not ready (state="
+                        + context.state() + ")");
+                    return false;
+                }
+                try {
+                    // The attribute values exactly as POST /context/{id}/attribute decodes them.
+                    Map<?, ?> values = mapper.readValue("{\"f\": 3.0, \"i\": 3}", Map.class);
+                    context.setAttribute("v_float", values.get("f"));
+                    context.setAttribute("v_int", values.get("i"));
+                    boolean passed = expect(context, exposures, "integral float", "sb_float", 0)
+                        && expect(context, exposures, "integer", "sb_integer", 5,
+                            new ExposurePayload(532, "sb_integer", "unit_serving", 5, 0, true, true, false, false, false,
+                                false));
+                    System.out.println("[integralFloatAttributes probe] " + (passed ? "PASSED" : "FAILED"));
+                    return passed;
+                } finally {
+                    context.close();
+                }
             } finally {
-                context.close();
+                client.close();
             }
         } catch (Throwable t) {
             System.out.println("[integralFloatAttributes probe] FAILED with throwable: " + t);
