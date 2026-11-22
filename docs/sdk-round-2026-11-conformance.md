@@ -122,80 +122,16 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
-Exception: python3-sdk is pinned to `feat/switchbacks` while its switchbacks PR
-(stacked on python3-sdk#17, holdouts) is open, because its lane now requires
-`holdouts`, `holdout_arms` and `switchback`; `feat/switchbacks` contains
-`feat/holdouts`. The pin follows the same rule: keep python3-sdk's
-`feat/switchbacks` branch (delete-branch-on-merge **off** for that PR) until a
-follow-up PR here re-pins python3-sdk to `main` and its lane is green; re-run
-this suite after any push to that branch.
-Exception: ruby-sdk is pinned to `feat/holdouts` while ruby-sdk#43 (holdouts) is
-open, because its lane now requires `holdouts`/`holdout_arms` (the liquid lane,
-which wraps ruby-sdk, builds that branch too but does not advertise holdouts).
-Keep ruby-sdk's `feat/holdouts` branch until a follow-up PR here re-pins ruby-sdk
-to `main` and its lane is green; re-run this suite after any push to that branch.
-dotnet-sdk is temporarily pinned to `feat/holdouts` (the open dotnet-sdk holdouts
-PR), which turns its `holdouts`/`holdout_arms` capabilities on; the pin goes back
-to `main` once that PR merges.
-Exception: swift-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
-because its lane now requires `holdouts`/`holdout_arms`. The pin follows the same
-rule: keep swift-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for
-that PR) until a follow-up PR here re-pins swift-sdk to `main` and its lane is
-green; re-run this suite after any push to that branch.
-**Holdouts for elixir-sdk.** The elixir lane requires `holdouts` and
-`holdout_arms`, advertised from a behavioural self-test
-(`elixir-wrapper/lib/elixir_wrapper/holdout_self_test.ex`, a port of
-`javascript-wrapper/holdoutSelfTest.js`), so `sdk-branches.sh` pins elixir-sdk to
-`feat/holdouts`, the branch of the open elixir-sdk#5. Merge order: merge
-elixir-sdk#5 first, then re-pin `["elixir-sdk"]` to `main` on the companion PR,
-before it merges, and re-run the elixir lane. Never merge the companion PR while
-the pin names a feature branch.
-Exception: php-sdk is pinned to `feat/holdouts` while php-sdk#11 (holdouts) is
-open, because its lane now requires `holdouts`/`holdout_arms`. The pin follows
-the same rule: keep php-sdk's `feat/holdouts` branch (delete-branch-on-merge is
-**off** for php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its
-lane is green; re-run this suite after any push to that branch.
-Exception: go-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
-because its lane now requires `holdouts`/`holdout_arms`.
-Keep go-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for that
-PR) until a follow-up PR here re-pins go-sdk to `main` and its lane is green;
-re-run this suite after any push to that branch.
-Exception: ruby-sdk is pinned to `feat/switchbacks` (the switchbacks PR, stacked
-on ruby-sdk#43, holdouts) while both are open, because its lane now requires
-`holdouts`/`holdout_arms` and `switchback` (the liquid lane, which wraps ruby-sdk,
-builds that branch too but advertises neither). Keep ruby-sdk's
-`feat/switchbacks` branch until a follow-up PR here re-pins ruby-sdk to `main` and
-its lane is green; re-run this suite after any push to that branch.
-Exception: php-sdk is pinned to `feat/switchbacks` while its switchbacks PR
-(stacked on php-sdk#11, `feat/holdouts`) is open, because its lane now requires
-`holdouts`/`holdout_arms` and `switchback`. `feat/switchbacks` contains
-`feat/holdouts`, so the one pin covers both. The pin follows the same rule:
-keep php-sdk's `feat/switchbacks` branch (delete-branch-on-merge is **off** for
-php-sdk) until a follow-up PR here re-pins php-sdk to `main` and its lane is
-green; re-run this suite after any push to that branch.
-dotnet-sdk is temporarily pinned to `feat/switchbacks` (dotnet-sdk#16, stacked on
-the holdouts PR dotnet-sdk#15), which turns its `holdouts`/`holdout_arms` and
-`switchback` capabilities on; the pin goes back to `main` once those PRs merge.
-Exception: go-sdk is pinned to `feat/switchbacks` while its holdouts and
-switchbacks PRs are open (`feat/switchbacks` is stacked on `feat/holdouts`),
-because its lane now requires `holdouts`, `holdout_arms`, `holdoutIdsDedup`
-and `switchback`. Keep both go-sdk branches (delete-branch-on-merge **off**
-for those PRs) until a follow-up PR here re-pins go-sdk to `main` and its lane
-is green; re-run this suite after any push to either branch.
-rust-sdk is pinned to `feat/switchbacks` (rust-sdk#12) while its switchback
-port is open: the rust wrapper links `absmartly::switchback`, which rust-sdk
-`main` does not have yet. The pin goes back to `main` once rust-sdk#12 merges.
-
-**Switchbacks for elixir-sdk.** The elixir lane also requires `switchback`,
-advertised from a behavioural self-test
-(`elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex`, a port of the
-java-wrapper's `SwitchbackSelfTest`), and serves `/switchback/assign` and
-`/switchback/permutation`. The wrapper decodes request bodies with the SDK's
-order-preserving `ABSmartly.Switchback.Json`, so `switchbackClusters` keeps its
-declared order. `sdk-branches.sh` pins elixir-sdk to `feat/switchbacks`, the
-branch of the switchback PR stacked on elixir-sdk#5. Merge order: elixir-sdk#5,
-then the switchback PR, then re-pin `["elixir-sdk"]` to `main` here and re-run
-the elixir lane before this PR merges.
+**Holdouts, switchbacks and shared-variable-key round (consolidated PR).**
+Lanes that now require `holdouts`/`holdout_arms` and `switchback` build their
+SDK's open feature branch, not `main`: `sdk-branches.sh` lists each pin, the SDK
+PR it belongs to and its merge order in one comment block, and `SDK_REVISIONS`
+pins cpp-sdk and swift-sdk-v1 to exact commits. Every such pin is a pre-merge
+item: merge the SDK PR(s), re-pin that SDK to `main` (or, for swift-sdk-v1, to
+`release/1.x`) here in the same change, and re-run its lane. Keep each pinned SDK
+branch (delete-branch-on-merge **off**) until then; re-run the lane after any push
+to it. The holdout and switchback self-tests each wrapper uses are named in
+`WRAPPER_API_SPEC.md` and the README.
 
 ### Scenario numbering versus open PRs
 
