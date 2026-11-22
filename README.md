@@ -8,12 +8,16 @@ across languages.
 
 ## What's here
 
-- **20 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+- **21 SDK wrappers** — one HTTP service per SDK lane, each in a `<sdk>-wrapper/`
   directory:
 
   `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
-  `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
+  `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `java-v1`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
+
+  `java` runs java-sdk 2.x and `java-v1` runs the 1.x maintenance line (the
+  `java-sdk-v1` pin in `sdk-branches.sh`), so both majors keep passing the
+  contract while 1.x is supported.
 
 - **347 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
@@ -112,8 +116,11 @@ across languages.
   scenarios. Run `python3 generate_switchback_scenarios.py --rules` to print
   this map and the mutant results.
 
-  The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
-  switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
+  The java lane pins `java-sdk` to `next/major` (java-sdk 2.0) in
+  `sdk-branches.sh`, which carries switchback (java-sdk#15) and the
+  feature-parity round (java-sdk#22). The java-v1 lane pins the 1.x line to
+  `v1.9.0`, which predates switchback, so it lists switchback as unsupported
+  until `release/1.x` is cut from main.
   The go lane pins `go-sdk` to its switchback branch (`feat/switchbacks`) until
   it merges. The go wrapper decodes attribute values with `UseNumber`, so a
   JSON integer reaches the SDK as an integer and `3.0` as a float (scenario
@@ -384,8 +391,8 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 347-scenario suite for all 20
-SDKs on every pull request (and on demand), one independent matrix job per SDK.
+`.github/workflows/cross-sdk.yml` runs the full 347-scenario suite for all 21
+SDK lanes on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
 the compose network. The live-backend e2e suite is intentionally excluded from
@@ -393,7 +400,7 @@ CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
 Each lane uploads its report, which records every scenario outcome and what
 the SDK returned at each step. A separate `cross-sdk-consistency` job then
-downloads the reports from all 20 lanes and compares the SDKs with each other
+downloads the reports from all 21 lanes and compares the SDKs with each other
 (`test_runner.py --compare-reports`), because a lane runs only one SDK and has
 nothing to compare against. That job runs even when some lanes fail. It fails
 if a report is missing or unreadable, if fewer than two SDKs or zero
@@ -436,7 +443,7 @@ cross-sdk-tests/
 │   ├── test_runner.py            # cross-SDK orchestrator
 │   ├── e2e_runner.py             # live-backend e2e orchestrator
 │   └── results_aggregator.py     # merges per-SDK reports into report.json
-├── <sdk>-wrapper/                # one HTTP wrapper per SDK (20 total)
+├── <sdk>-wrapper/                # one HTTP wrapper per SDK lane (21 total)
 ├── docs/                         # historical design docs (see banners)
 └── test-results/                 # report.json output (generated)
 ```

@@ -47,7 +47,7 @@ source "$SCRIPT_DIR/sdk-checkout.sh"
 clone_or_update() {
   local repo="$1"
   local branch="$2"
-  local url="https://github.com/absmartly/${repo}.git"
+  local url="https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git"
 
   if [ -d "$repo" ]; then
     cd "$repo"
@@ -79,7 +79,7 @@ FAILED=()
 checkout_revision() {
   local repo="$1"
   local revision="$2"
-  local url="https://github.com/absmartly/${repo}.git"
+  local url="https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git"
 
   [ -d "$repo/.git" ] || git init -q "$repo"
   # origin as a clone would set it, so a later -b override can fetch a branch here.

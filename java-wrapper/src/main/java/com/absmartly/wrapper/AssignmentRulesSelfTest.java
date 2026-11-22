@@ -1,14 +1,15 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.ABSmartly;
-import com.absmartly.sdk.ABSmartlyConfig;
-import com.absmartly.sdk.ContextConfig;
-import com.absmartly.sdk.ContextEventLogger;
-import com.absmartly.sdk.json.ContextData;
-import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.ExperimentApplication;
-import com.absmartly.sdk.json.ExperimentVariant;
-import com.absmartly.sdk.json.Exposure;
+import com.absmartly.sdk.ABsmartlyClient;
+import com.absmartly.sdk.ContextState;
+import com.absmartly.sdk.Exposure;
+import com.absmartly.sdk.event.ContextEvent;
+import com.absmartly.sdk.event.EventListener;
+import com.absmartly.sdk.event.ExposureEvent;
+import com.absmartly.sdk.internal.json.ContextPayload;
+import com.absmartly.sdk.internal.json.Experiment;
+import com.absmartly.sdk.internal.json.ExperimentApplication;
+import com.absmartly.sdk.internal.json.ExperimentVariant;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -20,7 +21,7 @@ import static com.absmartly.wrapper.HoldoutProbeSupport.findField;
  * Behavioral self-tests for the {@code assignmentRules} and {@code semverOperators} wrapper
  * capabilities (cross-SDK scenario groups "Custom Assignment Rules" and "Semver Operators",
  * ported from javascript-sdk#67 / java-sdk#17). Mirrors {@link HoldoutSelfTest}: build real
- * ContextData fixtures against the linked core-api, drive getTreatment and assert BOTH the
+ * ContextPayload fixtures against the linked core-api, drive treatment and assert BOTH the
  * returned variant and the exposure's flags. A build without custom assignment rules (no
  * {@code Experiment.assignmentRules} / {@code Exposure.ruleOverride}) or without the semver
  * operators simply cannot reproduce the expected behaviour, so each probe fails closed and the
@@ -128,37 +129,31 @@ final class AssignmentRulesSelfTest {
         }
     }
 
-    private static com.absmartly.sdk.Context createContext(ContextData contextData,
-            List<ProbeExposure> exposures) {
-        Field ruleOverrideField = findField(Exposure.class, "ruleOverride");
-        ContextEventLogger logger = (context, type, data) -> {
-            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure) {
-                Exposure exposure = (Exposure) data;
-                boolean ruleOverride = false;
-                if (ruleOverrideField != null) {
-                    try {
-                        ruleOverride = ruleOverrideField.getBoolean(exposure);
-                    } catch (IllegalAccessException ignored) {
-                        // leave false; the probe will fail its ruleOverride assertion
-                    }
+    // Each probe context gets its own in-memory client; closing the context closes it.
+    private static final class ProbeContext implements AutoCloseable {
+        final ABsmartlyClient client = SdkSupport.inMemoryClient();
+        final com.absmartly.sdk.Context context;
+
+        ProbeContext(ContextPayload contextData, List<ProbeExposure> exposures) {
+            EventListener listener = event -> {
+                if (event.type() == ContextEvent.Type.EXPOSURE) {
+                    Exposure exposure = ((ExposureEvent) event).exposure();
+                    exposures.add(new ProbeExposure(exposure.variant(), exposure.assigned(), exposure.ruleOverride(),
+                        exposure.audienceMismatch()));
                 }
-                exposures.add(new ProbeExposure(exposure.variant, exposure.assigned, ruleOverride,
-                    exposure.audienceMismatch));
+            };
+            context = SdkSupport.context(client, contextData, java.util.Collections.singletonMap(UNIT_TYPE, UID),
+                listener);
+        }
+
+        @Override
+        public void close() {
+            try {
+                context.close();
+            } finally {
+                client.close();
             }
-        };
-        ContextConfig contextConfig = ContextConfig.create()
-            .setUnit(UNIT_TYPE, UID)
-            .setPublishDelay(-1)
-            .setRefreshInterval(0);
-        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-            .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) ->
-                java.util.concurrent.CompletableFuture.completedFuture(null))
-            .setContextEventLogger(logger);
-        ABSmartly sdk = ABSmartly.create(sdkConfig);
-        com.absmartly.sdk.Context context = sdk.createContextWith(contextConfig, contextData);
-        context.waitUntilReady();
-        return context;
+        }
     }
 
     private static boolean runRulesBattery() throws Exception {
@@ -170,21 +165,17 @@ final class AssignmentRulesSelfTest {
             System.out.println(prefix + " FAILED: linked core-api has no Experiment.assignmentRules field");
             return false;
         }
-        if (findField(Exposure.class, "ruleOverride") == null) {
-            System.out.println(prefix + " FAILED: linked core-api has no Exposure.ruleOverride field");
-            return false;
-        }
-        ContextData contextData = new ContextData();
+        ContextPayload contextData = new ContextPayload();
         contextData.experiments = new Experiment[] {experiment};
 
         List<ProbeExposure> exposures = new CopyOnWriteArrayList<>();
-        com.absmartly.sdk.Context context = createContext(contextData, exposures);
-        try {
-            if (!context.isReady() || context.isFailed()) {
-                System.out.println(prefix + " FAILED: context not ready (failed=" + context.isFailed() + ")");
+        try (ProbeContext probe = new ProbeContext(contextData, exposures)) {
+            com.absmartly.sdk.Context context = probe.context;
+            if (context.state() != ContextState.READY) {
+                System.out.println(prefix + " FAILED: context not ready (state=" + context.state() + ")");
                 return false;
             }
-            int variant = context.getTreatment("probe_rule");
+            int variant = context.treatment("probe_rule");
             if (variant != 1 || exposures.size() != 1) {
                 System.out.println(prefix + " FAILED: expected treatment 1 with one exposure, got "
                     + variant + " / " + exposures);
@@ -197,8 +188,6 @@ final class AssignmentRulesSelfTest {
                     + exposure);
                 return false;
             }
-        } finally {
-            context.close();
         }
         System.out.println(prefix + " PASSED");
         return true;
@@ -215,37 +204,33 @@ final class AssignmentRulesSelfTest {
                 + "(cannot build the fixture)");
             return false;
         }
-        ContextData matchData = new ContextData();
+        ContextPayload matchData = new ContextPayload();
         matchData.experiments = new Experiment[] {matchExp};
         List<ProbeExposure> matchExposures = new CopyOnWriteArrayList<>();
-        com.absmartly.sdk.Context matchContext = createContext(matchData, matchExposures);
-        try {
+        try (ProbeContext probe = new ProbeContext(matchData, matchExposures)) {
+            com.absmartly.sdk.Context matchContext = probe.context;
             matchContext.setAttribute("app_version", "1.10.0");
-            int variant = matchContext.getTreatment("probe_semver");
+            int variant = matchContext.treatment("probe_semver");
             if (variant != 1 || matchExposures.size() != 1 || matchExposures.get(0).audienceMismatch) {
                 System.out.println(prefix + " FAILED (match): expected variant 1, audienceMismatch:false, got "
                     + variant + " / " + matchExposures);
                 return false;
             }
-        } finally {
-            matchContext.close();
         }
 
         Experiment missExp = buildExperiment(1, "probe_semver", null, audience, true);
-        ContextData missData = new ContextData();
+        ContextPayload missData = new ContextPayload();
         missData.experiments = new Experiment[] {missExp};
         List<ProbeExposure> missExposures = new CopyOnWriteArrayList<>();
-        com.absmartly.sdk.Context missContext = createContext(missData, missExposures);
-        try {
+        try (ProbeContext probe = new ProbeContext(missData, missExposures)) {
+            com.absmartly.sdk.Context missContext = probe.context;
             missContext.setAttribute("app_version", "1.2.0");
-            int variant = missContext.getTreatment("probe_semver");
+            int variant = missContext.treatment("probe_semver");
             if (variant != 0 || missExposures.size() != 1 || !missExposures.get(0).audienceMismatch) {
                 System.out.println(prefix + " FAILED (mismatch): expected variant 0, audienceMismatch:true, got "
                     + variant + " / " + missExposures);
                 return false;
             }
-        } finally {
-            missContext.close();
         }
         System.out.println(prefix + " PASSED");
         return true;

@@ -36,6 +36,12 @@
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="45ed81223e594d491ec74dc9529e055ea04e6606"
 )
+
+# Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
+# absmartly/<repo> it is cloned from. Directories not listed are cloned from the repo of the same name.
+declare -A SDK_REPO_SOURCES=(
+  ["java-sdk-v1"]="java-sdk"
+)
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/switchbacks"
@@ -43,7 +49,12 @@ declare -A SDK_BRANCHES=(
   ["elixir-sdk"]="feat/switchbacks"
   ["flutter-sdk"]="feat/switchbacks"
   ["go-sdk"]="feat/switchbacks"
-  ["java-sdk"]="main"
+  # java-sdk 2.0 (the open java-sdk next/major -> main PR): the `java` lane runs the 2.x wrapper on
+  # next/major until it merges, then on main.
+  ["java-sdk"]="next/major"
+  # The 1.x line, for the `java-v1` lane (java-v1-wrapper): release/1.x once the owner cuts it, until then the
+  # last 1.x tag. v1.9.0 predates switchback (on main since java-sdk#15), so java-v1 lists it as unsupported.
+  ["java-sdk-v1"]="v1.9.0"
   ["javascript-sdk"]="feat/switchbacks"
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"

@@ -276,7 +276,7 @@ class SdkRevisionPinTest(unittest.TestCase):
     def test_ci_and_local_setup_check_the_pin_out(self):
         workflow = self.read(".github", "workflows", "cross-sdk.yml")
         self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', workflow)
-        self.assertIn('fetch_and_checkout_revision "$repo" "https://github.com/absmartly/$repo.git" "$revision"',
+        self.assertIn('fetch_and_checkout_revision "$repo" "https://github.com/absmartly/$source_repo.git" "$revision"',
                       workflow)
         setup = self.read("setup-sdks.sh")
         self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', setup)

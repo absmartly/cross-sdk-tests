@@ -16,14 +16,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import com.absmartly.sdk.DefaultContextDataDeserializer;
-import com.absmartly.sdk.json.ContextData;
-import com.absmartly.sdk.json.Experiment;
+import com.absmartly.sdk.internal.Json;
+import com.absmartly.sdk.internal.json.ContextPayload;
+import com.absmartly.sdk.internal.json.Experiment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 // The R33 wire fields must pass through the wrapper verbatim: the payload a scenario stores is
-// deserialized into the SDK's ContextData and served back to the SDK's own fetch, so the ordered
+// deserialized into the SDK's context payload and served back to the SDK's own fetch, so the ordered
 // switchbackClusters map must keep its key order across serialize -> parse.
 class SwitchbackR33PayloadTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -64,14 +64,15 @@ class SwitchbackR33PayloadTest {
 
         // What the SDK's fetch receives back from /context_payload/{id}/context.
         ResponseEntity<?> served = controller.mockApiContext("p", Map.of());
-        String json = MAPPER.writeValueAsString(served.getBody());
+        // Served verbatim: the stored JSON text, so key order is exactly what the scenario sent.
+        String json = (String) served.getBody();
         JsonNode experiment = MAPPER.readTree(json).get("experiments").get(0);
         assertEquals(ORDER, keys(experiment.get("switchbackClusters")));
         assertEquals("[\"x\",\"y\"]", experiment.get("switchbackClusterValues").toString());
 
         // And the SDK's own model after its Client's deserializer parses the served bytes.
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        ContextData parsed = new DefaultContextDataDeserializer().deserialize(bytes, 0, bytes.length);
+        ContextPayload parsed = Json.decodeContext(bytes);
         Field clusters = Experiment.class.getField("switchbackClusters");
         assertEquals(ORDER, new ArrayList<>(((Map<String, String>) clusters.get(parsed.experiments[0])).keySet()));
     }
@@ -82,7 +83,7 @@ class SwitchbackR33PayloadTest {
         // Behaviour, not class structure: the SDK's own deserializer (what its Client uses) parses
         // the legacy fields without error and they do not survive.
         byte[] bytes = payload().getBytes(StandardCharsets.UTF_8);
-        ContextData parsed = new DefaultContextDataDeserializer().deserialize(bytes, 0, bytes.length);
+        ContextPayload parsed = Json.decodeContext(bytes);
         assertEquals(1, parsed.experiments.length);
         JsonNode reserialized = MAPPER.valueToTree(parsed).get("experiments").get(0);
         assertFalse(reserialized.has("switchbackClusterCount"));

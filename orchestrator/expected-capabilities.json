@@ -328,6 +328,41 @@
         "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)"
       }
     },
+    "java-v1": {
+      "required": [
+        "diagnostics",
+        "publishFail",
+        "variableKeysMap",
+        "globalCustomFieldKeys",
+        "getUnits",
+        "getAttributes",
+        "readyError",
+        "holdouts",
+        "holdout_arms",
+        "diagnosticsUtf8",
+        "assignmentRules",
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment",
+        "xAgentHeader",
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent",
+        "semverNumericOperands",
+        "rejectsSettersAfterFinalize",
+        "sharedVariableKeys"
+      ],
+      "unsupported": {
+        "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "switchback": "v1.9.0, the last 1.x tag, predates switchback; re-require once release/1.x is cut from main",
+        "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)",
+        "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode gzip; fix pending",
+        "integralFloatAttributes": "depends on switchback, which v1.9.0 (the last 1.x tag) predates; re-require with switchback once release/1.x is cut from main"
+      }
+    },
     "kotlin": {
       "required": [
         "diagnostics",
