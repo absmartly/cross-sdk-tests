@@ -1415,21 +1415,22 @@ Both endpoints are pure functions with no context. Request rules:
   **decimal strings** and must be parsed exactly (never through a double);
   JSON numbers lose precision above 2^53 in most languages. `seed` is the
   experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
-- `armCount` is a JSON integer from 2 to 1000 (the vectors use 2, 3 and 10).
-  The bound is part of the contract, so every wrapper rejects the same
-  requests. A wrapper may read an integral JSON number such as `3.0` as `3`
-  (JavaScript cannot tell them apart); scenarios always send integers.
+- `armCount` is a JSON integer, at least 2 (the vectors use 2, 3 and 10). A
+  wrapper may read an integral JSON number such as `3.0` as `3` (JavaScript
+  cannot tell them apart); scenarios always send integers.
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
 - A wrapper may cap `armCount` to bound the permutation it builds; the ruby
-  wrapper accepts at most 10,000 and the javascript and java wrappers at most
-  1,000 (the golden vectors use 2, 3 and 10). Values above a wrapper's cap are
+  wrapper accepts at most 10,000, the elixir wrapper 16,384 and the javascript
+  and java wrappers 1,000 (the golden vectors use 2, 3 and 10). Values above a wrapper's cap are
   an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
   `armCount < 2` or above the wrapper's cap) returns 400 with
-  `{"error": "...", "events": []}`, the error envelope of every other endpoint.
-  A wrapper whose SDK lacks the function returns 501 with the same envelope.
+  `{"error": "...", "events": []}`, the wrapper-wide error envelope. A wrapper
+  whose SDK lacks the function returns 501 with the same shape. (The java-wrapper
+  still returns `{"error": "..."}` without `events`; that predates this envelope
+  and is tracked separately.)
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob

@@ -563,10 +563,10 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
-        "holdout_arms"
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in elixir-sdk",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
         "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
         "integralFloatAttributes": "switchback serving not implemented in elixir-sdk; java-sdk and javascript-sdk only (R33)",
