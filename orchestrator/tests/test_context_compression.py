@@ -180,8 +180,8 @@ def test_place_group_rejects_a_split_group():
 # the Switchback group (400+). The file with the br scenarios (273 up to, not including, 300) and the
 # generator-owned groups below removed must render to exactly those bytes: the only change the br
 # follow-up may make is that insertion after 272. Last changed when 148, 149 and 188 moved to the
-# rejectsSettersAfterFinalize gate (php-sdk#12).
-BEFORE_BR_SHA256 = "af21ae7b17b065f414613530db8d7c6299ee9067a6b5c6664791c6af2366336f"
+# rejectsSettersAfterFinalize gate (php-sdk#12), then when scenario 35 listed the dart 2.2.0 wording.
+BEFORE_BR_SHA256 = "6c9a6f5215ea16b421599f19d1720453356f36f69625db43cbe418341379468b"
 BEFORE_BR_COUNT = 282
 # Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
 # verified by its own --check, and the Holdout Conformance group, which landed after the br follow-up.

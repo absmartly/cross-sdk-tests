@@ -4052,6 +4052,7 @@
           "errorAnyOf": [
             "Unit 'session_id' UID already set.",
             "Unit 'session_id' already set.",
+            "Unit session_id already set.",
             "Unit \"session_id\" UID is already set"
           ]
         }

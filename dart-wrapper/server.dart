@@ -65,7 +65,7 @@ class EventCollector implements ContextEventLogger {
 
   @override
   void handleEvent(Context context, EventType type, dynamic data) {
-    String eventType;
+    String eventType = 'finalize';
     switch (type) {
       case EventType.error:
         eventType = 'error';
