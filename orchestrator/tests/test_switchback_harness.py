@@ -47,8 +47,16 @@ def canonical():
     return copy.deepcopy(_canonical_parsed())
 
 
-# The group owns 400+, after main's scenarios (the feature-parity round ends at 332).
+# The group owns 400+, after main's scenarios (the feature-parity round ends at 332) and the Shared
+# Variable Key group (340+, generate_shared_variable_key_scenarios.py, pinned by its own test).
 KEPT_COUNT = 279
+OTHER_GROUPS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.CONTEXT_FETCH)
+
+
+def main_scenarios(scenarios):
+    """The scenarios outside the Switchback group and the other generated groups (Context Fetch
+    Compression 270-274, Shared Variable Key 340+)."""
+    return [s for s in scenarios if not any(m in s["name"] for m in (generator.GROUP_MARKER,) + OTHER_GROUPS)]
 FIRST_ID = scenario_groups.SWITCHBACK_FIRST_NUMBER
 GROUP_SIZE = 27
 
@@ -225,7 +233,8 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     # Every requests entry point, module-level helpers included, goes through Session.request.
     monkeypatch.setattr(requests.sessions.Session, "request", record)
 
-    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
+    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])
+             and generator.GROUP_MARKER in s["name"]]
     assert len(gated) == len(built_group) - 1 == GROUP_SIZE - 1
 
     reason = runner.policy["sdks"]["kotlin"]["unsupported"]["switchback"]
@@ -283,6 +292,7 @@ def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_ta
     # and the Context Fetch Compression group (270-274), which sits between the round and parity groups.
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
     assert group == list(range(len(scenarios) - GROUP_SIZE, len(scenarios)))
+    assert len(main_scenarios(scenarios)) == KEPT_COUNT
     assert len(group) == GROUP_SIZE
     assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + GROUP_SIZE))
 
@@ -564,8 +574,7 @@ MAIN_SHA256 = "1e5ceba2abfc9900d6059b7b492188d36e13923b899c35dd8e8779210b043b00"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in without_later_groups(canonical())
-            if generator.GROUP_MARKER not in s["name"] and scenario_groups.CONTEXT_FETCH not in s["name"]]
+    kept = main_scenarios(without_later_groups(canonical()))
     assert len(kept) == KEPT_COUNT
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 

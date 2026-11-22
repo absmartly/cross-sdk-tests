@@ -49,12 +49,13 @@ import scenario_groups  # noqa: E402
 
 GROUP_MARKER = scenario_groups.ROUND_SYSATTR
 # Groups after this one: the Context Fetch Compression group (generate_context_compression_scenarios.py,
-# 270-274), then generate_parity_round_scenarios.py (300+), then the Switchback group from
+# 270-274), then generate_parity_round_scenarios.py (300+), the Shared Variable Key group from
+# generate_shared_variable_key_scenarios.py (340+), the Switchback group from
 # generate_switchback_scenarios.py (400+), then generate_holdout_conformance_scenarios.py (501+).
 # They are neither "kept" scenarios for the digest nor part of this group; this group must directly
 # precede them.
-LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK, scenario_groups.CONTEXT_FETCH,
-                                                       scenario_groups.HOLDOUT_CONFORMANCE)
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
+                                                       scenario_groups.CONTEXT_FETCH, scenario_groups.HOLDOUT_CONFORMANCE)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before

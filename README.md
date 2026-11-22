@@ -15,7 +15,7 @@ across languages.
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
   `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
-- **318 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+- **347 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -211,6 +211,28 @@ across languages.
   advertised on create and refresh, br served and decoded). How they are
   measured and gated, and what each SDK sends and decodes (with a Brotli survey):
   [docs/context-fetch-compression.md](docs/context-fetch-compression.md).
+  Scenarios 340-368 (Shared Variable Key, `requires: sharedVariableKeys`) pin
+  how `variableValue` and `peekVariableValue` pick an experiment when several
+  define the same key, as java-sdk's `Context.getVariableAssignment`: candidates
+  in ascending experiment id (not payload order); the first assigned, overridden
+  or rule-won candidate wins even if its variant lacks the key (the default is
+  returned, later candidates are not tried); otherwise the first
+  holdout-suppressed candidate serves control; otherwise the default, with no
+  exposure. A candidate that is not assigned (strict audience mismatch, no unit,
+  a custom assignment on a strict mismatch, a switchback with no linked unit)
+  never leaks its control value; a traffic-excluded or non-strict mismatched
+  unit is assigned and does win. The group also covers overrides to control,
+  full-on, holdouts (also `holdouts`), switchbacks (also `switchback`), reads
+  agreeing with `treatment`/`variableKeys`, re-evaluation after `setAttribute`,
+  a refresh removing the winner and a JSON `null` value. Expectations are
+  recorded from the java-sdk wrapper by `generate_shared_variable_key_scenarios.py`
+  and replayed in CI against a Python model and 19 wrong models
+  (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
+  the per-mutant kill counts locally).
+  java, kotlin, dart, flutter and dotnet require the capability (dotnet from
+  dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
+  merged, which its pinned `feat/switchbacks` branch contains). Every other SDK
+  lists a reviewed exception naming its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -362,7 +384,7 @@ section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 318-scenario suite for all 20
+`.github/workflows/cross-sdk.yml` runs the full 347-scenario suite for all 20
 SDKs on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
@@ -387,7 +409,10 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 318 scenarios
+├── test_scenarios_complete.json  # 347 scenarios
+├── generate_shared_variable_key_scenarios.py  # records the Shared Variable
+│                                 #   Key group (340-368) from java-sdk;
+│                                 #   --replay checks it without Docker
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
 │                                 #   (400-426) in place; --check verifies
 ├── generate_holdout_conformance_scenarios.py  # regenerates the Holdout

@@ -14,23 +14,25 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
-# dotnet-sdk is on feat/holdouts (its open holdouts PR) until that PR merges, then
-# back to main.
-# cpp-sdk is pinned to feat/holdouts (the absmartly/cpp-sdk holdouts PR) while that
-# PR is open; the pin goes back to `main` once it merges.
-# dotnet-sdk is on feat/switchbacks (dotnet-sdk#16, stacked on the holdouts PR #15)
-# until those PRs merge, then back to main.
-# javascript-sdk is pinned to feat/switchbacks (javascript-sdk#69) only while that PR is
-# open: repin it to main in the same change that merges #69, before the branch is deleted,
-# or this lane's clone fails. The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
-# rust-sdk is pinned to feat/switchbacks (rust-sdk#12, stacked on the holdouts
-# PR rust-sdk#11) for its switchback lane; the pin goes back to main once
-# rust-sdk#12 merges.
-# cpp-sdk is pinned to feat/switchbacks (absmartly/cpp-sdk switchbacks PR, stacked on the
-# feat/holdouts PR) while those PRs are open, at the exact commit in SDK_REVISIONS below so a later
-# push to that branch cannot change what this commit tests. Both pins go back to `main` once
-# cpp-sdk#5 and #6 merge.
-
+#
+# Holdouts / switchbacks / shared-variable-key round (one consolidated cross-sdk-tests PR):
+# every lane that now requires `holdouts`/`holdout_arms` and `switchback` builds its SDK's
+# open switchback PR branch (stacked on, or containing, that SDK's holdouts PR). Re-pin each
+# to `main` in the change that merges its SDK PR(s), before the branch is deleted, or the
+# lane's clone fails:
+#   cpp-sdk        feat/switchbacks  cpp-sdk#6 (on #5 holdouts), at the SDK_REVISIONS commit
+#   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (on #15 holdouts); contains #17 (1.4.1)
+#   elixir-sdk     feat/switchbacks  elixir-sdk#6 (on #5 holdouts)
+#   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
+#   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
+#   javascript-sdk feat/switchbacks  javascript-sdk#69 (holdouts already on main)
+#   php-sdk        feat/switchbacks  php-sdk#13 (on #11 holdouts)
+#   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
+#   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
+#   rust-sdk       feat/switchbacks  rust-sdk#12 (holdouts rust-sdk#11 merged)
+#   swift-sdk      feat/holdouts     swift-sdk#12 (its lane requires holdouts only)
+# SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
+# what this commit tests.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="45ed81223e594d491ec74dc9529e055ea04e6606"
 )
@@ -38,30 +40,19 @@ declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/switchbacks"
   ["dotnet-sdk"]="feat/switchbacks"
-  # elixir-sdk#5 (holdouts, feat/holdouts) and the switchback PR stacked on it
-  # (feat/switchbacks) are open; re-pin to main once both merge.
   ["elixir-sdk"]="feat/switchbacks"
-  # Temporary: flutter-sdk#13 (switchbacks, stacked on #11 holdouts); back to main once both merge.
   ["flutter-sdk"]="feat/switchbacks"
-  # go-sdk switchbacks PR (go-sdk feat/switchbacks, stacked on feat/holdouts) is
-  # open; re-pin to main once both merge.
   ["go-sdk"]="feat/switchbacks"
   ["java-sdk"]="main"
   ["javascript-sdk"]="feat/switchbacks"
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"
-  # php-sdk switchbacks PR (stacked on php-sdk#11, feat/holdouts) is open; re-pin to main once both merge.
   ["php-sdk"]="feat/switchbacks"
-  # python3-sdk switchbacks PR (feat/switchbacks, stacked on python3-sdk#17's feat/holdouts) is
-  # open; re-pin to main once both merge.
   ["python3-sdk"]="feat/switchbacks"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-  # ruby-sdk switchbacks PR (feat/switchbacks, stacked on holdouts ruby-sdk#43) is open;
-  # re-pin to main once both merge.
   ["ruby-sdk"]="feat/switchbacks"
   ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
-  # swift-sdk holdouts PR (swift-sdk feat/holdouts) is open; re-pin to main once it merges.
   ["swift-sdk"]="feat/holdouts"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"

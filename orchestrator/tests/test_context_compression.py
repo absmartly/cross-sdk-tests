@@ -184,8 +184,10 @@ def test_place_group_rejects_a_split_group():
 BEFORE_BR_SHA256 = "6c9a6f5215ea16b421599f19d1720453356f36f69625db43cbe418341379468b"
 BEFORE_BR_COUNT = 282
 # Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
-# verified by its own --check, and the Holdout Conformance group, which landed after the br follow-up.
-LATER_GROUP_MARKERS = (scenario_groups.SWITCHBACK, scenario_groups.HOLDOUT_CONFORMANCE)
+# verified by its own --check, and the Shared Variable Key and Holdout Conformance groups, which
+# landed after the br follow-up.
+LATER_GROUP_MARKERS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
+                       scenario_groups.HOLDOUT_CONFORMANCE)
 
 
 def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():

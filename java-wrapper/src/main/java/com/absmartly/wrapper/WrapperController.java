@@ -81,12 +81,27 @@ public class WrapperController {
         return body;
     }
 
+    // The java-sdk commit this wrapper was built from (written by the Dockerfile), so a recording
+    // can prove which reference produced it.
+    private static final String SDK_COMMIT = readSdkCommit();
+
+    private static String readSdkCommit() {
+        try (java.io.InputStream in = WrapperController.class.getResourceAsStream("/sdk-commit.txt")) {
+            if (in == null) return null;
+            String commit = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            return commit.isEmpty() ? null : commit;
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "healthy");
         response.put("sdk", "java");
         response.put("version", "1.0.0");
+        response.put("sdkCommit", SDK_COMMIT);
         return response;
     }
 
@@ -110,6 +125,7 @@ public class WrapperController {
         response.put("rejectsSettersAfterFinalize", true);
         response.put("singleFinalizeEvent", true);
         response.put("semverNumericOperands", true);
+        response.put("sharedVariableKeys", true);
         response.put("clientNoEnvironment", true);
         response.put("clientRejectsBlankApplication", true);
         response.put("clientAcceptsBlankApplication", false);

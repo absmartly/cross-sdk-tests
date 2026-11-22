@@ -28,6 +28,11 @@ GET /health
 }
 ```
 
+A wrapper may add `sdkCommit`, the git commit of the SDK checkout it was built
+from (null when the tree was modified). The java-wrapper reports it, and
+`generate_shared_variable_key_scenarios.py` refuses to record from a wrapper
+whose `sdkCommit` is not its pinned `JAVA_SDK_COMMIT`.
+
 ### 2. Create Context
 
 There are two modes for creating a context:
@@ -1499,6 +1504,19 @@ message. An SDK that only logs misuse (an `error` event) and returns normally
 reports `false` and lists a reviewed exception; its wrapper returns the SDK's
 result and the logged event unchanged and must not synthesize a 400 from it.
 Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
+
+### Capability: `sharedVariableKeys`
+
+No new endpoint. `true` when `variableValue`/`peekVariableValue` resolve a key
+shared by several experiments as java-sdk's `Context.getVariableAssignment`:
+candidates in ascending experiment id; the first assigned, overridden or
+rule-won candidate wins (even if its selected variant lacks the key, which then
+gives the default); otherwise the first holdout-suppressed candidate's control
+value; otherwise the default with no exposure. `variableValue` exposes at most
+one experiment, the selected one; it also fires the applicable holdouts'
+exposures for the candidates it visits (a held-out candidate never exposes
+itself). `peekVariableValue` exposes nothing. A constant `true` is allowed for
+the SDKs that require it; scenarios 340-368 verify it.
 
 ### Capability: `singleFinalizeEvent`
 

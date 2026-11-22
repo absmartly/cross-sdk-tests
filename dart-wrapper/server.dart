@@ -306,6 +306,7 @@ void main() async {
         'rejectsSettersAfterFinalize': true,
         'singleFinalizeEvent': true,
         'semverNumericOperands': true,
+        'sharedVariableKeys': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
