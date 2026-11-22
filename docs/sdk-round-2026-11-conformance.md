@@ -133,6 +133,14 @@ branch (delete-branch-on-merge **off**) until then; re-run the lane after any pu
 to it. The holdout and switchback self-tests each wrapper uses are named in
 `WRAPPER_API_SPEC.md` and the README.
 
+Pre-merge item, flutter-sdk 2.2 (#48): the dart and flutter lanes build
+flutter-sdk `feat/switchbacks` (3.0.0), which has neither `getUnitValue(s)` nor
+`absmartly.dart`, so #48's port of the wrappers to absmartly_sdk 2.2.0 and its
+`release/2.2.0-prep` pin are not in this round. Only its 3.x-compatible parts are:
+scenario 35 accepts the released dart wording, and the wrappers initialise
+`eventType`. No lane tests absmartly_sdk 2.2 until the owner decides whether a
+2.x lane (like java-v1/swift-v1) is wanted; keep #48 open until then.
+
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332

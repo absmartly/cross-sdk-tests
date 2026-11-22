@@ -24,8 +24,8 @@ assignment whenever nothing was assigned. A unit outside the traffic split IS as
 reference (eligible=false, control variant), so it wins and is exposed.
 
 Expected results are recorded from the java-sdk reference through its cross-sdk wrapper (the
-java-wrapper image built from the sibling ../java-sdk checkout at JAVA_SDK_COMMIT), never written by
-hand. The wrapper reports the java-sdk commit it was built from (`sdkCommit` on GET /health), and
+java-v1-wrapper image, the 1.x API, built from the sibling ../java-sdk-v1 checkout at JAVA_SDK_COMMIT),
+never written by hand. The wrapper reports the java-sdk commit it was built from (`sdkCommit` on GET /health), and
 recording refuses a wrapper built from any other commit or from a modified tree. Recording drives the wrapper exactly like the orchestrator (payload endpoint, createContext,
 steps); exposure data drops exposedAt; ruleOverride is retained for rule probes and omitted
 for ordinary probes (SDKs without rules omit the field), and ready/refresh events are projected to experiment id/name.
@@ -39,7 +39,8 @@ Record from a standalone java-sdk clone: a linked worktree built through SDK_SOU
 usable git metadata in the image, so its wrapper reports no sdkCommit and recording is refused.
 
 Usage:
-    docker compose up -d java-sdk          # java-wrapper built from ../java-sdk at JAVA_SDK_COMMIT
+    git -C ../java-sdk-v1 checkout <JAVA_SDK_COMMIT>   # the 1.x java-v1 lane's checkout
+    docker compose build java-v1-sdk && docker compose up -d java-v1-sdk
     python3 generate_shared_variable_key_scenarios.py --java-url http://localhost:<port>
     python3 generate_shared_variable_key_scenarios.py --java-url ... --check   # exit 1 if stale
     python3 generate_shared_variable_key_scenarios.py --replay                 # model + mutants only
@@ -57,9 +58,10 @@ import scenario_groups
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CANONICAL = os.path.join(HERE, "test_scenarios_complete.json")
-JAVA_SDK_PATH = os.environ.get("JAVA_SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "java-sdk")))
+JAVA_SDK_PATH = os.environ.get("JAVA_SDK_PATH", os.path.abspath(os.path.join(HERE, "..", "java-sdk-v1")))
 
-# java-sdk main (switchback, holdouts, assignment rules), the branch sdk-branches.sh pins for java.
+# java-sdk main on the 1.x API (switchback, holdouts, assignment rules). The java lane now builds java-sdk 2.0
+# (java-wrapper); the recording reference stays on 1.x, so it is recorded through java-v1-wrapper.
 JAVA_SDK_COMMIT = "07807b516df5ad0d7d92e5b682041982802cd871"
 
 GROUP_MARKER = scenario_groups.SHARED_VARIABLE_KEY
@@ -509,7 +511,7 @@ def ensure_reference_checkout():
                           capture_output=True, text=True, check=False).stdout.strip()
     if head != JAVA_SDK_COMMIT:
         raise SystemExit(f"java-sdk checkout {JAVA_SDK_PATH} is at {head or '?'}, not {JAVA_SDK_COMMIT}; "
-                         "check it out and rebuild the java-wrapper image from it")
+                         "check it out and rebuild the java-v1-wrapper image from it")
     status = subprocess.run(["git", "-C", JAVA_SDK_PATH, "status", "--porcelain"],
                             capture_output=True, text=True, check=False)
     if status.returncode != 0:
@@ -528,7 +530,7 @@ def ensure_reference_wrapper(base_url):
     health.raise_for_status()
     built = health.json().get("sdkCommit")
     if built != JAVA_SDK_COMMIT:
-        raise SystemExit(f"java-wrapper at {base_url} reports java-sdk {built or 'unknown'}, not "
+        raise SystemExit(f"java-v1-wrapper at {base_url} reports java-sdk {built or 'unknown'}, not "
                          f"{JAVA_SDK_COMMIT}; rebuild it from the pinned checkout")
 
 
@@ -868,7 +870,7 @@ def group_of(scenarios):
 def main():
     parser = argparse.ArgumentParser(description="Generate the Shared Variable Key scenario group.")
     parser.add_argument("--java-url", default=os.environ.get("JAVA_WRAPPER_URL"),
-                        help="base URL of a running java-wrapper built from JAVA_SDK_COMMIT")
+                        help="base URL of a running java-v1-wrapper built from JAVA_SDK_COMMIT")
     parser.add_argument("--check", action="store_true", help="fail if the canonical file is stale")
     parser.add_argument("--replay", action="store_true",
                         help="only replay the checked-in group against the model and mutants")

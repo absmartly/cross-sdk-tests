@@ -1310,7 +1310,40 @@ class StaticRepoChecks(unittest.TestCase):
         "dotnet-wrapper/Program.cs": ("async Task<IResult> SwitchbackCall(", "\n}\n", "error ="),
         "rust-wrapper/src/main.rs": ("fn switchback_response(", "\n}\n", '"error"'),
         "ruby-wrapper/server.rb": ("halt 501, { error: 'linked SDK has no switchback assigner'", "\n", "error:"),
+        "dart-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        "flutter-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        # These handlers build errors through a shared helper; check the helper's envelope.
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp send_error(", "\n  end\n", "error:"),
+        "cpp-wrapper/server.cpp": ("static json make_error_response(", "\n}\n", '"error"'),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
     }
+    # How each helper puts events into the error body it returns.
+    HELPER_EVENTS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": r"%\{error: message, events: events\}",
+        "cpp-wrapper/server.cpp": r'json\{\{"error", error\}, \{"events", ',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+    }
+    # The helper each of those handlers uses for its 400/501 responses.
+    SWITCHBACK_ERROR_HELPERS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp switchback_call(", "send_error(conn"),
+        "cpp-wrapper/server.cpp": ("const auto switchback_endpoint = ", "make_error_response("),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+    }
+
+    def test_switchback_handlers_build_errors_through_their_helper(self):
+        for path, (start, helper) in self.SWITCHBACK_ERROR_HELPERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                body = text[text.index(start):][:2500]
+                self.assertIn(helper, body)
 
     def test_switchback_error_responses_carry_events(self):
         for path, (start, end, marker) in self.SWITCHBACK_HANDLERS.items():
@@ -1322,6 +1355,10 @@ class StaticRepoChecks(unittest.TestCase):
                 body = body[:body.index(end) + len(end)]
                 errors = [line for line in body.splitlines() if marker in line]
                 self.assertTrue(errors, "no error response found")
+                if path in self.SWITCHBACK_ERROR_HELPERS:
+                    # A helper may build the map over several statements: the map it encodes must set events.
+                    self.assertRegex(body, self.HELPER_EVENTS[path])
+                    continue
                 for line in errors:
                     self.assertIn("events", line)
 

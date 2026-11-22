@@ -251,6 +251,23 @@ class ProjectionTest(unittest.TestCase):
                          {"type": "ready", "data": {"experiments": [{"id": 1, "name": "e"}]}})
 
 
+class RecordingReferenceTest(unittest.TestCase):
+    """JAVA_SDK_COMMIT is on java-sdk's 1.x API, so it is recorded through java-v1-wrapper (the java lane's
+    java-wrapper needs 2.x and cannot build it), from the java-v1 lane's checkout."""
+
+    def test_the_recorder_names_the_1x_wrapper_and_checkout(self):
+        self.assertEqual(os.path.basename(generator.JAVA_SDK_PATH), "java-sdk-v1")
+        self.assertIn("docker compose up -d java-v1-sdk", generator.__doc__)
+        self.assertNotIn("docker compose up -d java-sdk ", generator.__doc__)
+        with open(os.path.join(REPO_ROOT, "java-v1-wrapper", "Dockerfile"), encoding="utf-8") as f:
+            self.assertIn("ARG SDK_SOURCE_DIR=java-sdk-v1", f.read())
+        with open(os.path.join(REPO_ROOT, "java-v1-wrapper", "src", "main", "java", "com", "absmartly", "wrapper",
+                               "WrapperController.java"), encoding="utf-8") as f:
+            controller = f.read()
+        self.assertIn("ABSmartly.create(", controller)  # the 1.x entry point
+        self.assertIn('response.put("sdkCommit", SDK_COMMIT);', controller)
+
+
 class SdkRevisionPinTest(unittest.TestCase):
     """Exact-commit pins (SDK_REVISIONS in sdk-branches.sh) are full SHAs, and both CI and local
     setup check them out."""
