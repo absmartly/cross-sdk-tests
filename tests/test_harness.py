@@ -1362,6 +1362,52 @@ class StaticRepoChecks(unittest.TestCase):
                 for line in errors:
                     self.assertIn("events", line)
 
+    # Where each wrapper that requires integralFloatAttributes gets it: its switchback self-test, never a literal.
+    INTEGRAL_FLOAT_SOURCES = {
+        "ruby-wrapper/server.rb": "integralFloatAttributes: SwitchbackSelfTest.switchback?",
+        "python-wrapper/server.py": "'integralFloatAttributes': switchback_self_test.run()",
+        "php-wrapper/server.php": "'integralFloatAttributes' => SwitchbackSelfTest::run()",
+        "go-wrapper/server.go": '"integralFloatAttributes": switchbackSupported()',
+        "rust-wrapper/src/main.rs": '"integralFloatAttributes": tokio::task::block_in_place(state.switchback_probe)',
+        "cpp-wrapper/server.cpp": '{"integralFloatAttributes", switchback_self_test::switchback()}',
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": "integralFloatAttributes: ElixirWrapper.SwitchbackSelfTest.switchback?()",
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java":
+            'response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());',
+    }
+    # The float check inside each of those self-tests (a 3.0 attribute must key no cluster).
+    INTEGRAL_FLOAT_PROBES = {
+        "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
+        "python-wrapper/switchback_self_test.py": "'sb_whole_float', 0",
+        "php-wrapper/SwitchbackSelfTest.php": "'sb_integral_float', 0",
+        "go-wrapper/switchback.go": '"sb_float_value"',
+        "rust-wrapper/src/switchback_self_test.rs": '"sb_float_number", 0',
+        "cpp-wrapper/switchback_self_test.h": '"sb_float_value", 0',
+        "elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex": '"sb_float_value", 0',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/SwitchbackSelfTest.java": '"integral float", "sb_float", 0',
+    }
+
+    def test_integral_float_attributes_comes_from_the_switchback_self_test(self):
+        policy = test_runner.load_capability_policy()
+        requiring = {sdk for sdk, e in policy["sdks"].items() if "integralFloatAttributes" in e["required"]}
+        paths = {path.split("-wrapper/")[0] for path in self.INTEGRAL_FLOAT_SOURCES}
+        self.assertEqual(requiring - {"java-v1"}, paths)
+        for table in (self.INTEGRAL_FLOAT_SOURCES, self.INTEGRAL_FLOAT_PROBES):
+            for path, needle in table.items():
+                with self.subTest(path=path):
+                    with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                        self.assertIn(needle, src.read())
+
+    def test_java_wrapper_publishes_over_http_only_with_publish_to_endpoint(self):
+        """An endpoint that serves the context (the context server, 270-274) need not accept a publish, so
+        java-sdk 2.0's wrapper sends the SDK's own PUT only when a scenario sets publishToEndpoint."""
+        path = os.path.join(REPO_ROOT, "java-wrapper", "src", "main", "java", "com", "absmartly", "wrapper",
+                            "WrapperController.java")
+        with open(path, encoding="utf-8") as src:
+            text = src.read()
+        construction = re.search(r"new WrapperTransport\(fetchOverHttp, ([^,]+),", text)
+        self.assertIsNotNone(construction)
+        self.assertEqual(construction.group(1).strip(), "publishToEndpoint")
+
     def test_python_dockerfile_copies_every_local_module_the_server_imports(self):
         wrapper = os.path.join(REPO_ROOT, "python-wrapper")
         local = {name[:-3] for name in os.listdir(wrapper) if name.endswith(".py") and not name.startswith("test_")}

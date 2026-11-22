@@ -20,9 +20,9 @@
 # open switchback PR branch (stacked on, or containing, that SDK's holdouts PR). Re-pin each
 # to `main` in the change that merges its SDK PR(s), before the branch is deleted, or the
 # lane's clone fails:
-#   cpp-sdk        feat/switchbacks  cpp-sdk#6 (on #5 holdouts), at the SDK_REVISIONS commit
-#   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (on #15 holdouts); contains #17 (1.4.1)
-#   elixir-sdk     feat/switchbacks  elixir-sdk#6 (on #5 holdouts)
+#   cpp-sdk        feat/switchbacks  cpp-sdk#6 (stacked on #5 holdouts), at the SDK_REVISIONS commit
+#   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (stacked on #15 holdouts); contains #17 (1.4.1)
+#   elixir-sdk     feat/switchbacks  elixir-sdk#6 (stacked on #5 holdouts)
 #   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
 #   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
 #   javascript-sdk feat/switchbacks  javascript-sdk#69 (holdouts already on main)
@@ -37,6 +37,9 @@
 #                                    absmartly/swift-sdk) requires holdouts. swift-sdk main becomes 2.0
 #                                    when #13 merges, so this lane never tracks main: re-pin it to
 #                                    release/1.x once that is cut and carries #12.
+# Not every switchbacks branch contains its holdouts PR's latest head: cpp, elixir and dotnet
+# feat/switchbacks are behind their feat/holdouts, so those lanes test switchback over an older
+# holdouts port. Merge holdouts into switchbacks in those SDK repos and re-run the lanes before merge.
 # SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
 # what this commit tests.
 declare -A SDK_REVISIONS=(
