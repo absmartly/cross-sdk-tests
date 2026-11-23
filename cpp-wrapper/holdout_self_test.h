@@ -159,7 +159,12 @@ inline bool run_holdouts_battery() {
         std::cout << p << " check G (mirrors 221, pre-unit peek) FAILED: treatment=" << peeked << std::endl;
         return false;
     }
+    const size_t before_unit = log->seen.size();
     context.set_unit(late_type, held_out_uid);
+    if (log->seen.size() != before_unit) {
+        std::cout << p << " check G (mirrors 221, set-unit) FAILED: setter emitted exposures" << std::endl;
+        return false;
+    }
     if (!check(p, "G (mirrors 221, post-unit treatment)", context, *log, "probe_g_late_unit", 2,
                {{308, "probe_g_late_unit", 2}, {408, "probe_g_holdout", 1}}))
         return false;

@@ -285,8 +285,11 @@ public static class SwitchbackSelfTest
             // baseline's shape, and a unit experiment carrying every R33 field publishes the
             // baseline's bytes once id, name and timestamps are aligned.
             var serializer = new DefaultContextEventSerializer();
-            var baselineJson = Normalized(serializer.Serialize(baseline));
-            if (Normalized(serializer.Serialize(switchback)) != baselineJson)
+            var baselineBytes = serializer.Serialize(baseline);
+            var switchbackBytes = serializer.Serialize(switchback);
+            var inertBytes = serializer.Serialize(inert);
+            var baselineJson = Normalized(baselineBytes);
+            if (!SameShape(baselineBytes, switchbackBytes) || Normalized(switchbackBytes) != baselineJson)
             {
                 Console.WriteLine($"{Prefix} check publish payload FAILED: shape of " +
                                   Encoding.UTF8.GetString(serializer.Serialize(switchback)) + " differs from " +
@@ -294,7 +297,7 @@ public static class SwitchbackSelfTest
                 return false;
             }
 
-            if (Normalized(serializer.Serialize(inert)) != baselineJson)
+            if (!SameShape(baselineBytes, inertBytes) || Normalized(inertBytes) != baselineJson)
             {
                 Console.WriteLine($"{Prefix} check unit inertness FAILED: " +
                                   Encoding.UTF8.GetString(serializer.Serialize(inert)) + " differs from " +
@@ -321,6 +324,31 @@ public static class SwitchbackSelfTest
         var experiment = data.Experiments.First(e => e.Name == experimentName);
         var clusters = typeof(Experiment).GetProperty("SwitchbackClusters")!.GetValue(experiment) as KeyValuePair<string, string>[];
         return clusters?.Select(c => c.Key).ToList() ?? new List<string>();
+    }
+
+    internal static bool SameShape(byte[] baseline, byte[] actual)
+    {
+        using var a = JsonDocument.Parse(baseline);
+        using var b = JsonDocument.Parse(actual);
+        return SameShape(a.RootElement, b.RootElement);
+    }
+
+    private static bool SameShape(JsonElement baseline, JsonElement actual)
+    {
+        if (baseline.ValueKind != actual.ValueKind) return false;
+        if (baseline.ValueKind == JsonValueKind.Object)
+        {
+            var a = baseline.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+            var b = actual.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+            return a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var v) && SameShape(p.Value, v));
+        }
+        if (baseline.ValueKind == JsonValueKind.Array)
+        {
+            var a = baseline.EnumerateArray().ToArray();
+            var b = actual.EnumerateArray().ToArray();
+            return a.Length == b.Length && a.Zip(b).All(p => SameShape(p.First, p.Second));
+        }
+        return true;
     }
 
     private static string Normalized(byte[] json)

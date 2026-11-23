@@ -70,7 +70,7 @@ final BigInt _longMin = -(BigInt.one << 63);
 final BigInt _longMax = (BigInt.one << 63) - BigInt.one;
 
 BigInt _long(String text) {
-  if (!RegExp(r'^-?[0-9]+$').hasMatch(text)) {
+  if (!RegExp(r'^[+-]?[0-9]+$').hasMatch(text)) {
     throw ArgumentError('not a decimal integer: $text');
   }
   final BigInt value = BigInt.parse(text);
@@ -445,6 +445,12 @@ String? _serializedMismatch(Map<String, dynamic> event, _E expected) {
   return 'publish.units lacks the hashed serving unit: ${event['units']}';
 }
 
+// Validate callback values independently of the serialized publication.
+bool payloadExposuresMatch(List<Exposure> emitted) =>
+    emitted.length == 2 &&
+    const _E(514, 'sb_unit_baseline', 'unit_serving', 1).matches(emitted[0]) &&
+    const _E(513, 'sb_payload', 'unit_serving', 1).matches(emitted[1]);
+
 // A unit baseline and a switchback on the same unit, each published on its
 // own, have the same fields at every depth. Returns the baseline event, or
 // null when a check fails.
@@ -463,7 +469,7 @@ Future<PublishEvent?> _checkPayloadShape(
     return null;
   }
   final emitted = log.exposures.sublist(before);
-  if (emitted.length != 2 || baseline == null || switchback == null) {
+  if (!payloadExposuresMatch(emitted) || baseline == null || switchback == null) {
     print('$_prefix check payload shape FAILED: expected 2 exposures and 2 '
         'publish events, got ${emitted.length}');
     return null;

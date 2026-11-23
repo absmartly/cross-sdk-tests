@@ -278,6 +278,12 @@ type switchbackProbeExposure struct {
 	variant  int
 	assigned bool
 	eligible bool
+	flags    [5]bool // overridden, fullOn, custom, audienceMismatch, ruleOverride; all false in this battery
+}
+
+func switchbackExposure(e jsonmodels.Exposure) switchbackProbeExposure {
+	return switchbackProbeExposure{e.Id, e.Name, e.Unit, e.Variant, e.Assigned, e.Eligible,
+		[5]bool{e.Overridden, e.FullOn, e.Custom, e.AudienceMismatch, e.RuleOverride}}
 }
 
 type switchbackExposureLog struct {
@@ -343,7 +349,7 @@ func switchbackContextBattery(prefix string) error {
 	}
 
 	served := func(id int, name string, unit string, variant int) switchbackProbeExposure {
-		return switchbackProbeExposure{id, name, unit, variant, true, true}
+		return switchbackProbeExposure{id, name, unit, variant, true, true, [5]bool{}}
 	}
 	for _, c := range []struct {
 		check      string
@@ -369,7 +375,7 @@ func switchbackContextBattery(prefix string) error {
 		}
 		var emitted []switchbackProbeExposure
 		for _, e := range logger.since(before) {
-			emitted = append(emitted, switchbackProbeExposure{e.Id, e.Name, e.Unit, e.Variant, e.Assigned, e.Eligible})
+			emitted = append(emitted, switchbackExposure(e))
 		}
 		if got != c.treatment || !reflect.DeepEqual(emitted, c.exposures) {
 			return fmt.Errorf("%s check %s FAILED: expected treatment=%d exposures=%v, got treatment=%d exposures=%v",

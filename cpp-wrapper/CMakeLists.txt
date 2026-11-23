@@ -17,3 +17,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../cpp-sdk ${CMAKE_CURRENT_BINAR
 
 add_executable(cpp-wrapper server.cpp)
 target_link_libraries(cpp-wrapper PRIVATE absmartly-sdk httplib::httplib)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(test-probes test_probes.cpp)
+  target_link_libraries(test-probes PRIVATE absmartly-sdk)
+  add_test(NAME probe-regressions COMMAND test-probes)
+endif()

@@ -103,10 +103,15 @@ func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmode
 		if len(h.split) == 3 {
 			holdoutType = "all_full_on"
 		}
-		hos = append(hos, map[string]interface{}{
+		var holdout = map[string]interface{}{
 			"id": h.id, "name": h.name, "iteration": 1, "unitType": h.unitType, "seedHi": h.seedHi,
-			"seedLo": h.seedLo, "split": h.split, "holdoutType": holdoutType,
-		})
+			"seedLo": h.seedLo, "split": h.split,
+		}
+		// Scenario 222: arm 1 must follow the split even without a type.
+		if h.id != 622 {
+			holdout["holdoutType"] = holdoutType
+		}
+		hos = append(hos, holdout)
 	}
 	payload["experiments"] = exps
 	payload["holdouts"] = hos

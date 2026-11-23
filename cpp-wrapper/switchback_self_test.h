@@ -266,11 +266,15 @@ inline bool published_exactly(const absmartly::PublishEvent& event, const json& 
     return unit_matches && served_as(exposure, expected);
 }
 
+inline bool has_declared_cluster_order(const ordered_json& clusters) {
+    return clusters.is_object() && clusters.size() == 2 && clusters.begin().key() == "unit_user";
+}
+
 inline bool check_context_serving() {
     const auto data = ordered_json::parse(probe_payload()).get<absmartly::ContextData>();
     for (const auto& experiment : data.experiments) {
         if (experiment.name == "sb_declared_order" &&
-            (!experiment.switchbackClusters.is_object() || experiment.switchbackClusters.begin().key() != "unit_user")) {
+            !has_declared_cluster_order(experiment.switchbackClusters)) {
             std::cout << PREFIX << " FAILED: switchbackClusters lost its declared order: "
                       << experiment.switchbackClusters.dump() << std::endl;
             return false;

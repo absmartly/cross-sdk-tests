@@ -8,6 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Remove="tests/**/*.cs" />
         <ProjectReference Include="../../dotnet-sdk/src/ABSmartly.Sdk/ABSmartly.Sdk.csproj" />
     </ItemGroup>
 

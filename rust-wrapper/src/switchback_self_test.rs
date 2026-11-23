@@ -324,6 +324,21 @@ fn served_as(actual: &Exposure, expected: &Served) -> bool {
         && actual.exposed_at > 0
 }
 
+#[derive(Default)]
+struct ExposureLog {
+    exposures: Vec<Exposure>,
+    decode_failed: bool,
+}
+
+impl ExposureLog {
+    fn record(&mut self, data: Option<Value>) {
+        match data.and_then(|d| serde_json::from_value::<Exposure>(d).ok()) {
+            Some(exposure) => self.exposures.push(exposure),
+            None => self.decode_failed = true,
+        }
+    }
+}
+
 fn check_context_serving() -> bool {
     let data: ContextData = match serde_json::from_str(&probe_payload()) {
         Ok(data) => data,
@@ -347,18 +362,14 @@ fn check_context_serving() -> bool {
         return false;
     }
 
-    let exposures: Arc<Mutex<Vec<Exposure>>> = Arc::new(Mutex::new(Vec::new()));
+    let exposures = Arc::new(Mutex::new(ExposureLog::default()));
     let sink = exposures.clone();
     let options = ContextOptions {
         publish_delay: -1,
         refresh_period: 0,
         event_logger: Some(Arc::new(move |_ctx, event, data| {
             if event == "exposure" {
-                if let Some(exposure) =
-                    data.and_then(|d| serde_json::from_value::<Exposure>(d).ok())
-                {
-                    sink.lock().unwrap().push(exposure);
-                }
+                sink.lock().unwrap().record(data);
             }
         })),
     };
@@ -387,10 +398,11 @@ fn check_context_serving() -> bool {
     }
 
     let mut expect = |check: &str, name: &str, treatment: i32, expected: &[Served]| -> bool {
-        let before = exposures.lock().unwrap().len();
+        let before = exposures.lock().unwrap().exposures.len();
         let actual = context.treatment(name);
-        let emitted: Vec<Exposure> = exposures.lock().unwrap()[before..].to_vec();
-        let matches = actual == Ok(treatment)
+        let emitted: Vec<Exposure> = exposures.lock().unwrap().exposures[before..].to_vec();
+        let matches = !exposures.lock().unwrap().decode_failed
+            && actual == Ok(treatment)
             && emitted.len() == expected.len()
             && emitted.iter().zip(expected).all(|(a, e)| served_as(a, e));
         if !matches {
@@ -502,7 +514,10 @@ fn shape(value: &Value) -> Value {
             Value::Object(map.iter().map(|(k, v)| (k.clone(), shape(v))).collect())
         }
         Value::Array(items) => Value::Array(items.iter().map(shape).collect()),
-        _ => Value::Null,
+        Value::Null => json!("null"),
+        Value::Bool(_) => json!("boolean"),
+        Value::Number(_) => json!("number"),
+        Value::String(_) => json!("string"),
     }
 }
 
@@ -511,21 +526,21 @@ fn shape(value: &Value) -> Value {
 /// R33 field publishes the same bytes as the plain baseline.
 fn check_payload_shape(
     context: &mut absmartly::Context,
-    exposures: &Arc<Mutex<Vec<Exposure>>>,
+    exposures: &Arc<Mutex<ExposureLog>>,
     published: &Arc<Mutex<Vec<PublishParams>>>,
 ) -> bool {
     if publish_one(context, published).is_none() {
         println!("{} check payload shape FAILED: first publish", PREFIX);
         return false;
     }
-    let before = exposures.lock().unwrap().len();
+    let before = exposures.lock().unwrap().exposures.len();
     let baseline_variant = context.treatment("sb_unit_baseline");
     let baseline = publish_one(context, published);
     let switchback_variant = context.treatment("sb_payload");
     let switchback = publish_one(context, published);
     let with_fields_variant = context.treatment("sb_unit_with_fields");
     let with_fields = publish_one(context, published);
-    let emitted: Vec<Exposure> = exposures.lock().unwrap()[before..].to_vec();
+    let emitted: Vec<Exposure> = exposures.lock().unwrap().exposures[before..].to_vec();
     let (Some(baseline), Some(switchback), Some(with_fields)) = (baseline, switchback, with_fields)
     else {
         println!(
@@ -539,7 +554,8 @@ fn check_payload_shape(
         (513, "sb_payload", "unit_serving", 1, ELIGIBLE),
         (527, "sb_unit_with_fields", "unit_serving", 1, ELIGIBLE),
     ];
-    if (baseline_variant, switchback_variant, with_fields_variant) != (Ok(1), Ok(1), Ok(1))
+    if exposures.lock().unwrap().decode_failed
+        || (baseline_variant, switchback_variant, with_fields_variant) != (Ok(1), Ok(1), Ok(1))
         || emitted.len() != 3
         || !emitted.iter().zip(&expected).all(|(a, e)| served_as(a, e))
     {
@@ -600,6 +616,45 @@ fn check_payload_shape(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shape_preserves_scalar_types_but_not_values() {
+        let baseline = json!({"publishedAt": 123, "exposures": [{"assigned": true, "unit": "a", "extra": null}]});
+        assert_eq!(
+            shape(&baseline),
+            shape(
+                &json!({"publishedAt": 456, "exposures": [{"assigned": false, "unit": "b", "extra": null}]})
+            )
+        );
+        for changed in [json!("123"), json!(true), Value::Null] {
+            let mut actual = baseline.clone();
+            actual["publishedAt"] = changed;
+            assert_ne!(shape(&baseline), shape(&actual));
+        }
+        let mut actual = baseline.clone();
+        actual["exposures"][0]["assigned"] = json!("true");
+        assert_ne!(shape(&baseline), shape(&actual));
+    }
+
+    #[test]
+    fn exposure_decode_errors_are_sticky_and_fail_closed() {
+        let valid = json!({"id": 521, "name": "sb_agree", "unit": "unit_serving", "variant": 3,
+            "exposedAt": 123, "assigned": true, "eligible": true, "overridden": false,
+            "fullOn": false, "custom": false, "audienceMismatch": false, "ruleOverride": false});
+        let mut log = ExposureLog::default();
+        assert!(!log.decode_failed); // An ineligible treatment with no callback is valid.
+        log.record(Some(valid.clone()));
+        assert_eq!(log.exposures.len(), 1);
+        assert!(!log.decode_failed);
+        for malformed in [None, Some(json!({})), Some(json!({"variant": "bad"}))] {
+            let mut log = ExposureLog::default();
+            log.record(malformed);
+            assert!(log.decode_failed);
+            assert!(log.exposures.is_empty());
+            log.record(Some(valid.clone()));
+            assert!(log.decode_failed); // A later valid callback must not hide the failure.
+        }
+    }
 
     #[test]
     fn passes_on_the_linked_sdk() {

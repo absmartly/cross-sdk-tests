@@ -96,15 +96,39 @@ enum HoldoutSelfTest {
         ]
     }
 
+    private final class CapturingPublisher: ContextPublisher {
+        private let lock = NSLock()
+        private var batches: [[Seen]] = []
+
+        func publish(event: PublishEvent) -> Promise<Void> {
+            lock.lock()
+            batches.append(event.exposures.map { Seen(id: $0.id, name: $0.name, variant: $0.variant) })
+            lock.unlock()
+            return Promise.value(())
+        }
+
+        var published: [[Seen]] {
+            lock.lock()
+            defer { lock.unlock() }
+            return batches
+        }
+    }
+
+    // Scenario 221 requires the queued experiment then holdout, not just their callbacks.
+    static func lateUnitPublishMatches(_ ids: [Int], _ names: [String], _ variants: [Int]) -> Bool {
+        return ids == [308, 408] && names == ["probe_g_late_unit", "probe_g_holdout"] && variants == [2, 1]
+    }
+
     private static func makeContext(
-        experiments: [[String: Any]], holdouts: [[String: Any]], units: [String: String], log: ExposureLog
+        experiments: [[String: Any]], holdouts: [[String: Any]], units: [String: String], log: ExposureLog,
+        publisher: ContextPublisher = CustomPublisher()
     ) throws -> Context {
         let payload = try JSONSerialization.data(withJSONObject: ["experiments": experiments, "holdouts": holdouts])
         let data = try JSONDecoder().decode(ContextData.self, from: payload)
         let client = try DefaultClient(config: ClientConfig(
             apiKey: "self-test", application: "test", endpoint: "http://127.0.0.1:3000", environment: "test"))
         let sdk = try ABSmartlySDK(config: ABSmartlyConfig(
-            contextDataProvider: DummyContextDataProvider(), contextPublisher: CustomPublisher(),
+            contextDataProvider: DummyContextDataProvider(), contextPublisher: publisher,
             contextEventLogger: log, variableParser: nil, scheduler: nil, client: client))
         let config = ContextConfig()
         for (unitType, uid) in units {
@@ -165,9 +189,10 @@ enum HoldoutSelfTest {
 
         do {
             let log = ExposureLog()
+            let publisher = CapturingPublisher()
             let context = try makeContext(
                 experiments: experiments, holdouts: holdouts,
-                units: [heldOutType: heldOutUid, notHeldOutType: notHeldOutUid], log: log)
+                units: [heldOutType: heldOutUid, notHeldOutType: notHeldOutUid], log: log, publisher: publisher)
             guard context.isReady(), !context.isFailed() else {
                 print("\(prefix) FAILED: context not ready (failed=\(context.isFailed()))")
                 return false
@@ -212,11 +237,24 @@ enum HoldoutSelfTest {
                 print("\(prefix) check G (mirrors 221, pre-unit peek) FAILED: got treatment=\(peeked) exposures=\(log.since(before))")
                 return false
             }
+            // Flush A-F so G's queued exposures can be checked on their own.
+            try context.publish().wait()
+            let batchesBefore = publisher.published.count
             context.setUnit(unitType: lateType, uid: heldOutUid)
             guard verify(
                 prefix, "G (mirrors 221, post-unit treatment)", context, log, "probe_g_late_unit", 2,
                 [Seen(id: 308, name: "probe_g_late_unit", variant: 2), Seen(id: 408, name: "probe_g_holdout", variant: 1)])
             else { return false }
+
+            try context.publish().wait()
+            let batches = publisher.published
+            guard batches.count == batchesBefore + 1,
+                let batch = batches.last,
+                lateUnitPublishMatches(batch.map { $0.id }, batch.map { $0.name }, batch.map { $0.variant })
+            else {
+                print("\(prefix) check G (mirrors 221, publish) FAILED: \(batches)")
+                return false
+            }
 
             print("\(prefix) behavioral self-test PASSED: all 7 checks mirroring scenarios 203-208 and 221 passed")
             return true
