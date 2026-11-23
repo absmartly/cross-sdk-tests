@@ -234,6 +234,33 @@ class RecordingProvenanceTest(unittest.TestCase):
             self.assertEqual(generator.build_group("http://wrapper.invalid"), group)
 
 
+class ReplayDiagnosticsTest(unittest.TestCase):
+    def setUp(self):
+        with open(SCENARIOS_PATH, encoding="utf-8") as src:
+            self.group = generator.group_of(json.load(src))
+
+    def test_replay_reuses_one_mutant_map_for_survivors_and_counts(self):
+        results = {m: ([self.group[0]["name"]] if i else []) for i, m in enumerate(generator.MUTANTS)}
+        with mock.patch.object(generator, "killed_by", return_value=results) as killed, \
+                mock.patch.object(generator, "observed", wraps=generator.observed) as observed, \
+                mock.patch.object(sys, "argv", ["generate_shared_variable_key_scenarios.py", "--replay"]), \
+                mock.patch("builtins.print") as printed:
+            self.assertEqual(generator.main(), 1)
+        killed.assert_called_once_with(self.group)
+        self.assertEqual(observed.call_count, len(self.group), "model agreement must still be checked")
+        self.assertTrue(all(len(call.args) == 1 for call in observed.call_args_list))
+        printed.assert_any_call(f"{generator.MUTANTS[0]}: killed by 0 scenario(s)")
+        printed.assert_any_call(f"mutant {generator.MUTANTS[0]} survives every scenario")
+
+    def test_cached_mutant_results_do_not_hide_model_disagreement(self):
+        results = {m: [self.group[0]["name"]] for m in generator.MUTANTS}
+        with mock.patch.object(generator, "killed_by") as killed, \
+                mock.patch.object(generator, "observed", return_value=["wrong model result"]):
+            failures = generator.replay_failures(self.group, results)
+        killed.assert_not_called()
+        self.assertEqual(failures, [f"model disagrees with the recording: {s['name']}" for s in self.group])
+
+
 class RecordingCleanupTest(unittest.TestCase):
     def test_record_deletes_the_context_on_success_and_failures_without_recording_cleanup(self):
         spec = {"title": "cleanup", "experiments": [], "holdouts": [], "units": {}, "requires": [],
@@ -292,6 +319,13 @@ class ProjectionTest(unittest.TestCase):
 class RecordingReferenceTest(unittest.TestCase):
     """JAVA_SDK_COMMIT is on java-sdk's 1.x API, so it is recorded through java-v1-wrapper (the java lane's
     java-wrapper needs 2.x and cannot build it), from the java-v1 lane's checkout."""
+
+    def test_the_recorder_fetches_the_pin_before_checkout(self):
+        fetch = "git -C ../java-sdk-v1 fetch --depth 1 origin <JAVA_SDK_COMMIT>"
+        checkout = "git -C ../java-sdk-v1 checkout --detach <JAVA_SDK_COMMIT>"
+        self.assertIn(fetch, generator.__doc__)
+        self.assertIn(checkout, generator.__doc__)
+        self.assertLess(generator.__doc__.index(fetch), generator.__doc__.index(checkout))
 
     def test_the_recorder_names_the_1x_wrapper_and_checkout(self):
         self.assertEqual(os.path.basename(generator.JAVA_SDK_PATH), "java-sdk-v1")

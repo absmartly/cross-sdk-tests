@@ -39,7 +39,8 @@ Record from a standalone java-sdk clone: a linked worktree built through SDK_SOU
 usable git metadata in the image, so its wrapper reports no sdkCommit and recording is refused.
 
 Usage:
-    git -C ../java-sdk-v1 checkout <JAVA_SDK_COMMIT>   # the 1.x java-v1 lane's checkout
+    git -C ../java-sdk-v1 fetch --depth 1 origin <JAVA_SDK_COMMIT>
+    git -C ../java-sdk-v1 checkout --detach <JAVA_SDK_COMMIT>   # the 1.x java-v1 lane's checkout
     docker compose build java-v1-sdk && docker compose up -d java-v1-sdk
     python3 generate_shared_variable_key_scenarios.py --java-url http://localhost:<port>
     python3 generate_shared_variable_key_scenarios.py --java-url ... --check   # exit 1 if stale
@@ -157,7 +158,6 @@ def switchback_fields(cluster_unit_type):
     }
 
 
-# step helpers (action, params)
 def value(key=KEY, default=DEFAULT):
     return ("variableValue", {"key": key, "defaultValue": default})
 
@@ -841,13 +841,15 @@ def recorded(scenario):
     return out
 
 
-def replay_failures(group):
+def replay_failures(group, mutant_results=None):
     failures = []
     for scenario in group:
         if observed(scenario) != recorded(scenario):
             failures.append(f"model disagrees with the recording: {scenario['name']}")
-    for mutant in MUTANTS:
-        if all(observed(s, mutant) == recorded(s) for s in group):
+    if mutant_results is None:
+        mutant_results = killed_by(group)
+    for mutant, names in mutant_results.items():
+        if not names:
             failures.append(f"mutant {mutant} survives every scenario")
     return failures
 
@@ -886,8 +888,9 @@ def main():
 
     if args.replay:
         group = group_of(existing)
-        failures = replay_failures(group)
-        for mutant, names in killed_by(group).items():
+        mutant_results = killed_by(group)
+        failures = replay_failures(group, mutant_results)
+        for mutant, names in mutant_results.items():
             print(f"{mutant}: killed by {len(names)} scenario(s)")
         if failures:
             print("\n".join(failures))
