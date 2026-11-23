@@ -240,7 +240,7 @@ final class HoldoutSelfTest {
      * correctly before its unit exists, but pins that decision so the holdout's own exposure is
      * silently lost once the unit later arrives, passes A-F yet fails this check and 221.
      */
-    private static boolean checkLateUnitPublishesHoldoutExposure(String prefix, com.absmartly.sdk.Context context,
+    static boolean checkLateUnitPublishesHoldoutExposure(String prefix, com.absmartly.sdk.Context context,
             List<ProbeExposure> exposures) {
         int before = exposures.size();
         int peeked = context.peekTreatment("chk_g_late_unit");
@@ -252,6 +252,11 @@ final class HoldoutSelfTest {
         }
 
         context.setUnit(LATE_UNIT_TYPE, HELD_OUT_UID);
+        if (exposures.size() != before) {
+            System.out.println(prefix + " check G (mirrors 221, setUnit) FAILED: expected no exposures, got "
+                + exposures.subList(before, exposures.size()));
+            return false;
+        }
 
         return verifyTreatmentAndExposures(prefix, "G (mirrors 221, post-unit treatment)", context, exposures,
             "chk_g_late_unit", 2,

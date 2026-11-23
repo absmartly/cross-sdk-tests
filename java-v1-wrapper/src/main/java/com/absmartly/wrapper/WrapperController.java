@@ -30,13 +30,19 @@ public class WrapperController {
     }
 
     private final SwitchbackFunctions switchback;
+    private final java.util.function.Function<String, String> environment;
 
     public WrapperController() {
         this(SwitchbackFunctions.LINKED);
     }
 
     WrapperController(SwitchbackFunctions switchback) {
+        this(switchback, System::getenv);
+    }
+
+    WrapperController(SwitchbackFunctions switchback, java.util.function.Function<String, String> environment) {
         this.switchback = switchback;
+        this.environment = environment;
     }
 
     private String translateEndpoint(String endpoint) {
@@ -325,11 +331,13 @@ public class WrapperController {
         try {
             String mode = (String) request.get("mode");
             if ("e2e".equals(mode)) {
-                String e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT");
-                String e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY");
-                String e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION");
-                String e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT");
-                if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
+                String e2eEndpoint = environment.apply("ABSMARTLY_E2E_ENDPOINT");
+                String e2eApiKey = environment.apply("ABSMARTLY_E2E_API_KEY");
+                String e2eApplication = environment.apply("ABSMARTLY_E2E_APPLICATION");
+                String e2eEnvironment = environment.apply("ABSMARTLY_E2E_ENVIRONMENT");
+                if (e2eEndpoint == null || e2eEndpoint.isBlank() || e2eApiKey == null || e2eApiKey.isBlank()
+                    || e2eApplication == null || e2eApplication.isBlank()
+                    || e2eEnvironment == null || e2eEnvironment.isBlank()) {
                     return ResponseEntity.status(501).body(Collections.singletonMap("error", "e2e mode not configured"));
                 }
 
@@ -370,7 +378,10 @@ public class WrapperController {
                 e2eContext.waitUntilReady();
 
                 String e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-                contexts.put(e2eContextId, new ContextWrapper(e2eContext, e2eCollector, null, null));
+                ContextWrapper e2eWrapper = new ContextWrapper(e2eContext, e2eCollector, null, null);
+                e2eWrapper.setSdk(e2eSdk);
+                e2eWrapper.setClient(e2eClient);
+                contexts.put(e2eContextId, e2eWrapper);
 
                 Map<String, Object> e2eResult = new HashMap<>();
                 e2eResult.put("contextId", e2eContextId);
@@ -551,6 +562,7 @@ public class WrapperController {
             String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
             ContextWrapper wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
             wrapper.setClient(namedClient);
+            wrapper.setSdk(sdk);
             contexts.put(contextId, wrapper);
 
             Map<String, Object> result = new HashMap<>();
@@ -1415,7 +1427,7 @@ public class WrapperController {
     public ResponseEntity<?> deleteContext(@PathVariable String contextId) {
         ContextWrapper removed = contexts.remove(contextId);
         if (removed != null) {
-            // Release the per-context Client's HTTP client (an Apache async reactor).
+            // Release the context, SDK-owned scheduler and HTTP client (an Apache async reactor).
             removed.closeClient();
         }
 

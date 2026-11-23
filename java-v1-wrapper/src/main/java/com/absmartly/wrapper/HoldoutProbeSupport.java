@@ -95,8 +95,12 @@ final class HoldoutProbeSupport {
 
     static void setIfPresent(Object target, String fieldName, Object value) throws Exception {
         Field field = findField(target.getClass(), fieldName);
-        if (field != null && field.getType().isInstance(value)) {
-            field.set(target, value);
+        if (field != null) {
+            try {
+                field.set(target, value);
+            } catch (IllegalArgumentException ignored) {
+                // Optional fields may have incompatible types on another SDK version.
+            }
         }
     }
 

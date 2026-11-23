@@ -452,8 +452,11 @@ public class WrapperController {
             }
             // The client does not close a transport it was given, so the wrapper closes both together.
             AutoCloseable owner = () -> {
-                client.close();
-                transport.close();
+                try {
+                    client.close();
+                } finally {
+                    transport.close();
+                }
             };
 
             // No environment configured: the SDK's own client and context, with the environment reported absent.
@@ -463,15 +466,28 @@ public class WrapperController {
                 java.util.concurrent.ScheduledExecutorService scheduler = noEnvScheduler;
                 AutoCloseable inner = owner;
                 owner = () -> {
-                    inner.close();
-                    scheduler.shutdownNow();
+                    try {
+                        inner.close();
+                    } finally {
+                        scheduler.shutdownNow();
+                    }
                 };
             }
 
             Context context;
             if (contextJson != null) {
                 // Sync: inline data, ready at once; refresh(newData) then serves from memory.
-                ContextData data = ContextData.fromJson(contextJson);
+                ContextData data;
+                try {
+                    data = ContextData.fromJson(contextJson);
+                } catch (Exception e) {
+                    try {
+                        owner.close();
+                    } catch (Exception cleanup) {
+                        e.addSuppressed(cleanup);
+                    }
+                    throw e;
+                }
                 context = (noEnvScheduler != null)
                     ? WrapperNoEnvironment.context(clientEndpoint, clientApplication, transport, noEnvScheduler,
                         contextOptions.build(), data)

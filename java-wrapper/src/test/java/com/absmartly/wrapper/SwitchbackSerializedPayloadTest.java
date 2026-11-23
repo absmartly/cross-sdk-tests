@@ -100,4 +100,20 @@ class SwitchbackSerializedPayloadTest {
         duplicated.withArray("exposures").add(exposure(correctEvent()));
         assertNotNull(SwitchbackSelfTest.serializedMismatch(duplicated, SERVED, MAPPER));
     }
+
+    @Test
+    void shapeComparisonRejectsScalarTypeChangesButAllowsDifferentTimestamps() throws Exception {
+        ObjectNode baseline = correctEvent();
+        baseline.put("publishedAt", 1700000000000L);
+        ObjectNode actual = baseline.deepCopy();
+        actual.put("publishedAt", 1700000000010L);
+        assertNull(SwitchbackSelfTest.shapeMismatch(baseline, actual, "publish"));
+        actual.put("publishedAt", "1700000000010");
+        assertTrue(SwitchbackSelfTest.shapeMismatch(baseline, actual, "publish").contains("publish.publishedAt"));
+        actual.putNull("publishedAt");
+        assertNotNull(SwitchbackSelfTest.shapeMismatch(baseline, actual, "publish"));
+        actual = baseline.deepCopy();
+        exposure(actual).put("eligible", "true");
+        assertNotNull(SwitchbackSelfTest.shapeMismatch(baseline, actual, "publish"));
+    }
 }

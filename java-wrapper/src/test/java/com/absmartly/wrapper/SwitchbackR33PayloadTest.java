@@ -153,4 +153,37 @@ class SwitchbackR33PayloadTest {
         assumeTrue(SwitchbackSelfTest.hasR33WireModel(Experiment.class), "linked core-api has no R33 wire model");
         assertTrue(SwitchbackSelfTest.run());
     }
+
+    @Test
+    void unitInertnessFixtureCarriesEveryR33Field() throws Exception {
+        JsonNode experiments = MAPPER.readTree(SwitchbackSelfTest.probePayload()).get("experiments");
+        for (JsonNode experiment : experiments) {
+            if ("sb_unit_with_fields".equals(experiment.path("name").asText())) {
+                assertEquals("unit", experiment.path("randomizationType").asText());
+                assertTrue(experiment.has("switchbackClusters"));
+                assertTrue(experiment.has("switchbackClusterValues"));
+                assertTrue(experiment.has("switchbackStartAt"));
+                assertTrue(experiment.has("switchbackPeriodMs"));
+                assertEquals("balanced_block", experiment.path("switchbackDesignType").asText());
+                assertEquals("global_average_treatment_effect", experiment.path("switchbackEstimand").asText());
+                return;
+            }
+        }
+        throw new AssertionError("probe payload has no inert unit experiment");
+    }
+
+    @Test
+    void missingFirstSourceFixtureDistinguishesServingUnitFromLegacyUnitType() throws Exception {
+        JsonNode experiments = MAPPER.readTree(SwitchbackSelfTest.probePayload()).get("experiments");
+        for (JsonNode experiment : experiments) {
+            if ("sb_missing_first".equals(experiment.path("name").asText())) {
+                assertEquals(Arrays.asList("unit_user", "unit_serving"), keys(experiment.get("switchbackClusters")));
+                assertEquals("missing_city", experiment.path("switchbackClusters").path("unit_user").asText());
+                assertEquals("city", experiment.path("switchbackClusters").path("unit_serving").asText());
+                assertEquals("unit_user", experiment.path("unitType").asText());
+                return;
+            }
+        }
+        throw new AssertionError("probe payload has no missing-first-source experiment");
+    }
 }

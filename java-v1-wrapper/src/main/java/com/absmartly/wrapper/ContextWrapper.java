@@ -12,6 +12,7 @@ public class ContextWrapper {
     private CustomPublisher eventHandler;
     private boolean publishFail;
     private Client client;
+    private com.absmartly.sdk.ABSmartly sdk;
 
     public ContextWrapper(Context context, EventCollector eventCollector, DummyContextDataProvider dataProvider) {
         this.context = context;
@@ -53,13 +54,29 @@ public class ContextWrapper {
         this.client = client;
     }
 
+    public void setSdk(com.absmartly.sdk.ABSmartly sdk) {
+        this.sdk = sdk;
+    }
+
+    /** Close the context before its scheduler, then release the transport even if either close fails. */
     public void closeClient() {
-        if (client == null) {
-            return;
-        }
         try {
-            client.close();
-        } catch (IOException ignored) {
+            context.close();
+        } catch (Exception ignored) {
+        } finally {
+            try {
+                if (sdk != null) {
+                    sdk.close();
+                }
+            } catch (Exception ignored) {
+            } finally {
+                try {
+                    if (client != null) {
+                        client.close();
+                    }
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 }

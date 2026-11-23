@@ -84,12 +84,12 @@ public class EventCollector implements EventListener {
         }
     }
 
-    // The 1.x wire shape: a not-running experiment has no unit (the 2.0 Exposure reports it as "").
+    // Preserve the SDK's values, including an empty or null unit, without 1.x normalization.
     static Map<String, Object> exposure(Exposure exposure) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", exposure.id());
         data.put("name", exposure.name());
-        data.put("unit", exposure.unit().isEmpty() ? null : exposure.unit());
+        data.put("unit", exposure.unit());
         data.put("variant", exposure.variant());
         data.put("exposedAt", exposure.exposedAt());
         data.put("assigned", exposure.assigned());

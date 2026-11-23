@@ -5,8 +5,9 @@ cross-SDK conformance suite. The 1.x line runs as the `java-v1` lane from `java-
 
 Every context gets its own `ABsmartlyClient` over a `WrapperTransport`: in memory it answers the SDK's own
 `GET /context` (with the next `refresh` `newData` payload, or no experiments) and `PUT /context`, so the SDK's real
-client, decoding and publish path run without a server; with an `endpoint` it sends both through the SDK's default
-`JdkHttpTransport`. `/publishFail` arms a one-shot `500 Publish failed`. Events come from an `EventListener`
+client, decoding and publish path run without a server. An `endpoint` enables HTTP fetching through the SDK's
+default `JdkHttpTransport`; HTTP publishing also requires `publishToEndpoint: true`. Without that flag, publishes
+still complete in memory. `/publishFail` arms a one-shot `500 Publish failed`. Events come from an `EventListener`
 attached through `ContextOptions.eventListener`, reported under the 1.x names (`CLOSE` is `finalize`).
 
 The "no environment configured" case (`clientNoEnvironment`) cannot be built through `ABsmartlyClient.builder()`,

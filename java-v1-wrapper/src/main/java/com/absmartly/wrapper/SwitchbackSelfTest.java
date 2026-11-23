@@ -221,6 +221,11 @@ final class SwitchbackSelfTest {
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/city"}}));
         experiments.add(switchback(mapper, 522, "sb_declared_order", 0, 42, 10,
             new String[][] {{"unit_user", "profile/city"}, {"unit_serving", "city"}}));
+        ObjectNode fallback = switchback(mapper, 529, "sb_missing_first", 0, 42, 10,
+            new String[][] {{"unit_user", "missing_city"}, {"unit_serving", "city"}});
+        // Legacy unitType points to the missing source: R33 must select the second source.
+        fallback.put("unitType", "unit_user");
+        experiments.add(fallback);
         experiments.add(switchback(mapper, 523, "sb_disagree", 0, 42, 10,
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/zone"}}));
         experiments.add(switchback(mapper, 524, "sb_whole_number", 0, 42, 10,
@@ -250,6 +255,7 @@ final class SwitchbackSelfTest {
         withFields.put("switchbackStartAt", ANCHOR_PERIOD_0);
         withFields.put("switchbackPeriodMs", PERIOD_MS);
         withFields.put("switchbackDesignType", "balanced_block");
+        withFields.put("switchbackEstimand", "global_average_treatment_effect");
         experiments.add(withFields);
         return mapper.writeValueAsString(data);
     }
@@ -308,6 +314,8 @@ final class SwitchbackSelfTest {
                 && expect(context, exposures, "agreement repeat", "sb_agree", 3)
                 && expect(context, exposures, "declared order", "sb_declared_order", 3,
                     new Exposure(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
+                && expect(context, exposures, "missing first source", "sb_missing_first", 3,
+                    new Exposure(529, "sb_missing_first", "unit_serving", 3, 0, true, true, false, false, false, false))
                 && expect(context, exposures, "disagreement", "sb_disagree", 0)
                 && expect(context, exposures, "whole number", "sb_whole_number", 6,
                     new Exposure(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
@@ -379,9 +387,15 @@ final class SwitchbackSelfTest {
         context.publish();
 
         int before = exposures.size();
-        context.getTreatment("sb_unit_baseline");
+        if (context.getTreatment("sb_unit_baseline") != 1) {
+            System.out.println(PREFIX + " check payload shape FAILED: sb_unit_baseline did not serve 1");
+            return null;
+        }
         PublishEvent baselineEvent = publishOne(context, published);
-        context.getTreatment("sb_payload");
+        if (context.getTreatment("sb_payload") != 1) {
+            System.out.println(PREFIX + " check payload shape FAILED: sb_payload did not serve 1");
+            return null;
+        }
         PublishEvent switchbackEvent = publishOne(context, published);
         List<Exposure> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
         if (emitted.size() != 2 || baselineEvent == null || switchbackEvent == null) {
@@ -496,8 +510,8 @@ final class SwitchbackSelfTest {
         }
     }
 
-    private static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
-        if (baseline.isObject() != actual.isObject() || baseline.isArray() != actual.isArray()) {
+    static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
+        if (baseline.getNodeType() != actual.getNodeType()) {
             return path + ": baseline is " + baseline.getNodeType() + ", got " + actual.getNodeType();
         }
         if (baseline.isObject()) {

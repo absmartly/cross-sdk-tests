@@ -210,6 +210,24 @@ class SwitchbackEndpointsTest {
 
     @Test
     void failingProbeStillServesTheAssignersActualValues() {
+        try (org.mockito.MockedStatic<SwitchbackSelfTest> probe = org.mockito.Mockito.mockStatic(SwitchbackSelfTest.class)) {
+            probe.when(SwitchbackSelfTest::run).thenReturn(false);
+            probe.when(SwitchbackSelfTest::runIntegralFloat).thenReturn(false);
+            WrongFunctions available = new WrongFunctions();
+            WrapperController controller = new WrapperController(available);
+            assertEquals(false, controller.capabilities().get("switchback"));
+            assertTrue(available.isAvailable());
+            assertEquals(HttpStatus.OK, controller.switchbackAssign(assignRequest()).getStatusCode());
+            assertEquals(9, body(controller.switchbackAssign(assignRequest())).get("result"));
+            Map<String, Object> request = permutationRequest();
+            request.put("armCount", 3);
+            assertEquals(HttpStatus.OK, controller.switchbackPermutation(request).getStatusCode());
+            assertEquals(Arrays.asList(2, 1, 0), body(controller.switchbackPermutation(request)).get("result"));
+        }
+    }
+
+    @Test
+    void wrongGoldenValuesAreNotSubstitutedByTheRoutes() {
         WrongFunctions wrong = new WrongFunctions();
         assertFalse(SwitchbackSelfTest.checkGoldenSample(wrong));
         assertTrue(wrong.calls.get() > 0);

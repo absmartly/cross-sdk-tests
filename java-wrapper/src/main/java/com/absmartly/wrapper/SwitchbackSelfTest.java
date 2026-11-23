@@ -224,6 +224,11 @@ final class SwitchbackSelfTest {
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/city"}}));
         experiments.add(switchback(mapper, 522, "sb_declared_order", 0, 42, 10,
             new String[][] {{"unit_user", "profile/city"}, {"unit_serving", "city"}}));
+        ObjectNode fallback = switchback(mapper, 529, "sb_missing_first", 0, 42, 10,
+            new String[][] {{"unit_user", "missing_city"}, {"unit_serving", "city"}});
+        // Legacy unitType points to the missing source: R33 must select the second source.
+        fallback.put("unitType", "unit_user");
+        experiments.add(fallback);
         experiments.add(switchback(mapper, 523, "sb_disagree", 0, 42, 10,
             new String[][] {{"unit_serving", "city"}, {"unit_user", "profile/zone"}}));
         experiments.add(switchback(mapper, 524, "sb_whole_number", 0, 42, 10,
@@ -253,11 +258,12 @@ final class SwitchbackSelfTest {
         withFields.put("switchbackStartAt", ANCHOR_PERIOD_0);
         withFields.put("switchbackPeriodMs", PERIOD_MS);
         withFields.put("switchbackDesignType", "balanced_block");
+        withFields.put("switchbackEstimand", "global_average_treatment_effect");
         experiments.add(withFields);
         return mapper.writeValueAsString(data);
     }
 
-    private static boolean checkContextServing() throws Exception {
+    static boolean checkContextServing() throws Exception {
         if (!hasR33WireModel(Experiment.class)) {
             System.out.println(PREFIX + " FAILED: linked core-api has no R33 switchback wire model "
                 + "(switchbackClusters + switchbackClusterValues, no switchbackClusterCount)");
@@ -296,44 +302,48 @@ final class SwitchbackSelfTest {
         units.put("unit_serving", "serving-9");
 
         ABsmartlyClient client = SdkSupport.inMemoryClient();
-        Context context = SdkSupport.context(client, ContextData.fromJson(probePayload()), units, listener);
-        if (context.state() != ContextState.READY) {
-            System.out.println(PREFIX + " FAILED: context not ready (state=" + context.state() + ")");
-            client.close();
-            return false;
-        }
-        context.setAttribute("city", "market_1");
-        context.setAttribute("profile", Map.of("city", "market_1", "zone", "market_2"));
-        context.setAttribute("store_number", 123456789);
-
         try {
-            boolean served = expect(context, exposures, "agreement", "sb_agree", 3,
-                    new ExposurePayload(521, "sb_agree", "unit_serving", 3, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "agreement repeat", "sb_agree", 3)
-                && expect(context, exposures, "declared order", "sb_declared_order", 3,
-                    new ExposurePayload(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "disagreement", "sb_disagree", 0)
-                && expect(context, exposures, "whole number", "sb_whole_number", 6,
-                    new ExposurePayload(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "value filtered out", "sb_value_filtered", 0)
-                && expect(context, exposures, "empty allow-list admits all", "sb_allow_empty", 3,
-                    new ExposurePayload(528, "sb_allow_empty", "unit_serving", 3, 0, true, true, false, false, false, false))
-                && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0);
-            if (!served) {
-                return false;
+            Context context = SdkSupport.context(client, ContextData.fromJson(probePayload()), units, listener);
+            try {
+                if (context.state() != ContextState.READY) {
+                    System.out.println(PREFIX + " FAILED: context not ready (state=" + context.state() + ")");
+                    return false;
+                }
+                context.setAttribute("city", "market_1");
+                context.setAttribute("profile", Map.of("city", "market_1", "zone", "market_2"));
+                context.setAttribute("store_number", 123456789);
+
+                boolean served = expect(context, exposures, "agreement", "sb_agree", 3,
+                        new ExposurePayload(521, "sb_agree", "unit_serving", 3, 0, true, true, false, false, false, false))
+                    && expect(context, exposures, "agreement repeat", "sb_agree", 3)
+                    && expect(context, exposures, "declared order", "sb_declared_order", 3,
+                        new ExposurePayload(522, "sb_declared_order", "unit_user", 3, 0, true, true, false, false, false, false))
+                    && expect(context, exposures, "missing first source", "sb_missing_first", 3,
+                        new ExposurePayload(529, "sb_missing_first", "unit_serving", 3, 0, true, true, false, false, false, false))
+                    && expect(context, exposures, "disagreement", "sb_disagree", 0)
+                    && expect(context, exposures, "whole number", "sb_whole_number", 6,
+                        new ExposurePayload(524, "sb_whole_number", "unit_serving", 6, 0, true, true, false, false, false, false))
+                    && expect(context, exposures, "value filtered out", "sb_value_filtered", 0)
+                    && expect(context, exposures, "empty allow-list admits all", "sb_allow_empty", 3,
+                        new ExposurePayload(528, "sb_allow_empty", "unit_serving", 3, 0, true, true, false, false, false, false))
+                    && expect(context, exposures, "Phase 1E fields only", "sb_phase1e_only", 0);
+                if (!served) {
+                    return false;
+                }
+                JsonNode baselineEvent = checkPayloadShape(context, exposures, published);
+                return baselineEvent != null
+                    && checkUnitExperimentInert(context, exposures, published, mapper, baselineEvent);
+            } finally {
+                context.close();
             }
-            JsonNode baselineEvent = checkPayloadShape(context, exposures, published);
-            return baselineEvent != null
-                && checkUnitExperimentInert(context, exposures, published, mapper, baselineEvent);
         } finally {
-            context.close();
             client.close();
         }
     }
 
     // The SDK's Exposure in the wire model, so expected and actual compare and serialize alike.
     static ExposurePayload payload(com.absmartly.sdk.Exposure exposure) {
-        return new ExposurePayload(exposure.id(), exposure.name(), exposure.unit().isEmpty() ? null : exposure.unit(),
+        return new ExposurePayload(exposure.id(), exposure.name(), exposure.unit(),
             exposure.variant(), exposure.exposedAt(), exposure.assigned(), exposure.eligible(), exposure.overridden(),
             exposure.fullOn(), exposure.custom(), exposure.audienceMismatch(), exposure.ruleOverride());
     }
@@ -353,7 +363,7 @@ final class SwitchbackSelfTest {
     // A unit experiment carrying every R33 field (randomizationType "unit") must be served, exposed
     // and published exactly like the plain baseline on the same unit and seeds: the serialized
     // publish bytes are identical once id, name and exposedAt are aligned.
-    private static boolean checkUnitExperimentInert(Context context, List<ExposurePayload> exposures,
+    static boolean checkUnitExperimentInert(Context context, List<ExposurePayload> exposures,
             List<JsonNode> published, ObjectMapper mapper, JsonNode baseline) throws Exception {
         int before = exposures.size();
         if (context.treatment("sb_unit_with_fields") != 1) {
@@ -365,6 +375,13 @@ final class SwitchbackSelfTest {
                 new ExposurePayload(527, "sb_unit_with_fields", "unit_serving", 1, 0, true, true, false, false, false, false))) {
             System.out.println(PREFIX + " check unit inertness FAILED: exposures " + exposures.subList(before,
                 exposures.size()) + ", publish " + event);
+            return false;
+        }
+        String mismatch = serializedMismatch(event,
+            new ExposurePayload(527, "sb_unit_with_fields", "unit_serving", 1, 0, true, true, false, false, false, false),
+            mapper);
+        if (mismatch != null) {
+            System.out.println(PREFIX + " check unit inertness FAILED: " + mismatch);
             return false;
         }
         ObjectNode baselineJson = baseline.deepCopy();
@@ -385,14 +402,20 @@ final class SwitchbackSelfTest {
     }
 
     // Mirrors the payload scenario. Returns the baseline publish event, or null when a check fails.
-    private static JsonNode checkPayloadShape(Context context, List<ExposurePayload> exposures,
+    static JsonNode checkPayloadShape(Context context, List<ExposurePayload> exposures,
             List<JsonNode> published) throws Exception {
         context.publish();
 
         int before = exposures.size();
-        context.treatment("sb_unit_baseline");
+        if (context.treatment("sb_unit_baseline") != 1) {
+            System.out.println(PREFIX + " check payload shape FAILED: sb_unit_baseline did not serve 1");
+            return null;
+        }
         JsonNode baselineEvent = publishOne(context, published);
-        context.treatment("sb_payload");
+        if (context.treatment("sb_payload") != 1) {
+            System.out.println(PREFIX + " check payload shape FAILED: sb_payload did not serve 1");
+            return null;
+        }
         JsonNode switchbackEvent = publishOne(context, published);
         List<ExposurePayload> emitted = new ArrayList<>(exposures.subList(before, exposures.size()));
         if (emitted.size() != 2 || baselineEvent == null || switchbackEvent == null) {
@@ -512,8 +535,8 @@ final class SwitchbackSelfTest {
         return exposure.ruleOverride;
     }
 
-    private static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
-        if (baseline.isObject() != actual.isObject() || baseline.isArray() != actual.isArray()) {
+    static String shapeMismatch(JsonNode baseline, JsonNode actual, String path) {
+        if (baseline.getNodeType() != actual.getNodeType()) {
             return path + ": baseline is " + baseline.getNodeType() + ", got " + actual.getNodeType();
         }
         if (baseline.isObject()) {
