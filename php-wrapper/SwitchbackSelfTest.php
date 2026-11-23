@@ -109,7 +109,10 @@ final class SwitchbackSelfTest
 
     public static function isAvailable(): bool
     {
-        return class_exists(self::ASSIGNER);
+        return class_exists(self::ASSIGNER)
+            && method_exists(self::ASSIGNER, 'assign')
+            && method_exists(self::ASSIGNER, 'baseHash')
+            && method_exists(self::ASSIGNER, 'fisherYatesPermutation');
     }
 
     public static function assign(string $clusterUnit, int $periodIndex, int $seed, int $armCount): int
@@ -365,9 +368,13 @@ final class SwitchbackSelfTest
     {
         $context->publish();
 
-        $context->getTreatment('sb_unit_baseline');
+        if ($context->getTreatment('sb_unit_baseline') !== 1) {
+            return self::fail('check unit baseline FAILED: treatment');
+        }
         $baseline = self::publishOne($context, $handler);
-        $context->getTreatment('sb_payload');
+        if ($context->getTreatment('sb_payload') !== 1) {
+            return self::fail('check payload FAILED: treatment');
+        }
         $switchback = self::publishOne($context, $handler);
         if (!self::publishedExactly($baseline, self::served(514, 'sb_unit_baseline', 'unit_serving', 1))
             || !self::publishedExactly($switchback, self::served(513, 'sb_payload', 'unit_serving', 1))) {

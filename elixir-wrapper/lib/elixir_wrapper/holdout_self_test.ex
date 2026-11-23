@@ -31,14 +31,23 @@ defmodule ElixirWrapper.HoldoutSelfTest do
   @doc false
   def run(name, fun), do: safely(name, fun)
 
-  defp cached(name, fun) do
+  @doc false
+  def cached(name, fun) do
     key = {__MODULE__, name}
 
     case :persistent_term.get(key, :unset) do
       :unset ->
-        result = safely(name, fun)
-        :persistent_term.put(key, result)
-        result
+        :global.trans({key, self()}, fn ->
+          case :persistent_term.get(key, :unset) do
+            :unset ->
+              result = safely(name, fun)
+              :persistent_term.put(key, result)
+              result
+
+            result ->
+              result
+          end
+        end, [node()])
 
       result ->
         result

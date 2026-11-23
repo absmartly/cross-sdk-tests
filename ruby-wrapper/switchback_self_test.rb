@@ -259,6 +259,7 @@ module SwitchbackSelfTest
     expect_served(context, log, 'unit inertness', 'sb_unit_with_fields', 1,
                   exposure(527, 'sb_unit_with_fields', 'unit_serving', 1))
     with_fields = publish_one(context, publisher)
+    check_publish(with_fields, exposure(527, 'sb_unit_with_fields', 'unit_serving', 1))
     normalize = lambda do |json|
       json.reject { |k, _| k == 'publishedAt' }
           .merge('exposures' => json['exposures'].map { |e| e.merge('id' => 0, 'name' => '', 'exposedAt' => 0) })

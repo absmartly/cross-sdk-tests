@@ -277,9 +277,13 @@ def _check_publish(context, log, publisher):
     every R33 field publishes the same bytes as the baseline."""
     context.publish()
     before = len(log.exposures)
-    context.get_treatment('sb_unit_baseline')
+    if context.get_treatment('sb_unit_baseline') != 1:
+        print(f'{PREFIX} check unit baseline FAILED: variant', flush=True)
+        return False
     baseline = _publish_one(context, publisher)
-    context.get_treatment('sb_payload')
+    if context.get_treatment('sb_payload') != 1:
+        print(f'{PREFIX} check payload FAILED: variant', flush=True)
+        return False
     switchback = _publish_one(context, publisher)
     emitted = [_record(e) for e in log.exposures[before:]]
     expected = [_served(514, 'sb_unit_baseline', 'unit_serving', 1),
@@ -312,8 +316,14 @@ def _check_publish(context, log, publisher):
         print(f'{PREFIX} check unit inertness FAILED: exposures {emitted}',
               flush=True)
         return False
+    with_fields_json = _wire(with_fields)
+    mismatch = _wire_mismatch(
+        with_fields_json, _served(527, 'sb_unit_with_fields', 'unit_serving', 1))
+    if mismatch is not None:
+        print(f'{PREFIX} check unit inertness FAILED: {mismatch}', flush=True)
+        return False
     aligned = []
-    for event in (baseline_json, _wire(with_fields)):
+    for event in (baseline_json, with_fields_json):
         event.pop('publishedAt', None)
         event['exposures'][0].update({'id': 0, 'name': '', 'exposedAt': 0})
         aligned.append(json.dumps(event, sort_keys=True))

@@ -55,6 +55,59 @@ class SwitchbackSelfTestTest(unittest.TestCase):
                                wrong_flag):
             self.assertFalse(switchback_self_test.run())
 
+    def test_fails_when_publish_fixture_returns_the_wrong_treatment(self):
+        from sdk.context import Context
+        treatment = Context.get_treatment
+        for name in ('sb_unit_baseline', 'sb_payload'):
+            with self.subTest(name=name):
+                switchback_self_test._result = None
+
+                def wrong_result(context, experiment, *args, **kwargs):
+                    result = treatment(context, experiment, *args, **kwargs)
+                    return 0 if experiment == name else result
+
+                with mock.patch.object(Context, 'get_treatment', wrong_result):
+                    self.assertFalse(switchback_self_test.run())
+
+    def test_fails_when_inert_publish_reuses_the_baseline_identity(self):
+        serialize = DefaultContextEventSerializer.serialize
+
+        def wrong_identity(serializer, event):
+            payload = json.loads(serialize(serializer, event))
+            for exposure in payload.get('exposures') or []:
+                if exposure.get('id') == 527:
+                    exposure.update(id=514, name='sb_unit_baseline')
+            return bytearray(json.dumps(payload), 'utf-8')
+
+        with mock.patch.object(DefaultContextEventSerializer, 'serialize', wrong_identity):
+            self.assertFalse(switchback_self_test.run())
+
+
+class SwitchbackSignedDecimalsTest(unittest.TestCase):
+    def test_both_routes_accept_explicit_positive_signs(self):
+        import server
+        client = server.app.test_client()
+        for route, index, compute in (
+                ('assign', 'periodIndex', 'assign'),
+                ('permutation', 'cycleIndex', 'permutation')):
+            result = 3 if route == 'assign' else [0, 1]
+            with mock.patch.object(switchback_self_test, 'assigner', return_value=object()), \
+                    mock.patch.object(switchback_self_test, compute, return_value=result) as call:
+                response = client.post('/switchback/' + route, json={
+                    'clusterUnit': 'market_1', index: '+1', 'seed': '+42', 'armCount': 2})
+                self.assertEqual(200, response.status_code)
+                self.assertEqual({'result': result, 'events': []}, response.json)
+                call.assert_called_once_with('market_1', 1, 42, 2)
+
+    def test_signed_decimal_validation_keeps_its_bounds_and_syntax(self):
+        import server
+        for value in ('+', '-', '++1', '+-1', ' 1', '1.0',
+                      '+9223372036854775808', '-9223372036854775809'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                server._switchback_long({'seed': value}, 'seed')
+        for value in ('+9223372036854775807', '-9223372036854775808', '+0', '-0'):
+            self.assertEqual(int(value), server._switchback_long({'seed': value}, 'seed'))
+
 
 class PublishReportingTest(unittest.TestCase):
 

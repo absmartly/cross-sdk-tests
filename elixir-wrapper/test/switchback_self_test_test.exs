@@ -399,4 +399,30 @@ defmodule ElixirWrapper.SwitchbackSelfTestTest do
     body = ~s({"data":{"experiments":"x","foo":{"experiments":[{"switchbackClusters":{"z":"1","a":"2"}}]}}})
     assert ElixirWrapper.OrderedJson.decode(body) == Jason.decode(body)
   end
+
+  test "malformed JSON returns the switchback JSON error envelope" do
+    for path <- ["/switchback/assign", "/switchback/permutation"] do
+      conn = conn(:post, path, "{") |> Plug.Conn.put_req_header("content-type", "application/json")
+      assert_raise Plug.Parsers.ParseError, fn -> Router.call(conn, Router.init([])) end
+      assert_received {:plug_conn, :sent}
+      ref = conn.adapter |> elem(1) |> Map.fetch!(:ref)
+      assert_received {^ref, {400, headers, body}}
+      assert {"content-type", "application/json; charset=utf-8"} in headers
+      assert %{"error" => "Something went wrong", "events" => []} = Jason.decode!(body)
+    end
+  end
+
+  test "inert publish identity must be validated before normalizing" do
+    exposure = %{"id" => 514, "name" => "sb_unit_baseline", "unit" => "unit_serving",
+      "variant" => 1, "assigned" => true, "eligible" => true, "overridden" => false,
+      "fullOn" => false, "custom" => false, "audienceMismatch" => false,
+      "ruleOverride" => false, "exposedAt" => 1}
+    baseline = %{"hashed" => true, "publishedAt" => 1, "exposures" => [exposure],
+      "units" => [%{"type" => "unit_serving", "uid" => "r5uxZRoi-JuM5yYJa0kmSQ"}]}
+    switchback = put_in(baseline["exposures"], [%{exposure | "id" => 513, "name" => "sb_payload"}])
+    inert = put_in(baseline["exposures"], [%{exposure | "id" => 527, "name" => "sb_unit_with_fields"}])
+    assert :ok = SwitchbackSelfTest.check_published_payloads(baseline, switchback, inert)
+    assert {:failed, "unit inert exposure", _} =
+      SwitchbackSelfTest.check_published_payloads(baseline, switchback, baseline)
+  end
 end

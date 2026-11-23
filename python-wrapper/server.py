@@ -931,7 +931,7 @@ def _switchback_long(body, name):
     # 64-bit values arrive as decimal strings and are parsed exactly.
     value = body.get(name)
     if not isinstance(value, str) or \
-            re.fullmatch(r'-?[0-9]+', value) is None:
+            re.fullmatch(r'[-+]?[0-9]+', value) is None:
         raise ValueError(f'{name} must be a decimal string')
     number = int(value)
     if not -(1 << 63) <= number < (1 << 63):

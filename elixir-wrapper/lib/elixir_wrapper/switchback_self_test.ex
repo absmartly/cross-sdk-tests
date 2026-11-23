@@ -355,7 +355,11 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
     switchback = publish_one(ctx)
     ABSmartly.Context.treatment(ctx, "sb_unit_with_fields")
     with_fields = publish_one(ctx)
+    check_published_payloads(baseline, switchback, with_fields)
+  end
 
+  @doc false
+  def check_published_payloads(baseline, switchback, with_fields) do
     cond do
       not Enum.all?([baseline, switchback, with_fields], &is_map/1) ->
         {:failed, "publish", inspect([baseline, switchback, with_fields])}
@@ -371,6 +375,9 @@ defmodule ElixirWrapper.SwitchbackSelfTest do
 
       not Enum.member?(switchback["units"], %{"type" => "unit_serving", "uid" => @serving_hash}) ->
         {:failed, "published units", inspect(switchback["units"])}
+
+      exposures_of(with_fields) != [exposure(527, "sb_unit_with_fields", "unit_serving", 1)] ->
+        {:failed, "unit inert exposure", inspect(with_fields)}
 
       normalized(with_fields) != normalized(baseline) ->
         {:failed, "unit inertness", "#{inspect(with_fields)} vs #{inspect(baseline)}"}

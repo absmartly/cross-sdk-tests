@@ -50,4 +50,38 @@ defmodule ElixirWrapper.HoldoutSelfTestTest do
       refute HoldoutSelfTest.run(:probe, fn -> throw(:boom) end)
     end)
   end
+
+  test "concurrent cache misses run each battery once and preserve false results" do
+    for {name, result} <- [{:holdouts, :ok}, {:holdout_arms, {:failed, "test", "failure"}}] do
+      key = {HoldoutSelfTest, name}
+      saved = :persistent_term.get(key, :unset)
+      :persistent_term.erase(key)
+      owner = self()
+      {:ok, count} = Agent.start_link(fn -> 0 end)
+
+      try do
+        tasks = for _ <- 1..16 do
+          Task.async(fn ->
+            receive do: (:start -> :ok)
+            HoldoutSelfTest.cached(name, fn ->
+              Agent.update(count, &(&1 + 1))
+              send(owner, {:battery, self()})
+              receive do: (:release -> result)
+            end)
+          end)
+        end
+        Enum.each(tasks, &send(&1.pid, :start))
+        assert_receive {:battery, _}, 1000
+        # Keep the first battery blocked while other first callers contend.
+        Process.sleep(100)
+        Enum.each(tasks, &send(&1.pid, :release))
+        assert Enum.map(tasks, &Task.await(&1, 5000)) == List.duplicate(result == :ok, 16)
+        assert Agent.get(count, & &1) == 1
+        assert HoldoutSelfTest.cached(name, fn -> flunk("cached result reran") end) == (result == :ok)
+      after
+        Agent.stop(count)
+        if saved == :unset, do: :persistent_term.erase(key), else: :persistent_term.put(key, saved)
+      end
+    end
+  end
 end

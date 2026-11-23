@@ -140,6 +140,8 @@ function probePayloadText() {
   const experiments = [
     switchbackJson(521, 'sb_agree', 0, 42, 10, [['unit_serving', 'city'], ['unit_user', 'profile/city']]),
     switchbackJson(522, 'sb_declared_order', 0, 42, 10, [['unit_user', 'profile/city'], ['unit_serving', 'city']]),
+    switchbackJson(529, 'sb_declared_unit', 0, 42, 10, [['unit_user', 'profile/city'], ['unit_serving', 'city']],
+      { unitType: 'unit_serving' }),
     switchbackJson(523, 'sb_disagree', 0, 42, 10, [['unit_serving', 'city'], ['unit_user', 'profile/zone']]),
     switchbackJson(524, 'sb_whole_number', 0, 42, 10, [['unit_serving', 'store_number']]),
     // switchbackClusterValues [] admits every value, like null.
@@ -265,6 +267,8 @@ async function checkContextServing() {
     expect(context, exposures, 'agreement repeat', 'sb_agree', 3, []) &&
     expect(context, exposures, 'declared order', 'sb_declared_order', 3,
       [exposureOf(522, 'sb_declared_order', 'unit_user', 3)]) &&
+    expect(context, exposures, 'declared unit differs from unitType', 'sb_declared_unit', 3,
+      [exposureOf(529, 'sb_declared_unit', 'unit_user', 3)]) &&
     expect(context, exposures, 'disagreement', 'sb_disagree', 0, []) &&
     expect(context, exposures, 'whole number', 'sb_whole_number', 6,
       [exposureOf(524, 'sb_whole_number', 'unit_serving', 6)]) &&
@@ -304,7 +308,9 @@ async function checkContextServing() {
     return false;
   }
   const inertEvent = await publishOne(context, published);
-  if (inertEvent == null || exposures.length !== beforeInert + 1 ||
+  if (inertEvent == null ||
+      !publishedExactly(inertEvent, exposureOf(527, 'sb_unit_with_fields', 'unit_serving', 1)) ||
+      exposures.length !== beforeInert + 1 ||
       !servedAs(exposures[beforeInert], exposureOf(527, 'sb_unit_with_fields', 'unit_serving', 1))) {
     console.log(`${PREFIX} check unit inertness FAILED: ${JSON.stringify(exposures.slice(beforeInert))}`);
     return false;

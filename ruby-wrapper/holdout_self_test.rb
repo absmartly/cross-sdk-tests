@@ -15,11 +15,21 @@ module HoldoutSelfTest
     end
   end
 
-  NullPublisher = Class.new(ContextPublisher) do
-    def publish(_context, _event)
+  RecordingPublisher = Class.new(ContextPublisher) do
+    attr_reader :events
+
+    def initialize
+      @events = []
+    end
+
+    def publish(_context, event)
+      @events << event
       self
     end
   end
+
+  HOLDOUTS_MUTEX = Mutex.new
+  HOLDOUT_ARMS_MUTEX = Mutex.new
 
   module_function
 
@@ -50,7 +60,8 @@ module HoldoutSelfTest
     client_config.environment = 'test'
     sdk_config = ABSmartlyConfig.new
     sdk_config.client = Client.create(client_config)
-    sdk_config.context_event_handler = NullPublisher.new
+    publisher = RecordingPublisher.new
+    sdk_config.context_event_handler = publisher
     sdk_config.context_event_logger = log
     context_config = ContextConfig.new
     context_config.units = units
@@ -62,7 +73,7 @@ module HoldoutSelfTest
                                                             OpenStruct.new(success?: true, data_future: data))
     raise 'context not ready' unless context.ready? && !context.failed?
 
-    [context, log]
+    [context, log, publisher]
   end
 
   def verify(prefix, label, context, log, name, expected_treatment, expected_sequence)
@@ -107,7 +118,7 @@ module HoldoutSelfTest
         holdout(408, 'probe_g_holdout', late, 1, 222, two, 'full')
       ]
     }
-    context, log = context_for(payload, { held_out.to_sym => held_out_uid, not_held_out.to_sym => not_held_out_uid })
+    context, log, publisher = context_for(payload, { held_out.to_sym => held_out_uid, not_held_out.to_sym => not_held_out_uid })
     p = '[holdouts probe]'
 
     verify(p, 'A (mirrors 203)', context, log, 'probe_a_covered', 0, [{ id: 401, name: 'probe_a_holdout', variant: 0 }])
@@ -123,6 +134,8 @@ module HoldoutSelfTest
            [{ id: 407, name: 'probe_e_holdout', variant: 0 }])
     verify(p, 'F (mirrors 208)', context, log, 'probe_f_fullon', 0, [{ id: 403, name: 'probe_f_holdout', variant: 0 }])
 
+    context.publish
+
     # G (mirrors 221): a pre-unit peek exposes nothing; once the unit is set, treatment publishes
     # both the experiment's and the holdout's exposure exactly once.
     before = log.entries.length
@@ -132,6 +145,14 @@ module HoldoutSelfTest
     context.set_unit(late, held_out_uid)
     verify(p, 'G (mirrors 221, post-unit treatment)', context, log, 'probe_g_late_unit', 2,
            [{ id: 308, name: 'probe_g_late_unit', variant: 2 }, { id: 408, name: 'probe_g_holdout', variant: 1 }])
+    before_publish = publisher.events.length
+    context.publish
+    batches = publisher.events[before_publish..]
+    published = batches.flat_map { |event| event.exposures || [] }
+                       .map { |e| { id: e.id, name: e.name, variant: e.variant } }
+    expected = [{ id: 308, name: 'probe_g_late_unit', variant: 2 }, { id: 408, name: 'probe_g_holdout', variant: 1 }]
+    raise "#{p} check G publish FAILED: #{published.inspect}" unless batches.length == 1 && published == expected
+
     true
   end
 
@@ -181,13 +202,22 @@ module HoldoutSelfTest
   def holdouts?
     return @holdouts if defined?(@holdouts)
 
-    @holdouts = safely('[holdouts probe]') { run_holdouts_battery }
+    HOLDOUTS_MUTEX.synchronize do
+      return @holdouts if defined?(@holdouts)
+
+      @holdouts = safely('[holdouts probe]') { run_holdouts_battery }
+    end
   end
 
   # Three arms can't work without the two-arm basics, so that battery is a precondition.
   def holdout_arms?
     return @holdout_arms if defined?(@holdout_arms)
 
-    @holdout_arms = holdouts? && safely('[holdout_arms probe]') { run_holdout_arms_battery }
+    base = holdouts?
+    HOLDOUT_ARMS_MUTEX.synchronize do
+      return @holdout_arms if defined?(@holdout_arms)
+
+      @holdout_arms = base && safely('[holdout_arms probe]') { run_holdout_arms_battery }
+    end
   end
 end
