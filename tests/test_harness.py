@@ -1479,7 +1479,7 @@ class StaticRepoChecks(unittest.TestCase):
         "ruby-sdk": ("feat/switchbacks", None),
         "rust-sdk": ("feat/switchbacks", None),
         "swift-sdk": ("feat/swift-2.0", None),
-        "swift-sdk-v1": ("feat/holdouts", "caa804ebc7a87a2f545da708c2d368802884d2d7"),
+        "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
     }
 
     def test_round_pins_match_the_expected_table(self):

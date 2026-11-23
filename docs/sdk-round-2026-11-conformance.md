@@ -82,25 +82,27 @@ are unchanged.
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
 
-### Shared variable keys: owner decision on the winner, exposures still open
+### Shared variable keys: owner decision, java-sdk is the contract
 
-On 2026-11-23 the owner decided the winner rule
-([#52 comment](https://github.com/absmartly/cross-sdk-tests/pull/52#issuecomment-7107979255)):
-java-sdk is correct. An experiment is a candidate if any of its variants defines the key. The
-winner is chosen by assignment, override and rule precedence, independently of whether the
-user's selected variant defines the key. If the winner's variant lacks the key, the caller's
-default is returned and no later experiment is tried (scenario 351): choosing the experiment by
-the arm the user received would bias exposure. So the gated SDKs below that fall through past
-such a winner diverge from the decided contract and must change.
+On 2026-11-23 the owner decided the shared-variable-key contract in two steps on #52
+([winner rule](https://github.com/absmartly/cross-sdk-tests/pull/52#issuecomment-7107979255),
+then the exposure rule): java-sdk is correct.
 
-The decision does not cover which candidates a multi-candidate read exposes. The group (340-368)
-records java-sdk, which exposes only the selected experiment (plus the applicable holdouts of the
-candidates visited), while the 2026-11-06 shared-variable-key decision exposed every visited
-candidate. That part is still pending, so these lanes stay gated until it is recorded.
+- An experiment is a candidate if any of its variants defines the key. The winner is chosen by
+  assignment, override and rule precedence, independently of whether the user's selected variant
+  defines the key. If the winner's variant lacks the key, the caller's default is returned and no
+  later experiment is tried (scenario 351): choosing the experiment by the arm the user received
+  would bias exposure.
+- Only the winning experiment is exposed (plus the applicable holdouts), exactly as java-sdk does.
+  This replaces the 2026-11-06 rule that exposed every visited candidate.
+
+So the SDKs gated below are not reviewed differences but SDK bugs: each must change to the java-sdk
+rule, and its exception is removed (making `sharedVariableKeys` required) in the change that pins
+its fixed SDK. javascript-sdk is being fixed in javascript-sdk#70.
 
 | capability | meaning | gated scenarios | gated SDKs (divergence) |
 | --- | --- | --- | --- |
-| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). The winner and default rule is owner-decided (java-sdk; falling through is a bug in these SDKs). Which candidates are exposed is still pending: this group follows java-sdk, while the 2026-11-06 decision exposed every visited candidate. Required for java, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
 
 Three more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
