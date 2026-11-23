@@ -1496,13 +1496,22 @@ closed on any exception.
 ### Capability: `throwsOnMisuse`
 
 No new endpoint. `true` when the SDK surfaces misuse to the caller as an error,
-as the JS reference does: `setUnit` with a blank or already-set uid, a mutation
-(`track`, `attribute`, `setUnit`, `treatment`) after finalize, and a read before
-the context is ready. The wrapper maps that error to a 400 carrying the SDK's own
-message. An SDK that only logs misuse (an `error` event) and returns normally
-reports `false` and lists a reviewed exception; its wrapper returns the SDK's
-result and the logged event unchanged and must not synthesize a 400 from it.
-Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
+as the JS reference does: `setUnit` with a blank or already-set uid, `track` or
+`treatment` after finalize, and a read before the context is ready. The wrapper
+maps that error to a 400 carrying the SDK's own message. An SDK that only logs
+misuse (an `error` event) and returns normally reports `false` and lists a
+reviewed exception; its wrapper returns the SDK's result and the logged event
+unchanged and must not synthesize a 400 from it. Scenarios 34, 35, 147, 189 and
+201 require it.
+
+### Capability: `rejectsSettersAfterFinalize`
+
+No new endpoint. `true` when `setAttribute` and `setUnit` called after finalize
+throw (or return the SDK's idiomatic error), as the JS reference does. It is
+split from `throwsOnMisuse` so an SDK whose released contract accepts these
+setters after finalize (php-sdk 1.x) skips only scenarios 148, 149 and 188,
+which require it. The same wrapper rules apply: report the SDK's own behaviour,
+never synthesize a 400.
 
 ### Capability: `sharedVariableKeys`
 

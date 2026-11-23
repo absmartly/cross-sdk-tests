@@ -82,25 +82,33 @@ are unchanged.
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
 
-### Pending owner decision: `sharedVariableKeys`
+### Shared variable keys: owner decision on the winner, exposures still open
 
-Unlike the exceptions above, these are **not** owner-approved differences. The Shared Variable Key
-group (340-368) is new and takes its expectations from java-sdk rather than the JS reference. Java
-exposes only the selected experiment (plus the applicable holdouts of the candidates visited),
-while the 2026-11-06 shared-variable-key decision exposed every visited candidate. The SDKs that
-follow that earlier rule are gated here so their lanes skip the group until the owner records one
-contract; then either they or the SDKs that require the capability change.
+On 2026-11-23 the owner decided the winner rule
+([#52 comment](https://github.com/absmartly/cross-sdk-tests/pull/52#issuecomment-7107979255)):
+java-sdk is correct. An experiment is a candidate if any of its variants defines the key. The
+winner is chosen by assignment, override and rule precedence, independently of whether the
+user's selected variant defines the key. If the winner's variant lacks the key, the caller's
+default is returned and no later experiment is tried (scenario 351): choosing the experiment by
+the arm the user received would bias exposure. So the gated SDKs below that fall through past
+such a winner diverge from the decided contract and must change.
+
+The decision does not cover which candidates a multi-candidate read exposes. The group (340-368)
+records java-sdk, which exposes only the selected experiment (plus the applicable holdouts of the
+candidates visited), while the 2026-11-06 shared-variable-key decision exposed every visited
+candidate. That part is still pending, so these lanes stay gated until it is recorded.
 
 | capability | meaning | gated scenarios | gated SDKs (divergence) |
 | --- | --- | --- | --- |
-| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). **Owner follow-up is pending.** This group follows java-sdk, while the 2026-11-06 shared-variable-key decision exposed every visited candidate; once one contract is recorded, either these SDKs or java/kotlin/dart/flutter/dotnet change. Required for java, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). The winner and default rule is owner-decided (java-sdk; falling through is a bug in these SDKs). Which candidates are exposed is still pending: this group follows java-sdk, while the 2026-11-06 decision exposed every visited candidate. Required for java, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
 
-Two more reviewed exceptions replace wrapper code that used to hide an SDK
+Three more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
 
 | capability | meaning | gated scenarios | exempted SDK (reason) |
 | --- | --- | --- | --- |
-| `throwsOnMisuse` | misuse (blank or already-set unit uid, a mutation after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 148, 149, 188, 189, 201 | **swift** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `throwsOnMisuse` | misuse (blank or already-set unit uid, `track`/`treatment` after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 189, 201 | **swift**, **swift-v1** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `rejectsSettersAfterFinalize` | `setAttribute`/`setUnit` after finalize throw (or return the SDK's idiomatic error), as in the JS reference; split from `throwsOnMisuse` | 148, 149, 188 | **php** — php-sdk 1.x keeps the v1.0.3 contract that the setters are accepted after `close()` (php-sdk#12; the throwing behaviour moves to 2.0). **swift**, **swift-v1** — follows their `throwsOnMisuse` exception. |
 | `singleFinalizeEvent` | sealing the context logs exactly one lifecycle event, `finalize`, as in the JS reference | 19, 131, 147, 148, 149, 186, 188-192, 228 | **python** — python3-sdk logs `close` and then `finalize` for one transition (kept for v0.2.4 listeners). The wrapper returns both events unchanged. |
 
 Scenario 35 (duplicate unit) lists the released v1 wordings of ruby-sdk
