@@ -179,11 +179,34 @@ final class ContextStorage: @unchecked Sendable {
     let context: Context
     let eventCollector: EventCollector
     let transport: WrapperTransport
+    private let lock = NSLock()
+    private var loadError: ABsmartlyError?
 
     init(context: Context, eventCollector: EventCollector, transport: WrapperTransport) {
         self.context = context
         self.eventCollector = eventCollector
         self.transport = transport
+    }
+
+    func readyError() async -> ABsmartlyError? {
+        switch context.state {
+        case .ready, .failed:
+            do {
+                try await context.ready()
+            } catch {
+                lock.withLock { loadError = error }
+            }
+        case .loading, .closing, .closed:
+            break
+        }
+        return lock.withLock { loadError }
+    }
+
+    func close() async throws {
+        // Closing hides the SDK's load state. Preserve its settled readiness result first;
+        // ready() must not be awaited while loading, even when close() has already finished.
+        _ = await readyError()
+        try await context.close()
     }
 }
 
@@ -770,10 +793,7 @@ func routes(_ app: VaporApplication) throws {
 
     app.get("context", ":contextId", "isFailed") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
-        return try await call(storage) {
-            if case .failed = storage.context.state { return true }
-            return false
-        }
+        return try await call(storage) { await storage.readyError() != nil }
     }
 
     app.get("context", ":contextId", "experiments") { req async throws -> HTTPResponse in
@@ -784,7 +804,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "readyError") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            if case .failed(let error) = storage.context.state {
+            if let error = await storage.readyError() {
                 return ["isError": true, "message": error.localizedDescription] as [String: Any]
             }
             return nil
@@ -818,7 +838,7 @@ func routes(_ app: VaporApplication) throws {
     app.post("context", ":contextId", "finalize") { req async throws -> HTTPResponse in
         let storage = try lookup(req)
         return try await call(storage) {
-            try await storage.context.close()
+            try await storage.close()
             return nil
         }
     }
@@ -831,7 +851,7 @@ func routes(_ app: VaporApplication) throws {
         let before = storage.eventCollector.events.count
         var closeError: Error?
         if storage.context.state != .closed {
-            do { try await storage.context.close() } catch { closeError = error }
+            do { try await storage.close() } catch { closeError = error }
         }
         contextManager.remove(contextId: contextId)
         let events = Array(storage.eventCollector.events.suffix(from: before))
