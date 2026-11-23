@@ -98,11 +98,12 @@ then the exposure rule): java-sdk is correct.
 
 So the SDKs gated below are not reviewed differences but SDK bugs: each must change to the java-sdk
 rule, and its exception is removed (making `sharedVariableKeys` required) in the change that pins
-its fixed SDK. javascript-sdk is being fixed in javascript-sdk#70.
+its fixed SDK. The javascript-sdk fix is a follow-up targeting javascript-sdk#70; until a fixed commit
+exists and is pinned, the javascript-family lanes stay gated.
 
 | capability | meaning | gated scenarios | gated SDKs (divergence) |
 | --- | --- | --- | --- |
-| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **javascript**, **react**, **vue2**, **vue3**, **angular**, **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, java-v1, kotlin, dart, flutter and dotnet (dotnet-sdk#17, merged). |
 
 Three more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):

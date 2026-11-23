@@ -592,6 +592,9 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
+        for sdk in holders:
+            with self.subTest(sdk=sdk):
+                self.assertLessEqual({"holdouts", "holdout_arms"}, set(policy["sdks"][sdk]["required"]))
         # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
         self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift-v1", "vue2", "vue3"])
         ready_error_exceptions = sorted(
