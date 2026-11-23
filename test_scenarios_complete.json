@@ -48428,6 +48428,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -48442,6 +48443,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -48456,6 +48458,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -48469,6 +48472,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       }
@@ -59019,6 +59023,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -59033,6 +59038,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -59047,6 +59053,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       },
@@ -59060,6 +59067,7 @@
         "expect": {
           "status": 400,
           "errorContains": "",
+          "errorEnvelope": true,
           "events": []
         }
       }

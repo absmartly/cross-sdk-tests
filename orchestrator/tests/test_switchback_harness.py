@@ -185,6 +185,77 @@ def reference_failure(failures):
     return failures[0]["actual"]
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("drop_field", [False, True])
+def test_same_shape_reference_uses_prior_unordered_expected_positions(runner, monkeypatch, reverse, drop_field):
+    baseline_events = [response("exposure", {"id": 1})["events"][0],
+                       response("exposure", {"id": 2, "variant": 1})["events"][0]]
+    wire_events = list(reversed(baseline_events)) if reverse else baseline_events[:]
+    baseline = {"result": None, "events": wire_events}
+    raw_baseline = copy.deepcopy(baseline)
+    actual_events = copy.deepcopy(baseline_events)
+    if drop_field:
+        del actual_events[1]["data"]["variant"]
+    actual = {"result": None, "events": actual_events}
+    expected_events = [{"type": "exposure", "data": {"id": i}} for i in (1, 2)]
+    scenario = {"name": "unordered baseline", "steps": [
+        {"action": "switchbackAssign", "expect": {"result": None, "unorderedEvents": True,
+                                                     "events": expected_events}},
+        {"action": "switchbackAssign", "expect": {"result": None, "events": [
+            {**event, "sameShapeAs": 0} for event in expected_events]}},
+    ]}
+    bodies = iter([baseline, actual])
+
+    def post(*args, **kwargs):
+        res = requests.Response()
+        res.status_code = 200
+        body = next(bodies)
+        monkeypatch.setattr(res, "json", lambda: body)
+        return res
+
+    monkeypatch.setattr(requests.Session, "post", post)
+    result = runner.run_and_validate_sdk("java", "http://sdk.invalid", scenario)
+    assert result["passed"] is not drop_field, result
+    assert baseline == raw_baseline  # References must not mutate the raw response.
+    if drop_field:
+        assert len(result["failures"]) == 1
+        assert "sameShapeAs step 0" in result["failures"][0]["field"]
+
+
+@pytest.mark.parametrize("action,index", [("switchbackAssign", "periodIndex"),
+                                          ("switchbackPermutation", "cycleIndex")])
+@pytest.mark.parametrize("status,body,valid", [
+    (400, {"error": "SDK-specific explanation", "events": []}, True),
+    (400, {"error": "another wording", "result": None, "events": []}, True),
+    (400, {"result": 1, "events": []}, False),
+    (400, {"events": []}, False),
+    (400, {"error": None, "events": []}, False),
+    (400, {"error": "", "events": []}, False),
+    (400, {"error": " \t\n", "events": []}, False),
+    (400, {"error": 42, "events": []}, False),
+    (400, {"error": {}, "events": []}, False),
+    (400, {"error": "bad", "result": 0, "events": []}, False),
+    (400, {"error": "bad", "result": False, "events": []}, False),
+    (400, {"error": "bad", "result": [], "events": []}, False),
+    (400, {"error": "bad"}, False),
+    (400, {"error": "bad", "events": [{"type": "exposure"}]}, False),
+    (400, "not JSON", False),
+    (400, [], False),
+    (200, {"error": "bad", "events": []}, False),
+    (500, {"error": "bad", "events": []}, False),
+])
+def test_invalid_switchback_steps_check_raw_error_envelope(runner, monkeypatch, action, index, status, body, valid):
+    res = requests.Response()
+    res.status_code = status
+    res.url = "http://sdk.invalid/switchback"
+    res._content = body.encode("utf-8") if isinstance(body, str) else json.dumps(body).encode("utf-8")
+    monkeypatch.setattr(requests.Session, "post", lambda *args, **kwargs: res)
+    steps = generator.invalid_request_steps(action, index)
+    assert len(steps) == 4 and all(s["expect"]["errorEnvelope"] is True for s in steps)
+    result = runner.run_and_validate_sdk("java", "http://sdk.invalid", {"name": "bad input", "steps": steps})
+    assert result["passed"] is valid, result
+
+
 def test_reference_event_without_data_fails(runner):
     prior = [response("publish", None, include_data=False)]
     assert "has no data" in reference_failure(validate(runner, prior, 123, 0))

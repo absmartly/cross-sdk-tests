@@ -559,24 +559,27 @@ def record(s, base_url):
     response.raise_for_status()
     body = response.json()
     context_id = body["result"]["contextId"]
-    ready = {k: body["result"][k] for k in ("ready", "failed", "finalized")}
-    if ready != {"ready": True, "failed": False, "finalized": False}:
-        raise SystemExit(f"{s['title']}: reference context not ready: {ready}")
-    steps = [{"action": "createContextWith", "params": create_params,
-              "expect": {"result": ready, "events": [project_event(e) for e in body["events"]]}}]
-    for action, params in s["steps"]:
-        if action == "refresh":
-            requests.put(payload, json={"data": params["newData"]}, timeout=5).raise_for_status()
-            response = requests.post(f"{base_url}/context/{context_id}/refresh", json=params, timeout=10)
-        elif action == "pending":
-            response = requests.get(f"{base_url}/context/{context_id}/pending", timeout=5)
-        else:
-            response = requests.post(f"{base_url}/context/{context_id}/{action}", json=params, timeout=5)
-        response.raise_for_status()
-        got = response.json()
-        steps.append({"action": action, "params": params,
-                      "expect": {"result": got["result"], "events": [project_event(e, "assignmentRules" in (s["requires"] or [])) for e in got["events"]]}})
-    return steps
+    try:
+        ready = {k: body["result"][k] for k in ("ready", "failed", "finalized")}
+        if ready != {"ready": True, "failed": False, "finalized": False}:
+            raise SystemExit(f"{s['title']}: reference context not ready: {ready}")
+        steps = [{"action": "createContextWith", "params": create_params,
+                  "expect": {"result": ready, "events": [project_event(e) for e in body["events"]]}}]
+        for action, params in s["steps"]:
+            if action == "refresh":
+                requests.put(payload, json={"data": params["newData"]}, timeout=5).raise_for_status()
+                response = requests.post(f"{base_url}/context/{context_id}/refresh", json=params, timeout=10)
+            elif action == "pending":
+                response = requests.get(f"{base_url}/context/{context_id}/pending", timeout=5)
+            else:
+                response = requests.post(f"{base_url}/context/{context_id}/{action}", json=params, timeout=5)
+            response.raise_for_status()
+            got = response.json()
+            steps.append({"action": action, "params": params,
+                          "expect": {"result": got["result"], "events": [project_event(e, "assignmentRules" in (s["requires"] or [])) for e in got["events"]]}})
+        return steps
+    finally:
+        requests.delete(f"{base_url}/context/{context_id}", timeout=5).raise_for_status()
 
 
 def build_group(base_url):

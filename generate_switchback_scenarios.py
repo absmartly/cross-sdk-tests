@@ -219,7 +219,8 @@ def invalid_request_steps(action: str, index_field: str) -> list:
         dict(valid, seed="9223372036854775808"),
         {k: v for k, v in valid.items() if k != "clusterUnit"},
     ]
-    return [{"action": action, "params": params, "expect": {"status": 400, "errorContains": "", "events": []}}
+    return [{"action": action, "params": params,
+             "expect": {"status": 400, "errorContains": "", "errorEnvelope": True, "events": []}}
             for params in invalid]
 
 

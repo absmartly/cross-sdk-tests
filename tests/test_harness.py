@@ -270,6 +270,42 @@ class ValidateStepTests(unittest.TestCase):
                                {"type": "exposure", "data": {"id": 1, "variant": 2}}]}
         self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
 
+    def test_unordered_matching_checks_each_pair_once_when_a_specific_event_is_missing(self):
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(11)] + [
+            {"type": "exposure", "data": {"id": 99}}]
+        calls = []
+
+        def matches(candidate, event, index):
+            calls.append((id(candidate), index))
+            # A call-count bound, not a wall-clock timeout: the old factorial search fails fast.
+            self.assertLessEqual(len(calls), len(actual) * len(expected))
+            return values_match(candidate, event)
+
+        ordered = test_runner.events_in_expected_order(actual, expected, matches)
+        self.assertIs(ordered, actual, "a failed matching keeps wire order for diagnostics")
+        self.assertEqual(len(calls), 144)
+        self.assertEqual(len(set(calls)), 144)
+        failures = self.orch.validate_step(0, "variableValue", {"result": None, "events": actual},
+                                           {"result": None, "unorderedEvents": True, "events": expected})
+        self.assertEqual(self.fields(failures), ["events[11].data.id"])
+
+    def test_unordered_matching_detects_a_shared_candidate_shortage(self):
+        # Every expectation has a compatible event, but the last two need the same event.
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(10)] + [
+            {"type": "exposure", "data": {"id": 0}} for _ in range(2)]
+        calls = 0
+
+        def matches(candidate, event, index):
+            nonlocal calls
+            calls += 1
+            self.assertLessEqual(calls, 144)
+            return values_match(candidate, event)
+
+        self.assertIs(test_runner.events_in_expected_order(actual, expected, matches), actual)
+        self.assertEqual(calls, 144)
+
     def test_unordered_events_pair_by_type(self):
         actual = {"result": None, "events": [{"type": "goal", "data": {"id": 1}},
                                              {"type": "exposure", "data": {"id": 1}}]}
@@ -527,6 +563,15 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_checked_in_policy_is_valid(self):
         policy = test_runner.load_capability_policy()
         self.assertEqual(test_runner.validate_capability_policy(policy), [])
+
+    def test_misuse_descriptions_keep_post_finalize_setters_separate(self):
+        descriptions = test_runner.load_capability_policy()["capabilities"]
+        misuse = descriptions["throwsOnMisuse"]
+        self.assertIn("setUnit with a blank or already-set uid", misuse)
+        self.assertIn("a mutation (track/treatment) after finalize", misuse)
+        self.assertIn("a read before the context is ready", misuse)
+        self.assertNotIn("attribute/setUnit", misuse)
+        self.assertIn("setAttribute/setUnit called after finalize", descriptions["rejectsSettersAfterFinalize"])
 
     def test_checked_in_policy_covers_every_compose_sdk(self):
         policy = test_runner.load_capability_policy()

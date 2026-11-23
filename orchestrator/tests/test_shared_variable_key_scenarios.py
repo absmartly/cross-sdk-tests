@@ -234,6 +234,44 @@ class RecordingProvenanceTest(unittest.TestCase):
             self.assertEqual(generator.build_group("http://wrapper.invalid"), group)
 
 
+class RecordingCleanupTest(unittest.TestCase):
+    def test_record_deletes_the_context_on_success_and_failures_without_recording_cleanup(self):
+        spec = {"title": "cleanup", "experiments": [], "holdouts": [], "units": {}, "requires": [],
+                "steps": [("treatment", {"experimentName": "e"})]}
+        ready = {"contextId": "ctx-123", "ready": True, "failed": False, "finalized": False}
+        for failure in (None, "not-ready", "projection", "request"):
+            with self.subTest(failure=failure):
+                created = mock.Mock()
+                created.json.return_value = {"result": {**ready, "ready": failure != "not-ready"}, "events": []}
+                if failure == "projection":
+                    created.json.return_value["events"] = [{"type": "unexpected"}]
+                action = mock.Mock()
+                action.json.return_value = {"result": 1, "events": []}
+                if failure == "request":
+                    action.raise_for_status.side_effect = RuntimeError("recording failed")
+                with mock.patch("requests.put"), \
+                        mock.patch("requests.post", side_effect=[created, action]), \
+                        mock.patch("requests.delete") as delete:
+                    if failure:
+                        with self.assertRaises(RuntimeError if failure == "request" else SystemExit):
+                            generator.record(spec, "http://wrapper.invalid")
+                    else:
+                        steps = generator.record(spec, "http://wrapper.invalid")
+                        self.assertEqual([st["action"] for st in steps], ["createContextWith", "treatment"])
+                        self.assertEqual(steps[1]["expect"], {"result": 1, "events": []})
+                    delete.assert_called_once_with("http://wrapper.invalid/context/ctx-123", timeout=5)
+                    delete.return_value.raise_for_status.assert_called_once_with()
+
+    def test_record_does_not_delete_a_context_before_creation_succeeds(self):
+        spec = {"experiments": [], "holdouts": [], "units": {}}
+        with mock.patch("requests.put"), mock.patch("requests.post") as create, \
+                mock.patch("requests.delete") as delete:
+            create.return_value.raise_for_status.side_effect = RuntimeError("create failed")
+            with self.assertRaises(RuntimeError):
+                generator.record(spec, "http://wrapper.invalid")
+            delete.assert_not_called()
+
+
 class ProjectionTest(unittest.TestCase):
     def test_an_exposure_keeps_every_compared_field_and_drops_the_timestamp(self):
         data = {"id": 1, "name": "e", "unit": "session_id", "variant": 1, "assigned": True,
@@ -283,12 +321,14 @@ class SdkRevisionPinTest(unittest.TestCase):
         for repo, sha in pins.items():
             self.assertRegex(sha, r"^[0-9a-f]{40}$", repo)
 
-    def test_the_java_wrapper_reports_no_commit_for_a_modified_tree(self):
-        dockerfile = self.read("java-wrapper", "Dockerfile")
-        self.assertIn('if head=$(git rev-parse HEAD 2>/dev/null) && status=$(git status --porcelain 2>/dev/null)',
-                      dockerfile)
-        self.assertIn('&& [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt', dockerfile)
-        self.assertNotIn("--untracked-files=no", dockerfile)
+    def test_the_java_wrappers_report_no_commit_for_a_modified_tree(self):
+        for wrapper in ("java-wrapper", "java-v1-wrapper"):
+            with self.subTest(wrapper=wrapper):
+                dockerfile = self.read(wrapper, "Dockerfile")
+                self.assertIn('if head=$(git rev-parse HEAD 2>/dev/null) && status=$(git status --porcelain 2>/dev/null)',
+                              dockerfile)
+                self.assertIn('&& [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt', dockerfile)
+                self.assertNotIn("--untracked-files=no", dockerfile)
 
     def test_ci_and_local_setup_check_the_pin_out(self):
         workflow = self.read(".github", "workflows", "cross-sdk.yml")

@@ -369,18 +369,28 @@ def events_in_expected_order(
     third argument), one-to-one, or unchanged if no ordering does, so the positional check reports
     the mismatch."""
 
-    def assign(i: int, used: Tuple[int, ...]) -> Optional[Tuple[int, ...]]:
-        if i == len(expected):
-            return used
-        for j, candidate in enumerate(actual):
-            if j not in used and matches(candidate, expected[i], i):
-                found = assign(i + 1, used + (j,))
-                if found is not None:
-                    return found
-        return None
+    # Cache compatibility once: retrying every permutation is factorial when a late expectation
+    # cannot be satisfied. Augmenting paths find a complete bipartite matching in polynomial time,
+    # including when a broad expectation initially takes a more specific expectation's only match.
+    compatible = [[j for j, candidate in enumerate(actual) if matches(candidate, event, i)]
+                  for i, event in enumerate(expected)]
+    owners: Dict[int, int] = {}
 
-    order = assign(0, ())
-    return actual if order is None else [actual[j] for j in order]
+    def assign(i: int, seen: set) -> bool:
+        for j in compatible[i]:
+            if j in seen:
+                continue
+            seen.add(j)
+            if j not in owners or assign(owners[j], seen):
+                owners[j] = i
+                return True
+        return False
+
+    for i in range(len(expected)):
+        if not assign(i, set()):
+            return actual  # Preserve wire order for positional diagnostics on a mismatch.
+    order = sorted(owners, key=owners.get)
+    return [actual[j] for j in order]
 
 
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
@@ -1569,10 +1579,18 @@ class TestOrchestrator:
                     if not harness_exc.served_fault:
                         failures.extend(self.validate_step(step_index, action, data, expected, responses))
                     raise
-                step_failures = self.validate_step(step_index, action, data, expected, responses)
+                reference_events: List[Any] = []
+                step_failures = self.validate_step(
+                    step_index, action, data, expected, responses, reference_events=reference_events
+                )
                 if step_failures:
                     failures.extend(step_failures)
+                # References use the same expected-event positions as validation. Keep the raw
+                # response untouched for observations and diagnostics.
                 responses[step_index] = data
+                if (expected.get("unorderedEvents") is True and isinstance(data, dict)
+                        and isinstance(data.get("events"), list)):
+                    responses[step_index] = {**data, "events": reference_events}
                 failures.extend(wire_failures)
                 observations[step_index] = (
                     action,
@@ -1647,6 +1665,16 @@ class TestOrchestrator:
                             "actual": "error response body is not a JSON object",
                         }
                     )
+
+                if expected.get("errorEnvelope") is True:
+                    raw_error = error_body.get("error") if isinstance(error_body, dict) else None
+                    if not isinstance(raw_error, str) or not raw_error.strip():
+                        failures.append({"step": step_index, "action": action, "field": "errorEnvelope.error",
+                                         "expected": "a non-blank error string in the raw JSON body",
+                                         "actual": describe(raw_error)})
+                    if isinstance(error_body, dict) and error_body.get("result") is not None:
+                        failures.append({"step": step_index, "action": action, "field": "errorEnvelope.result",
+                                         "expected": "no success result", "actual": describe(error_body["result"])})
 
                 if "status" in expected:
                     actual_status = exc.response.status_code if exc.response is not None else None
@@ -1746,6 +1774,8 @@ class TestOrchestrator:
         actual: Any,
         expected: Dict[str, Any],
         prior_responses: Optional[List[Any]] = None,
+        *,
+        reference_events: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
 
@@ -1809,7 +1839,10 @@ class TestOrchestrator:
 
         actual_events = actual.get("events", MISSING)
         failures.extend(
-            self.validate_events(step_index, action, actual_events, expected, prior_responses=prior_responses)
+            self.validate_events(
+                step_index, action, actual_events, expected, prior_responses=prior_responses,
+                reference_events=reference_events,
+            )
         )
         return failures
 
@@ -1821,10 +1854,14 @@ class TestOrchestrator:
         expected: Dict[str, Any],
         context: str = "",
         prior_responses: Optional[List[Any]] = None,
+        *,
+        reference_events: Optional[List[Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Check a response's events window against the step's `events`."""
         failures: List[Dict[str, Any]] = []
         prior_responses = prior_responses or []
+        if reference_events is not None and isinstance(actual_events, list):
+            reference_events.extend(actual_events)
 
         def fail(field: str, expected_value: Any, actual_value: Any) -> None:
             failures.append(
@@ -1929,6 +1966,9 @@ class TestOrchestrator:
                 return not mismatches
 
             actual_events = events_in_expected_order(actual_events, expected_events, pairs)
+
+        if reference_events is not None:
+            reference_events[:] = actual_events
 
         for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
             check_event(i, actual_event, expected_event, fail)

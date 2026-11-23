@@ -209,9 +209,47 @@ def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_af
         text = src.read()
     # Byte-level too: the file is the old bytes with one block inserted (and any later groups
     # appended after the old tail).
-    head = rendered[:rendered.index(b'\n  {\n    "name": "300 - ')]
-    tail = rendered[len(head):]
-    assert text.startswith(head) and generator.render(scenarios).encode("utf-8").endswith(tail)
+    assert_retained_bytes(text, rendered, canonical())
+
+
+def assert_retained_bytes(text, rendered, scenarios):
+    """Compare the actual file's retained bytes, not a re-rendering that erases whitespace drift."""
+    head_end = rendered.index(b'\n  {\n    "name": "300 - ')
+    tail_start = text.index(b'\n  {\n    "name": "300 - ')
+    later = [s for s in scenarios if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    tail_end = len(text)
+    if later:
+        first_later = b'\n  {\n    "name": ' + json.dumps(later[0]["name"]).encode("utf-8")
+        tail_end = text.index(first_later)
+    raw_tail = text[tail_start:tail_end]
+    if later:
+        # The old last scenario gained a comma when the later groups were appended.
+        assert raw_tail.endswith(b",")
+        raw_tail = raw_tail[:-1] + b"\n]\n"
+    assert text.startswith(rendered[:head_end])
+    assert raw_tail == rendered[head_end:]
+
+
+@pytest.mark.parametrize("mutation", ["head-indent", "tail-indent", "tail-value"])
+def test_retained_byte_guard_rejects_raw_file_drift(mutation):
+    with open(generator.CANONICAL, "rb") as src:
+        text = src.read()
+    scenarios = canonical()
+    kept = [s for s in scenarios if not any(m in s["name"] for m in LATER_GROUP_MARKERS)
+            and not 273 <= scenario_groups.number(s) < 300]
+    rendered = generator.render(kept).encode("utf-8")
+    if mutation == "head-indent":
+        changed = text.replace(b'    "name": "01 - ', b'     "name": "01 - ', 1)
+    else:
+        start = text.index(b'\n  {\n    "name": "300 - ')
+        old, new = ((b'    "description":', b'     "description":') if mutation == "tail-indent"
+                    else (b'    "description": "', b'    "description": "changed '))
+        changed = text[:start] + text[start:].replace(old, new, 1)
+    assert changed != text
+    if mutation != "tail-value":
+        assert json.loads(changed) == scenarios
+    with pytest.raises(AssertionError):
+        assert_retained_bytes(changed, rendered, scenarios)
 
 
 # -- policy ------------------------------------------------------------------
