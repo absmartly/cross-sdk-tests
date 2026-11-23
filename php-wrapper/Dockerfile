@@ -23,6 +23,10 @@ COPY cross-sdk-tests/php-wrapper /app
 
 RUN composer install --no-dev --optimize-autoloader
 
+# switchback_self_test_test.php ships with the wrapper directory; running it here fails the image
+# build (and so the php lane) when the switchback probe regresses.
+RUN php switchback_self_test_test.php /app/vendor/autoload.php
+
 EXPOSE 3000
 
 CMD ["php", "server.php"]

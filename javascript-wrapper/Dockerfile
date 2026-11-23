@@ -19,6 +19,15 @@ COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
 COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 COPY cross-sdk-tests/javascript-wrapper/switchbackSelfTest.js ./
 
+FROM server AS wrapper-tests
+COPY cross-sdk-tests/javascript-wrapper/switchbackSelfTest.test.js ./
+RUN node --test switchbackSelfTest.test.js && touch /wrapper-tests.passed
+
+# The runtime image depends on wrapper-tests (through its marker), so BuildKit and buildah cannot
+# skip the stage and a failing wrapper test fails the image build. Test files stay out of the runtime.
+FROM server
+COPY --from=wrapper-tests /wrapper-tests.passed /wrapper-tests.passed
+
 EXPOSE 3000
 
 CMD ["node", "server.js"]
