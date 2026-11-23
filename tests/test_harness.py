@@ -1094,7 +1094,8 @@ class ConsistencyTests(unittest.TestCase):
         for lane in matrix["include"]:
             if "-" in lane["sdk"]:
                 with self.subTest(lane=lane["sdk"]):
-                    self.assertIn(lane["sdk"], test_runner.SDK_AGENT_LANGUAGE)
+                    self.assertEqual(test_runner.SDK_AGENT_LANGUAGE[lane["sdk"]],
+                                     lane["sdk"].split("-", 1)[0])
 
     def test_lane_checkouts_resolve_through_sdk_repo_sources(self):
         """Checkout dirs that are not repo names (java-sdk-v1, swift-sdk-v1) are cloned through
