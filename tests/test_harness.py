@@ -1320,14 +1320,12 @@ class StaticRepoChecks(unittest.TestCase):
         "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
             "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
     }
-    # How each helper puts events into the error body it returns.
     HELPER_EVENTS = {
         "elixir-wrapper/lib/elixir_wrapper/router.ex": r"%\{error: message, events: events\}",
         "cpp-wrapper/server.cpp": r'json\{\{"error", error\}, \{"events", ',
         "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
         "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
     }
-    # The helper each of those handlers uses for its 400/501 responses.
     SWITCHBACK_ERROR_HELPERS = {
         "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp switchback_call(", "send_error(conn"),
         "cpp-wrapper/server.cpp": ("const auto switchback_endpoint = ", "make_error_response("),
@@ -1362,7 +1360,6 @@ class StaticRepoChecks(unittest.TestCase):
                 for line in errors:
                     self.assertIn("events", line)
 
-    # Where each wrapper that requires integralFloatAttributes gets it: its switchback self-test, never a literal.
     INTEGRAL_FLOAT_SOURCES = {
         "ruby-wrapper/server.rb": "integralFloatAttributes: SwitchbackSelfTest.switchback?",
         "python-wrapper/server.py": "'integralFloatAttributes': switchback_self_test.run()",
@@ -1374,7 +1371,6 @@ class StaticRepoChecks(unittest.TestCase):
         "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java":
             'response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());',
     }
-    # The float check inside each of those self-tests (a 3.0 attribute must key no cluster).
     INTEGRAL_FLOAT_PROBES = {
         "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
         "python-wrapper/switchback_self_test.py": "'sb_whole_float', 0",

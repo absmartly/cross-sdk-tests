@@ -176,6 +176,9 @@ UNIT_TEST_PARSERS = {
     },
 }
 
+UNIT_TEST_PARSERS["java-v1"] = UNIT_TEST_PARSERS["java"]
+UNIT_TEST_PARSERS["swift-v1"] = UNIT_TEST_PARSERS["swift"]
+
 
 def parse_catch2_junit(output):
     output = strip_ansi(output)
