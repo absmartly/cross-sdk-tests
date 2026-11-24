@@ -646,6 +646,13 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
         self.assertEqual(holders, ["cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
 
+    def test_shared_variable_keys_required_only_where_evidenced(self):
+        # The JS family requires it only at the javascript-sdk pin whose lanes were measured passing 340-368.
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
+        self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "java-v1", "javascript", "kotlin",
+                                   "react", "vue2", "vue3"])
+
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
         bad = make_policy({"alpha": {"required": ["diagnostics"], "unsupported": {}}})
@@ -1475,7 +1482,7 @@ class StaticRepoChecks(unittest.TestCase):
         "go-sdk": ("feat/switchbacks", None),
         "java-sdk": ("next/major", None),
         "java-sdk-v1": ("v1.9.0", None),
-        "javascript-sdk": ("feat/switchbacks", None),
+        "javascript-sdk": ("feat/switchbacks", "2aa9a2df4a3b636375edae8df077bd10fd5a6b32"),
         "php-sdk": ("feat/switchbacks", None),
         "python3-sdk": ("feat/switchbacks", None),
         "ruby-sdk": ("feat/switchbacks", None),

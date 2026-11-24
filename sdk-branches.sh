@@ -25,7 +25,9 @@
 #   elixir-sdk     feat/switchbacks  elixir-sdk#6 (stacked on #5 holdouts)
 #   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
 #   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
-#   javascript-sdk feat/switchbacks  javascript-sdk#69 (holdouts already on main)
+#   javascript-sdk feat/switchbacks  javascript-sdk#69 (holdouts already on main), at the SDK_REVISIONS commit:
+#                                    2aa9a2d carries the java-sdk shared-variable-key rule, so the JS-family
+#                                    lanes require `sharedVariableKeys` (340-368) at exactly that tree.
 #   php-sdk        feat/switchbacks  php-sdk#13 (on #11 holdouts)
 #   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
 #   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
@@ -45,6 +47,7 @@
 # what this commit tests.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
+  ["javascript-sdk"]="2aa9a2df4a3b636375edae8df077bd10fd5a6b32"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
 )
 

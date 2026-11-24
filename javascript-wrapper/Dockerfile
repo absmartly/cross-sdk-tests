@@ -18,6 +18,7 @@ COPY cross-sdk-tests/javascript-wrapper/server.js ./
 COPY cross-sdk-tests/javascript-wrapper/holdoutSelfTest.js ./
 COPY cross-sdk-tests/javascript-wrapper/assignmentRulesSelfTest.js ./
 COPY cross-sdk-tests/javascript-wrapper/switchbackSelfTest.js ./
+COPY cross-sdk-tests/javascript-wrapper/sharedVariableKeysSelfTest.js ./
 
 FROM server AS wrapper-tests
 COPY cross-sdk-tests/javascript-wrapper/switchbackSelfTest.test.js ./

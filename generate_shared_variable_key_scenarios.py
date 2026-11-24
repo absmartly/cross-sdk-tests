@@ -2,10 +2,7 @@
 """Generate the Shared Variable Key group of test_scenarios_complete.json (340+).
 
 When two or more experiments define the same variable key, variableValue / peekVariableValue must
-pick the experiment the java-sdk reference picks (core-api Context.getVariableAssignment). The
-javascript-sdk exposes every candidate it visits and falls through past a winner whose variant lacks
-the key, so where that winner returns the default (scenario 351) it returns a later candidate's
-value; it is a reviewed exception):
+pick the experiment the java-sdk reference picks (core-api Context.getVariableAssignment):
 
   * candidates are the experiments whose variants define the key, visited in ascending experiment id
     (not payload order);

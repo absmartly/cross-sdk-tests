@@ -71,6 +71,7 @@ function isSdkOptionsValidationError(error) {
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+const sharedVariableKeysSelfTest = require('./sharedVariableKeysSelfTest');
 const { Treatment, TreatmentVariant, TreatmentFunction, useTreatment } = require('@absmartly/react-sdk');
 const SDKProvider = require('@absmartly/react-sdk').default;
 const { JSDOM } = require('jsdom');
@@ -205,17 +206,19 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators, sharedVariableKeys] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
+    sharedVariableKeysSelfTest.runSharedVariableKeys(),
   ]);
   res.json({diagnosticsUtf8: true,
     holdouts,
     holdout_arms: holdoutArms,
     assignmentRules,
     semverOperators,
+    sharedVariableKeys,
     diagnostics: true,
     attrsSeq: true,
     isWrapper: true,

@@ -5,6 +5,7 @@ const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
 const switchbackSelfTest = require('./switchbackSelfTest');
+const sharedVariableKeysSelfTest = require('./sharedVariableKeysSelfTest');
 
 // Default client config for a test context. A scenario can override the
 // application/environment names through the optional `client` field on
@@ -174,12 +175,13 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, assignmentRules, semverOperators, switchback] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators, switchback, sharedVariableKeys] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
     switchbackSelfTest.runSwitchback(),
+    sharedVariableKeysSelfTest.runSharedVariableKeys(),
   ]);
 
   res.json({diagnosticsUtf8: true,
@@ -210,6 +212,7 @@ app.get('/capabilities', async (req, res) => {
     assignmentRules,
     semverOperators,
     switchback,
+    sharedVariableKeys,
     // JavaScript parses 3.0 as 3, so a cluster attribute of 3.0 keys "3" (owner decision 2026-11-17).
     integralFloatAttributes: false
   });

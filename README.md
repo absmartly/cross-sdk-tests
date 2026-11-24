@@ -240,10 +240,13 @@ across languages.
   and replayed in CI against a Python model and 19 wrong models
   (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
   the per-mutant kill counts locally).
-  java, kotlin, dart, flutter and dotnet require the capability (dotnet from
+  java, java-v1, kotlin, dart, flutter and dotnet require the capability (dotnet from
   dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
-  merged, which its pinned `feat/switchbacks` branch contains). Every other SDK
-  lists a reviewed exception naming its divergence.
+  merged, which its pinned `feat/switchbacks` branch contains), and so do
+  javascript, react, vue2, vue3 and angular, which build javascript-sdk
+  [#69](https://github.com/absmartly/javascript-sdk/pull/69) pinned at 2aa9a2d
+  and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
+  Every other SDK lists a reviewed exception naming its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the

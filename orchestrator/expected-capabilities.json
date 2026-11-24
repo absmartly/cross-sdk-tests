@@ -73,12 +73,12 @@
         "singleFinalizeEvent",
         "semverNumericOperands",
         "switchback",
+        "sharedVariableKeys",
         "contextFetchCompression"
       ],
       "unsupported": {
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "javascript-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in javascript-sdk",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
@@ -702,13 +702,13 @@
         "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "sharedVariableKeys",
         "contextFetchCompression"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in react (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
@@ -737,13 +737,13 @@
         "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "sharedVariableKeys",
         "contextFetchCompression"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in vue2 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
@@ -772,13 +772,13 @@
         "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "sharedVariableKeys",
         "contextFetchCompression"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in vue3 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
@@ -807,13 +807,13 @@
         "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
+        "sharedVariableKeys",
         "contextFetchCompression"
       ],
       "unsupported": {
         "switchback": "switchback serving not implemented in angular (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "sharedVariableKeys": "wraps javascript-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in javascript-sdk",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
