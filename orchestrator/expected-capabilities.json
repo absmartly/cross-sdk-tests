@@ -359,9 +359,9 @@
         "semverNumericOperands"
       ],
       "unsupported": {
-        "holdouts": "swift-sdk 2.0 (feat/swift-2.0) has no holdout resolution yet; it is ported from 1.x once feat/holdouts lands on swift-sdk main",
+        "holdouts": "swift-sdk 2.0.0 does not support holdouts (owner decision 2026-11-24): holdout data is ignored, as in 1.4.0; 1.5.x supports them and a later 2.x adds them",
         "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which swift-sdk 2.0 does not have yet",
+        "holdout_arms": "depends on holdouts, which swift-sdk 2.0.0 does not support",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "throwsOnMisuse": "swift-sdk's reads and track/setAttribute are non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7, kept in 2.0 so view code needs no `try`): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
