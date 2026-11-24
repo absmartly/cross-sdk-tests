@@ -488,6 +488,9 @@ class E2ERunner:
 
     def _wrapper_post(self, url, body=None, deadline=None):
         for attempt in range(3):
+            # The budget bounds the calls themselves, not only the 429 waits.
+            if deadline is not None and time.time() >= deadline:
+                raise RuntimeError(f"Wrapper call budget exhausted before POST {url}")
             response = requests.post(url, json=body or {}, timeout=30)
             if response.status_code != 429:
                 response.raise_for_status()

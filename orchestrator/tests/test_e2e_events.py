@@ -492,6 +492,43 @@ def test_case_deadline_never_exceeds_the_run_budget(runner):
     assert {c.kwargs.get("deadline") for c in post.call_args_list} == {25.0}
 
 
+def test_run_budget_is_set_once_for_all_sdks(runner, monkeypatch):
+    # The clock moves while sending: every SDK must see the budget set before the first one.
+    clock = [100.0]
+    runner.timeout = 30
+    runner.sdks = {"javascript": "http://a", "python": "http://b", "go": "http://c"}
+    seen = []
+    def send(sdk, base_url, case):
+        seen.append(runner.case_run_deadline)
+        clock[0] += 1
+    monkeypatch.setattr(runner, "_case_skip", lambda sdk, case: None)
+    monkeypatch.setattr(runner, "_send_event_case", send)
+    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]):
+        runner.run_event_cases()
+    assert set(seen) == {190.0}
+
+
+def test_wrapper_call_after_budget_is_refused(runner):
+    with patch("e2e_runner.requests.post") as post, patch("e2e_runner.time.time", return_value=200.0), \
+         pytest.raises(RuntimeError, match="budget exhausted"):
+        runner._wrapper_post("http://w/track", {}, deadline=150)
+    assert not post.called
+
+
+def test_slow_wrapper_stops_at_the_budget(runner):
+    # A wrapper that answers 200 slowly still cannot run the case past its deadline.
+    clock = [0.0]
+    def slow(*a, **kw):
+        clock[0] += 25
+        return Mock(status_code=200, json=lambda: {"result": {"contextId": "c", "ready": True, "failed": False}})
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "batch")
+    runner.timeout = 300
+    with patch("e2e_runner.requests.post", side_effect=slow), patch("e2e_runner.requests.delete"), \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]), pytest.raises(RuntimeError, match="budget exhausted"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert clock[0] <= 325
+
+
 def test_run_event_cases_sets_one_run_budget(runner, monkeypatch):
     runner.timeout = 30
     runner.sdks = {"javascript": "http://a", "python": "http://b"}
