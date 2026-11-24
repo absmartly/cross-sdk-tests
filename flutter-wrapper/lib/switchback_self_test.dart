@@ -133,20 +133,25 @@ Future<bool>? _integralFloat;
 /// 10 arms "3" draws 5 and a lax "3.0" would draw 7, so neither a lax reader
 /// nor one rejecting every number passes. Requires the switchback battery
 /// first.
-Future<bool> runIntegralFloat() => _integralFloat ??= () async {
-      if (!await runSwitchback()) {
-        return false;
-      }
-      try {
-        final bool passed = await checkIntegralFloat(
-            jsonDecode('{"f": 3.0, "i": 3}') as Map<String, dynamic>);
-        print('[integralFloatAttributes probe] ${passed ? 'PASSED' : 'FAILED'}');
-        return passed;
-      } catch (error) {
-        print('[integralFloatAttributes probe] FAILED with exception: $error');
-        return false;
-      }
-    }();
+Future<bool> runIntegralFloat() =>
+    _integralFloat ??= runIntegralFloatAfter(runSwitchback);
+
+/// The integral-float probe gated on [battery]: false without running the
+/// probe when the battery fails. Takes the battery so tests can stub it.
+Future<bool> runIntegralFloatAfter(Future<bool> Function() battery) async {
+  if (!await battery()) {
+    return false;
+  }
+  try {
+    final bool passed = await checkIntegralFloat(
+        jsonDecode('{"f": 3.0, "i": 3}') as Map<String, dynamic>);
+    print('[integralFloatAttributes probe] ${passed ? 'PASSED' : 'FAILED'}');
+    return passed;
+  } catch (error) {
+    print('[integralFloatAttributes probe] FAILED with exception: $error');
+    return false;
+  }
+}
 
 Future<bool> _runSafely() async {
   try {

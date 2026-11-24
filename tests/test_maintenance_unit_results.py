@@ -142,6 +142,23 @@ class SwiftUnitResultsTest(unittest.TestCase):
         output = "\u2718 Test run with 3 tests in 1 suite failed after 0.1 seconds with 1 issue.\n"
         self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (2, 1, 3))
 
+    def test_failures_without_run_summary_count_failed_tests_not_issues(self):
+        # Truncated output (no "Test run with" summaries): only the per-test
+        # lines count. The issue lines' messages quote "failed after N seconds",
+        # so they would be miscounted as failed tests if not excluded.
+        output = (
+            "✔ Test chooseVariant() passed after 0.278 seconds.\n"
+            "✘ Test retriesTimeout() recorded an issue at RetryTests.swift:40:5: "
+            "Expectation failed: (error.message → \"publish failed after 3 seconds\") == \"\"\n"
+            "✘ Test retriesTimeout() recorded an issue at RetryTests.swift:41:5: "
+            "Expectation failed: (log → \"refresh failed after 2 seconds\") == \"\"\n"
+            "✘ Test retriesTimeout() failed after 6.049 seconds with 2 issues.\n"
+            "✘ Test backoff(count:) with 4 test cases recorded an issue at RetryTests.swift:70:3: "
+            "Expectation failed: (state → \"failed after 1 seconds\") == \"ok\"\n"
+            "✘ Test backoff(count:) with 4 test cases failed after 1.2 seconds with 1 issue.\n"
+        )
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (1, 2, 3))
+
     def test_empty_output_fails(self):
         result = self.assert_cli("swift", "", 0, 1)
         self.assertIn("NO TESTS DETECTED", result.stdout)

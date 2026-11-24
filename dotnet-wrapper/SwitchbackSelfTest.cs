@@ -94,7 +94,7 @@ public static class SwitchbackSelfTest
 
     public static bool Run() => Result.Value;
 
-    private static readonly Lazy<bool> IntegralFloatResult = new(RunIntegralFloatSafely);
+    private static readonly Lazy<bool> IntegralFloatResult = new(() => RunIntegralFloatAfter(Run));
 
     // Behind the `integralFloatAttributes` capability (scenario 426): an attribute value 3.0, passed
     // as the JSON number token POST /context/{id}/attribute hands the SDK, gives no cluster value,
@@ -102,9 +102,11 @@ public static class SwitchbackSelfTest
     // neither a lax reader nor one rejecting every number passes. Requires the switchback battery first.
     public static bool RunIntegralFloat() => IntegralFloatResult.Value;
 
-    private static bool RunIntegralFloatSafely()
+    // The integral-float probe gated on `battery`: false without running the probe when the battery
+    // fails. Takes the battery so tests can stub it.
+    public static bool RunIntegralFloatAfter(Func<bool> battery)
     {
-        if (!Run()) return false;
+        if (!battery()) return false;
         try
         {
             using var values = JsonDocument.Parse("{\"f\": 3.0, \"i\": 3}");

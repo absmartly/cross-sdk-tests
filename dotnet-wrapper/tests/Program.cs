@@ -38,4 +38,10 @@ Require(SwitchbackSelfTest.CheckIntegralFloat(Token("3.0"), Token("3")), "integr
 Require(!SwitchbackSelfTest.CheckIntegralFloat(Token("3"), Token("3")), "float keyed like the integer");
 Require(!SwitchbackSelfTest.CheckIntegralFloat(Token("3.0"), Token("3.0")), "integer as a float");
 Require(SwitchbackSelfTest.RunIntegralFloat(), "linked SDK integral-float self-test");
+// The probe itself passes on this SDK (above), so only the gate can make it false: a failing
+// switchback battery must withhold integralFloatAttributes.
+var batteryRuns = 0;
+Require(!SwitchbackSelfTest.RunIntegralFloatAfter(() => { batteryRuns++; return false; }),
+    "integral float advertised despite a failing switchback battery");
+Require(batteryRuns == 1, "switchback battery not consulted");
 Console.WriteLine("All probe regressions passed");

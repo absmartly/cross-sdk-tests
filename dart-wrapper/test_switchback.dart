@@ -54,6 +54,14 @@ Future<void> checkProbe() async {
   require(!await probe.checkIntegralFloat({'f': 3, 'i': 3}), 'float keyed like the integer');
   require(!await probe.checkIntegralFloat({'f': 3.0, 'i': 3.0}), 'integer as a float');
   require(await probe.runIntegralFloat(), 'linked SDK integral-float self-test');
+  // The probe itself passes on this SDK (above), so only the gate can make it
+  // false: a failing switchback battery must withhold integralFloatAttributes.
+  int batteryRuns = 0;
+  require(!await probe.runIntegralFloatAfter(() async {
+    batteryRuns++;
+    return false;
+  }), 'integral float advertised despite a failing switchback battery');
+  require(batteryRuns == 1, 'switchback battery not consulted');
 }
 
 Future<void> main() => checkProbe();
