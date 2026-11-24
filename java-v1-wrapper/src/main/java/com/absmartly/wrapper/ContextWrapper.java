@@ -58,10 +58,12 @@ public class ContextWrapper {
         this.sdk = sdk;
     }
 
-    /** Close the context before its scheduler, then release the transport even if either close fails. */
+    /** Close the context, if created, before its scheduler; release the transport even if either close fails. */
     public void closeClient() {
         try {
-            context.close();
+            if (context != null) {
+                context.close();
+            }
         } catch (Exception ignored) {
         } finally {
             try {

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class ReviewRegressionTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -122,6 +123,34 @@ class ReviewRegressionTest {
             assertEquals(1, transports.constructed().size());
             verify(client).close();
             verify(transports.constructed().get(0)).close();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"inline", "inline-cleanup-fails", "fetch", "fetch-cleanup-fails"})
+    void contextCreationFailureClosesClientAndTransportWithoutMaskingTheFailure(String mode) {
+        boolean inline = mode.startsWith("inline");
+        ABsmartlyClient client = mock(ABsmartlyClient.class);
+        ABsmartlyClient.Builder builder = mock(ABsmartlyClient.Builder.class, RETURNS_SELF);
+        when(builder.build()).thenReturn(client);
+        IllegalStateException creation = new IllegalStateException("context creation failed");
+        if (inline) when(client.context(any(), any())).thenThrow(creation);
+        else when(client.newContext(any())).thenThrow(creation);
+        if (mode.endsWith("cleanup-fails")) doThrow(new IllegalStateException("cleanup failed")).when(client).close();
+        Map<String, Object> request = inline
+            ? Map.of("data", Map.of("experiments", List.of()))
+            : Map.of("endpoint", "http://example.test");
+        WrapperController controller = new WrapperController();
+        try (var clients = mockStatic(ABsmartlyClient.class);
+             var transports = mockConstruction(WrapperTransport.class)) {
+            clients.when(ABsmartlyClient::builder).thenReturn(builder);
+            var response = controller.createContext(request);
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals(creation.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            assertEquals(1, transports.constructed().size());
+            verify(client).close();
+            verify(transports.constructed().get(0)).close();
+            assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
         }
     }
 }

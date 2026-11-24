@@ -130,6 +130,39 @@ class ReviewRegressionTest {
         order.verify(client).close();
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedContextCreationReleasesItsOwnClientButNotRegisteredOnes(boolean inline) throws Exception {
+        List<Client> created = new ArrayList<>();
+        WrapperController controller = new WrapperController();
+        Map<String, Object> source = inline ? Map.of("data", Map.of("experiments", List.of())) : Map.of();
+        try (var clients = mockStatic(Client.class)) {
+            clients.when(() -> Client.create(any())).thenAnswer(call -> {
+                Client client = mock(Client.class);
+                created.add(client);
+                return client;
+            });
+            Map<String, Object> good = new HashMap<>(source);
+            good.put("units", Map.of("user_id", "u1"));
+            var registered = controller.createContext(good);
+            assertEquals(HttpStatus.OK, registered.getStatusCode());
+
+            Map<String, Object> blank = new HashMap<>(source);
+            blank.put("units", Map.of("user_id", " "));
+            var response = controller.createContext(blank);
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals("Unit 'user_id' UID must not be blank.", ((Map<?, ?>) response.getBody()).get("error"));
+            assertEquals(2, created.size());
+            verify(created.get(1)).close();
+            verify(created.get(0), never()).close();
+            assertEquals(1, ((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).size());
+
+            String id = (String) ((Map<?, ?>) ((Map<?, ?>) registered.getBody()).get("result")).get("contextId");
+            controller.deleteContext(id);
+            verify(created.get(0)).close();
+        }
+    }
+
     @Test
     void deletingTimedContextShutsDownItsSdkOwnedSchedulerEvenAfterFinalize() {
         for (boolean finalizeFirst : List.of(false, true)) {

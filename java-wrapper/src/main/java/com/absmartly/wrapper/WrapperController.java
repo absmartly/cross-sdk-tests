@@ -459,55 +459,58 @@ public class WrapperController {
                 }
             };
 
-            // No environment configured: the SDK's own client and context, with the environment reported absent.
-            java.util.concurrent.ScheduledExecutorService noEnvScheduler = null;
-            if (clientEnvironment == null) {
-                noEnvScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-                java.util.concurrent.ScheduledExecutorService scheduler = noEnvScheduler;
-                AutoCloseable inner = owner;
-                owner = () -> {
-                    try {
-                        inner.close();
-                    } finally {
-                        scheduler.shutdownNow();
-                    }
-                };
-            }
-
+            // Until the registry holds the wrapper, this method owns client, transport and scheduler: any failure
+            // building the context (decoding, options, creation, awaits) closes them before the original propagates.
             Context context;
-            if (contextJson != null) {
-                // Sync: inline data, ready at once; refresh(newData) then serves from memory.
-                ContextData data;
-                try {
-                    data = ContextData.fromJson(contextJson);
-                } catch (Exception e) {
-                    try {
-                        owner.close();
-                    } catch (Exception cleanup) {
-                        e.addSuppressed(cleanup);
-                    }
-                    throw e;
+            ContextWrapper wrapper;
+            String contextId;
+            try {
+                // No environment configured: the SDK's own client and context, with the environment reported absent.
+                java.util.concurrent.ScheduledExecutorService noEnvScheduler = null;
+                if (clientEnvironment == null) {
+                    noEnvScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+                    java.util.concurrent.ScheduledExecutorService scheduler = noEnvScheduler;
+                    AutoCloseable inner = owner;
+                    owner = () -> {
+                        try {
+                            inner.close();
+                        } finally {
+                            scheduler.shutdownNow();
+                        }
+                    };
                 }
-                context = (noEnvScheduler != null)
-                    ? WrapperNoEnvironment.context(clientEndpoint, clientApplication, transport, noEnvScheduler,
-                        contextOptions.build(), data)
-                    : client.context(contextOptions.build(), data);
-                eventCollector.awaitEvent(0, 2000, "ready", "error");
-            } else {
-                // The SDK's own client fetches and decodes the payload from <endpoint>/context (or fails it, with
-                // failLoad); a throttled fetch leaves the context loading.
-                context = (noEnvScheduler != null)
-                    ? WrapperNoEnvironment.newContext(clientEndpoint, clientApplication, transport, noEnvScheduler,
-                        contextOptions.build())
-                    : client.newContext(contextOptions.build());
-                if (!(fetchOverHttp && payloadThrottle > 0)) {
-                    awaitLoad(context);
-                    eventCollector.awaitEvent(0, 2000, "ready", "error");
-                }
-            }
 
-            String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            ContextWrapper wrapper = new ContextWrapper(context, eventCollector, transport, owner, contextJson != null);
+                if (contextJson != null) {
+                    // Sync: inline data, ready at once; refresh(newData) then serves from memory.
+                    ContextData data = ContextData.fromJson(contextJson);
+                    context = (noEnvScheduler != null)
+                        ? WrapperNoEnvironment.context(clientEndpoint, clientApplication, transport, noEnvScheduler,
+                            contextOptions.build(), data)
+                        : client.context(contextOptions.build(), data);
+                    eventCollector.awaitEvent(0, 2000, "ready", "error");
+                } else {
+                    // The SDK's own client fetches and decodes the payload from <endpoint>/context (or fails it, with
+                    // failLoad); a throttled fetch leaves the context loading.
+                    context = (noEnvScheduler != null)
+                        ? WrapperNoEnvironment.newContext(clientEndpoint, clientApplication, transport, noEnvScheduler,
+                            contextOptions.build())
+                        : client.newContext(contextOptions.build());
+                    if (!(fetchOverHttp && payloadThrottle > 0)) {
+                        awaitLoad(context);
+                        eventCollector.awaitEvent(0, 2000, "ready", "error");
+                    }
+                }
+
+                contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                wrapper = new ContextWrapper(context, eventCollector, transport, owner, contextJson != null);
+            } catch (Exception e) {
+                try {
+                    owner.close();
+                } catch (Exception cleanup) {
+                    e.addSuppressed(cleanup);
+                }
+                throw e;
+            }
             contexts.put(contextId, wrapper);
 
             Map<String, Object> response = new HashMap<>();

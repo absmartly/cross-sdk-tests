@@ -452,8 +452,8 @@ public class WrapperController {
             contextConfig.setPublishDelay(publishDelay);
             contextConfig.setRefreshInterval(refreshPeriod);
 
-            Context context;
-            ABSmartly sdk;
+            Context context = null;
+            ABSmartly sdk = null;
             DummyContextDataProvider contextDataProvider = null;
 
             // Build a client carrying the requested system names once, so every
@@ -481,88 +481,100 @@ public class WrapperController {
                     .body(errorBody(e.getMessage(), Collections.emptyList()));
             }
 
-            // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
-            // (its real HTTP client) to {endpoint}/context.
-            boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
-            CustomPublisher publisher = new CustomPublisher(eventCollector,
-                publishToEndpoint ? new DefaultContextEventHandler(namedClient) : null);
+            // Until the registry holds the wrapper, this request owns namedClient (and any SDK built on it): a
+            // failure creating the context (e.g. a blank unit uid) releases them as deleteContext would.
+            ContextWrapper wrapper;
+            String contextId;
+            try {
+                // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
+                // (its real HTTP client) to {endpoint}/context.
+                boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
+                CustomPublisher publisher = new CustomPublisher(eventCollector,
+                    publishToEndpoint ? new DefaultContextEventHandler(namedClient) : null);
 
-            if (contextData != null) {
-                // Sync: createContextWith - use dummy data provider, but keep the
-                // configured client so the inline-data context still evaluates
-                // audiences against the requested application/environment.
-                contextDataProvider = new DummyContextDataProvider();
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(contextDataProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContextWith(contextConfig, contextData);
-            } else if (endpoint != null) {
-                // createContext with endpoint: a real SDK Client fetches and
-                // deserializes the payload from <endpoint>/context.
-                Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
-
-                Client client = namedClient;
-
-                if (payloadThrottle > 0) {
-                    // Delay the SDK's own fetch; the context stays not-ready until it lands.
-                    // Keep .setClient(client) so the delayed context still evaluates
-                    // against the configured names: the SDK reads them from the
-                    // config client, not from the custom data provider.
-                    DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
-                        new DefaultContextDataProvider(client), payloadThrottle);
+                if (contextData != null) {
+                    // Sync: createContextWith - use dummy data provider, but keep the
+                    // configured client so the inline-data context still evaluates
+                    // audiences against the requested application/environment.
+                    contextDataProvider = new DummyContextDataProvider();
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                        .setClient(client)
-                        .setContextDataProvider(deferredProvider)
+                        .setClient(namedClient)
+                        .setContextDataProvider(contextDataProvider)
                         .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
-                    context = sdk.createContext(contextConfig);
-                } else {
+                    context = sdk.createContextWith(contextConfig, contextData);
+                } else if (endpoint != null) {
+                    // createContext with endpoint: a real SDK Client fetches and
+                    // deserializes the payload from <endpoint>/context.
+                    Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
+
+                    Client client = namedClient;
+
+                    if (payloadThrottle > 0) {
+                        // Delay the SDK's own fetch; the context stays not-ready until it lands.
+                        // Keep .setClient(client) so the delayed context still evaluates
+                        // against the configured names: the SDK reads them from the
+                        // config client, not from the custom data provider.
+                        DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
+                            new DefaultContextDataProvider(client), payloadThrottle);
+                        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                            .setClient(client)
+                            .setContextDataProvider(deferredProvider)
+                            .setContextEventHandler(publisher)
+                            .setContextEventLogger(eventCollector);
+                        sdk = ABSmartly.create(sdkConfig);
+                        context = sdk.createContext(contextConfig);
+                    } else {
+                        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                            .setClient(client)
+                            .setContextEventHandler(publisher)
+                            .setContextEventLogger(eventCollector);
+                        sdk = ABSmartly.create(sdkConfig);
+                        context = sdk.createContext(contextConfig);
+                        context.waitUntilReady();
+                        eventCollector.awaitEvent(0, 2000, "ready", "error");
+                    }
+                } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
+                    ContextDataProvider failingProvider = new ContextDataProvider() {
+                        @Override
+                        public java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
+                            java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java.util.concurrent.CompletableFuture<>();
+                            f.completeExceptionally(new RuntimeException("Context load failed"));
+                            return f;
+                        }
+                    };
                     ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                        .setClient(client)
+                        .setClient(namedClient)
+                        .setContextDataProvider(failingProvider)
                         .setContextEventHandler(publisher)
                         .setContextEventLogger(eventCollector);
                     sdk = ABSmartly.create(sdkConfig);
                     context = sdk.createContext(contextConfig);
                     context.waitUntilReady();
                     eventCollector.awaitEvent(0, 2000, "ready", "error");
+                } else {
+                    DummyContextDataProvider dataProvider = new DummyContextDataProvider();
+                    ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
+                        .setClient(namedClient)
+                        .setContextDataProvider(dataProvider)
+                        .setContextEventHandler(publisher)
+                        .setContextEventLogger(eventCollector);
+                    sdk = ABSmartly.create(sdkConfig);
+                    context = sdk.createContext(contextConfig);
                 }
-            } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
-                ContextDataProvider failingProvider = new ContextDataProvider() {
-                    @Override
-                    public java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
-                        java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java.util.concurrent.CompletableFuture<>();
-                        f.completeExceptionally(new RuntimeException("Context load failed"));
-                        return f;
-                    }
-                };
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(failingProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContext(contextConfig);
-                context.waitUntilReady();
-                eventCollector.awaitEvent(0, 2000, "ready", "error");
-            } else {
-                DummyContextDataProvider dataProvider = new DummyContextDataProvider();
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(dataProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContext(contextConfig);
-            }
 
-            String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            ContextWrapper wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
-            wrapper.setClient(namedClient);
-            wrapper.setSdk(sdk);
+                contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
+                wrapper.setClient(namedClient);
+                wrapper.setSdk(sdk);
+            } catch (Exception e) {
+                ContextWrapper partial = new ContextWrapper(context, eventCollector, contextDataProvider);
+                partial.setSdk(sdk);
+                partial.setClient(namedClient);
+                partial.closeClient();
+                throw e;
+            }
             contexts.put(contextId, wrapper);
 
             Map<String, Object> result = new HashMap<>();

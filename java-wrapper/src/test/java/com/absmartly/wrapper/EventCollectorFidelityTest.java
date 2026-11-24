@@ -55,12 +55,15 @@ class EventCollectorFidelityTest {
                 assertEquals(0, context.treatment("not_running"));
                 collector.awaitEvent(0, 2000, "exposure");
                 assertEquals(1, raw.size());
-                assertEquals("", raw.get(0).unit()); // Actual linked 2.x SDK observation, not contract normalization.
+                // Whatever the linked SDK reports (2.x currently "", possibly null later) must reach the wire unchanged.
                 Map<?, ?> observed = collector.getEvents().stream()
                     .filter(event -> "exposure".equals(event.get("type")))
                     .map(event -> (Map<?, ?>) event.get("data")).findFirst().orElseThrow();
+                assertTrue(observed.containsKey("unit"));
                 assertEquals(raw.get(0).unit(), observed.get("unit"));
-                assertEquals("", MAPPER.valueToTree(observed).get("unit").textValue());
+                JsonNode wire = MAPPER.valueToTree(observed);
+                assertTrue(wire.has("unit"));
+                assertEquals(MAPPER.valueToTree(raw.get(0).unit()), wire.get("unit"));
             } finally {
                 context.close();
             }
