@@ -19,11 +19,6 @@ import requests
 from e2e_cases import case_specs, eq_filter, matches, measured_total, metric_specs
 
 
-# Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
-# allowance absorbs publish retries; anything above it is treated as an
-# over-publish (duplicate exposures/goals) and fails.
-OVER_PUBLISH_TOLERANCE = 1.05
-
 # Fallback environment when neither config["environment"] nor
 # ABSMARTLY_E2E_ENVIRONMENT is set. Experiment creation and the context poll
 # MUST agree on this name: create places the experiment in this environment and
@@ -58,7 +53,13 @@ def generate_run_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str = "", output_json: bool = True) -> Tuple[int, str]:
+# Only an HTTP 429 status from the API retries; a "429" elsewhere (an ID) does not.
+RATE_LIMITED_RE = re.compile(r"(status code 429|HTTP 429|\b429 Too Many Requests)", re.IGNORECASE)
+RATE_LIMIT_SLEEP = 120
+
+
+def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str = "", output_json: bool = True,
+            deadline: Optional[float] = None) -> Tuple[int, str]:
     cmd = ["abs"] + args
     if api_key and endpoint:
         cmd += ["--api-key", api_key, "--endpoint", endpoint]
@@ -68,10 +69,11 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
         cmd += ["-o", "json"]
     for attempt in range(3):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0 or not re.search(r"\b429\b", result.stdout + result.stderr):
+        if result.returncode == 0 or not RATE_LIMITED_RE.search(result.stdout + result.stderr):
             break
-        if attempt < 2:
-            time.sleep(120)
+        if attempt == 2 or (deadline is not None and time.time() + RATE_LIMIT_SLEEP >= deadline):
+            break
+        time.sleep(RATE_LIMIT_SLEEP)
     output = result.stdout.strip()
     if result.returncode != 0 and result.stderr.strip():
         output = output + "\n" + result.stderr.strip() if output else result.stderr.strip()
@@ -450,11 +452,11 @@ class E2ERunner:
         finally:
             requests.delete(url, timeout=10).raise_for_status()
 
-    def _query_metric(self, metric_id, sdk, case="baseline", experiment_id=None):
+    def _query_metric(self, metric_id, sdk, case="baseline", experiment_id=None, deadline=None):
         rc, output = run_abs([
             "experiments", "metrics", "results", str(experiment_id or self.experiment_id),
             "--metric", str(metric_id), "--filter", json.dumps(eq_filter(sdk_name=sdk, e2e_case=case)),
-        ], self.profile)
+        ], self.profile, deadline=deadline)
         if rc:
             self.log(f"Unmeasurable {sdk}/{case}/{metric_id}: {output}")
             return None
@@ -907,7 +909,7 @@ class E2ERunner:
 
         deadline = time.time() + self.timeout
         while time.time() < deadline:
-            metrics = self._fetch_metrics()
+            metrics = self._fetch_metrics(deadline)
             if metrics:
                 total_participants = self._extract_total_participants(metrics)
                 if total_participants >= total_expected_exposures and self._sentinels_landed(deadline):
@@ -936,12 +938,12 @@ class E2ERunner:
             if self.case_results.get(sdk, {}).get("batch", {}).get("status") != "sent":
                 continue
             batch = next(c for c in case_specs(self.run_id, sdk) if c["name"] == "batch")
-            metric = self._query_metric(self.case_metric_ids["events"], sdk, "batch")
+            metric = self._query_metric(self.case_metric_ids["events"], sdk, "batch", deadline=deadline)
             if not matches(batch["expected"]["events"], measured_total(metric, "count")):
                 return False
         return True
 
-    def _fetch_metrics(self) -> Optional[Dict[str, Any]]:
+    def _fetch_metrics(self, deadline: Optional[float] = None) -> Optional[Dict[str, Any]]:
         if not self.experiment_id:
             return None
 
@@ -949,7 +951,7 @@ class E2ERunner:
             "experiments", "metrics", "results", str(self.experiment_id),
             "--metric", str(self.metric_id),
             "--filter", json.dumps(eq_filter(e2e_case="baseline")),
-        ], self.profile)
+        ], self.profile, deadline=deadline)
 
         if rc != 0:
             self.log(f"Metrics fetch failed: {output}")
@@ -976,45 +978,6 @@ class E2ERunner:
             return total
 
         return 0
-
-    def _extract_total_goals(self, metrics: Any) -> int:
-        """Goal/conversion count from a goal_unique_count metric result.
-
-        Per the metric-results schema, each VariantResult carries `unit_count`
-        (participants) and `count` (the metric numerator — for a
-        goal_unique_count metric this is the number of converting units). Sum
-        `count` across variants, with fallbacks for older field names.
-        """
-        if not metrics:
-            return 0
-
-        metric_list = metrics if isinstance(metrics, list) else [metrics]
-        total = 0
-        for metric in metric_list:
-            if not isinstance(metric, dict):
-                continue
-            for variant in metric.get("variants", []):
-                if not isinstance(variant, dict):
-                    continue
-                for field in ("count", "goal_count", "numerator", "conversion_count"):
-                    val = variant.get(field)
-                    if isinstance(val, (int, float)):
-                        total += int(val)
-                        break
-        return total
-
-    def _within_tolerance(self, expected: int, actual: Optional[int]) -> bool:
-        """Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE.
-
-        Equality-with-tolerance (not actual >= expected) so a duplicate/over-
-        publish is caught as a failure instead of silently passing. When nothing
-        was planned, the backend must also show nothing.
-        """
-        if actual is None:
-            return False
-        if expected <= 0:
-            return actual == 0
-        return expected <= actual <= int(expected * OVER_PUBLISH_TOLERANCE)
 
     def _fetch_metrics_for_sdk(self, sdk_name: str) -> Optional[Dict[str, Any]]:
         return self._query_metric(self.metric_id, sdk_name)
@@ -1140,16 +1103,6 @@ class E2ERunner:
         print(f"  {header}")
         print(f"  {separator}")
 
-        total_exp_expected = 0
-        total_exp_actual = 0
-        total_goal_expected = 0
-        total_goal_actual = 0
-        total_rev_expected = 0
-        total_rev_actual = 0
-        # Set when at least one verified row was excluded from the actual totals
-        # because it was unverified — the TOTAL actual is then a lower bound.
-        total_partially_unverified = False
-
         for sdk_name, sdk_data in sdks.items():
             if sdk_data.get("status") == "skipped":
                 print(
@@ -1174,18 +1127,6 @@ class E2ERunner:
             goal = sdk_data["goals"]
             rev = sdk_data["revenue"]
 
-            total_exp_expected += exp["expected"]
-            total_goal_expected += goal["expected"]
-            total_rev_expected += rev["expected"]
-            # Only sum actuals we actually verified. Unverified rows carry no
-            # trustworthy actual, so excluding them keeps the TOTAL honest.
-            if exp.get("unverified") or exp.get("actual") is None:
-                total_partially_unverified = True
-            else:
-                total_exp_actual += exp.get("actual") or 0
-                total_goal_actual += goal.get("actual") or 0
-                total_rev_actual += rev.get("actual") or 0
-
             exp_str = self._format_metric(exp)
             goal_str = self._format_metric(goal)
             rev_str = self._format_metric(rev)
@@ -1198,30 +1139,7 @@ class E2ERunner:
 
         print(f"  {separator}")
 
-        total_exp = self._format_total(total_exp_expected, total_exp_actual, total_partially_unverified)
-        total_goal = self._format_total(total_goal_expected, total_goal_actual, total_partially_unverified)
-        total_rev = self._format_total(total_rev_expected, total_rev_actual, total_partially_unverified)
-
-        print(f"  {Colors.BOLD}{'TOTAL':<{col_sdk}}{Colors.RESET}{total_exp:<{col_data}}{total_goal:<{col_data}}{total_rev:<{col_data}}")
-        if total_partially_unverified:
-            print(f"  {Colors.YELLOW}(TOTAL actual excludes unverified SDKs — lower bound){Colors.RESET}")
         print()
-
-        agg = results.get("aggregate")
-        if agg:
-            if agg.get("gating"):
-                color = Colors.GREEN if agg["pass"] else Colors.RED
-                label = "PASS" if agg["pass"] else "FAIL"
-            else:
-                # Per-SDK segmentation was the authoritative gate; the unsegmented
-                # aggregate is informational only (unreliable on this backend).
-                color = Colors.YELLOW
-                label = "info (per-SDK segmentation authoritative)"
-            print(
-                f"  {color}Backend participants: "
-                f"{agg['actual_participants']}/{agg['expected_participants']} {label}{Colors.RESET}"
-            )
-            print()
 
         for sdk, cases in results.get("event_cases", {}).items():
             for name, result in cases.items():
@@ -1250,17 +1168,6 @@ class E2ERunner:
         label = "PASS" if passed else "FAIL"
         if metric.get("derived"):
             label += " (derived)"
-        return f"{color}{actual}/{expected} {label}{Colors.RESET}"
-
-    def _format_total(self, expected: int, actual: int, partial: bool) -> str:
-        # With unverified SDKs excluded, `actual` is a lower bound, so an equality
-        # gate would be misleading; require only actual >= expected here and flag
-        # the caveat separately.
-        passed = actual >= expected if partial else self._within_tolerance(expected, actual)
-        color = Colors.YELLOW if partial else (Colors.GREEN if passed else Colors.RED)
-        label = "PASS" if passed else "FAIL"
-        if partial:
-            label += "*"
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:

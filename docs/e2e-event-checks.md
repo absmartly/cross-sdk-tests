@@ -30,7 +30,9 @@ Comparisons use an absolute 1e-9 allowance for arithmetic noise, never rounding 
   python3-sdk serializes with `strip_nulls=True` and sends `{}`; that is an SDK release gate.
 
 Polling waits for baseline participants plus one sentinel query per SDK (the batch case's
-goal count) and never runs past `--timeout`; the full case check runs once afterwards.
+goal count); the full case check runs once afterwards. A CLI call
+is capped at 30s, and an HTTP 429 sleeps 120s and retries only while that sleep ends before the
+deadline, so a poll overruns `--timeout` by at most one in-flight call.
 Raw property comparison is by numeric value (10 equals 10.0); agents must carry a version
 unless the SDK's `xAgentHeader` policy is a reviewed exception.
 

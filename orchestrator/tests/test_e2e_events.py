@@ -145,7 +145,7 @@ def test_raw_collector_query_failure_cannot_pass_zero(runner):
 
 
 def test_429_sleeps_120_then_retries():
-    fail = Mock(returncode=1, stdout="", stderr="HTTP 429")
+    fail = Mock(returncode=1, stdout="", stderr="API error: Request failed with status code 429")
     ok = Mock(returncode=0, stdout="[]", stderr="")
     with patch("e2e_runner.subprocess.run", side_effect=[fail, ok]), patch("e2e_runner.time.sleep") as sleep:
         assert run_abs(["metrics", "list"]) == (0, "[]")
@@ -320,7 +320,7 @@ def test_python_null_value_is_reviewed_exception(runner):
 
 def test_poll_respects_deadline(runner):
     clock = [0.0]
-    def slow_query(mid, sdk, name, *rest):
+    def slow_query(mid, sdk, name, *rest, **kw):
         # Every SDK's batch lands except the last, so the loop must walk all of them.
         clock[0] += 100
         count = BATCH_SIZE if sdk != "sdk21" else 0
@@ -336,3 +336,139 @@ def test_poll_respects_deadline(runner):
          patch.object(runner, "_query_metric", side_effect=slow_query) as q:
         runner.wait_for_metrics()
     assert q.call_count <= 3
+
+
+# --- Review round 3: one killing test per surviving false-pass mutant. ---
+
+def _all_backend(runner):
+    return lambda mid, sdk, name, *rest, **kw: backend(runner, sdk, name, mid)
+
+
+def test_verify_metrics_checks_event_cases(runner):
+    # M2: verify_metrics must run the case check, not just the baseline.
+    runner.sdk_results = {"javascript": {"status": "ok", "planned_exposures": 2, "planned_goals": 1}}
+    def query(mid, sdk, name="baseline", *rest, **kw):
+        if name == "baseline":
+            count = 1 if mid == runner.metric_id else 10
+            return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 2, "count": count}]}
+        if name == "batch":
+            return None
+        return backend(runner, sdk, name, mid)
+    with patch.object(runner, "_query_metric", side_effect=query), \
+         patch.object(runner, "_verify_arrival", return_value={"pass": True}):
+        result = runner.verify_metrics()
+    assert result["sdks"]["javascript"]["status"] == "ok"
+    assert result["event_cases"]["javascript"]["batch"]["status"] == "fail"
+    assert not result["overall_pass"]
+
+
+def test_raw_arrival_failure_fails_case(runner):
+    # M4: a failing raw collector check fails the case even when metrics match.
+    with patch.object(runner, "_query_metric", side_effect=_all_backend(runner)), \
+         patch.object(runner, "_verify_arrival", side_effect=lambda sdk, case: {"pass": case["name"] != "strings", "errors": ["x"]}):
+        result = verify(runner)
+    assert result["event_cases"]["javascript"]["strings"]["status"] == "fail"
+    assert result["event_cases"]["javascript"]["booleans"]["status"] == "pass"
+    assert not result["overall_pass"]
+
+
+def test_unsent_case_fails_run(runner):
+    # M11: a case whose send failed fails the run.
+    runner.case_results["javascript"]["batch"] = {"status": "fail", "reason": "wrapper 500"}
+    with patch.object(runner, "_query_metric", side_effect=_all_backend(runner)), \
+         patch.object(runner, "_verify_arrival", return_value={"pass": True}):
+        result = verify(runner)
+    assert result["event_cases"]["javascript"]["batch"]["status"] == "fail"
+    assert not result["overall_pass"]
+
+
+def _baseline(runner, exposures, goals, revenue):
+    runner.sdk_results = {"javascript": {"status": "ok", "planned_exposures": 4, "planned_goals": 2}}
+    def query(mid, sdk, name="baseline", *rest, **kw):
+        if mid == runner.metric_id:
+            return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": exposures, "count": goals}]}
+        assert mid == runner.case_metric_ids["amount"]
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": exposures, "count": revenue}]}
+    result = {"sdks": {}, "overall_pass": True}
+    with patch.object(runner, "_query_metric", side_effect=query):
+        runner._verify_active_sdks(result, runner.sdk_results)
+    return result
+
+
+def test_baseline_measures_each_number(runner):
+    # M7/M8: exposures gate, and revenue comes from the amount metric, never the count.
+    assert _baseline(runner, 4, 2, 20)["overall_pass"]
+    assert not _baseline(runner, 3, 2, 20)["overall_pass"]
+    assert not _baseline(runner, 4, 2, 2)["overall_pass"]
+    assert not _baseline(runner, 4, 1, 20)["overall_pass"]
+
+
+def test_exposure_to_another_experiment_does_not_count(runner):
+    # M6
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    rows[0]["experiment_id"] = 999
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert not runner._verify_arrival("javascript", case)["pass"]
+
+
+def test_repeated_goals_are_a_multiset(runner):
+    # M5: one of seven identical goals arriving must fail.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "repeated")
+    rows = raw_fixture(runner, case)
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows[:2]))):
+        assert not runner._verify_arrival("javascript", case)["pass"]
+
+
+def test_poll_waits_for_sentinels(runner):
+    # M1: baseline participants alone must not end the poll; the batch sentinel must land.
+    clock = [0.0]
+    runner.timeout = 60
+    runner.sdk_results = {"javascript": {"status": "ok", "exposures_sent": 1}}
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    landed = [False, False, True]
+    def query(mid, sdk, name, *rest, **kw):
+        assert (sdk, name) == ("javascript", "batch")
+        count = BATCH_SIZE if landed.pop(0) else 0
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
+    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
+         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
+         patch("e2e_runner.run_abs", return_value=(0, "")), \
+         patch.object(runner, "_fetch_metrics", return_value={"variants": [{"unit_count": 99}]}), \
+         patch.object(runner, "_query_metric", side_effect=query) as q:
+        runner.wait_for_metrics()
+    assert q.call_count == 3 and not landed
+    assert clock[0] == 10
+
+
+def test_case_expectations_are_literal(runner):
+    # M19/M21/M22: expected values pinned, not read back from the code under test.
+    cases = {c["name"]: c["expected"] for c in case_specs(runner.run_id, "javascript")}
+    assert cases["nested"]["nested"] == Decimal("6.6")
+    assert cases["strings"]["eur"] == 2
+    assert (cases["booleans"]["true"], cases["booleans"]["false"]) == (2, 1)
+    assert cases["no_properties"]["events"] == 1 and cases["null_properties"]["events"] == 1
+    assert cases["null_properties"]["amount"] == 0
+    assert cases["repeated"]["events"] == 7 and cases["batch"]["events"] == 300
+    assert cases["numeric_total"]["amount"] == Decimal("1000016.6")
+    assert [cases[f"numeric_{i}"]["amount"] for i in range(6)] == \
+        [10, Decimal("10.5"), Decimal("0.1"), -4, 0, 1000000]
+
+
+def test_429_in_an_id_does_not_retry():
+    fail = Mock(returncode=1, stdout="", stderr="Error: metric 429 not found")
+    with patch("e2e_runner.subprocess.run", return_value=fail) as run, patch("e2e_runner.time.sleep") as sleep:
+        assert run_abs(["metrics", "get", "429"])[0] == 1
+    assert run.call_count == 1 and not sleep.called
+
+
+def test_429_retry_stops_at_deadline():
+    clock = [0.0]
+    fail = Mock(returncode=1, stdout="", stderr="API error: Request failed with status code 429")
+    with patch("e2e_runner.subprocess.run", return_value=fail) as run, \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
+         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)):
+        run_abs(["metrics", "list"], deadline=150)
+    assert run.call_count == 2 and clock[0] == 120
