@@ -295,7 +295,7 @@ class E2ERunner:
         """
         self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
         if self.revenue_metric_id:
-            self._check_revenue_metric_definition(self.revenue_metric_id)
+            self._reuse_revenue_metric(self.revenue_metric_id)
             self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
             return
 
@@ -312,7 +312,7 @@ class E2ERunner:
         if rc != 0 and "already exists" in output:
             self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
             if self.revenue_metric_id:
-                self._check_revenue_metric_definition(self.revenue_metric_id)
+                self._reuse_revenue_metric(self.revenue_metric_id)
                 return
         if rc != 0:
             raise RuntimeError(f"Failed to create revenue metric: {output}")
@@ -321,26 +321,41 @@ class E2ERunner:
         if not self.revenue_metric_id:
             raise RuntimeError(f"Could not determine revenue metric ID from output: {output}")
 
+        self._review_and_activate_revenue_metric(self.revenue_metric_id)
+        self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+
+    def _review_and_activate_revenue_metric(self, metric_id: str) -> None:
         actions = [
-            ["metrics", "review", "request", self.revenue_metric_id],
-            ["metrics", "review", "approve", self.revenue_metric_id],
-            ["metrics", "activate", self.revenue_metric_id, "--reason", "E2E testing"],
+            ["metrics", "review", "request", metric_id],
+            ["metrics", "review", "approve", metric_id],
+            ["metrics", "activate", metric_id, "--reason", "E2E testing"],
         ]
         for action in actions:
             rc, output = run_abs(action, self.profile, output_json=False)
             if rc != 0:
                 raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
 
-        self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+    def _reuse_revenue_metric(self, metric_id: str) -> None:
+        """Check an existing revenue metric and activate it if a run left it inactive.
 
-    def _check_revenue_metric_definition(self, metric_id: str) -> None:
+        A run whose review/approve/activate step failed leaves the metric in
+        draft; later runs find it by name, so they re-run the activation instead
+        of accepting a metric that measures nothing.
+        """
+        status = self._check_revenue_metric_definition(metric_id)
+        if status is not None and status != "active":
+            self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r}; reviewing and activating it")
+            self._review_and_activate_revenue_metric(metric_id)
+
+    def _check_revenue_metric_definition(self, metric_id: str) -> Optional[str]:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
 
         A metric found by name alone could be a different type or property, and
         its result would then be "measured" wrongly. `abs metrics get <id> --raw`
         returns the metric's `type` and `value_source_property` (absmartly/cli
         src/core/metrics/payload.ts). The goal is checked when the payload
-        carries it as a nested goal or `goal_id`.
+        carries it as a nested goal or `goal_id`. Returns the metric's
+        `lifecycle_status` (e.g. "draft", "active"), or None if absent.
         """
         # `--raw`: without it the CLI prints a summary that has no
         # value_source_property and a plain-string goal (absmartly/cli
@@ -370,6 +385,8 @@ class E2ERunner:
                 f"Existing metric '{REVENUE_METRIC_NAME}' (id={metric_id}) cannot measure revenue: "
                 + "; ".join(problems)
             )
+        status = metric.get("lifecycle_status")
+        return status if isinstance(status, str) else None
 
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"
@@ -692,7 +709,12 @@ class E2ERunner:
             print(f"\n{Colors.YELLOW}[dry-run]{Colors.RESET} Skipping metrics polling")
             return
 
-        active_sdks = {k: v for k, v in self.sdk_results.items() if v.get("status") == "ok"}
+        # An SDK with wrapper errors already fails verification, so waiting for its
+        # planned counts would only spend the whole timeout on a decided result.
+        active_sdks = {
+            k: v for k, v in self.sdk_results.items()
+            if v.get("status") == "ok" and not any(self._error_counts(v).values())
+        }
         if not active_sdks:
             print("\nNo active SDKs to verify metrics for")
             return
@@ -954,8 +976,9 @@ class E2ERunner:
             self.profile,
         )
         if rc != 0:
-            # `output` already carries the CLI stderr (see run_abs).
-            print(
+            # `output` already carries the CLI stderr (see run_abs). Readiness polls
+            # repeatedly, so each distinct failure is printed once per run.
+            self._print_once(
                 f"  {Colors.RED}Segmentation query failed for {sdk_name}"
                 f"{Colors.RESET} (abs rc={rc}): {output}"
             )
@@ -964,7 +987,7 @@ class E2ERunner:
             return None, f"{reason}: {first_line}" if first_line else reason
         data = parse_json_output(output)
         if data is None:
-            print(
+            self._print_once(
                 f"  {Colors.RED}Segmentation output for {sdk_name} could not be "
                 f"parsed{Colors.RESET}: {output[:300]}"
             )
@@ -1064,6 +1087,12 @@ class E2ERunner:
             results["overall_pass"] = False
 
         return results
+
+    def _print_once(self, message: str) -> None:
+        printed = self.__dict__.setdefault("_printed_messages", set())
+        if message not in printed:
+            printed.add(message)
+            print(message)
 
     def _error_counts(self, sdk_result: Dict[str, Any]) -> Dict[str, int]:
         return {

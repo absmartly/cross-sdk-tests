@@ -192,3 +192,13 @@ class SwiftSkippedTestsTest(unittest.TestCase):
             "\u2714 Test run with 2 tests in 1 suite passed after 0.01 seconds.\n"
         )
         self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (1, 0, 2))
+
+
+    def test_commented_skips_and_cancelled_tests_are_not_counted_as_passed(self):
+        output = (
+            "\u2714 Test a() passed after 0.001 seconds.\n"
+            "\u2794 Test b() skipped: \"needs network\"\n"
+            "\u2718 Test c() was cancelled after 0.002 seconds.\n"
+            "\u2714 Test run with 3 tests in 1 suite passed after 0.01 seconds.\n"
+        )
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (1, 0, 3))

@@ -244,8 +244,11 @@ def parse_swift_test(output):
     test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
     st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
     st_failed = len(re.findall(test_line.format(status="failed"), output, re.MULTILINE))
-    # A skipped test ("➔ Test name() skipped.") is in the run total but did not pass.
-    st_skipped = len(re.findall(r"^\S+ Test (?!run with ).*? skipped\.?\s*$", output, re.MULTILINE))
+    # A skipped test is in the run total but did not pass: "➔ Test name() skipped."
+    # or, with a comment, 'Test name() skipped: "reason"'. A cancelled test
+    # ("Test name() was cancelled after N seconds") did not pass either.
+    st_skipped = len(re.findall(r'^\S+ Test (?!run with ).*? skipped(?:\.|: ".*")?\s*$', output, re.MULTILINE))
+    st_skipped += len(re.findall(r"^\S+ Test (?!run with ).*? was cancelled after [\d.]+ seconds", output, re.MULTILINE))
     runs = re.findall(
         r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after", output, re.MULTILINE)
     if runs:

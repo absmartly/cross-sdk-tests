@@ -824,10 +824,51 @@ def test_existing_revenue_metric_with_wrong_goal_id_is_refused(monkeypatch):
         runner._ensure_revenue_metric()
 
 
-def test_summary_output_without_raw_would_be_refused():
-    # Guard for the --raw flag: the CLI summary lacks value_source_property.
+def test_definition_check_refuses_the_cli_summary_shape(monkeypatch):
+    # What `metrics get` prints without --raw must not pass the definition check.
     summary = metric_get_output(REVENUE_DEFINITION, ["metrics", "get", "2914"])
-    assert "value_source_property" not in summary
+    monkeypatch.setattr(e2e_runner, "run_abs", lambda args, *a, **kw: (0, json.dumps(summary)))
+    runner = make_runner(sdks=("java",))
+    with pytest.raises(RuntimeError, match="value_source_property=None"):
+        runner._check_revenue_metric_definition(REVENUE_METRIC_ID)
+
+
+@pytest.mark.parametrize("status, reactivated", [("draft", True), ("active", False), (None, False)])
+def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, reactivated):
+    definition = dict(REVENUE_DEFINITION)
+    if status is not None:
+        definition["lifecycle_status"] = status
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate")]
+    expected = [
+        ["metrics", "review", "request", str(REVENUE_METRIC_ID)],
+        ["metrics", "review", "approve", str(REVENUE_METRIC_ID)],
+        ["metrics", "activate", str(REVENUE_METRIC_ID), "--reason", "E2E testing"],
+    ]
+    assert tail == (expected if reactivated else [])
+
+
+def test_reactivation_failure_of_existing_metric_stops_the_run(monkeypatch):
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft"}
+
+    def fake(args, profile="", api_key="", endpoint="", output_json=True):
+        if args[:2] == ["metrics", "list"]:
+            return 0, json.dumps([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+        if args[:2] == ["metrics", "get"]:
+            return 0, json.dumps(metric_get_output(definition, args))
+        if args[:3] == ["metrics", "review", "approve"]:
+            return 1, "approval denied"
+        return 0, ""
+
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="approval denied"):
+        runner._ensure_revenue_metric()
 
 
 def test_trailing_comma_in_sdk_list_is_ignored(monkeypatch):

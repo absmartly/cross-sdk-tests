@@ -612,3 +612,37 @@ def test_wait_does_not_start_queries_after_the_deadline(monkeypatch, capsys, pol
     runner.wait_for_metrics()
     assert started_after_deadline == []
     assert "Metrics incomplete" in capsys.readouterr().out
+
+
+def test_wait_skips_sdks_whose_wrapper_errors_already_fail_them(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend(sdks=("java",))
+    runner = make_runner(sdks=("java",))
+    runner.timeout = 12
+    runner.sdk_results["java"]["treatment_errors"] = 100
+    calls = []
+
+    def record(args, *a, **kw):
+        calls.append(list(args))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", record)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert not [c for c in calls if c[:3] == ["experiments", "metrics", "results"]]
+    assert "No active SDKs" in capsys.readouterr().out
+
+
+def test_wait_prints_a_repeated_segmentation_failure_once(monkeypatch, capsys, poll_clock):
+    runner = make_runner(sdks=("java",))
+    runner.timeout = 12
+
+    def rejected(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        return 1, "filter rejected"
+
+    monkeypatch.setattr(e2e_runner, "run_abs", rejected)
+    runner.wait_for_metrics()
+    out = capsys.readouterr().out
+    assert out.count("Segmentation query failed for java") == 1
+    assert "Metrics incomplete" in out

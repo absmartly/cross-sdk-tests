@@ -408,8 +408,9 @@ An SDK whose exposures, goals or revenue the backend can't measure is a failure
 (`unverified: <reason>` / `unverified: revenue <reason>`), not a skip: the run
 prints `PASS All metrics verified` and exits 0 only when every non-skipped SDK
 row was measured and passed. An existing `e2e_purchase_revenue` is read with `abs metrics get <id> --raw` and
-refused unless it is a goal_property metric on the `amount` property of
-`purchase`. An SDK named with `--sdk` must be verified: if it
+refused unless it is a goal_property metric on the `amount` property (and,
+when the payload names the goal, on `purchase`); one left inactive by a failed
+run is reviewed and activated again. An SDK named with `--sdk` must be verified: if it
 is skipped (its wrapper returns 501 for e2e mode) or unknown, the run fails.
 Only SDKs that were not requested (the default "all") may be skipped, and the
 report lists them; a run where every SDK is skipped fails. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
