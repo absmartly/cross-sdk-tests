@@ -308,13 +308,22 @@ static json make_error_response(const std::string& error,
     return json{{"error", error}, {"events", events_to_json(window_events())}};
 }
 
-static std::optional<nlohmann::ordered_json> find_payload(const std::string& id) {
-    std::lock_guard<std::mutex> lock(payloads_mu);
-    auto it = payload_store_map.find(id);
-    if (it == payload_store_map.end()) {
-        return std::nullopt;
+// Responds with a stored payload, or 404 for an unknown one.
+static void serve_payload(const std::string& id, httplib::Response& res) {
+    std::optional<std::string> body;
+    {
+        std::lock_guard<std::mutex> lock(payloads_mu);
+        auto it = payload_store_map.find(id);
+        if (it != payload_store_map.end()) {
+            body = it->second.dump();
+        }
     }
-    return it->second;
+    if (!body) {
+        res.status = 404;
+        res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
+        return;
+    }
+    res.set_content(*body, "application/json");
 }
 
 int main() {
@@ -519,13 +528,7 @@ int main() {
                         std::this_thread::sleep_for(std::chrono::milliseconds(throttle));
                     }
                 }
-                std::optional<nlohmann::ordered_json> stored = find_payload(payload_id);
-                if (!stored) {
-                    res.status = 404;
-                    res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
-                    return;
-                }
-                res.set_content(stored->dump(), "application/json");
+                serve_payload(payload_id, res);
             });
 
     // Mock collector `GET {endpoint}/context`, fetched by the SDK's Client. An
@@ -535,13 +538,7 @@ int main() {
             [](const httplib::Request& req, httplib::Response& res) {
                 std::string payload_id = req.matches[1];
                 capture_request(payload_id, req);
-                std::optional<nlohmann::ordered_json> stored = find_payload(payload_id);
-                if (!stored) {
-                    res.status = 404;
-                    res.set_content(make_error_response("payload not found", "NOT_FOUND").dump(), "application/json");
-                    return;
-                }
-                res.set_content(stored->dump(), "application/json");
+                serve_payload(payload_id, res);
             });
 
     svr.Post("/context",

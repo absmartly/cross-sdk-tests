@@ -396,9 +396,10 @@ public class WrapperController {
             }
 
             // An explicit "data": null is treated as absent (the context is fetched from the endpoint), as in 1.x.
+            Object inlineData = request.get("data");
             String contextJson = null;
-            if (request.get("data") != null) {
-                contextJson = objectMapper.writeValueAsString(request.get("data"));
+            if (inlineData != null) {
+                contextJson = objectMapper.writeValueAsString(inlineData);
             }
 
             String endpoint = (String) request.get("endpoint");

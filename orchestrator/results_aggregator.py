@@ -72,11 +72,7 @@ UNIT_TEST_PARSERS = {
     },
     "swift": {
         "framework": "swift test",
-        "patterns": [
-            (r"Test Case '.*?' passed", lambda m: (1, 0, None)),
-            (r"Test Case '.*?' failed", lambda m: (0, 1, None)),
-        ],
-        "aggregate": True,
+        "custom_parser": "swift_test",
     },
     "rust": {
         "framework": "cargo test",
@@ -228,6 +224,42 @@ def parse_gradle_junit(output):
     return None, None, None
 
 
+def parse_swift_test(output):
+    """Parse `swift test` output: XCTest and swift-testing, combined.
+
+    XCTest prints one "Test Case '...' passed/failed" line per test. swift-testing
+    (Swift 6) prints its own lines, one run per test target, ending in a summary:
+      ✔ Test run with 566 tests in 37 suites passed after 8.167 seconds.
+      ✘ Test run with 566 tests in 37 suites failed after 9.244 seconds with 33 issues.
+    and one result line per test (parameterised tests count once):
+      ✔ Test evaluate() passed after 0.001 seconds.
+      ✘ Test retries(count:) with 4 test cases failed after 6.1 seconds with 2 issues.
+    The two formats never share a line, so the counts add up without double
+    counting. The leading symbol is matched loosely (macOS uses SF Symbols).
+    """
+    output = strip_ansi(output)
+    xc_passed = len(re.findall(r"Test Case '.*?' passed", output, re.MULTILINE))
+    xc_failed = len(re.findall(r"Test Case '.*?' failed", output, re.MULTILINE))
+
+    test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
+    st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
+    st_failed = len(re.findall(test_line.format(status="failed"), output, re.MULTILINE))
+    runs = re.findall(
+        r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after", output, re.MULTILINE)
+    if runs:
+        # The run summaries are authoritative for the total; a failed run counts
+        # at least one failure even if no single test reported one.
+        st_total = sum(int(n) for n, _ in runs)
+        failed_runs = sum(1 for _, status in runs if status == "failed")
+        st_failed = min(st_total, max(st_failed, failed_runs))
+        st_passed = st_total - st_failed
+
+    passed, failed = xc_passed + st_passed, xc_failed + st_failed
+    if passed or failed:
+        return passed, failed, passed + failed
+    return None, None, None
+
+
 def parse_pytest_summary(output):
     output = strip_ansi(output)
     matches = re.findall(r"=+\s+([\d\w,. ]+)\s+=+\s*$", output, re.MULTILINE)
@@ -291,6 +323,9 @@ def parse_unit_test_output(sdk, output):
 
     if parser.get("custom_parser") == "gradle_junit":
         return parse_gradle_junit(output)
+
+    if parser.get("custom_parser") == "swift_test":
+        return parse_swift_test(output)
 
     if parser.get("aggregate"):
         passed = 0
