@@ -163,6 +163,29 @@ class ReviewRegressionTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void failedContextConstructionReleasesItsSdkAndClient(boolean inline) throws Exception {
+        Client client = mock(Client.class);
+        ABSmartly sdk = mock(ABSmartly.class);
+        IllegalStateException creation = new IllegalStateException("context construction failed");
+        if (inline) when(sdk.createContextWith(any(), any())).thenThrow(creation);
+        else when(sdk.createContext(any())).thenThrow(creation);
+        Map<String, Object> request = inline ? Map.of("data", Map.of("experiments", List.of())) : Map.of();
+        WrapperController controller = new WrapperController();
+        try (var clients = mockStatic(Client.class); var owners = mockStatic(ABSmartly.class)) {
+            clients.when(() -> Client.create(any())).thenReturn(client);
+            owners.when(() -> ABSmartly.create(any())).thenReturn(sdk);
+            var response = controller.createContext(request);
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals(creation.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            // The SDK owns the scheduler: it was built before construction failed, so it must be released too.
+            verify(sdk).close();
+            verify(client).close();
+            assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
+        }
+    }
+
     @Test
     void deletingTimedContextShutsDownItsSdkOwnedSchedulerEvenAfterFinalize() {
         for (boolean finalizeFirst : List.of(false, true)) {

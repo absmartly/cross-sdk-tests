@@ -16,6 +16,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -123,6 +125,34 @@ class ReviewRegressionTest {
             assertEquals(1, transports.constructed().size());
             verify(client).close();
             verify(transports.constructed().get(0)).close();
+        }
+    }
+
+    @Test
+    void failedNoEnvironmentCreationReleasesSchedulerClientAndTransport() {
+        ABsmartlyClient client = mock(ABsmartlyClient.class);
+        ABsmartlyClient.Builder builder = mock(ABsmartlyClient.Builder.class, RETURNS_SELF);
+        when(builder.build()).thenReturn(client);
+        ScheduledExecutorService scheduler = mock(ScheduledExecutorService.class);
+        RuntimeException decode = assertThrows(RuntimeException.class,
+            () -> ContextData.fromJson("{\"experiments\":\"not an experiment array\"}"));
+        WrapperController controller = new WrapperController();
+        try (var clients = mockStatic(ABsmartlyClient.class);
+             var executors = mockStatic(Executors.class, CALLS_REAL_METHODS);
+             var transports = mockConstruction(WrapperTransport.class)) {
+            clients.when(ABsmartlyClient::builder).thenReturn(builder);
+            executors.when(Executors::newSingleThreadScheduledExecutor).thenReturn(scheduler);
+            // An application but no environment selects the no-environment path, which owns its own scheduler.
+            var response = controller.createContext(Map.of(
+                "data", Map.of("experiments", "not an experiment array"),
+                "client", Map.of("application", "app")));
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals(decode.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            verify(scheduler).shutdownNow();
+            assertEquals(1, transports.constructed().size());
+            verify(client).close();
+            verify(transports.constructed().get(0)).close();
+            assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
         }
     }
 
