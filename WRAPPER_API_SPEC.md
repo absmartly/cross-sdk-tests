@@ -1527,11 +1527,11 @@ itself). `peekVariableValue` exposes nothing. A constant `true` is allowed for
 the SDKs that require it; scenarios 340-368 verify it. The javascript, react,
 vue2, vue3 and angular wrappers require it too (javascript-sdk pinned at
 2aa9a2d) but derive it from a behavioral self-test
-(`javascript-wrapper/sharedVariableKeysSelfTest.js`, as scenarios 344 and 351):
-a strict-mismatched lower-id candidate is skipped and never exposed, and a
-winner whose variant lacks the key returns the default with no fall-through;
-each with exactly one exposure, for the winner, and none from
-`peekVariableValue`.
+(`javascript-wrapper/sharedVariableKeysSelfTest.js`, as scenarios 341, 350 and
+351): a strict-mismatched lower-id candidate is skipped and never exposed, the
+lower id wins even when the payload lists it second, and a winner whose variant
+lacks the key returns the default with no fall-through; each with exactly one
+exposure, for the winner, and none from `peekVariableValue`.
 
 ### Capability: `singleFinalizeEvent`
 

@@ -1,14 +1,18 @@
 // Behavioral self-test for the `sharedVariableKeys` wrapper capability (WRAPPER_API_SPEC.md): a key
 // shared by several experiments resolves as java-sdk Context.getVariableAssignment. Mirrors the
 // assignmentRulesSelfTest.js pattern: real ContextData fixtures against the built js-sdk, asserting
-// both the returned value and the exact exposures. Two batteries, taken from scenarios 344 and 351:
+// both the returned value and the exact exposures. Three batteries, modelled on scenarios 341, 350
+// and 351:
 //
-//   * a strict-mismatched lower-id candidate listed after an assigned higher-id one: candidates are
-//     visited in id order, the unassigned one is skipped and never exposed, the assigned one wins;
+//   * a strict-mismatched lower-id candidate listed after an assigned higher-id one: the unassigned
+//     one is skipped and never exposed, the assigned one wins;
+//   * two assigned candidates, the lower id listed second in the payload: candidates are visited in
+//     id order, so the lower id still wins;
 //   * the winner's variant lacks the key: the default is returned (no fall-through to the later
 //     candidate) and only the winner is exposed.
 //
-// peekVariableValue must expose nothing in both. Lazy, cached, run-once; fails closed on any exception.
+// peekVariableValue must expose nothing in any of them. Lazy, cached, run-once; fails closed on any
+// exception.
 
 const absmartly = require('@absmartly/javascript-sdk');
 
@@ -92,6 +96,17 @@ async function runBattery() {
     { Country: 'IE' }
   );
   if (!check(prefix, 'strict mismatch skipped', strictMismatch, { value: 'assigned-treatment', id: 176 })) return false;
+
+  const idOrder = await resolve(
+    {
+      experiments: [
+        experiment(191, 'svk_high_id', [{ [KEY]: 'high-control' }, { [KEY]: 'high-treatment' }]),
+        experiment(190, 'svk_low_id', [{ [KEY]: 'low-control' }, { [KEY]: 'low-treatment' }]),
+      ],
+    },
+    {}
+  );
+  if (!check(prefix, 'visited in id order', idOrder, { value: 'low-treatment', id: 190 })) return false;
 
   const lacksKey = await resolve(
     {
