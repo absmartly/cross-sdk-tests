@@ -308,6 +308,7 @@ class E2ERunner:
         if rc != 0 and "already exists" in output:
             self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
             if self.revenue_metric_id:
+                self._check_revenue_metric_definition(self.revenue_metric_id)
                 return
         if rc != 0:
             raise RuntimeError(f"Failed to create revenue metric: {output}")
@@ -316,9 +317,15 @@ class E2ERunner:
         if not self.revenue_metric_id:
             raise RuntimeError(f"Could not determine revenue metric ID from output: {output}")
 
-        for cmd in ["request", "approve"]:
-            run_abs(["metrics", "review", cmd, self.revenue_metric_id], self.profile, output_json=False)
-        run_abs(["metrics", "activate", self.revenue_metric_id, "--reason", "E2E testing"], self.profile, output_json=False)
+        actions = [
+            ["metrics", "review", "request", self.revenue_metric_id],
+            ["metrics", "review", "approve", self.revenue_metric_id],
+            ["metrics", "activate", self.revenue_metric_id, "--reason", "E2E testing"],
+        ]
+        for action in actions:
+            rc, output = run_abs(action, self.profile, output_json=False)
+            if rc != 0:
+                raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
 
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
 
@@ -685,36 +692,46 @@ class E2ERunner:
             print("\nNo active SDKs to verify metrics for")
             return
 
-        total_expected_exposures = sum(r["exposures_sent"] for r in active_sdks.values())
-        if total_expected_exposures == 0:
-            return
-
         rc, _ = run_abs(["experiments", "request-update", str(self.experiment_id)], self.profile, output_json=False)
         if rc == 0:
             self.log("Requested analysis update")
 
         print(f"\nWaiting for metrics (timeout: {self.timeout}s)...")
 
-        start_time = time.time()
-        while time.time() - start_time < self.timeout:
-            metrics = self._fetch_metrics()
-            if metrics:
-                total_participants = self._extract_total_participants(metrics)
-                if total_participants >= total_expected_exposures:
-                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
-                    return
-                if total_participants > 0:
-                    self.log(f"Participants so far: {total_participants}/{total_expected_exposures}")
-            time.sleep(5)
+        # Participants, goals and revenue need not become available together.
+        # Readiness uses the same per-SDK measurements as the final strict gate;
+        # the unsegmented aggregate cannot establish readiness for an SDK.
+        deadline = time.monotonic() + self.timeout
+        pending = [f"{sdk}: not polled" for sdk in active_sdks]
+        while time.monotonic() < deadline:
+            pending = []
+            for sdk_name, sdk_result in active_sdks.items():
+                metric, reason = self._fetch_metrics_for_sdk(sdk_name)
+                revenue, revenue_reason = self._fetch_revenue(sdk_name)
+                expected_goals = sdk_result["planned_goals"]
+                measurements = (
+                    ("participants", sdk_result["planned_exposures"],
+                     self._extract_total_participants(metric) if metric is not None else None, reason),
+                    ("goals", expected_goals,
+                     self._extract_total_goals(metric) if metric is not None else None, reason),
+                    ("revenue", expected_goals * PURCHASE_AMOUNT, revenue, revenue_reason),
+                )
+                for name, expected, actual, failure in measurements:
+                    if failure or not self._within_tolerance(expected, actual):
+                        pending.append(f"{sdk_name} {name}: {actual}/{expected}" +
+                                       (f" ({failure})" if failure else ""))
+            if not pending:
+                print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} (all per-SDK metrics)")
+                return
+            self.log("Waiting for " + "; ".join(pending))
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(5, remaining))
 
-        # Metrics never reached the expected total within the timeout. This is a
-        # real failure (events did not land on the backend), not a soft note —
-        # verify_metrics() will see the shortfall and fail the run.
-        final = self._fetch_metrics()
-        final_participants = self._extract_total_participants(final) if final else 0
+        # Verification still reads and strictly gates every segmented metric.
         print(
-            f"  {Colors.RED}Metrics incomplete{Colors.RESET}: "
-            f"{final_participants}/{total_expected_exposures} participants after {self.timeout}s"
+            f"  {Colors.RED}Metrics incomplete{Colors.RESET} after {self.timeout}s: "
+            + "; ".join(pending)
         )
 
     def _fetch_metrics(self) -> Optional[Dict[str, Any]]:
@@ -1032,15 +1049,6 @@ class E2ERunner:
         }
 
     def _verify_active_sdks(self, results: Dict[str, Any], active: Dict[str, Dict[str, Any]]) -> None:
-        # Aggregate backend numbers: an informational cross-check and the
-        # reference for detecting a backend that ignores the segmentation filter.
-        agg = self._fetch_metrics()
-        agg_participants = self._extract_total_participants(agg) if agg else 0
-        agg_goals = self._extract_total_goals(agg) if agg else 0
-        agg_revenue, agg_revenue_reason = self._fetch_revenue()
-
-        # First pass: per-SDK segmented results. A missing result carries the
-        # reason it is unverified.
         segmented: Dict[str, Dict[str, Any]] = {}
         unverified_reason: Dict[str, str] = {}
         for sdk_name in active:
@@ -1060,6 +1068,13 @@ class E2ERunner:
                 revenue_reason[sdk_name] = reason or "unavailable"
             else:
                 revenue[sdk_name] = value
+
+        # Read aggregates last so a live update during segmented reads does not
+        # compare newer segment sums against an older aggregate snapshot.
+        agg = self._fetch_metrics()
+        agg_participants = self._extract_total_participants(agg) if agg else 0
+        agg_goals = self._extract_total_goals(agg) if agg else 0
+        agg_revenue, agg_revenue_reason = self._fetch_revenue()
 
         # Filter-trust sanity checks. If the backend ignores the filter, every
         # SDK comes back with the aggregate total and per-SDK "verification"
@@ -1108,7 +1123,6 @@ class E2ERunner:
                 revenue_reason[sdk_name] = rev_warning
                 del revenue[sdk_name]
 
-        # Second pass: finalize each active SDK. Unverified is a FAIL.
         for sdk_name, sdk_result in active.items():
             expected_exposures = sdk_result["planned_exposures"]
             expected_goals = sdk_result["planned_goals"]
@@ -1240,9 +1254,7 @@ class E2ERunner:
         total_goal_actual = 0
         total_rev_expected = 0
         total_rev_actual = 0
-        # Set when at least one verified row was excluded from the actual totals
-        # because it was unverified — the TOTAL actual is then a lower bound.
-        total_partially_unverified = False
+        partially_unverified = {"exposures": False, "goals": False, "revenue": False}
 
         for sdk_name, sdk_data in sdks.items():
             if sdk_data.get("status") == "skipped":
@@ -1271,14 +1283,15 @@ class E2ERunner:
             total_exp_expected += exp["expected"]
             total_goal_expected += goal["expected"]
             total_rev_expected += rev["expected"]
-            # Only sum actuals we actually verified. Unverified rows carry no
-            # trustworthy actual, so excluding them keeps the TOTAL honest.
-            if any(m.get("unverified") or m.get("actual") is None for m in (exp, goal, rev)):
-                total_partially_unverified = True
-            else:
-                total_exp_actual += exp.get("actual") or 0
-                total_goal_actual += goal.get("actual") or 0
-                total_rev_actual += rev.get("actual") or 0
+            for name, metric in (("exposures", exp), ("goals", goal), ("revenue", rev)):
+                if metric.get("unverified") or metric.get("actual") is None:
+                    partially_unverified[name] = True
+                elif name == "exposures":
+                    total_exp_actual += metric["actual"]
+                elif name == "goals":
+                    total_goal_actual += metric["actual"]
+                else:
+                    total_rev_actual += metric["actual"]
 
             exp_str = self._format_metric(exp)
             goal_str = self._format_metric(goal)
@@ -1304,13 +1317,13 @@ class E2ERunner:
 
         print(f"  {separator}")
 
-        total_exp = self._format_total(total_exp_expected, total_exp_actual, total_partially_unverified)
-        total_goal = self._format_total(total_goal_expected, total_goal_actual, total_partially_unverified)
-        total_rev = self._format_total(total_rev_expected, total_rev_actual, total_partially_unverified)
+        total_exp = self._format_total(total_exp_expected, total_exp_actual, partially_unverified["exposures"])
+        total_goal = self._format_total(total_goal_expected, total_goal_actual, partially_unverified["goals"])
+        total_rev = self._format_total(total_rev_expected, total_rev_actual, partially_unverified["revenue"])
 
         print(f"  {Colors.BOLD}{'TOTAL':<{col_sdk}}{Colors.RESET}{total_exp:<{col_data}}{total_goal:<{col_data}}{total_rev:<{col_data}}")
-        if total_partially_unverified:
-            print(f"  {Colors.YELLOW}(TOTAL actual excludes unverified SDKs — lower bound){Colors.RESET}")
+        if any(partially_unverified.values()):
+            print(f"  {Colors.YELLOW}(Partial TOTAL actuals exclude unverified measurements — lower bounds){Colors.RESET}")
         print()
 
         agg = results.get("aggregate")
@@ -1396,14 +1409,11 @@ class E2ERunner:
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def _format_total(self, expected: int, actual: int, partial: bool) -> str:
-        # With unverified SDKs excluded, `actual` is a lower bound, so an equality
-        # gate would be misleading; require only actual >= expected here and flag
-        # the caveat separately.
-        passed = actual >= expected if partial else self._within_tolerance(expected, actual)
-        color = Colors.YELLOW if partial else (Colors.GREEN if passed else Colors.RED)
-        label = "PASS" if passed else "FAIL"
         if partial:
-            label += "*"
+            return f"{Colors.YELLOW}{actual}/{expected} FAIL (partial/unverified){Colors.RESET}"
+        passed = self._within_tolerance(expected, actual)
+        color = Colors.GREEN if passed else Colors.RED
+        label = "PASS" if passed else "FAIL"
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
