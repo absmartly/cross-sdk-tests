@@ -819,6 +819,7 @@ def test_priming_context_deleted_when_budget_runs_out(runner):
 @pytest.mark.parametrize("name,body,match", [
     ("batch", {"contextId": "c", "ready": False, "failed": False}, "not ready"),
     ("batch", {"contextId": "c", "ready": True, "failed": True}, "not ready"),
+    ("batch", {"contextId": "c", "ready": "false", "failed": False}, "not ready"),
     ("pre_ready", {"contextId": "c", "ready": True, "failed": False}, "not-ready state"),
 ])
 def test_rejected_context_is_still_deleted(runner, name, body, match):
@@ -865,3 +866,19 @@ def test_endless_raw_pages_report_the_limit(runner):
     with patch("e2e_runner.run_abs", return_value=(0, full)):
         result = runner._verify_arrival("javascript", case)
     assert not result["pass"] and result["errors"] == ["Collector event pagination limit exceeded"]
+
+
+def test_failing_cleanup_delete_keeps_the_original_error(runner):
+    import requests as real_requests
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "batch")
+    bad = Mock(); bad.raise_for_status.side_effect = real_requests.HTTPError("500 on DELETE")
+    with patch("e2e_runner.requests.post", return_value=Mock(status_code=200, json=lambda: {"result": {"contextId": "c", "ready": False}})), \
+         patch("e2e_runner.requests.delete", return_value=bad), pytest.raises(RuntimeError, match="not ready"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+
+
+def test_failing_cleanup_delete_raises_when_the_case_succeeded():
+    import requests as real_requests
+    bad = Mock(); bad.raise_for_status.side_effect = real_requests.HTTPError("500 on DELETE")
+    with patch("e2e_runner.requests.delete", return_value=bad), pytest.raises(real_requests.HTTPError):
+        E2ERunner._delete_context("http://wrapper/context/c")

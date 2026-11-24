@@ -524,7 +524,7 @@ class E2ERunner:
                 self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
                 self._wrapper_post(prime_url + "/publish", deadline=deadline)
             finally:
-                requests.delete(prime_url, timeout=10).raise_for_status()
+                self._delete_context(prime_url)
         created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
         result = created.get("result", {})
         context_id = result.get("contextId")
@@ -549,7 +549,17 @@ class E2ERunner:
             # Exactly one publish for the batch; close case must never publish explicitly.
             self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"), deadline=deadline)
         finally:
+            self._delete_context(url)
+
+    @staticmethod
+    def _delete_context(url):
+        # A failing cleanup DELETE must not replace the error that ended the case.
+        failing = sys.exc_info()[1] is not None
+        try:
             requests.delete(url, timeout=10).raise_for_status()
+        except requests.RequestException:
+            if not failing:
+                raise
 
     def _query_metric(self, metric_id, sdk, case, experiment_id=None, deadline=None):
         rc, output = run_abs([
