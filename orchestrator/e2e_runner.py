@@ -337,12 +337,15 @@ class E2ERunner:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
 
         A metric found by name alone could be a different type or property, and
-        its result would then be "measured" wrongly. `abs metrics get <id>`
+        its result would then be "measured" wrongly. `abs metrics get <id> --raw`
         returns the metric's `type` and `value_source_property` (absmartly/cli
         src/core/metrics/payload.ts). The goal is checked when the payload
         carries it as a nested goal or `goal_id`.
         """
-        rc, output = run_abs(["metrics", "get", str(metric_id)], self.profile)
+        # `--raw`: without it the CLI prints a summary that has no
+        # value_source_property and a plain-string goal (absmartly/cli
+        # src/core/metrics/get.ts -> summarizeMetric; --raw in api-helper.ts).
+        rc, output = run_abs(["metrics", "get", str(metric_id), "--raw"], self.profile)
         metric = parse_json_output(output) if rc == 0 else None
         if isinstance(metric, list) and metric:
             metric = metric[0]
@@ -710,6 +713,11 @@ class E2ERunner:
         while time.monotonic() < deadline:
             pending = []
             for sdk_name, sdk_result in active_sdks.items():
+                # Each query can take up to run_abs's timeout, so check the
+                # deadline per SDK rather than only between rounds.
+                if time.monotonic() >= deadline:
+                    pending.append(f"{sdk_name}: not polled before the deadline")
+                    continue
                 metric, reason = self._fetch_metrics_for_sdk(sdk_name)
                 revenue, revenue_reason = self._fetch_revenue(sdk_name)
                 expected_goals = sdk_result["planned_goals"]
@@ -1564,7 +1572,7 @@ def main() -> None:
     all_sdks = discover_sdks()
 
     if args.sdk:
-        sdk_names = [s.strip() for s in args.sdk.split(",")]
+        sdk_names = [s.strip() for s in args.sdk.split(",") if s.strip()]
         sdks = {name: all_sdks[name] for name in sdk_names if name in all_sdks}
         invalid_sdks = [name for name in sdk_names if name not in all_sdks]
         if invalid_sdks:

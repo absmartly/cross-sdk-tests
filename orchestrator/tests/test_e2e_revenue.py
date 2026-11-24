@@ -313,8 +313,12 @@ class _ProvisioningBackend:
         if args[:2] == ["metrics", "list"]:
             return 0, json.dumps(self.existing)
         if args[:2] == ["metrics", "get"]:
-            return 0, json.dumps({"id": int(args[2]), "name": "e2e_purchase_revenue", "type": "goal_property",
-                                  "value_source_property": "amount", "goal": {"name": "purchase"}})
+            raw = {"id": int(args[2]), "name": "e2e_purchase_revenue", "type": "goal_property",
+                   "value_source_property": "amount", "goal": {"name": "purchase"}}
+            if "--raw" not in args:
+                # The CLI summary: no value_source_property, goal as a string.
+                raw = {"id": raw["id"], "name": raw["name"], "type": raw["type"], "goal": "purchase"}
+            return 0, json.dumps(raw)
         if args[:2] == ["metrics", "create"]:
             return 0, self.create_output
         return 0, ""
@@ -443,7 +447,7 @@ def test_revenue_creation_race_checks_existing_definition(monkeypatch, definitio
     else:
         with pytest.raises(RuntimeError, match="cannot measure revenue|check its definition"):
             runner._ensure_revenue_metric()
-    assert calls[-1] == ["metrics", "get", REVENUE_METRIC_ID]
+    assert calls[-1] == ["metrics", "get", REVENUE_METRIC_ID, "--raw"]
 
 
 def test_aggregate_is_read_after_segments_advance(monkeypatch, capsys):

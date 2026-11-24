@@ -481,6 +481,16 @@ REVENUE_DEFINITION = {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue", "
                       "value_source_property": "amount", "goal": {"name": "purchase"}}
 
 
+def metric_get_output(definition, args):
+    """What `abs metrics get <id> -o json` prints: the raw metric with --raw,
+    else the CLI summary (no value_source_property, goal as a plain string)."""
+    if "--raw" in args:
+        return definition
+    goal = definition.get("goal")
+    return {"id": definition.get("id"), "name": definition.get("name"), "type": definition.get("type"),
+            "goal": goal.get("name") if isinstance(goal, dict) else goal}
+
+
 class ResourceAbs:
     def __init__(self, metrics_list, definition=REVENUE_DEFINITION):
         self.metrics_list = metrics_list
@@ -492,7 +502,7 @@ class ResourceAbs:
         if args[:2] == ["metrics", "list"]:
             return 0, json.dumps(self.metrics_list)
         if args[:2] == ["metrics", "get"]:
-            return 0, json.dumps(self.definition)
+            return 0, json.dumps(metric_get_output(self.definition, args))
         if args[:2] == ["metrics", "create"]:
             return 0, json.dumps({"id": REVENUE_METRIC_ID})
         return 0, ""
@@ -532,7 +542,7 @@ def test_ensure_revenue_metric_reuses_existing(monkeypatch):
     runner._ensure_revenue_metric()
     assert runner.revenue_metric_id == str(REVENUE_METRIC_ID)
     assert [c for c in fake.calls if c[0] == "metrics" and c[1] != "list"] == [
-        ["metrics", "get", str(REVENUE_METRIC_ID)]
+        ["metrics", "get", str(REVENUE_METRIC_ID), "--raw"]
     ]
 
 
@@ -744,7 +754,51 @@ def test_main_passes_requested_sdks_to_the_runner(monkeypatch):
     assert seen["requested"] == set()
 
 
-def test_run_e2e_script_forwards_requested_sdks():
+def test_run_e2e_script_passes_sdk_opt_to_the_runner():
     script = (Path(__file__).resolve().parents[2] / "run-e2e-tests.sh").read_text()
-    assert '[ -n "$SDK_NAMES" ] && SDK_OPT=(--sdk "$SDK_NAMES")' in script
+    assert 'done < <(sdk_opt_args "$SDK_NAMES")' in script
     assert '"${SDK_OPT[@]}"' in script
+
+
+def test_existing_revenue_metric_with_wrong_goal_id_is_refused(monkeypatch):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}],
+                       definition={**REVENUE_DEFINITION, "goal": None, "goal_id": 999})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner.goal_id = "12"
+    with pytest.raises(RuntimeError, match="goal_id="):
+        runner._ensure_revenue_metric()
+
+
+def test_summary_output_without_raw_would_be_refused():
+    # Guard for the --raw flag: the CLI summary lacks value_source_property.
+    summary = metric_get_output(REVENUE_DEFINITION, ["metrics", "get", "2914"])
+    assert "value_source_property" not in summary
+
+
+def test_trailing_comma_in_sdk_list_is_ignored(monkeypatch):
+    seen = {}
+
+    def fake_run(self):
+        seen["sdks"] = list(self.sdks)
+        return {"overall_pass": False, "sdks": {}}
+
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(E2ERunner, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java,"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["sdks"] == ["java"]
+
+
+@pytest.mark.parametrize("names, expected", [("", []), ("java,php", ["--sdk", "java,php"])])
+def test_run_e2e_script_sdk_opt_args(names, expected):
+    script = Path(__file__).resolve().parents[2] / "run-e2e-tests.sh"
+    text = script.read_text()
+    start = text.index("sdk_opt_args() {")
+    func = text[start:text.index("\n}\n", start) + 3]
+    import subprocess
+    out = subprocess.run(["bash", "-c", func + 'sdk_opt_args "$1"', "_", names],
+                         capture_output=True, text=True, check=True).stdout
+    assert out.splitlines() == expected

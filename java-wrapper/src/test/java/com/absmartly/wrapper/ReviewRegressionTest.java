@@ -240,6 +240,13 @@ class ReviewRegressionTest {
             assertEquals(failure.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
             verify(client).close();
             assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
+            // A failing cleanup is kept as suppressed on the original failure, not swallowed.
+            if (mode.endsWith("cleanup-fails")) {
+                assertEquals(1, failure.getSuppressed().length);
+                assertEquals("cleanup failed", failure.getSuppressed()[0].getMessage());
+            } else {
+                assertEquals(0, failure.getSuppressed().length);
+            }
         }
     }
 }
