@@ -4,7 +4,9 @@ These checks assert SDK events arrive, not analysis eligibility/dedup/audience s
 They extend the baseline e2e run (per-SDK exposures, goals and measured revenue on the
 `sdk_name` segment, from cross-sdk-tests#52) without touching it: case units carry the
 attributes `e2e_sdk` + `e2e_case` instead of `sdk_name`, so they never enter the baseline
-segment. Every case query pins a metric ID and the `e2e_sdk` + `e2e_case` segment. Missing,
+segment. They also run in their own run-scoped experiments, `e2e-<run>-cases` (user_id) and
+`e2e-<run>-session` (session_id), so they add nothing to the baseline experiment's numbers, and
+both are archived in cleanup. Every case query pins a metric ID and the `e2e_sdk` + `e2e_case` segment. Missing,
 malformed, non-finite or absent measurements fail; no revenue is derived from count. A failing
 case is listed with the baseline problems and gates the PASS banner and the exit code.
 Comparisons use an absolute 1e-9 allowance for arithmetic noise, never rounding to integer.
@@ -38,7 +40,7 @@ goal count); the full case check runs once afterwards. A CLI call
 is capped at 30s. An HTTP 429 (CLI text `Rate limit exceeded.`) sleeps 120s and retries only
 while that sleep ends before the deadline; every poll call, including the final fetch, carries
 the deadline, so a poll overruns `--timeout` by at most one in-flight call. The case check that
-follows gets its own `--timeout` budget the same way.
+follows gets its own `--timeout` budget the same way, as do each case's wrapper calls.
 Raw property comparison is by numeric value (10 equals 10.0); agents must carry a version
 unless the SDK's `xAgentHeader` policy is a reviewed exception.
 

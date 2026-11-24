@@ -26,7 +26,9 @@ def runner():
     r.metric_id = "20"
     r.capability_policy["sdks"]["javascript"]["e2e"] = {"required": ["preReadyGoals"]}
     r.case_results = {"javascript": {c["name"]: {"status": "sent"} for c in case_specs(r.run_id, "javascript")}}
-    r.event_cases_ran = True
+    r.case_experiment_id = 102
+    r.event_cases_expected = True
+    r.case_experiment_name = "e2e-abcd1234-cases"
     return r
 
 
@@ -166,7 +168,7 @@ def raw_fixture(runner, case):
     case['uid'] = 'e2e-0c11789c-go-94'
     common = dict(unit_uid='OSS6pz0j4iJ-ymv9M3DHvg', unit_type='user_id', application_id=90,
                   environment=runner.environment, agent='absmartly-javascript-sdk/1.14.0')
-    exposure = dict(common, event_type='exposure', experiment_id=100,
+    exposure = dict(common, event_type='exposure', experiment_id=102,
                     unit_attributes=json.dumps(dict(e2e_sdk='javascript', e2e_case=case['name'])))
     return [exposure] + [dict(common, event_type='goal', goal_name='purchase', properties=json.dumps(g)) for g in case['goals']]
 
@@ -271,7 +273,7 @@ def _sequence(runner, name):
 
 def test_multiple_units_exposes_both_experiments(runner):
     treatments = [body["experimentName"] for url, body in _sequence(runner, "multiple_units") if url.endswith("/treatment")]
-    assert treatments == ["e2e-abcd1234", "e2e-abcd1234-session"]
+    assert treatments == ["e2e-abcd1234-cases", "e2e-abcd1234-session"]
 
 
 def test_pre_ready_primes_exposure_before_goal_context(runner):
@@ -365,13 +367,113 @@ def test_verify_metrics_checks_event_cases(runner, monkeypatch):
     assert not E2ERunner.report_passes(result)
 
 
-def test_verify_metrics_without_event_cases_keeps_baseline_only(runner, monkeypatch):
-    runner.event_cases_ran = False
+def test_cases_never_run_fail_the_run(runner, monkeypatch):
+    # A run() that skips run_event_cases fails closed: every case is "not executed".
+    runner.case_results = {}
+    runner.sdk_results = {"javascript": {"status": "ok", "planned_exposures": 2, "planned_goals": 1}}
+    monkeypatch.setattr(runner, "_verify_active_sdks", lambda results, active: None)
+    with patch.object(runner, "_query_metric", return_value=None), \
+         patch.object(runner, "_verify_arrival", return_value={"pass": True}):
+        result = runner.verify_metrics()
+    assert result["event_cases"]["javascript"]["batch"]["reason"] == "Case was not executed"
+    assert not result["overall_pass"]
+
+
+def test_direct_baseline_verification_skips_cases(runner, monkeypatch):
+    # #52's baseline checks call verify_metrics() on their own; only run() expects cases.
+    runner.event_cases_expected = False
     runner.sdk_results = {"javascript": {"status": "ok", "planned_exposures": 2, "planned_goals": 1}}
     monkeypatch.setattr(runner, "_verify_active_sdks", lambda results, active: None)
     with patch.object(runner, "verify_event_cases") as cases:
         runner.verify_metrics()
     assert not cases.called
+
+
+def test_run_expects_cases_even_if_a_stage_drops_them(runner, monkeypatch):
+    runner.event_cases_expected = False
+    for name in ("ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
+                 "create_case_experiments", "run_sdk_scenarios", "run_event_cases", "wait_for_metrics",
+                 "print_report", "cleanup_experiment"):
+        monkeypatch.setattr(runner, name, lambda *a: None)
+    monkeypatch.setattr(runner, "verify_metrics", lambda: {"expected": runner.event_cases_expected})
+    assert runner.run() == {"expected": True}
+
+
+def test_run_stage_order(runner, monkeypatch):
+    order = []
+    for name in ("ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
+                 "create_case_experiments", "run_sdk_scenarios", "run_event_cases",
+                 "wait_for_metrics", "print_report", "cleanup_experiment"):
+        monkeypatch.setattr(runner, name, (lambda n: lambda *a: order.append(n))(name))
+    monkeypatch.setattr(runner, "verify_metrics", lambda: order.append("verify_metrics") or {})
+    runner.run()
+    assert order == ["ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
+                     "create_case_experiments", "run_sdk_scenarios", "run_event_cases",
+                     "wait_for_metrics", "verify_metrics", "print_report", "cleanup_experiment"]
+
+
+def test_cases_use_their_own_experiments(runner):
+    # Case exposures go to -cases / -session, never to the baseline experiment.
+    calls = _sequence(runner, "multiple_units")
+    names = [body["experimentName"] for url, body in calls if url.endswith("/treatment")]
+    assert names == ["e2e-abcd1234-cases", "e2e-abcd1234-session"]
+    with patch("e2e_runner.run_abs", return_value=(0, '[]')) as cli:
+        runner._query_metric("3", "javascript", "batch")
+    assert cli.call_args.args[0][3] == "102"
+
+
+def test_case_experiments_are_created_started_and_awaited(runner, monkeypatch):
+    runner.unit_type = "34"
+    created = iter([501, 502])
+    def create():
+        runner.experiment_id = next(created)
+    calls = []
+    monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
+    monkeypatch.setattr(runner, "create_experiment", create)
+    monkeypatch.setattr(runner, "_wait_for_experiment_in_context",
+                        lambda: calls.append(("wait", runner.experiment_id)) or True)
+    with patch("e2e_runner.run_abs", side_effect=lambda args, *a, **k: calls.append(tuple(args)) or (0, "")):
+        runner.create_case_experiments()
+    assert (runner.case_experiment_id, runner.session_experiment_id) == (501, 502)
+    assert runner.experiment_id == 100 and runner.side_experiment_ids == [501, 502]
+    assert calls == [("experiments", "start", "501"), ("wait", 501), ("experiments", "start", "502"), ("wait", 502)]
+
+
+def test_invisible_case_experiment_raises(runner, monkeypatch):
+    monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
+    monkeypatch.setattr(runner, "create_experiment", lambda: setattr(runner, "experiment_id", 501))
+    monkeypatch.setattr(runner, "_wait_for_experiment_in_context", lambda: False)
+    with patch("e2e_runner.run_abs", return_value=(0, "")), pytest.raises(RuntimeError, match="not visible"):
+        runner.create_case_experiments()
+    assert runner.side_experiment_ids == [501] and runner.experiment_id == 100
+
+
+def test_cleanup_archives_every_experiment(runner, monkeypatch):
+    runner.side_experiment_ids = [501, 502]
+    archived = []
+    monkeypatch.setattr(runner, "_archive_experiment", lambda: archived.append(runner.experiment_id))
+    runner.cleanup_experiment()
+    assert archived == [501, 502, 100]
+
+
+def test_wrapper_429_stops_at_deadline(runner):
+    clock = [0.0]
+    limited = Mock(status_code=429)
+    with patch("e2e_runner.requests.post", return_value=limited) as post, \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
+         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)):
+        runner._wrapper_post("http://w/context", {}, deadline=150)
+    assert post.call_count == 2 and clock[0] == 120
+
+
+def test_every_wrapper_call_carries_the_case_deadline(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    created = {"result": {"contextId": "ctx", "ready": True, "failed": False, "preReadyTracked": True}}
+    runner.timeout = 40
+    with patch.object(runner, "_wrapper_post", return_value=created) as post, \
+         patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=10.0):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert {c.kwargs.get("deadline") for c in post.call_args_list} == {50.0}
 
 
 def test_raw_arrival_failure_fails_case(runner):

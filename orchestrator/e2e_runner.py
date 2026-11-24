@@ -157,7 +157,12 @@ class E2ERunner:
             self.capability_policy = json.load(src)
         self.session_experiment_id: Optional[int] = None
         self.session_experiment_name: Optional[str] = None
-        self.event_cases_ran = False
+        self.case_experiment_id: Optional[int] = None
+        self.case_experiment_name: Optional[str] = None
+        self.experiment_suffix: Optional[str] = None
+        # Every side experiment created, so cleanup archives it even after a later failure.
+        self.side_experiment_ids: List[int] = []
+        self.event_cases_expected = False
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -182,13 +187,14 @@ class E2ERunner:
         print(f"  Profile: {self.profile}")
         print()
 
+        self.event_cases_expected = True
         try:
             self.ensure_resources()
             if not self.dry_run:
                 self._ensure_case_metrics()
             self.create_experiment()
             self.start_experiment()
-            self.create_session_experiment()
+            self.create_case_experiments()
             self.run_sdk_scenarios()
             self.run_event_cases()
             self.wait_for_metrics()
@@ -394,7 +400,12 @@ class E2ERunner:
                 raise RuntimeError(f"Metric {spec['name']} must not limit outliers")
             self.case_metric_ids[key] = metric_id
 
-    def create_session_experiment(self):
+    def create_case_experiments(self):
+        """Two run-scoped side experiments, so case units never touch the baseline experiment.
+
+        `-cases` (user_id) carries every case's user exposure and goals; `-session`
+        (session_id) carries the multiple-units case's second exposure.
+        """
         if self.dry_run:
             return
         session_type = self._find_resource("units", "session_id")
@@ -404,29 +415,35 @@ class E2ERunner:
             session_type = _extract_id(output) if rc == 0 else None
             if not session_type:
                 raise RuntimeError(f"Cannot provision session_id: {output}")
+        self.case_experiment_id, self.case_experiment_name = self._create_side_experiment("cases", self.unit_type)
+        self.session_experiment_id, self.session_experiment_name = self._create_side_experiment("session", session_type)
+
+    def _create_side_experiment(self, suffix, unit_type):
         parent = self.experiment_id, self.experiment_name, self.unit_type
+        created = None
         try:
-            self.unit_type = session_type
-            self.creating_session = True
+            self.unit_type = unit_type
+            self.experiment_suffix = suffix
             self.experiment_id = None
             self.create_experiment()
+            created = (self.experiment_id, self.experiment_name) if self.experiment_id else None
         finally:
-            self.session_experiment_id = self.experiment_id if self.experiment_id and self.experiment_id != parent[0] else None
-            self.session_experiment_name = self.experiment_name if self.session_experiment_id else None
             self.experiment_id, self.experiment_name, self.unit_type = parent
-            self.creating_session = False
-        if not self.session_experiment_id:
-            raise RuntimeError("Session experiment was not created")
-        rc, output = run_abs(["experiments", "start", str(self.session_experiment_id)], self.profile)
+            self.experiment_suffix = None
+            if created:
+                self.side_experiment_ids.append(created[0])
+        if not created:
+            raise RuntimeError(f"The {suffix} experiment was not created")
+        rc, output = run_abs(["experiments", "start", str(created[0])], self.profile)
         if rc:
-            raise RuntimeError(f"Start session experiment: {output}")
-        parent_id = self.experiment_id
+            raise RuntimeError(f"Start {suffix} experiment: {output}")
         try:
-            self.experiment_id = self.session_experiment_id
+            self.experiment_id = created[0]
             if not self._wait_for_experiment_in_context():
-                raise RuntimeError("Session experiment is not visible in the collector context")
+                raise RuntimeError(f"The {suffix} experiment is not visible in the collector context")
         finally:
-            self.experiment_id = parent_id
+            self.experiment_id = parent[0]
+        return created
 
     def _case_skip(self, sdk, case):
         cap = case.get("capability")
@@ -449,7 +466,6 @@ class E2ERunner:
         return reason
 
     def run_event_cases(self):
-        self.event_cases_ran = True
         for sdk, base_url in self.sdks.items():
             self.case_results[sdk] = {}
             for case in case_specs(self.run_id, sdk):
@@ -467,17 +483,20 @@ class E2ERunner:
                 except Exception as exc:
                     self.case_results[sdk][name] = {"status": "fail", "reason": str(exc)}
 
-    def _wrapper_post(self, url, body=None):
+    def _wrapper_post(self, url, body=None, deadline=None):
         for attempt in range(3):
             response = requests.post(url, json=body or {}, timeout=30)
             if response.status_code != 429:
                 response.raise_for_status()
                 return response.json()
-            if attempt < 2:
-                time.sleep(120)
+            if attempt == 2 or (deadline is not None and time.time() + RATE_LIMIT_SLEEP >= deadline):
+                break
+            time.sleep(RATE_LIMIT_SLEEP)
         response.raise_for_status()
 
     def _send_event_case(self, sdk, base_url, case):
+        # A rate-limited wrapper never sleeps past this case's budget.
+        deadline = time.time() + self.timeout
         units = {"user_id": case["uid"]}
         if "session" in case:
             units["session_id"] = case["session"]
@@ -490,12 +509,12 @@ class E2ERunner:
             # analysis metrics count goals only after first exposure.
             prime = dict(payload)
             prime.pop("preReadyGoals")
-            primed = self._wrapper_post(base_url + "/context", prime)["result"]["contextId"]
+            primed = self._wrapper_post(base_url + "/context", prime, deadline=deadline)["result"]["contextId"]
             prime_url = base_url + "/context/" + primed
-            self._wrapper_post(prime_url + "/treatment", {"experimentName": self.experiment_name})
-            self._wrapper_post(prime_url + "/publish")
+            self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
+            self._wrapper_post(prime_url + "/publish", deadline=deadline)
             requests.delete(prime_url, timeout=10).raise_for_status()
-        created = self._wrapper_post(base_url + "/context", payload)
+        created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
         result = created.get("result", {})
         context_id = result.get("contextId")
         if not context_id or result.get("ready") is not True or result.get("failed"):
@@ -504,23 +523,23 @@ class E2ERunner:
             raise RuntimeError("Wrapper did not confirm tracking in the SDK's not-ready state")
         url = base_url + "/context/" + context_id
         try:
-            self._wrapper_post(url + "/treatment", {"experimentName": self.experiment_name})
+            self._wrapper_post(url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
             if "session" in case:
-                self._wrapper_post(url + "/treatment", {"experimentName": self.session_experiment_name})
+                self._wrapper_post(url + "/treatment", {"experimentName": self.session_experiment_name}, deadline=deadline)
             if not case.get("pre_ready"):
                 for properties in case["goals"]:
                     body = {"goalName": "purchase"}
                     if not case.get("omit_properties"):
                         body["properties"] = properties
-                    self._wrapper_post(url + "/track", body)
+                    self._wrapper_post(url + "/track", body, deadline=deadline)
             # Exactly one publish for the batch; close case must never publish explicitly.
-            self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"))
+            self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"), deadline=deadline)
         finally:
             requests.delete(url, timeout=10).raise_for_status()
 
     def _query_metric(self, metric_id, sdk, case, experiment_id=None, deadline=None):
         rc, output = run_abs([
-            "experiments", "metrics", "results", str(experiment_id or self.experiment_id),
+            "experiments", "metrics", "results", str(experiment_id or self.case_experiment_id),
             "--metric", str(metric_id), "--filter", json.dumps(eq_filter(e2e_sdk=sdk, e2e_case=case)),
         ], self.profile, deadline=deadline)
         if rc:
@@ -590,7 +609,7 @@ class E2ERunner:
             own = [e for e in events if e.get("unit_uid") == hashed and e.get("unit_type") == unit_type
                    and e.get("application_id") == int(self.app_id) and e.get("environment") == self.environment]
             exposures = [e for e in own if e.get("event_type") == "exposure"
-                         and e.get("experiment_id") == (self.session_experiment_id if unit_type == "session_id" else self.experiment_id)]
+                         and e.get("experiment_id") == (self.session_experiment_id if unit_type == "session_id" else self.case_experiment_id)]
             if not exposures:
                 errors.append(f"No exposure for {unit_type}:{uid!r}")
             language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
@@ -641,7 +660,7 @@ class E2ERunner:
         return {"pass": not errors, "errors": errors}
 
     def create_experiment(self) -> None:
-        self.experiment_name = f"e2e-{self.run_id}" + ("-session" if getattr(self, "creating_session", False) else "")
+        self.experiment_name = f"e2e-{self.run_id}" + (f"-{self.experiment_suffix}" if self.experiment_suffix else "")
         print(f"Creating experiment: {self.experiment_name}")
 
         if self.dry_run:
@@ -1000,7 +1019,7 @@ class E2ERunner:
         )
 
     def _sentinels_landed(self, deadline: float) -> bool:
-        """One cheap query per SDK: the batch case's goal count, the last case sent."""
+        """One cheap query per SDK: the batch case's goal count (its largest event volume)."""
         for sdk in self.sdks:
             if time.time() >= deadline:
                 return False
@@ -1292,7 +1311,9 @@ class E2ERunner:
 
         if not self.dry_run and self.experiment_id:
             self._verify_active_sdks(results, active)
-            if self.event_cases_ran:
+            # run() sets this before any stage, so a run that never sends the cases
+            # still checks them and fails with "Case was not executed".
+            if self.event_cases_expected:
                 self.verify_event_cases(results)
 
         # An all-skipped (or otherwise all-inactive) run verifies nothing: every
@@ -1718,13 +1739,17 @@ class E2ERunner:
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
-        if self.session_experiment_id:
-            parent = self.experiment_id
-            self.experiment_id, self.session_experiment_id = self.session_experiment_id, None
+        parent = self.experiment_id
+        for side_id in self.side_experiment_ids:
+            self.experiment_id = side_id
             try:
-                self.cleanup_experiment()
+                self._archive_experiment()
             finally:
                 self.experiment_id = parent
+        self.side_experiment_ids = []
+        self._archive_experiment()
+
+    def _archive_experiment(self) -> None:
         if not self.experiment_id or self.dry_run:
             return
 
