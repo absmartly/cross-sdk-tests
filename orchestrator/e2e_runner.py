@@ -53,8 +53,9 @@ def generate_run_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-# Only an HTTP 429 status from the API retries; a "429" elsewhere (an ID) does not.
-RATE_LIMITED_RE = re.compile(r"(status code 429|HTTP 429|\b429 Too Many Requests)", re.IGNORECASE)
+# Only an HTTP 429 from the API retries; a "429" elsewhere (an ID) does not. CLI 1.18.0
+# reports a 429 as "Rate limit exceeded." (lib/api/axios-adapter.js handleError).
+RATE_LIMITED_RE = re.compile(r"(^|\n)(Error: )?Rate limit exceeded\.|status code 429|HTTP 429|\b429 Too Many Requests")
 RATE_LIMIT_SLEEP = 120
 
 
@@ -923,7 +924,7 @@ class E2ERunner:
         # Metrics never reached the expected total within the timeout. This is a
         # real failure (events did not land on the backend), not a soft note —
         # verify_metrics() will see the shortfall and fail the run.
-        final = self._fetch_metrics()
+        final = self._fetch_metrics(deadline)
         final_participants = self._extract_total_participants(final) if final else 0
         print(
             f"  {Colors.RED}Metrics incomplete{Colors.RESET}: "

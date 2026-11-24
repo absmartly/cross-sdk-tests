@@ -145,7 +145,8 @@ def test_raw_collector_query_failure_cannot_pass_zero(runner):
 
 
 def test_429_sleeps_120_then_retries():
-    fail = Mock(returncode=1, stdout="", stderr="API error: Request failed with status code 429")
+    # The exact text CLI 1.18.0 prints for an HTTP 429.
+    fail = Mock(returncode=1, stdout="", stderr="Error: Rate limit exceeded.\nEndpoint: GET /experiments/1\nRetry after: 0 seconds")
     ok = Mock(returncode=0, stdout="[]", stderr="")
     with patch("e2e_runner.subprocess.run", side_effect=[fail, ok]), patch("e2e_runner.time.sleep") as sleep:
         assert run_abs(["metrics", "list"]) == (0, "[]")
@@ -472,3 +473,42 @@ def test_429_retry_stops_at_deadline():
          patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)):
         run_abs(["metrics", "list"], deadline=150)
     assert run.call_count == 2 and clock[0] == 120
+
+
+def test_deadline_reaches_every_poll_cli_call(runner):
+    # Every CLI call made while polling, including the final fetch, carries the deadline.
+    clock = [1000.0]
+    runner.timeout = 30
+    runner.sdk_results = {"javascript": {"status": "ok", "exposures_sent": 1}}
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    deadlines = []
+    def cli(args, *a, **kw):
+        if args[:3] == ["experiments", "metrics", "results"]:
+            deadlines.append(kw.get("deadline"))
+            return 0, json.dumps([{"metric_id": 1, "variants": [{"variant": 0, "unit_count": 0, "count": 0}]}])
+        return 0, ""
+    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
+         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
+         patch("e2e_runner.run_abs", side_effect=cli):
+        runner.wait_for_metrics()
+    assert deadlines and set(deadlines) == {1030.0}
+
+
+def test_sentinel_query_carries_deadline(runner):
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    seen = []
+    def cli(args, *a, **kw):
+        seen.append(kw.get("deadline"))
+        return 0, json.dumps([{"metric_id": runner.case_metric_ids["events"],
+                               "variants": [{"variant": 0, "unit_count": 1, "count": BATCH_SIZE}]}])
+    with patch("e2e_runner.run_abs", side_effect=cli), patch("e2e_runner.time.time", return_value=0):
+        assert runner._sentinels_landed(42.0)
+    assert seen == [42.0]
+
+
+def test_other_goal_names_do_not_count(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    rows.append(dict(rows[-1], goal_name="refund", properties='{"currency":"GBP"}'))
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
