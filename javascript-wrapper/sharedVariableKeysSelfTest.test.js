@@ -55,6 +55,7 @@ function stubSdk(mutation = {}) {
       if (index < 0) return defaultValue;
       const winner = candidates[index];
       if (expose || mutation.peekExposes) this.expose(winner);
+      if (expose && mutation.exposeVisited) candidates.slice(0, index).forEach((e) => this.expose(e));
       if (expose && mutation.extraExposure) {
         const other = candidates.find((e) => e !== winner);
         if (other) this.expose(other);
@@ -67,7 +68,8 @@ function stubSdk(mutation = {}) {
       return defaultValue;
     }
     peekVariableValue(key, defaultValue) {
-      return this.resolve(key, defaultValue, false);
+      const value = this.resolve(key, defaultValue, false);
+      return mutation.peekWrongValue ? `peeked-${value}` : value;
     }
     variableValue(key, defaultValue) {
       return this.resolve(key, defaultValue, true);
@@ -119,4 +121,12 @@ test('visiting candidates in payload order fails', async () => {
 
 test('a peek that exposes fails', async () => {
   assert.equal(await runWith({ peekExposes: true }), false);
+});
+
+test('exposing the skipped unassigned candidates visited before the winner fails', async () => {
+  assert.equal(await runWith({ exposeVisited: true }), false);
+});
+
+test('a peek that returns a different value than variableValue fails', async () => {
+  assert.equal(await runWith({ peekWrongValue: true }), false);
 });

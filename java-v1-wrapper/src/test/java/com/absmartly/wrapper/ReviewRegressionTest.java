@@ -208,4 +208,31 @@ class ReviewRegressionTest {
             assertFalse(contexts.containsKey(id));
         }
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sdk", "context", "setter"})
+    void e2eContextCreationFailureReleasesItsSdkAndClient(String failing) throws Exception {
+        Client client = mock(Client.class);
+        ABSmartly sdk = mock(ABSmartly.class);
+        Context context = mock(Context.class);
+        IllegalStateException failure = new IllegalStateException("e2e context creation failed");
+        if ("context".equals(failing)) when(sdk.createContext(any())).thenThrow(failure);
+        else when(sdk.createContext(any())).thenReturn(context);
+        if ("setter".equals(failing)) doThrow(failure).when(context).setAttribute(anyString(), any());
+        Map<String, String> environment = Map.of("ABSMARTLY_E2E_ENDPOINT", "https://example.test/v1",
+            "ABSMARTLY_E2E_API_KEY", "key", "ABSMARTLY_E2E_APPLICATION", "app", "ABSMARTLY_E2E_ENVIRONMENT", "env");
+        WrapperController controller = new WrapperController(SwitchbackFunctions.LINKED, environment::get);
+        try (var clients = mockStatic(Client.class); var owners = mockStatic(ABSmartly.class)) {
+            clients.when(() -> Client.create(any())).thenReturn(client);
+            if ("sdk".equals(failing)) owners.when(() -> ABSmartly.create(any())).thenThrow(failure);
+            else owners.when(() -> ABSmartly.create(any())).thenReturn(sdk);
+            var response = controller.createContext(Map.of("mode", "e2e", "attributes", Map.of("country", "US")));
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals(failure.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            verify(client).close();
+            if (!"sdk".equals(failing)) verify(sdk).close();
+            if ("setter".equals(failing)) verify(context).close();
+            assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
+        }
+    }
 }

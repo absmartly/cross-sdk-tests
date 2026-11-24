@@ -34,13 +34,19 @@ public class WrapperController {
     }
 
     private final SwitchbackFunctions switchback;
+    private final java.util.function.Function<String, String> environment;
 
     public WrapperController() {
         this(SwitchbackFunctions.LINKED);
     }
 
     WrapperController(SwitchbackFunctions switchback) {
+        this(switchback, System::getenv);
+    }
+
+    WrapperController(SwitchbackFunctions switchback, java.util.function.Function<String, String> environment) {
         this.switchback = switchback;
+        this.environment = environment;
     }
 
     private String translateEndpoint(String endpoint) {
@@ -325,10 +331,10 @@ public class WrapperController {
         try {
             String mode = (String) request.get("mode");
             if ("e2e".equals(mode)) {
-                String e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT");
-                String e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY");
-                String e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION");
-                String e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT");
+                String e2eEndpoint = environment.apply("ABSMARTLY_E2E_ENDPOINT");
+                String e2eApiKey = environment.apply("ABSMARTLY_E2E_API_KEY");
+                String e2eApplication = environment.apply("ABSMARTLY_E2E_APPLICATION");
+                String e2eEnvironment = environment.apply("ABSMARTLY_E2E_ENVIRONMENT");
                 if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
                     return ResponseEntity.status(501).body(Collections.singletonMap("error", "e2e mode not configured"));
                 }
@@ -355,18 +361,33 @@ public class WrapperController {
                     .application(e2eApplication)
                     .environment(e2eEnvironment)
                     .build();
-                Context e2eContext = e2eClient.newContext(e2eOptions.build());
+                // Until the registry holds the wrapper, this method owns the client: any failure creating or
+                // loading the context closes it before the original propagates.
+                Context e2eContext;
+                ContextWrapper e2eWrapper;
+                String e2eContextId;
+                try {
+                    e2eContext = e2eClient.newContext(e2eOptions.build());
 
-                if (e2eAttrs != null) {
-                    for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
-                        e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                    if (e2eAttrs != null) {
+                        for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
+                            e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                        }
                     }
+
+                    awaitLoad(e2eContext);
+
+                    e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                    e2eWrapper = new ContextWrapper(e2eContext, e2eCollector, null, e2eClient, false);
+                } catch (Exception e) {
+                    try {
+                        e2eClient.close();
+                    } catch (Exception cleanup) {
+                        e.addSuppressed(cleanup);
+                    }
+                    throw e;
                 }
-
-                awaitLoad(e2eContext);
-
-                String e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-                contexts.put(e2eContextId, new ContextWrapper(e2eContext, e2eCollector, null, e2eClient, false));
+                contexts.put(e2eContextId, e2eWrapper);
 
                 Map<String, Object> e2eResponse = new HashMap<>();
                 e2eResponse.put("result", status(e2eContext, e2eContextId));
