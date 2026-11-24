@@ -48,6 +48,12 @@ Future<void> checkProbe() async {
   }
   require(!probe.payloadExposuresMatch([baseline]), 'missing callback');
   require(await probe.runSwitchback(), 'linked SDK self-test');
+  // 3.0 keys no cluster while 3 serves variant 5; a reader that keys 3.0
+  // like 3, or one that keys no number at all, fails.
+  require(await probe.checkIntegralFloat({'f': 3.0, 'i': 3}), 'integral float check');
+  require(!await probe.checkIntegralFloat({'f': 3, 'i': 3}), 'float keyed like the integer');
+  require(!await probe.checkIntegralFloat({'f': 3.0, 'i': 3.0}), 'integer as a float');
+  require(await probe.runIntegralFloat(), 'linked SDK integral-float self-test');
 }
 
 Future<void> main() => checkProbe();

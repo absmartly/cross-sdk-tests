@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 // No test framework dependencies: dotnet run --project tests/ProbeTests.csproj
@@ -30,4 +31,11 @@ changed = baseline.DeepClone();
 changed["exposures"]![0]!["switchbackOnly"] = true;
 Require(!Matches(baseline, changed), "extra nested field must fail");
 Require(SwitchbackSelfTest.Run(), "linked SDK self-test");
+// 3.0 keys no cluster while 3 serves variant 5; a reader that keys 3.0 like 3, or one that keys no
+// number at all, fails.
+JsonElement Token(string json) => JsonDocument.Parse(json).RootElement.Clone();
+Require(SwitchbackSelfTest.CheckIntegralFloat(Token("3.0"), Token("3")), "integral float check");
+Require(!SwitchbackSelfTest.CheckIntegralFloat(Token("3"), Token("3")), "float keyed like the integer");
+Require(!SwitchbackSelfTest.CheckIntegralFloat(Token("3.0"), Token("3.0")), "integer as a float");
+Require(SwitchbackSelfTest.RunIntegralFloat(), "linked SDK integral-float self-test");
 Console.WriteLine("All probe regressions passed");
