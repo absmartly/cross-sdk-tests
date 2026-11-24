@@ -833,23 +833,34 @@ def test_definition_check_refuses_the_cli_summary_shape(monkeypatch):
         runner._check_revenue_metric_definition(REVENUE_METRIC_ID)
 
 
-@pytest.mark.parametrize("status, reactivated", [("draft", True), ("active", False), (None, False)])
-def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, reactivated):
+REQUEST = ["metrics", "review", "request", str(REVENUE_METRIC_ID)]
+APPROVE = ["metrics", "review", "approve", str(REVENUE_METRIC_ID)]
+ACTIVATE = ["metrics", "activate", str(REVENUE_METRIC_ID), "--reason", "E2E testing"]
+
+
+@pytest.mark.parametrize("status, review, expected", [
+    ("draft", None, [REQUEST, APPROVE, ACTIVATE]),
+    ("draft", "none", [REQUEST, APPROVE, ACTIVATE]),
+    ("archived", None, [REQUEST, APPROVE, ACTIVATE]),
+    # A run that failed after `review request` or after `approve` is resumed, not repeated.
+    ("draft", "pending", [APPROVE, ACTIVATE]),
+    ("draft", "approved", [ACTIVATE]),
+    ("active", None, []),
+    (None, None, []),
+])
+def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, review, expected):
     definition = dict(REVENUE_DEFINITION)
     if status is not None:
         definition["lifecycle_status"] = status
+    if review is not None:
+        definition["review_status"] = review
     fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
     monkeypatch.setattr(e2e_runner, "run_abs", fake)
     runner = make_runner(sdks=("java",))
     runner.revenue_metric_id = None
     runner._ensure_revenue_metric()
     tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate")]
-    expected = [
-        ["metrics", "review", "request", str(REVENUE_METRIC_ID)],
-        ["metrics", "review", "approve", str(REVENUE_METRIC_ID)],
-        ["metrics", "activate", str(REVENUE_METRIC_ID), "--reason", "E2E testing"],
-    ]
-    assert tail == (expected if reactivated else [])
+    assert tail == expected
 
 
 def test_reactivation_failure_of_existing_metric_stops_the_run(monkeypatch):

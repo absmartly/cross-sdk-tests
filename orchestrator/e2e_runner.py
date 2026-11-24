@@ -324,12 +324,20 @@ class E2ERunner:
         self._review_and_activate_revenue_metric(self.revenue_metric_id)
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
 
-    def _review_and_activate_revenue_metric(self, metric_id: str) -> None:
-        actions = [
-            ["metrics", "review", "request", metric_id],
-            ["metrics", "review", "approve", metric_id],
-            ["metrics", "activate", metric_id, "--reason", "E2E testing"],
-        ]
+    def _review_and_activate_revenue_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
+        """Request review, approve and activate, skipping steps a failed run already did.
+
+        A retry after a run that got past `review request` (review_status
+        "pending") or past `approve` ("approved") must not repeat those steps,
+        which the API may reject (review_status values: absmartly/cli
+        src/commands/metrics/index.ts --review-status pending|approved|none).
+        """
+        actions = []
+        if review_status not in ("pending", "approved"):
+            actions.append(["metrics", "review", "request", metric_id])
+        if review_status != "approved":
+            actions.append(["metrics", "review", "approve", metric_id])
+        actions.append(["metrics", "activate", metric_id, "--reason", "E2E testing"])
         for action in actions:
             rc, output = run_abs(action, self.profile, output_json=False)
             if rc != 0:
@@ -342,12 +350,12 @@ class E2ERunner:
         draft; later runs find it by name, so they re-run the activation instead
         of accepting a metric that measures nothing.
         """
-        status = self._check_revenue_metric_definition(metric_id)
+        status, review_status = self._check_revenue_metric_definition(metric_id)
         if status is not None and status != "active":
-            self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r}; reviewing and activating it")
-            self._review_and_activate_revenue_metric(metric_id)
+            self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
+            self._review_and_activate_revenue_metric(metric_id, review_status)
 
-    def _check_revenue_metric_definition(self, metric_id: str) -> Optional[str]:
+    def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str]]:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
 
         A metric found by name alone could be a different type or property, and
@@ -355,7 +363,7 @@ class E2ERunner:
         returns the metric's `type` and `value_source_property` (absmartly/cli
         src/core/metrics/payload.ts). The goal is checked when the payload
         carries it as a nested goal or `goal_id`. Returns the metric's
-        `lifecycle_status` (e.g. "draft", "active"), or None if absent.
+        (`lifecycle_status`, `review_status`), each None if absent.
         """
         # `--raw`: without it the CLI prints a summary that has no
         # value_source_property and a plain-string goal (absmartly/cli
@@ -386,7 +394,9 @@ class E2ERunner:
                 + "; ".join(problems)
             )
         status = metric.get("lifecycle_status")
-        return status if isinstance(status, str) else None
+        review = metric.get("review_status")
+        return (status if isinstance(status, str) else None,
+                review if isinstance(review, str) else None)
 
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"
@@ -730,9 +740,12 @@ class E2ERunner:
         # the unsegmented aggregate cannot establish readiness for an SDK.
         deadline = time.monotonic() + self.timeout
         pending = [f"{sdk}: not polled" for sdk in active_sdks]
+        decided: set = set()
         while time.monotonic() < deadline:
             pending = []
             for sdk_name, sdk_result in active_sdks.items():
+                if sdk_name in decided:
+                    continue
                 # Each query can take up to run_abs's timeout, so check the
                 # deadline per SDK rather than only between rounds.
                 if time.monotonic() >= deadline:
@@ -748,12 +761,25 @@ class E2ERunner:
                      self._extract_total_goals(metric) if metric is not None else None, reason),
                     ("revenue", expected_goals * PURCHASE_AMOUNT, revenue, revenue_reason),
                 )
+                # Counts only grow, so a value already past the over-publish bound can
+                # never pass: that SDK's FAIL is decided and it no longer gates readiness.
+                if any(failure is None and actual is not None and expected > 0
+                       and actual > int(expected * OVER_PUBLISH_TOLERANCE)
+                       for _, expected, actual, failure in measurements):
+                    decided.add(sdk_name)
+                    continue
                 for name, expected, actual, failure in measurements:
                     if failure or not self._within_tolerance(expected, actual):
                         pending.append(f"{sdk_name} {name}: {actual}/{expected}" +
                                        (f" ({failure})" if failure else ""))
             if not pending:
-                print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} (all per-SDK metrics)")
+                if decided:
+                    print(
+                        f"  {Colors.RED}Metrics over-published{Colors.RESET} for "
+                        f"{', '.join(sorted(decided))}; stopped waiting (verification fails them)"
+                    )
+                else:
+                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} (all per-SDK metrics)")
                 return
             self.log("Waiting for " + "; ".join(pending))
             remaining = deadline - time.monotonic()

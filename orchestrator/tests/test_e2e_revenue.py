@@ -536,13 +536,12 @@ def test_wait_polls_each_segmented_metric_until_ready(monkeypatch, capsys, poll_
     assert E2ERunner.report_passes(results) is False  # The errored SDK still fails the run.
 
 
-@pytest.mark.parametrize("missing", ["empty", "query_failed", "short", "over_published", "no_metric_id"])
+@pytest.mark.parametrize("missing", ["empty", "query_failed", "short", "no_metric_id"])
 def test_wait_revenue_timeout_is_bounded_and_verification_fails(monkeypatch, capsys, poll_clock, missing):
     backend = healthy_backend()
     backend.revenue["java"] = {
         "empty": [], "query_failed": 1,
         "short": revenue_result([57, 43], [270, 220]),
-        "over_published": revenue_result([57, 43], [540, 460]),
     }.get(missing, [])
     runner = make_runner(revenue_metric_id=None if missing == "no_metric_id" else REVENUE_METRIC_ID)
     runner.timeout = 12
@@ -646,3 +645,32 @@ def test_wait_prints_a_repeated_segmentation_failure_once(monkeypatch, capsys, p
     out = capsys.readouterr().out
     assert out.count("Segmentation query failed for java") == 1
     assert "Metrics incomplete" in out
+
+
+@pytest.mark.parametrize("column", ["participants", "revenue"])
+def test_wait_stops_early_on_an_over_published_sdk(monkeypatch, capsys, poll_clock, column):
+    # Counts only grow, so an SDK already past the over-publish bound can never pass:
+    # readiness stops waiting on it instead of spending the whole timeout.
+    backend = healthy_backend()
+    if column == "revenue":
+        backend.revenue["java"] = revenue_result([57, 43], [540, 460])
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if column == "participants" and "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([114, 86], [27, 23]))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    out = capsys.readouterr().out
+    assert "Metrics over-published" in out and "Metrics ready" not in out
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    results = runner.verify_metrics()
+    assert results["sdks"]["java"]["status"] == "fail"
+    assert E2ERunner.report_passes(results) is False
