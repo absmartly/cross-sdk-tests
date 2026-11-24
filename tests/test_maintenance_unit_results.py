@@ -182,3 +182,13 @@ class SwiftUnitResultsTest(unittest.TestCase):
                          (572, 0, 572))
         result = self.assert_cli("swift", MIXED_SUCCESS, 0, 0)
         self.assertIn("572", result.stdout)
+
+
+class SwiftSkippedTestsTest(unittest.TestCase):
+    def test_skipped_swift_testing_tests_are_not_counted_as_passed(self):
+        output = (
+            "\u2714 Test a() passed after 0.001 seconds.\n"
+            "\u2794 Test b() skipped.\n"
+            "\u2714 Test run with 2 tests in 1 suite passed after 0.01 seconds.\n"
+        )
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (1, 0, 2))

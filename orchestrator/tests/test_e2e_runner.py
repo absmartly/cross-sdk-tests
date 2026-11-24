@@ -754,10 +754,63 @@ def test_main_passes_requested_sdks_to_the_runner(monkeypatch):
     assert seen["requested"] == set()
 
 
-def test_run_e2e_script_passes_sdk_opt_to_the_runner():
-    script = (Path(__file__).resolve().parents[2] / "run-e2e-tests.sh").read_text()
-    assert 'done < <(sdk_opt_args "$SDK_NAMES")' in script
-    assert '"${SDK_OPT[@]}"' in script
+STUB_DOCKER = """#!/bin/bash
+# docker stub for running run-e2e-tests.sh without containers.
+if [ "$1" = run ]; then exit 0; fi
+if [ "$1" = compose ]; then
+  case "$2" in
+    config) printf '%s\\n' java-sdk php-sdk ruby-sdk context-server ;;
+    port) echo "0.0.0.0:3000" ;;
+    ps) echo "Up 5 seconds" ;;
+  esac
+  exit 0
+fi
+exit 0
+"""
+
+STUB_PYTHON = """#!/bin/bash
+# python3 stub: records the e2e runner's argv and environment.
+if [ "$1" = "-c" ]; then exit 0; fi
+if [ "$1" = "orchestrator/e2e_runner.py" ]; then
+  shift
+  printf '%s\\n' "$@" > "$ARGV_FILE"
+  printf '%s\\n' "$SDK_SERVICES" > "$ARGV_FILE.services"
+fi
+exit 0
+"""
+
+
+def run_e2e_script(tmp_path, *script_args):
+    import shutil
+    import subprocess
+    repo = Path(__file__).resolve().parents[2]
+    work = tmp_path / "repo"
+    work.mkdir()
+    shutil.copy(repo / "run-e2e-tests.sh", work / "run-e2e-tests.sh")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("docker", STUB_DOCKER), ("python3", STUB_PYTHON), ("sleep", "#!/bin/bash\nexit 0\n")):
+        stub = bin_dir / name
+        stub.write_text(body)
+        stub.chmod(0o755)
+    argv_file = tmp_path / "argv"
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "ARGV_FILE": str(argv_file), "HOME": str(tmp_path)}
+    proc = subprocess.run(["bash", str(work / "run-e2e-tests.sh"), "--skip-build", *script_args],
+                          cwd=work, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return argv_file.read_text().splitlines(), (tmp_path / "argv.services").read_text().strip()
+
+
+def test_run_e2e_script_forwards_requested_sdks_to_the_runner(tmp_path):
+    argv, services = run_e2e_script(tmp_path, "--sdk", "java,php")
+    assert argv[:2] == ["--sdk", "java,php"]
+    assert services == "java,php"
+
+
+def test_run_e2e_script_requests_nothing_without_sdk(tmp_path):
+    argv, services = run_e2e_script(tmp_path)
+    assert "--sdk" not in argv
+    assert services == "java,php,ruby"
 
 
 def test_existing_revenue_metric_with_wrong_goal_id_is_refused(monkeypatch):
@@ -802,3 +855,14 @@ def test_run_e2e_script_sdk_opt_args(names, expected):
     out = subprocess.run(["bash", "-c", func + 'sdk_opt_args "$1"', "_", names],
                          capture_output=True, text=True, check=True).stdout
     assert out.splitlines() == expected
+
+
+@pytest.mark.parametrize("value", [",", " ", " , "])
+def test_empty_sdk_list_exits_before_any_api_call(monkeypatch, capsys, value):
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", value])
+    monkeypatch.setattr(E2ERunner, "run", lambda self: pytest.fail("must not run with no SDKs"))
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
+    assert "No valid SDKs specified" in capsys.readouterr().out

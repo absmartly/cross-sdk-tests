@@ -347,8 +347,6 @@ class E2ERunner:
         # src/core/metrics/get.ts -> summarizeMetric; --raw in api-helper.ts).
         rc, output = run_abs(["metrics", "get", str(metric_id), "--raw"], self.profile)
         metric = parse_json_output(output) if rc == 0 else None
-        if isinstance(metric, list) and metric:
-            metric = metric[0]
         if not isinstance(metric, dict):
             raise RuntimeError(
                 f"Could not read metric '{REVENUE_METRIC_NAME}' (id={metric_id}) to check its definition: {output}"
@@ -1578,6 +1576,9 @@ def main() -> None:
         if invalid_sdks:
             # A requested SDK that cannot be tested must fail, never be dropped.
             print(f"Error: Unknown SDK(s): {', '.join(invalid_sdks)}. Available: {', '.join(all_sdks.keys())}")
+            sys.exit(1)
+        if not sdks:
+            print(f"No valid SDKs specified. Available: {', '.join(all_sdks.keys())}")
             sys.exit(1)
         requested_sdks = list(sdks)
     else:

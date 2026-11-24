@@ -244,6 +244,8 @@ def parse_swift_test(output):
     test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
     st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
     st_failed = len(re.findall(test_line.format(status="failed"), output, re.MULTILINE))
+    # A skipped test ("➔ Test name() skipped.") is in the run total but did not pass.
+    st_skipped = len(re.findall(r"^\S+ Test (?!run with ).*? skipped\.?\s*$", output, re.MULTILINE))
     runs = re.findall(
         r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after", output, re.MULTILINE)
     if runs:
@@ -252,11 +254,12 @@ def parse_swift_test(output):
         st_total = sum(int(n) for n, _ in runs)
         failed_runs = sum(1 for _, status in runs if status == "failed")
         st_failed = min(st_total, max(st_failed, failed_runs))
-        st_passed = st_total - st_failed
+        st_skipped = min(st_skipped, st_total - st_failed)
+        st_passed = st_total - st_failed - st_skipped
 
     passed, failed = xc_passed + st_passed, xc_failed + st_failed
     if passed or failed:
-        return passed, failed, passed + failed
+        return passed, failed, passed + failed + st_skipped
     return None, None, None
 
 

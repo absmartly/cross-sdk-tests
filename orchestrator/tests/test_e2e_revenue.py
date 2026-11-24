@@ -588,3 +588,27 @@ def test_partial_total_never_passes_even_if_lower_bound_reaches_expected():
     total = runner._format_total(500, 500, partial=True)
     assert "FAIL (partial/unverified)" in total
     assert "PASS" not in total
+
+
+def test_wait_does_not_start_queries_after_the_deadline(monkeypatch, capsys, poll_clock):
+    # Each real query can take up to run_abs's timeout; queries that advance the clock
+    # past the deadline mid-round must stop further SDKs being polled in that round.
+    sdks = ("java", "go", "php", "dotnet")
+    backend = healthy_backend(sdks=sdks)
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 6
+    started_after_deadline = []
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if poll_clock.now >= 6:
+            started_after_deadline.append(list(args))
+        poll_clock.now += 4  # a slow query
+        return 0, "[]"  # never ready
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert started_after_deadline == []
+    assert "Metrics incomplete" in capsys.readouterr().out
