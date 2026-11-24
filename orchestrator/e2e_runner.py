@@ -528,12 +528,15 @@ class E2ERunner:
         created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
         result = created.get("result", {})
         context_id = result.get("contextId")
-        if not context_id or result.get("ready") is not True or result.get("failed"):
-            raise RuntimeError(f"Context is not ready: {created}")
-        if case.get("pre_ready") and result.get("preReadyTracked") is not True:
-            raise RuntimeError("Wrapper did not confirm tracking in the SDK's not-ready state")
+        if not context_id:
+            raise RuntimeError(f"Context was not created: {created}")
         url = base_url + "/context/" + context_id
         try:
+            # Inside the try: a context the wrapper reports as not ready is still deleted.
+            if result.get("ready") is not True or result.get("failed"):
+                raise RuntimeError(f"Context is not ready: {created}")
+            if case.get("pre_ready") and result.get("preReadyTracked") is not True:
+                raise RuntimeError("Wrapper did not confirm tracking in the SDK's not-ready state")
             self._wrapper_post(url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
             if "session" in case:
                 self._wrapper_post(url + "/treatment", {"experimentName": self.session_experiment_name}, deadline=deadline)

@@ -532,7 +532,7 @@ def test_slow_wrapper_stops_at_the_budget(runner):
     assert clock[0] == 300
 
 
-def test_run_event_cases_sets_one_run_budget(runner, monkeypatch):
+def test_run_event_cases_sets_a_per_sdk_share(runner, monkeypatch):
     runner.timeout = 30
     runner.sdks = {"javascript": "http://a", "python": "http://b"}
     monkeypatch.setattr(runner, "_case_skip", lambda sdk, case: None)
@@ -797,3 +797,71 @@ def test_contexts_deleted_when_budget_runs_out(runner, name):
          patch("e2e_runner.time.time", side_effect=lambda: clock[0]), pytest.raises(RuntimeError, match="budget exhausted"):
         runner._send_event_case("javascript", "http://wrapper", case)
     assert [c.args[0] for c in delete.call_args_list] == ["http://wrapper/context/c"]
+
+
+def test_priming_context_deleted_when_budget_runs_out(runner):
+    # timeout=40 with 25 s calls: the budget runs out on the priming /treatment.
+    clock = [0.0]
+    posted = []
+    def post(url, **kw):
+        posted.append(url)
+        clock[0] += 25
+        return Mock(status_code=200, json=lambda: {"result": {"contextId": "p", "ready": True, "failed": False}})
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    runner.timeout = 40
+    with patch("e2e_runner.requests.post", side_effect=post), patch("e2e_runner.requests.delete") as delete, \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]), pytest.raises(RuntimeError, match="budget exhausted"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert posted == ["http://wrapper/context", "http://wrapper/context/p/treatment"]
+    assert [c.args[0] for c in delete.call_args_list] == ["http://wrapper/context/p"]
+
+
+@pytest.mark.parametrize("name,body,match", [
+    ("batch", {"contextId": "c", "ready": False, "failed": False}, "not ready"),
+    ("batch", {"contextId": "c", "ready": True, "failed": True}, "not ready"),
+    ("pre_ready", {"contextId": "c", "ready": True, "failed": False}, "not-ready state"),
+])
+def test_rejected_context_is_still_deleted(runner, name, body, match):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    def post(url, **kw):
+        # The priming context of pre_ready is fine; the case context is the one rejected.
+        if url.endswith("/context") and "preReadyGoals" not in kw.get("json", {}) and name == "pre_ready":
+            reply = {"contextId": "p", "ready": True, "failed": False}
+        else:
+            reply = body if url.endswith("/context") else {}
+        return Mock(status_code=200, json=lambda: {"result": reply})
+    with patch("e2e_runner.requests.post", side_effect=post), patch("e2e_runner.requests.delete") as delete, \
+         pytest.raises(RuntimeError, match=match):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert "http://wrapper/context/c" in [c.args[0] for c in delete.call_args_list]
+
+
+def test_context_without_id_fails_without_delete(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "batch")
+    with patch("e2e_runner.requests.post", return_value=Mock(status_code=200, json=lambda: {"result": {}})), \
+         patch("e2e_runner.requests.delete") as delete, pytest.raises(RuntimeError, match="not created"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert not delete.called
+
+
+def test_raw_events_are_read_across_pages(runner):
+    # 500 rows of another goal fill page 1; the case's own goals are on page 2.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    filler = [dict(rows[-1], goal_name="refund", properties="{}") for _ in range(500)]
+    pages = [filler, rows]
+    skips = []
+    def cli(args, *a, **kw):
+        skips.append(args[args.index("--skip") + 1])
+        return 0, json.dumps(pages.pop(0) if pages else [])
+    with patch("e2e_runner.run_abs", side_effect=cli):
+        assert runner._verify_arrival("javascript", case)["pass"]
+    assert skips == ["0", "500"]
+
+
+def test_endless_raw_pages_report_the_limit(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    full = json.dumps([dict(raw_fixture(runner, case)[0])] * 500)
+    with patch("e2e_runner.run_abs", return_value=(0, full)):
+        result = runner._verify_arrival("javascript", case)
+    assert not result["pass"] and result["errors"] == ["Collector event pagination limit exceeded"]
