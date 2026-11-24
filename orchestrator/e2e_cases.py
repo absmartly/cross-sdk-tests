@@ -1,5 +1,6 @@
 """Collector-arrival cases. Expectations describe calls planned, never wrapper successes."""
 from decimal import Decimal
+import hashlib
 
 
 NUMERIC_VALUES = (10, 10.5, 0.1, -4, 0, 1000000)
@@ -38,7 +39,7 @@ def case_specs(run_id, sdk):
         {"name": "batch", "goals": [{"amount": 1}] * BATCH_SIZE},
         {"name": "unicode", "uid": prefix + "-用戶-🧪-é", "goals": []},
         {"name": "long_id", "uid": prefix + "-" + "x" * 1024, "goals": []},
-        {"name": "numeric_id", "uid": int(run_id, 16) * 1000 + 123, "goals": [],
+        {"name": "numeric_id", "uid": int(run_id, 16) * 1000000 + int.from_bytes(hashlib.sha256(sdk.encode()).digest()[:2], "big"), "goals": [],
          "capability": "numericUnitIds"},
         {"name": "multiple_units", "goals": [], "session": prefix + "-session"},
         {"name": "strings", "goals": [{"currency": v} for v in ("EUR", "USD", "EUR")]},

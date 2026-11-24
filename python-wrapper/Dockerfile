@@ -19,7 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY cross-sdk-tests/python-wrapper/server.py cross-sdk-tests/python-wrapper/holdout_self_test.py cross-sdk-tests/python-wrapper/switchback_self_test.py ./
 
 FROM server AS wrapper-tests
-COPY cross-sdk-tests/python-wrapper/test_switchback_self_test.py ./
+COPY cross-sdk-tests/python-wrapper/test_switchback_self_test.py cross-sdk-tests/python-wrapper/test_pre_ready_goals.py ./
+RUN pip install --no-cache-dir pytest
+RUN python -m pytest -q test_pre_ready_goals.py
 RUN python -m unittest -v test_switchback_self_test && touch /wrapper-tests.passed
 
 # The runtime image depends on wrapper-tests (through its marker), so BuildKit and buildah cannot

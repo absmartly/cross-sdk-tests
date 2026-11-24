@@ -1197,6 +1197,8 @@ class E2ERunner:
         for sdk, cases in results.get("event_cases", {}).items():
             for name, result in cases.items():
                 print(f"  {sdk} / {name}: {result['status'].upper()} {result.get('reason', '')}")
+                for error in result.get("arrival", {}).get("errors", []):
+                    print(f"    arrival: {error}")
                 for metric, value in result.get("metrics", {}).items():
                     print(f"    {metric}: {value['actual']}/{value['expected']} "
                           f"{'PASS' if value['pass'] else 'FAIL'}")

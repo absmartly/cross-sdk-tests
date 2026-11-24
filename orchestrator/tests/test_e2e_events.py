@@ -150,3 +150,85 @@ def test_429_sleeps_120_then_retries():
     with patch("e2e_runner.subprocess.run", side_effect=[fail, ok]), patch("e2e_runner.time.sleep") as sleep:
         assert run_abs(["metrics", "list"]) == (0, "[]")
     sleep.assert_called_once_with(120)
+
+
+def test_numeric_ids_distinct_for_every_lane(runner):
+    ids = [next(c['uid'] for c in case_specs(runner.run_id, sdk) if c['name'] == 'numeric_id')
+           for sdk in runner.capability_policy['sdks']]
+    assert len(set(ids)) == len(ids)
+    assert all(type(uid) is int and 0 < uid < 2**53 for uid in ids)
+
+
+def raw_fixture(runner, case):
+    # Independent precomputed UTF-8 MD5/base64url fixture, not the runner's hash code.
+    case['uid'] = 'e2e-0c11789c-go-94'
+    common = dict(unit_uid='OSS6pz0j4iJ-ymv9M3DHvg', unit_type='user_id', application_id=90,
+                  environment=runner.environment, agent='absmartly-javascript-sdk/1.14.0')
+    exposure = dict(common, event_type='exposure', experiment_id=100,
+                    unit_attributes=json.dumps(dict(sdk_name='javascript', e2e_case=case['name'])))
+    return [exposure] + [dict(common, event_type='goal', goal_name='purchase', properties=json.dumps(g)) for g in case['goals']]
+
+
+@pytest.mark.parametrize('name', ['strings', 'booleans', 'nested', 'null_value', 'null_properties'])
+def test_raw_property_multisets_positive_and_corrupt(runner, name):
+    case = next(c for c in case_specs(runner.run_id, 'javascript') if c['name'] == name)
+    rows = raw_fixture(runner, case)
+    with patch('e2e_runner.run_abs', return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival('javascript', case)['pass']
+    rows[-1]['properties'] = '{"wrong":true}'
+    with patch('e2e_runner.run_abs', return_value=(0, json.dumps(rows))):
+        assert not runner._verify_arrival('javascript', case)['pass']
+
+
+@pytest.mark.parametrize('field,value', [('agent','other-sdk'), ('unit_type','wrong'), ('application_id',91),
+                                        ('environment','wrong'), ('unit_attributes','{}')])
+def test_raw_identity_mutations(runner, field, value):
+    case = next(c for c in case_specs(runner.run_id, 'javascript') if c['name'] == 'strings')
+    rows = raw_fixture(runner, case)
+    rows[0][field] = value
+    with patch('e2e_runner.run_abs', return_value=(0,json.dumps(rows))):
+        assert not runner._verify_arrival('javascript',case)['pass']
+
+
+def test_unicode_hash_independent_fixture(runner):
+    case = next(c for c in case_specs(runner.run_id,'javascript') if c['name']=='unicode')
+    rows = raw_fixture(runner,case)
+    case['uid'] = '用戶-🧪-é'
+    import hashlib, base64
+    # Fixture uses literal UTF-8 octets, independent of UID encoding in production.
+    expected = base64.urlsafe_b64encode(hashlib.md5(bytes.fromhex('e794a8e688b62df09fa7aa2dc3a9')).digest()).decode().rstrip('=')
+    rows[0]['unit_uid'] = expected
+    with patch('e2e_runner.run_abs',return_value=(0,json.dumps(rows))) as cli:
+        assert runner._verify_arrival('javascript',case)['pass']
+        assert expected in cli.call_args.args[0]
+
+
+def test_session_requires_distinct_metric_and_raw_exposure(runner):
+    case = next(c for c in case_specs(runner.run_id,'javascript') if c['name']=='multiple_units')
+    rows = raw_fixture(runner,case)
+    with patch('e2e_runner.run_abs', return_value=(0,json.dumps(rows))):
+        assert not runner._verify_arrival('javascript',case)['pass']
+    def query(mid,sdk,name,*rest):
+        value = backend(runner,sdk,name,mid)
+        if rest:
+            assert rest == (101,)
+            value['variants'][0]['unit_count'] = 0
+        return value
+    with patch.object(runner,'_query_metric',side_effect=query), patch.object(runner,'_verify_arrival',return_value={'pass':True}):
+        assert verify(runner)['event_cases']['javascript']['multiple_units']['status']=='fail'
+
+
+@pytest.mark.parametrize('key,field,wrong', [('amount','value_source_property','wrong/path'),
+    ('nested','value_source_property','wrong/path'), ('eur','property_filter',{'filter':{'and':[]}}),
+    ('true','property_filter',{'filter':{'and':[]}}), ('false','property_filter',{'filter':{'and':[]}})])
+def test_existing_metric_validation(runner,key,field,wrong):
+    specs=metric_specs()
+    runner.goal_id='183'
+    def cli(args,*a,**kw):
+        spec=specs[next(k for k,v in runner.case_metric_ids.items() if v==args[2])]
+        detail={'type':spec['type'],'goal_id':183,'outlier_limit_method':'unlimited',
+                'value_source_property':spec.get('path'),'property_filter':spec.get('filter')}
+        if spec is specs[key]: detail[field]=wrong
+        return 0,json.dumps(detail)
+    with patch.object(runner,'_find_resource',side_effect=lambda resource,name: runner.case_metric_ids[next(k for k,s in specs.items() if s['name']==name)]), patch('e2e_runner.run_abs',side_effect=cli), pytest.raises(RuntimeError,match='wrong property'):
+        runner._ensure_case_metrics()
