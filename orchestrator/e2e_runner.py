@@ -163,6 +163,7 @@ class E2ERunner:
         # Every side experiment created, so cleanup archives it even after a later failure.
         self.side_experiment_ids: List[int] = []
         self.event_cases_expected = False
+        self.case_run_deadline: Optional[float] = None
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -466,6 +467,8 @@ class E2ERunner:
         return reason
 
     def run_event_cases(self):
+        # Sending every SDK's cases shares one budget of --timeout per SDK.
+        self.case_run_deadline = time.time() + self.timeout * max(1, len(self.sdks))
         for sdk, base_url in self.sdks.items():
             self.case_results[sdk] = {}
             for case in case_specs(self.run_id, sdk):
@@ -495,8 +498,10 @@ class E2ERunner:
         response.raise_for_status()
 
     def _send_event_case(self, sdk, base_url, case):
-        # A rate-limited wrapper never sleeps past this case's budget.
+        # A rate-limited wrapper never sleeps past this case's budget, nor the run's.
         deadline = time.time() + self.timeout
+        if self.case_run_deadline is not None:
+            deadline = min(deadline, self.case_run_deadline)
         units = {"user_id": case["uid"]}
         if "session" in case:
             units["session_id"] = case["session"]

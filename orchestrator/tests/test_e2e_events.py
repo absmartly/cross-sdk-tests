@@ -466,14 +466,88 @@ def test_wrapper_429_stops_at_deadline(runner):
     assert post.call_count == 2 and clock[0] == 120
 
 
-def test_every_wrapper_call_carries_the_case_deadline(runner):
-    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+@pytest.mark.parametrize("name", [c["name"] for c in case_specs("abcd1234", "javascript")])
+def test_every_wrapper_call_carries_the_case_deadline(runner, name):
+    # Every call of every case is bounded, and no case ever exposes the baseline experiment.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
     created = {"result": {"contextId": "ctx", "ready": True, "failed": False, "preReadyTracked": True}}
     runner.timeout = 40
     with patch.object(runner, "_wrapper_post", return_value=created) as post, \
          patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=10.0):
         runner._send_event_case("javascript", "http://wrapper", case)
     assert {c.kwargs.get("deadline") for c in post.call_args_list} == {50.0}
+    treated = [c.args[1]["experimentName"] for c in post.call_args_list if c.args[0].endswith("/treatment")]
+    assert treated and runner.experiment_name not in treated
+    assert set(treated) <= {"e2e-abcd1234-cases", "e2e-abcd1234-session"}
+
+
+def test_case_deadline_never_exceeds_the_run_budget(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "batch")
+    created = {"result": {"contextId": "ctx", "ready": True, "failed": False}}
+    runner.timeout = 40
+    runner.case_run_deadline = 25.0
+    with patch.object(runner, "_wrapper_post", return_value=created) as post, \
+         patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=10.0):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert {c.kwargs.get("deadline") for c in post.call_args_list} == {25.0}
+
+
+def test_run_event_cases_sets_one_run_budget(runner, monkeypatch):
+    runner.timeout = 30
+    runner.sdks = {"javascript": "http://a", "python": "http://b"}
+    monkeypatch.setattr(runner, "_case_skip", lambda sdk, case: None)
+    monkeypatch.setattr(runner, "_send_event_case", lambda *a: None)
+    with patch("e2e_runner.time.time", return_value=100.0):
+        runner.run_event_cases()
+    assert runner.case_run_deadline == 160.0
+
+
+def test_sentinel_reads_the_cases_experiment(runner):
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    with patch("e2e_runner.run_abs", return_value=(0, "[]")) as cli, patch("e2e_runner.time.time", return_value=0):
+        runner._sentinels_landed(42.0)
+    args = cli.call_args.args[0]
+    assert args[3] == "102"
+    assert json.loads(args[args.index("--filter") + 1]) == eq_filter(e2e_sdk="javascript", e2e_case="batch")
+
+
+def _side_runner(runner, monkeypatch, start_rc=0, ids=(501, 502)):
+    runner.unit_type = "34"
+    made = []
+    created = iter(ids)
+    def create():
+        made.append((runner.unit_type, runner.experiment_suffix))
+        runner.experiment_id = next(created)
+        runner.experiment_name = f"e2e-{runner.run_id}-{runner.experiment_suffix}"
+    monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
+    monkeypatch.setattr(runner, "create_experiment", create)
+    monkeypatch.setattr(runner, "_wait_for_experiment_in_context", lambda: True)
+    patcher = patch("e2e_runner.run_abs", return_value=(start_rc, "boom" if start_rc else ""))
+    return made, patcher
+
+
+def test_side_experiments_unit_types_and_names(runner, monkeypatch):
+    made, patcher = _side_runner(runner, monkeypatch)
+    with patcher:
+        runner.create_case_experiments()
+    assert made == [("34", "cases"), ("79", "session")]
+    assert runner.case_experiment_name == "e2e-abcd1234-cases"
+    assert runner.session_experiment_name == "e2e-abcd1234-session"
+    assert runner.unit_type == "34" and runner.experiment_suffix is None
+
+
+def test_side_experiment_start_failure_raises(runner, monkeypatch):
+    made, patcher = _side_runner(runner, monkeypatch, start_rc=1)
+    with patcher, pytest.raises(RuntimeError, match="Start cases experiment"):
+        runner.create_case_experiments()
+    assert runner.side_experiment_ids == [501]
+
+
+def test_side_experiment_create_without_id_raises(runner, monkeypatch):
+    made, patcher = _side_runner(runner, monkeypatch, ids=(None,))
+    with patcher, pytest.raises(RuntimeError, match="cases experiment was not created"):
+        runner.create_case_experiments()
+    assert runner.side_experiment_ids == []
 
 
 def test_raw_arrival_failure_fails_case(runner):
@@ -637,3 +711,19 @@ def test_case_verification_carries_one_deadline(runner):
         verify(runner)
     assert {kind for kind, _ in seen} == {"experiments", "events"}
     assert {d for _, d in seen} == {1050.0}
+
+
+def test_create_experiment_names_side_experiments(runner):
+    # The real create_experiment, not a fake: side experiments get their suffix, the baseline none.
+    runner.app_id, runner.unit_type, runner.owner_id = "90", "34", "7"
+    names = []
+    def cli(args, *a, **kw):
+        if args[:2] == ["experiments", "create"]:
+            names.append(args[args.index("--name") + 1])
+        return 0, '{"id": 700}'
+    with patch("e2e_runner.run_abs", side_effect=cli):
+        for suffix in ("cases", "session", None):
+            runner.experiment_suffix = suffix
+            runner.experiment_id = None
+            runner.create_experiment()
+    assert names == ["e2e-abcd1234-cases", "e2e-abcd1234-session", "e2e-abcd1234"]
