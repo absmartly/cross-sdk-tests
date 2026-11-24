@@ -406,8 +406,9 @@ unfiltered) without attaching it to the experiment. Actual revenue is the sum
 of the variants' `count`, compared with the planned amount (planned goals x 10).
 An SDK whose exposures, goals or revenue the backend can't measure is a failure
 (`unverified: <reason>` / `unverified: revenue <reason>`), not a skip: the run
-prints `PASS All metrics verified` and exits 0 only when every SDK row was
-measured and passed. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
+prints `PASS All metrics verified` and exits 0 only when every non-skipped SDK
+row was measured and passed (an SDK whose wrapper returns 501 for e2e mode is
+skipped; a run where every SDK is skipped fails). `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
 [docs/specs/2026-03-20-e2e-testing-design.md](docs/specs/2026-03-20-e2e-testing-design.md).
 
 ## Continuous integration

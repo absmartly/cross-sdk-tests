@@ -477,15 +477,22 @@ def test_revenue_wording_banned_in_source_and_report(monkeypatch, capsys):
     assert BANNED_WORD not in json.dumps(results).lower()
 
 
+REVENUE_DEFINITION = {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue", "type": "goal_property",
+                      "value_source_property": "amount", "goal": {"name": "purchase"}}
+
+
 class ResourceAbs:
-    def __init__(self, metrics_list):
+    def __init__(self, metrics_list, definition=REVENUE_DEFINITION):
         self.metrics_list = metrics_list
+        self.definition = definition
         self.calls = []
 
     def __call__(self, args, profile="", api_key="", endpoint="", output_json=True):
         self.calls.append(list(args))
         if args[:2] == ["metrics", "list"]:
             return 0, json.dumps(self.metrics_list)
+        if args[:2] == ["metrics", "get"]:
+            return 0, json.dumps(self.definition)
         if args[:2] == ["metrics", "create"]:
             return 0, json.dumps({"id": REVENUE_METRIC_ID})
         return 0, ""
@@ -524,7 +531,86 @@ def test_ensure_revenue_metric_reuses_existing(monkeypatch):
     runner.revenue_metric_id = None
     runner._ensure_revenue_metric()
     assert runner.revenue_metric_id == str(REVENUE_METRIC_ID)
-    assert not [c for c in fake.calls if c[0] == "metrics" and c[1] != "list"]
+    assert [c for c in fake.calls if c[0] == "metrics" and c[1] != "list"] == [
+        ["metrics", "get", str(REVENUE_METRIC_ID)]
+    ]
+
+
+@pytest.mark.parametrize("change, needle", [
+    ({"type": "goal_unique_count"}, "type="),
+    ({"value_source_property": "price"}, "value_source_property="),
+    ({"goal": {"name": "checkout"}}, "goal="),
+])
+def test_existing_revenue_metric_with_wrong_definition_is_refused(monkeypatch, change, needle):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}],
+                       definition={**REVENUE_DEFINITION, **change})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match=needle):
+        runner._ensure_revenue_metric()
+
+
+def test_unreadable_existing_revenue_metric_is_refused(monkeypatch):
+    def fake(args, profile="", api_key="", endpoint="", output_json=True):
+        if args[:2] == ["metrics", "list"]:
+            return 0, json.dumps([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+        return 1, "not found"
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="check its definition"):
+        runner._ensure_revenue_metric()
+
+
+def test_select_metric_never_falls_back_when_metric_id_is_known():
+    runner = make_runner(sdks=("java",))
+    other_primary = metric_result(JAVA_6143, metric_id=999, type_="primary")
+    assert runner._select_metric([other_primary]) is None
+    runner.metric_id = None
+    assert runner._select_metric([other_primary]) is other_primary
+
+
+def test_track_body_carries_the_purchase_amount(monkeypatch):
+    sent = []
+
+    class Resp:
+        def __init__(self, status=200, body=None):
+            self.status_code = status
+            self._body = body or {}
+
+        def json(self):
+            return self._body
+
+    def post(url, json=None, timeout=None):
+        sent.append((url.rsplit("/", 1)[-1], json))
+        if url.endswith("/context"):
+            return Resp(body={"result": {"contextId": "c1"}})
+        return Resp()
+
+    monkeypatch.setattr(e2e_runner.requests, "get", lambda url, timeout=None: Resp())
+    monkeypatch.setattr(e2e_runner.requests, "post", post)
+    runner = make_runner(sdks=("java",), units=2)
+    result = runner._run_sdk_scenario("java", "http://java")
+    assert result["status"] == "ok"
+    tracks = [body for name, body in sent if name == "track"]
+    assert tracks == [{"goalName": "purchase", "properties": {"amount": 10}}]
+    assert result["revenue_sent"] == 10
+
+
+def test_main_exits_nonzero_when_overall_pass_was_left_true(monkeypatch, capsys):
+    # A hand-built result whose overall_pass is wrongly True over an unverified row:
+    # main() must still exit non-zero (exit gate is report_passes, not overall_pass).
+    unverified = {"status": "fail", "note": "unverified: revenue no result",
+                  "exposures": {"expected": 100, "actual": 100, "pass": True},
+                  "goals": {"expected": 50, "actual": 50, "pass": True},
+                  "revenue": {"expected": 500, "actual": None, "pass": False, "unverified": True}}
+    monkeypatch.setattr(E2ERunner, "run", lambda self: {"overall_pass": True, "sdks": {"java": unverified}})
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py"])
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
 
 
 def test_dry_run_report_never_prints_pass(capsys):

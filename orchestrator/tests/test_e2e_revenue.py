@@ -306,6 +306,9 @@ class _ProvisioningBackend:
         self.calls.append(list(args))
         if args[:2] == ["metrics", "list"]:
             return 0, json.dumps(self.existing)
+        if args[:2] == ["metrics", "get"]:
+            return 0, json.dumps({"id": int(args[2]), "name": "e2e_purchase_revenue", "type": "goal_property",
+                                  "value_source_property": "amount", "goal": {"name": "purchase"}})
         if args[:2] == ["metrics", "create"]:
             return 0, self.create_output
         return 0, ""

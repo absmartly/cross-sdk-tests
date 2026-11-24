@@ -291,6 +291,7 @@ class E2ERunner:
         """
         self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
         if self.revenue_metric_id:
+            self._check_revenue_metric_definition(self.revenue_metric_id)
             self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
             return
 
@@ -320,6 +321,43 @@ class E2ERunner:
         run_abs(["metrics", "activate", self.revenue_metric_id, "--reason", "E2E testing"], self.profile, output_json=False)
 
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+
+    def _check_revenue_metric_definition(self, metric_id: str) -> None:
+        """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
+
+        A metric found by name alone could be a different type or property, and
+        its result would then be "measured" wrongly. `abs metrics get <id>`
+        returns the metric's `type` and `value_source_property` (absmartly/cli
+        src/core/metrics/payload.ts). The goal is checked when the payload
+        carries it as a nested goal or `goal_id`.
+        """
+        rc, output = run_abs(["metrics", "get", str(metric_id)], self.profile)
+        metric = parse_json_output(output) if rc == 0 else None
+        if isinstance(metric, list) and metric:
+            metric = metric[0]
+        if not isinstance(metric, dict):
+            raise RuntimeError(
+                f"Could not read metric '{REVENUE_METRIC_NAME}' (id={metric_id}) to check its definition: {output}"
+            )
+        problems = []
+        if metric.get("type") != "goal_property":
+            problems.append(f"type={metric.get('type')!r}, expected 'goal_property'")
+        if metric.get("value_source_property") != REVENUE_PROPERTY:
+            problems.append(
+                f"value_source_property={metric.get('value_source_property')!r}, expected {REVENUE_PROPERTY!r}"
+            )
+        goal = metric.get("goal")
+        goal_name = goal.get("name") if isinstance(goal, dict) else None
+        if goal_name is not None and goal_name != "purchase":
+            problems.append(f"goal={goal_name!r}, expected 'purchase'")
+        goal_id = metric.get("goal_id")
+        if goal_id is not None and self.goal_id is not None and str(goal_id) != str(self.goal_id):
+            problems.append(f"goal_id={goal_id!r}, expected {self.goal_id!r}")
+        if problems:
+            raise RuntimeError(
+                f"Existing metric '{REVENUE_METRIC_NAME}' (id={metric_id}) cannot measure revenue: "
+                + "; ".join(problems)
+            )
 
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"
@@ -702,12 +740,12 @@ class E2ERunner:
         effect?, variants: [VariantResult]} (absmartly/cli
         src/api-client/metric-results.ts, MetricResult/VariantResult and
         fetchAllMetricResults; printed raw by src/commands/experiments/metrics.ts
-        resultsCommand). Select ours by metric_id, falling back to the
-        "primary" entry; never guess at an arbitrary row.
+        resultsCommand). Select ours by metric_id. Only when no metric_id is
+        known fall back to the "primary" entry; a known id that is missing from
+        the output never selects some other row.
         """
-        metric = self._select_metric_by_id(data, self.metric_id)
-        if metric is not None:
-            return metric
+        if self.metric_id is not None:
+            return self._select_metric_by_id(data, self.metric_id)
         for m in self._metric_list(data):
             if m.get("type") == "primary":
                 return m
@@ -1300,7 +1338,7 @@ class E2ERunner:
 
     @staticmethod
     def report_passes(results: Dict[str, Any]) -> bool:
-        """PASS only if the run passed AND every SDK row was measured and passed.
+        """PASS only if the run passed AND every non-skipped SDK row was measured and passed.
 
         Gates both the PASS banner and the exit code. Computed from the rows as
         well as overall_pass, so a path that forgets to clear overall_pass can
