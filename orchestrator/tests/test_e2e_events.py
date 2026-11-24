@@ -232,3 +232,107 @@ def test_existing_metric_validation(runner,key,field,wrong):
         return 0,json.dumps(detail)
     with patch.object(runner,'_find_resource',side_effect=lambda resource,name: runner.case_metric_ids[next(k for k,s in specs.items() if s['name']==name)]), patch('e2e_runner.run_abs',side_effect=cli), pytest.raises(RuntimeError,match='wrong property'):
         runner._ensure_case_metrics()
+
+
+def test_metric_definitions_are_pinned_literally():
+    specs = metric_specs()
+    assert specs["eur"]["filter"] == {"filter": {"and": [{"eq": [{"var": {"path": "currency"}}, {"value": "EUR"}]}]}}
+    assert specs["true"]["filter"] == {"filter": {"and": [{"eq": [{"var": {"path": "gift"}}, {"value": True}]}]}}
+    assert specs["false"]["filter"] == {"filter": {"and": [{"eq": [{"var": {"path": "gift"}}, {"value": False}]}]}}
+    assert specs["nested"]["path"] == "order/total"
+    assert specs["amount"]["path"] == "amount"
+    assert specs["events"]["type"] == "goal_count"
+
+
+def test_unmeasurable_zero_expectation_fails(runner):
+    # unicode expects 0 events and amount 0: a missing measurement must not read as 0.
+    assert measured_total(None, "count") is None
+    def query(mid, sdk, name, *rest):
+        if name == "unicode" and mid == runner.case_metric_ids["amount"]:
+            return None
+        return backend(runner, sdk, name, mid)
+    with patch.object(runner, "_query_metric", side_effect=query), \
+         patch.object(runner, "_verify_arrival", return_value={"pass": True}):
+        result = verify(runner)
+    row = result["event_cases"]["javascript"]["unicode"]
+    assert row["status"] == "fail" and row["metrics"]["amount"]["actual"] is None
+
+
+def _sequence(runner, name):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    created = {"result": {"contextId": "ctx", "ready": True, "failed": False, "preReadyTracked": True}}
+    with patch.object(runner, "_wrapper_post", return_value=created) as post, \
+         patch("e2e_runner.requests.delete"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    return [(c.args[0], c.args[1] if len(c.args) > 1 else None) for c in post.call_args_list]
+
+
+def test_multiple_units_exposes_both_experiments(runner):
+    treatments = [body["experimentName"] for url, body in _sequence(runner, "multiple_units") if url.endswith("/treatment")]
+    assert treatments == ["e2e-abcd1234", "e2e-abcd1234-session"]
+
+
+def test_pre_ready_primes_exposure_before_goal_context(runner):
+    calls = _sequence(runner, "pre_ready")
+    kinds = [url.rsplit("/", 1)[-1] for url, _ in calls]
+    assert kinds == ["context", "treatment", "publish", "context", "treatment", "publish"]
+
+
+def test_foreign_unit_rows_are_ignored(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    rows.append(dict(rows[-1], unit_uid="someone-else", properties='{"currency":"GBP"}', agent="other-sdk"))
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
+
+
+@pytest.mark.parametrize("sdk,agent,ok", [
+    ("python", "absmartly-python-sdk/0.4.0", True),
+    ("python", "absmartly-python-sdk", False),
+    ("javascript", "absmartly-javascript-sdk", True),
+])
+def test_agent_version_required_unless_policy_excepts(runner, sdk, agent, ok):
+    case = next(c for c in case_specs(runner.run_id, sdk) if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    for row in rows:
+        row["agent"] = agent
+    rows[0]["unit_attributes"] = json.dumps({"sdk_name": sdk, "e2e_case": "strings"})
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival(sdk, case)["pass"] is ok
+
+
+def test_numbers_compare_by_value_not_spelling(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "numeric_0")
+    rows = raw_fixture(runner, case)
+    rows[-1]["properties"] = '{"amount":10.0}'
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
+    rows[-1]["properties"] = '{"amount":10.000001}'
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert not runner._verify_arrival("javascript", case)["pass"]
+
+
+def test_python_null_value_is_reviewed_exception(runner):
+    case = next(c for c in case_specs(runner.run_id, "python") if c["name"] == "null_value")
+    assert "strip_nulls" in runner._case_skip("python", case)
+    assert runner._case_skip("go", next(c for c in case_specs(runner.run_id, "go") if c["name"] == "null_value")) is None
+
+
+def test_poll_respects_deadline(runner):
+    clock = [0.0]
+    def slow_query(mid, sdk, name, *rest):
+        # Every SDK's batch lands except the last, so the loop must walk all of them.
+        clock[0] += 100
+        count = BATCH_SIZE if sdk != "sdk21" else 0
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
+    runner.timeout = 150
+    runner.sdks = {f"sdk{i}": "http://x" for i in range(22)}
+    runner.sdk_results = {s: {"status": "ok", "exposures_sent": 1} for s in runner.sdks}
+    runner.case_results = {s: {"batch": {"status": "sent"}} for s in runner.sdks}
+    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
+         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
+         patch("e2e_runner.run_abs", return_value=(0, "")), \
+         patch.object(runner, "_fetch_metrics", return_value={"variants": [{"unit_count": 99}]}), \
+         patch.object(runner, "_query_metric", side_effect=slow_query) as q:
+        runner.wait_for_metrics()
+    assert q.call_count <= 3

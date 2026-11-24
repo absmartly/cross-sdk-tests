@@ -47,7 +47,7 @@ def case_specs(run_id, sdk):
         {"name": "booleans", "goals": [{"gift": v} for v in (True, False, True)]},
         {"name": "no_properties", "goals": [None], "omit_properties": True},
         {"name": "null_properties", "goals": [None]},
-        {"name": "null_value", "goals": [{"amount": None}]},
+        {"name": "null_value", "goals": [{"amount": None}], "capability": "nullPropertyValues"},
         {"name": "numeric_total", "goals": [{"amount": v} for v in NUMERIC_VALUES]},
     ]
     for i, value in enumerate(NUMERIC_VALUES):

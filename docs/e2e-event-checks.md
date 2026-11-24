@@ -26,6 +26,13 @@ Comparisons use an absolute 1e-9 allowance for arithmetic noise, never rounding 
 - Nested order.total: goal_property path is `order/total` (backend slash path grammar).
 - Booleans: separate true and false property-filtered goal_count metrics.
 - Missing properties, null properties, null amount: goal_count increases, amount sum zero.
+  `null_value` is a reviewed exception for python (`e2e.unsupported.nullPropertyValues`):
+  python3-sdk serializes with `strip_nulls=True` and sends `{}`; that is an SDK release gate.
+
+Polling waits for baseline participants plus one sentinel query per SDK (the batch case's
+goal count) and never runs past `--timeout`; the full case check runs once afterwards.
+Raw property comparison is by numeric value (10 equals 10.0); agents must carry a version
+unless the SDK's `xAgentHeader` policy is a reviewed exception.
 
 The raw events oracle additionally verifies unit type, unit hash, application/environment,
 SDK agent, exposure attributes, and exact multiset of goal properties; no-properties/null

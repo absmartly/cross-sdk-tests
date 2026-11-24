@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import base64
+from decimal import Decimal
 import hashlib
 from collections import Counter
 import argparse
@@ -66,7 +67,7 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
     if output_json:
         cmd += ["-o", "json"]
     for attempt in range(3):
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0 or not re.search(r"\b429\b", result.stdout + result.stderr):
             break
         if attempt < 2:
@@ -523,8 +524,10 @@ class E2ERunner:
                 errors.append(f"No exposure for {unit_type}:{uid!r}")
             language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
                         "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript"}.get(sdk, sdk)
+            versioned = "xAgentHeader" not in self.capability_policy["sdks"].get(sdk, {}).get("unsupported", {})
+            agent_re = r"absmartly-" + re.escape(language) + r"-sdk" + (r"/[^ /]+" if versioned else r"(?:/[^ /]+)?")
             for event in own:
-                if not isinstance(event.get("agent"), str) or not re.fullmatch(r"absmartly-" + re.escape(language) + r"-sdk(?:/[^ ]+)?", event["agent"]):
+                if not isinstance(event.get("agent"), str) or not re.fullmatch(agent_re, event["agent"]):
                     errors.append("Collector SDK agent missing or incorrect")
             for exposure in exposures:
                 attrs = exposure.get("unit_attributes")
@@ -537,10 +540,25 @@ class E2ERunner:
             if unit_type != "user_id":
                 continue
             goals = [e for e in own if e.get("event_type") == "goal" and e.get("goal_name") == "purchase"]
+            def numbers(value):
+                # Compare numbers by value: 10 and 10.0 are the same amount.
+                if isinstance(value, dict):
+                    return {k: numbers(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [numbers(v) for v in value]
+                if isinstance(value, Decimal):
+                    if not value.is_finite():
+                        raise ValueError("non-finite property")
+                    return {"$number": format(value.normalize(), "f") if value else "0"}
+                return value
+
             def canonical(value):
                 if isinstance(value, str):
-                    value = json.loads(value)
-                return json.dumps(value if value is not None else {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                    value = json.loads(value, parse_float=Decimal, parse_int=Decimal)
+                else:
+                    value = json.loads(json.dumps(value), parse_float=Decimal, parse_int=Decimal)
+                return json.dumps(numbers(value if value is not None else {}), sort_keys=True,
+                                  ensure_ascii=False, separators=(",", ":"))
             try:
                 actual = Counter(canonical(e.get("properties")) for e in goals)
                 expected = Counter(canonical(g) for g in case["goals"])
@@ -887,20 +905,18 @@ class E2ERunner:
 
         print(f"\nWaiting for metrics (timeout: {self.timeout}s)...")
 
-        start_time = time.time()
-        while time.time() - start_time < self.timeout:
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
             metrics = self._fetch_metrics()
             if metrics:
                 total_participants = self._extract_total_participants(metrics)
-                if total_participants >= total_expected_exposures:
-                    checked = {"overall_pass": True}
-                    self.verify_event_cases(checked)
-                    if checked["overall_pass"]:
-                        print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
-                        return
+                if total_participants >= total_expected_exposures and self._sentinels_landed(deadline):
+                    # The full case check runs once, in verify_metrics, after the poll.
+                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
+                    return
                 if total_participants > 0:
                     self.log(f"Participants so far: {total_participants}/{total_expected_exposures}")
-            time.sleep(5)
+            time.sleep(min(5, max(0, deadline - time.time())))
 
         # Metrics never reached the expected total within the timeout. This is a
         # real failure (events did not land on the backend), not a soft note —
@@ -911,6 +927,19 @@ class E2ERunner:
             f"  {Colors.RED}Metrics incomplete{Colors.RESET}: "
             f"{final_participants}/{total_expected_exposures} participants after {self.timeout}s"
         )
+
+    def _sentinels_landed(self, deadline: float) -> bool:
+        """One cheap query per SDK: the batch case's goal count, the last case sent."""
+        for sdk in self.sdks:
+            if time.time() >= deadline:
+                return False
+            if self.case_results.get(sdk, {}).get("batch", {}).get("status") != "sent":
+                continue
+            batch = next(c for c in case_specs(self.run_id, sdk) if c["name"] == "batch")
+            metric = self._query_metric(self.case_metric_ids["events"], sdk, "batch")
+            if not matches(batch["expected"]["events"], measured_total(metric, "count")):
+                return False
+        return True
 
     def _fetch_metrics(self) -> Optional[Dict[str, Any]]:
         if not self.experiment_id:

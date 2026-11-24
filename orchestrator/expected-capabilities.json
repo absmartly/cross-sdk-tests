@@ -84,7 +84,8 @@
       },
       "e2e": {
         "required": [
-          "preReadyGoals"
+          "preReadyGoals",
+          "nullPropertyValues"
         ],
         "unsupported": {}
       }
@@ -127,7 +128,9 @@
         "required": [
           "preReadyGoals"
         ],
-        "unsupported": {}
+        "unsupported": {
+          "nullPropertyValues": "python3-sdk serializes publish events with jsons strip_nulls=True, so {\"amount\": null} reaches the collector as {}; reviewed release gate until the SDK keeps null property values"
+        }
       }
     },
     "ruby": {
@@ -165,7 +168,9 @@
         "contextFetchBrotli": "observed: Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder; the SDK's Faraday stack adds none"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -206,7 +211,9 @@
         "contextFetchBrotli": "observed: wraps ruby-sdk; Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -247,7 +254,9 @@
         "contextFetchBrotli": "observed: the wrapper's ReactHttpClient sends no Accept-Encoding and decodes nothing; the curl default sets no CURLOPT_ENCODING"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -288,7 +297,9 @@
         "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -329,7 +340,9 @@
         "contextFetchBrotli": "observed: rust-sdk builds reqwest 0.12 with only the `json` feature: no Accept-Encoding, no br decoder (needs the reqwest `brotli` feature)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -370,7 +383,9 @@
         "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -411,7 +426,9 @@
         "integralFloatAttributes": "depends on switchback, which v1.9.0 (the last 1.x tag) predates; re-require with switchback once release/1.x is cut from main"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -452,7 +469,9 @@
         "contextFetchBrotli": "observed: kotlin-sdk HttpURLConnection sends no Accept-Encoding and decodes nothing; br is not in the JDK (needs org.brotli:dec or brotli4j)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -493,7 +512,9 @@
         "contextFetchBrotli": "from code (lane not built here, repo.scala-sbt.org unreachable): sttp basicRequest sends `gzip, deflate` and HttpURLConnectionBackend throws on any other coding"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -534,7 +555,9 @@
         "holdout_arms": "depends on holdouts, which swift-sdk 2.0 (swift-sdk#13) lacks; required on swift-v1"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -575,7 +598,9 @@
         "sharedVariableKeys": "swift-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in swift-sdk"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -616,7 +641,9 @@
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -657,7 +684,9 @@
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -698,7 +727,9 @@
         "contextFetchBrotli": "from code (lane not built here, nuget.org unreachable): no AutomaticDecompression on the SDK's handler or the wrapper's HttpClient, so no Accept-Encoding; needs DecompressionMethods.Brotli (built into .NET Core 3.0+)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -739,7 +770,9 @@
         "contextFetchBrotli": "observed: cpp-sdk libcurl handle sets no CURLOPT_ACCEPT_ENCODING, so none is sent and nothing decoded; `\"\"` would enable every coding the system libcurl has"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -780,7 +813,9 @@
         "contextFetchBrotli": "from code (lane not built here, hex.pm unreachable): HTTPoison/hackney sends no Accept-Encoding; br is not in OTP (needs a NIF such as the `brotli` hex package)"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -821,7 +856,9 @@
         "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -862,7 +899,9 @@
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -903,7 +942,9 @@
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
@@ -944,7 +985,9 @@
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       },
       "e2e": {
-        "required": [],
+        "required": [
+          "nullPropertyValues"
+        ],
         "unsupported": {
           "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
         }
