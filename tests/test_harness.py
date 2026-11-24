@@ -1361,7 +1361,6 @@ class StaticRepoChecks(unittest.TestCase):
         "ruby-wrapper/server.rb": ("halt 501, { error: 'linked SDK has no switchback assigner'", "\n", "error:"),
         "dart-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
         "flutter-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
-        # These handlers build errors through a shared helper; check the helper's envelope.
         "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp send_error(", "\n  end\n", "error:"),
         "cpp-wrapper/server.cpp": ("static json make_error_response(", "\n}\n", '"error"'),
         "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (

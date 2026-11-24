@@ -1188,7 +1188,6 @@ mod switchback_endpoint_tests {
         builder.body(Body::from(body.to_vec())).unwrap()
     }
 
-    // The default state probes through the real, once-run self-test.
     #[test]
     fn production_state_runs_the_real_self_test() {
         assert!(std::ptr::fn_addr_eq(AppState::new().switchback_probe, switchback_capability as fn() -> bool));
