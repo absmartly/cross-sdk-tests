@@ -396,6 +396,20 @@ Wrappers enter this path when a `POST /context` request sets `mode: "e2e"`; they
 read credentials from their environment, not the request body. See the E2E Mode
 section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
+Each SDK is verified on its own segment of the metric results (the `sdk_name`
+attribute, sent as a `{"filter": {"and": [{"eq": ...}]}}` audience expression):
+exposures are the sum of the variants' `unit_count` and goals the sum of their
+`count`. Revenue is measured, not computed from goals: the runner keeps a
+`goal_property` metric `e2e_purchase_revenue` on the `purchase` goal (value
+source property `amount`) and queries it with `--metric <id>` (per SDK and
+unfiltered) without attaching it to the experiment. Actual revenue is the sum
+of the variants' `count`, compared with the planned amount (planned goals x 10).
+An SDK whose exposures, goals or revenue the backend can't measure is a failure
+(`unverified: <reason>` / `unverified: revenue <reason>`), not a skip: the run
+prints `PASS All metrics verified` and exits 0 only when every SDK row was
+measured and passed. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
+[docs/specs/2026-03-20-e2e-testing-design.md](docs/specs/2026-03-20-e2e-testing-design.md).
+
 ## Continuous integration
 
 `.github/workflows/cross-sdk.yml` runs the full 347-scenario suite for all 22
