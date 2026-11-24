@@ -374,8 +374,9 @@ public class WrapperController {
                 return ResponseEntity.ok(e2eResponse);
             }
 
+            // An explicit "data": null is treated as absent (the context is fetched from the endpoint), as in 1.x.
             String contextJson = null;
-            if (request.containsKey("data")) {
+            if (request.get("data") != null) {
                 contextJson = objectMapper.writeValueAsString(request.get("data"));
             }
 

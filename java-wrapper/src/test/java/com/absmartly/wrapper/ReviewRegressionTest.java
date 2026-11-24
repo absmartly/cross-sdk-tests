@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -181,6 +182,36 @@ class ReviewRegressionTest {
             verify(client).close();
             verify(transports.constructed().get(0)).close();
             assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void explicitNullDataFetchesFromTheEndpointWhileInlineDataStaysInline(boolean inline) {
+        ABsmartlyClient client = mock(ABsmartlyClient.class);
+        ABsmartlyClient.Builder builder = mock(ABsmartlyClient.Builder.class, RETURNS_SELF);
+        when(builder.build()).thenReturn(client);
+        IllegalStateException stop = new IllegalStateException("stop after path selection");
+        when(client.context(any(), any())).thenThrow(stop);
+        when(client.newContext(any())).thenThrow(stop);
+        Map<String, Object> request = new HashMap<>();
+        request.put("endpoint", "http://example.test");
+        request.put("data", inline ? Map.of("experiments", List.of()) : null);
+        List<Object> fetchOverHttp = new ArrayList<>();
+        try (var clients = mockStatic(ABsmartlyClient.class);
+             var transports = mockConstruction(WrapperTransport.class,
+                 (mock, ctx) -> fetchOverHttp.add(ctx.arguments().get(0)))) {
+            clients.when(ABsmartlyClient::builder).thenReturn(builder);
+            var response = new WrapperController().createContext(request);
+            assertEquals(stop.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            assertEquals(List.of(!inline), fetchOverHttp);
+            if (inline) {
+                verify(client).context(any(), any());
+                verify(client, never()).newContext(any());
+            } else {
+                verify(client).newContext(any());
+                verify(client, never()).context(any(), any());
+            }
         }
     }
 }
