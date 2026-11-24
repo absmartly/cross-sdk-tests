@@ -475,7 +475,7 @@ func routes(_ app: VaporApplication) throws {
             "numericUnitIds": true,
             "publishThrowsOnFailure": true,
             "trackRejectsNonObjectProperties": true,
-            "refreshNoOpOnFailedContext": true,
+            "refreshNoOpOnFailedContext": false,
             "throwsOnMisuse": false,
             "singleFinalizeEvent": true,
             "semverNumericOperands": true,

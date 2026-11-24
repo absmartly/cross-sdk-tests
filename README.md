@@ -16,8 +16,7 @@ across languages.
   `swift-v1`, `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
 
   `swift` wraps swift-sdk 2.x (`feat/swift-2.0` until it merges, then `main`); `swift-v1` wraps
-  the 1.x maintenance line (pinned to the 1.5.0 commit `b67a2a9` until `release/1.x` exists, built
-  from a `swift-sdk-v1/` checkout) for its
+  the 1.x maintenance line (pinned to `release/1.x`, built from a `swift-sdk-v1/` checkout) for its
   12-month support window. Both lanes run the same scenarios with the same capability policy.
 
 - **305 scenarios** in `test_scenarios_complete.json`. Each scenario is a

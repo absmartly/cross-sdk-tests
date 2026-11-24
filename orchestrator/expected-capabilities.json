@@ -380,7 +380,6 @@
         "numericUnitIds",
         "publishThrowsOnFailure",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext",
         "assignmentRules",
         "semverOperators",
         "xAgentHeader",
@@ -389,9 +388,10 @@
         "semverNumericOperands"
       ],
       "unsupported": {
-        "holdouts": "the swift-sdk 1.x lane (1.5.0 commit b67a2a9 until release/1.x is cut) has no holdout resolution",
+        "refreshNoOpOnFailedContext": "swift-sdk 1.5.0 (release/1.x) restored the released v1.4.0 behaviour: refresh() fetches again and recovers a context whose initial load failed; owner decision 2026-11-24 to keep it in 1.5.x for backwards compatibility and align with Java/JS later. swift-sdk 2.0 is a no-op (scenario 229)",
+        "holdouts": "swift-sdk 1.5.x (release/1.x) resolves holdouts, but the swift-v1 wrapper has no behavioral holdout self-test yet, so it does not advertise them",
         "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
+        "holdout_arms": "depends on holdouts, which the swift-v1 wrapper does not advertise yet",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip"
