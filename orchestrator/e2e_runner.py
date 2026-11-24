@@ -125,6 +125,10 @@ class E2ERunner:
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
         self.skipped_sdks: List[str] = []
+        # SDKs the user named explicitly (--sdk). A requested SDK that is skipped
+        # (e.g. its wrapper answers 501 for e2e mode) fails the run; only SDKs
+        # that were not requested (the default "all") may be skipped.
+        self.requested_sdks = set(config.get("requested_sdks") or ())
         self.experiment_context_ready = True
         self.app_id: Optional[str] = None
         self.unit_type: Optional[str] = None
@@ -980,6 +984,20 @@ class E2ERunner:
         active: Dict[str, Dict[str, Any]] = {}
         for sdk_name, sdk_result in self.sdk_results.items():
             status = sdk_result.get("status")
+            if status == "skipped" and sdk_name in self.requested_sdks:
+                results["sdks"][sdk_name] = {
+                    "status": "fail",
+                    "note": "requested with --sdk but skipped (wrapper reports no e2e mode)",
+                    "exposures": {"expected": sdk_result.get("planned_exposures", 0), "actual": None,
+                                  "pass": False, "unverified": True},
+                    "goals": {"expected": sdk_result.get("planned_goals", 0), "actual": None,
+                              "pass": False, "unverified": True},
+                    "revenue": {"expected": sdk_result.get("planned_goals", 0) * PURCHASE_AMOUNT, "actual": None,
+                                "pass": False, "unverified": True},
+                }
+                results["overall_pass"] = False
+                continue
+
             if status == "skipped":
                 results["sdks"][sdk_name] = {
                     "status": "skipped",
@@ -1326,6 +1344,12 @@ class E2ERunner:
             print(f"  {Colors.YELLOW}(Partial TOTAL actuals exclude unverified measurements — lower bounds){Colors.RESET}")
         print()
 
+        skipped = sorted(name for name, row in sdks.items() if row.get("status") == "skipped")
+        if skipped:
+            # Only SDKs that were not requested with --sdk can be skipped.
+            print(f"  {Colors.YELLOW}Skipped (not requested, no e2e mode): {', '.join(skipped)}{Colors.RESET}")
+            print()
+
         agg = results.get("aggregate")
         if agg:
             # Per-SDK segmentation is the only gate; the unsegmented aggregate
@@ -1544,12 +1568,13 @@ def main() -> None:
         sdks = {name: all_sdks[name] for name in sdk_names if name in all_sdks}
         invalid_sdks = [name for name in sdk_names if name not in all_sdks]
         if invalid_sdks:
-            print(f"Warning: Unknown SDK(s): {', '.join(invalid_sdks)}")
-        if not sdks:
-            print(f"No valid SDKs specified. Available: {', '.join(all_sdks.keys())}")
+            # A requested SDK that cannot be tested must fail, never be dropped.
+            print(f"Error: Unknown SDK(s): {', '.join(invalid_sdks)}. Available: {', '.join(all_sdks.keys())}")
             sys.exit(1)
+        requested_sdks = list(sdks)
     else:
         sdks = all_sdks
+        requested_sdks = []
 
     config = {
         "profile": args.profile,
@@ -1557,6 +1582,7 @@ def main() -> None:
         "timeout": args.timeout,
         "verbose": args.verbose,
         "dry_run": args.dry_run,
+        "requested_sdks": requested_sdks,
     }
 
     runner = E2ERunner(sdks, config)

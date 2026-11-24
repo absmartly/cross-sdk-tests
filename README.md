@@ -407,8 +407,10 @@ of the variants' `count`, compared with the planned amount (planned goals x 10).
 An SDK whose exposures, goals or revenue the backend can't measure is a failure
 (`unverified: <reason>` / `unverified: revenue <reason>`), not a skip: the run
 prints `PASS All metrics verified` and exits 0 only when every non-skipped SDK
-row was measured and passed (an SDK whose wrapper returns 501 for e2e mode is
-skipped; a run where every SDK is skipped fails). `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
+row was measured and passed. An SDK named with `--sdk` must be verified: if it
+is skipped (its wrapper returns 501 for e2e mode) or unknown, the run fails.
+Only SDKs that were not requested (the default "all") may be skipped, and the
+report lists them; a run where every SDK is skipped fails. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
 [docs/specs/2026-03-20-e2e-testing-design.md](docs/specs/2026-03-20-e2e-testing-design.md).
 
 ## Continuous integration

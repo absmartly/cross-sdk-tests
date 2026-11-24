@@ -683,3 +683,68 @@ def test_filter_ignored_all_equal_aggregate_fails_with_two_sdks(monkeypatch):
         assert results["sdks"][s]["status"] == "fail"
         assert "ignore the segmentation filter" in results["sdks"][s]["note"]
         assert results["sdks"][s]["note"].startswith("unverified: ")
+
+
+def test_requested_sdk_that_skips_fails_the_run(monkeypatch, capsys):
+    # Owner rule: an SDK named with --sdk that returns 501 (skipped) fails, never skips silently.
+    fake = FakeAbs(AGG_OK, {"php": ok(PHP_OK)})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java", "php"))
+    runner.requested_sdks = {"java", "php"}
+    runner.sdk_results["java"] = {"status": "skipped", "planned_exposures": 100, "planned_goals": 50}
+    results = runner.verify_metrics()
+    runner.print_report(results)
+    java = results["sdks"]["java"]
+    assert java["status"] == "fail" and "requested with --sdk" in java["note"]
+    assert results["overall_pass"] is False
+    assert E2ERunner.report_passes(results) is False
+    assert "All metrics verified" not in capsys.readouterr().out
+
+
+def test_unrequested_sdk_may_skip_and_is_listed(monkeypatch, capsys):
+    fake = FakeAbs(AGG_OK, {"php": ok(PHP_OK)})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java", "php"))
+    runner.requested_sdks = set()
+    runner.sdk_results["java"] = {"status": "skipped", "planned_exposures": 100, "planned_goals": 50}
+    results = runner.verify_metrics()
+    runner.print_report(results)
+    out = capsys.readouterr().out
+    assert results["sdks"]["java"]["status"] == "skipped"
+    assert "Skipped (not requested, no e2e mode): java" in out
+
+
+def test_unknown_requested_sdk_exits_nonzero(monkeypatch, capsys):
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java,rubyy"])
+    monkeypatch.setattr(E2ERunner, "run", lambda self: pytest.fail("must not run with an unknown SDK"))
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
+    assert "Unknown SDK(s): rubyy" in capsys.readouterr().out
+
+
+def test_main_passes_requested_sdks_to_the_runner(monkeypatch):
+    seen = {}
+
+    def fake_run(self):
+        seen["requested"] = set(self.requested_sdks)
+        return {"overall_pass": False, "sdks": {}}
+
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000,php=http://php-sdk:3000")
+    monkeypatch.setattr(E2ERunner, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["requested"] == {"java"}
+
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["requested"] == set()
+
+
+def test_run_e2e_script_forwards_requested_sdks():
+    script = (Path(__file__).resolve().parents[2] / "run-e2e-tests.sh").read_text()
+    assert '[ -n "$SDK_NAMES" ] && SDK_OPT=(--sdk "$SDK_NAMES")' in script
+    assert '"${SDK_OPT[@]}"' in script
