@@ -81,10 +81,10 @@ function check(prefix, label, got, want) {
   return ok;
 }
 
-async function runBattery() {
-  const prefix = '[sharedVariableKeys probe]';
-  const strictMismatch = await resolve(
-    {
+const BATTERY = [
+  {
+    label: 'strict mismatch skipped',
+    data: {
       experiments: [
         experiment(176, 'svk_assigned', [{ [KEY]: 'assigned-control' }, { [KEY]: 'assigned-treatment' }]),
         experiment(175, 'svk_strict', [{ [KEY]: 'strict-control' }, { [KEY]: 'strict-treatment' }], {
@@ -93,32 +93,38 @@ async function runBattery() {
         }),
       ],
     },
-    { Country: 'IE' }
-  );
-  if (!check(prefix, 'strict mismatch skipped', strictMismatch, { value: 'assigned-treatment', id: 176 })) return false;
-
-  const idOrder = await resolve(
-    {
+    attributes: { Country: 'IE' },
+    want: { value: 'assigned-treatment', id: 176 },
+  },
+  {
+    label: 'visited in id order',
+    data: {
       experiments: [
         experiment(191, 'svk_high_id', [{ [KEY]: 'high-control' }, { [KEY]: 'high-treatment' }]),
         experiment(190, 'svk_low_id', [{ [KEY]: 'low-control' }, { [KEY]: 'low-treatment' }]),
       ],
     },
-    {}
-  );
-  if (!check(prefix, 'visited in id order', idOrder, { value: 'low-treatment', id: 190 })) return false;
-
-  const lacksKey = await resolve(
-    {
+    attributes: {},
+    want: { value: 'low-treatment', id: 190 },
+  },
+  {
+    label: 'winner lacks key',
+    data: {
       experiments: [
         experiment(195, 'svk_lacks_key', [{ [KEY]: 'lacks-control' }, { 'other.key': 'x' }]),
         experiment(196, 'svk_after', [{ [KEY]: 'after-control' }, { [KEY]: 'after-treatment' }]),
       ],
     },
-    {}
-  );
-  if (!check(prefix, 'winner lacks key', lacksKey, { value: DEFAULT, id: 195 })) return false;
+    attributes: {},
+    want: { value: DEFAULT, id: 195 },
+  },
+];
 
+async function runBattery() {
+  const prefix = '[sharedVariableKeys probe]';
+  for (const { label, data, attributes, want } of BATTERY) {
+    if (!check(prefix, label, await resolve(data, attributes), want)) return false;
+  }
   console.log(`${prefix} PASSED`);
   return true;
 }

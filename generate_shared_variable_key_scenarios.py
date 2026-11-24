@@ -201,10 +201,6 @@ def spec(title, description, experiments, steps, *, units=None, holdouts=None, r
             "units": units or UNITS, "holdouts": holdouts, "requires": requires}
 
 
-# ---------------------------------------------------------------------------
-# Scenario specs
-# ---------------------------------------------------------------------------
-
 def specs():
     out = []
     ie = country("IE")

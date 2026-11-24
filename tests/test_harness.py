@@ -1355,7 +1355,6 @@ class StaticRepoChecks(unittest.TestCase):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
 
-    # Each switchback wrapper's /switchback handler: (path, first line, end line, error-response marker).
     # Scenarios 400 and 403 check the wrapper-wide error envelope, so every error response the handler
     # builds must carry `events`.
     SWITCHBACK_HANDLERS = {
@@ -1409,7 +1408,6 @@ class StaticRepoChecks(unittest.TestCase):
                 errors = [line for line in body.splitlines() if marker in line]
                 self.assertTrue(errors, "no error response found")
                 if path in self.SWITCHBACK_ERROR_HELPERS:
-                    # A helper may build the map over several statements: the map it encodes must set events.
                     self.assertRegex(body, self.HELPER_EVENTS[path])
                     continue
                 for line in errors:
