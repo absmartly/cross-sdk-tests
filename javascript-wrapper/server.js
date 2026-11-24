@@ -257,9 +257,39 @@ app.get('/context_payload/:payloadId/requests', (req, res) => {
   res.json({ requests: capturedRequests[req.params.payloadId] || [] });
 });
 
+// Validate the entire batch before creating a context or tracking any goals.
+function validatePreReadyGoals(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return 'Request body must be an object';
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, 'preReadyGoals')) return null;
+  if (body.mode !== 'e2e') return 'preReadyGoals is only supported in e2e mode';
+  if (!Array.isArray(body.preReadyGoals)) return 'preReadyGoals must be a list';
+  for (const goal of body.preReadyGoals) {
+    if (!goal || typeof goal !== 'object' || Array.isArray(goal) ||
+        typeof goal.goalName !== 'string' || !goal.goalName.trim() ||
+        Object.keys(goal).some(key => key !== 'goalName' && key !== 'properties')) {
+      return 'Each preReadyGoals entry must contain a non-empty goalName and optional properties';
+    }
+    if (Object.prototype.hasOwnProperty.call(goal, 'properties') &&
+        (!goal.properties || typeof goal.properties !== 'object' || Array.isArray(goal.properties))) {
+      return 'preReadyGoals properties must be an object';
+    }
+  }
+  return null;
+}
+
 app.post('/context', async (req, res) => {
   try {
+    const validationError = validatePreReadyGoals(req.body);
+    if (validationError) return res.status(400).json({ error: validationError, events: [] });
     if (req.body.mode === "e2e") {
+      for (const key of ['units', 'attributes', 'options']) {
+        if (Object.prototype.hasOwnProperty.call(req.body, key) &&
+            (!req.body[key] || typeof req.body[key] !== 'object' || Array.isArray(req.body[key]))) {
+          return res.status(400).json({ error: `${key} must be an object`, events: [] });
+        }
+      }
       const e2eEndpoint = process.env.ABSMARTLY_E2E_ENDPOINT;
       const e2eApiKey = process.env.ABSMARTLY_E2E_API_KEY;
       const e2eApp = process.env.ABSMARTLY_E2E_APPLICATION || "e2e-tests";
@@ -286,7 +316,24 @@ app.post('/context', async (req, res) => {
 
       const contextConfig = { units: req.body.units || {} };
       const e2eOptions = { ...(req.body.options || {}), publishDelay: -1, refreshPeriod: 0 };
-      const context = e2eSdk.createContext(contextConfig, e2eOptions);
+      let context;
+      let preReadyTracked = false;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'preReadyGoals')) {
+        let releaseData;
+        const deferredData = new Promise(resolve => { releaseData = resolve; });
+        context = e2eSdk.createContextWith(contextConfig, deferredData, e2eOptions);
+        preReadyTracked = context.isReady() === false;
+        if (!preReadyTracked) throw new Error('Expected a not-ready context before tracking');
+        for (const goal of req.body.preReadyGoals) {
+          // Measure the SDK itself immediately before every track; never spoof readiness.
+          if (context.isReady() !== false) throw new Error('Context became ready before tracking');
+          context.track(goal.goalName, goal.properties);
+        }
+        // Only now start the real SDK provider/client fetch, including SDK auth and parsing.
+        releaseData(Promise.resolve().then(() => e2eSdk.getContextData()));
+      } else {
+        context = e2eSdk.createContext(contextConfig, e2eOptions);
+      }
       await context.ready();
 
       if (req.body.attributes) {
@@ -298,7 +345,10 @@ app.post('/context', async (req, res) => {
       contexts.set(contextId, { context, eventCollector, customPublisher });
 
       return res.json({
-        result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
+        result: {
+          contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized(),
+          ...(preReadyTracked ? { preReadyTracked: true } : {})
+        },
         events: eventCollector.events
       });
     }

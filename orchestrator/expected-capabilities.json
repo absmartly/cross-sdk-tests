@@ -81,6 +81,12 @@
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
+      },
+      "e2e": {
+        "required": [
+          "preReadyGoals"
+        ],
+        "unsupported": {}
       }
     },
     "python": {
@@ -116,6 +122,12 @@
         "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip",
         "sharedVariableKeys": "python3-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in python3-sdk",
         "contextFetchBrotli": "observed: requests/urllib3 adds br only when the `brotli`/`brotlicffi` package is installed; the SDK does not depend on it, so it sends `gzip, deflate`"
+      },
+      "e2e": {
+        "required": [
+          "preReadyGoals"
+        ],
+        "unsupported": {}
       }
     },
     "ruby": {
@@ -151,6 +163,12 @@
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "sharedVariableKeys": "ruby-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in ruby-sdk",
         "contextFetchBrotli": "observed: Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder; the SDK's Faraday stack adds none"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "liquid": {
@@ -186,6 +204,12 @@
         "sharedVariableKeys": "wraps ruby-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in ruby-sdk",
         "integralFloatAttributes": "depends on switchback, which the liquid lane does not serve yet",
         "contextFetchBrotli": "observed: wraps ruby-sdk; Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "php": {
@@ -221,6 +245,12 @@
         "rejectsSettersAfterFinalize": "php-sdk 1.x keeps the v1.0.3 contract that setAttribute()/setAttributes()/setUnit()/setUnits() are accepted after close() (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the throwing behaviour moves to 2.0 on next/major), so scenarios 148, 149 and 188 would fail; reviewed PHP exception",
         "contextFetchCompression": "observed: php-sdk ReactHttpClient (the wrapper's injected client) sends no Accept-Encoding and does not decode gzip; the default curl HTTPClient sets no CURLOPT_ENCODING either; fix pending",
         "contextFetchBrotli": "observed: the wrapper's ReactHttpClient sends no Accept-Encoding and decodes nothing; the curl default sets no CURLOPT_ENCODING"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "go": {
@@ -256,6 +286,12 @@
         "sharedVariableKeys": "go-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in go-sdk",
         "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",
         "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "rust": {
@@ -291,6 +327,12 @@
         "sharedVariableKeys": "rust-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 343, 347-351, 356, 361-362); follow-up in rust-sdk",
         "contextFetchCompression": "observed: rust-sdk builds reqwest 0.12 without the gzip feature, so no Accept-Encoding is sent and gzip is not decoded; fix pending",
         "contextFetchBrotli": "observed: rust-sdk builds reqwest 0.12 with only the `json` feature: no Accept-Encoding, no br decoder (needs the reqwest `brotli` feature)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "java": {
@@ -326,6 +368,12 @@
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode gzip; fix pending",
         "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "java-v1": {
@@ -361,6 +409,12 @@
         "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)",
         "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode gzip; fix pending",
         "integralFloatAttributes": "depends on switchback, which v1.9.0 (the last 1.x tag) predates; re-require with switchback once release/1.x is cut from main"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "kotlin": {
@@ -396,6 +450,12 @@
         "integralFloatAttributes": "depends on switchback, which the kotlin lane does not serve yet",
         "contextFetchCompression": "observed: kotlin-sdk DefaultHTTPClient (HttpURLConnection) sends no Accept-Encoding and does not decode gzip; fix pending",
         "contextFetchBrotli": "observed: kotlin-sdk HttpURLConnection sends no Accept-Encoding and decodes nothing; br is not in the JDK (needs org.brotli:dec or brotli4j)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "scala": {
@@ -431,6 +491,12 @@
         "sharedVariableKeys": "scala-sdk resolves a shared key to the last candidate and exposes every candidate it visits; follow-up in scala-sdk",
         "integralFloatAttributes": "depends on switchback, which the scala lane does not serve yet",
         "contextFetchBrotli": "from code (lane not built here, repo.scala-sbt.org unreachable): sttp basicRequest sends `gzip, deflate` and HttpURLConnectionBackend throws on any other coding"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "swift": {
@@ -466,6 +532,12 @@
         "integralFloatAttributes": "depends on switchback, which swift-sdk 2.0 does not serve yet",
         "holdouts": "swift-sdk 2.0 (feat/swift-2.0, swift-sdk#13) has no holdout resolution yet; the swift-v1 lane (swift-sdk#12 on the 1.x line) requires it. Re-require once 2.0 carries #12",
         "holdout_arms": "depends on holdouts, which swift-sdk 2.0 (swift-sdk#13) lacks; required on swift-v1"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "swift-v1": {
@@ -501,6 +573,12 @@
         "integralFloatAttributes": "depends on switchback, which the swift-sdk 1.x line does not serve",
         "rejectsSettersAfterFinalize": "depends on throwsOnMisuse, which is a reviewed exception for this SDK: swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
         "sharedVariableKeys": "swift-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in swift-sdk"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "dart": {
@@ -536,6 +614,12 @@
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "flutter": {
@@ -571,6 +655,12 @@
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "dotnet": {
@@ -606,6 +696,12 @@
         "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchCompression": "from code (the lane cannot build in the sandbox, nuget.org unreachable): the wrapper injects its own HttpClient and the SDK's handler sets no AutomaticDecompression, so no Accept-Encoding is sent; fix pending",
         "contextFetchBrotli": "from code (lane not built here, nuget.org unreachable): no AutomaticDecompression on the SDK's handler or the wrapper's HttpClient, so no Accept-Encoding; needs DecompressionMethods.Brotli (built into .NET Core 3.0+)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "cpp": {
@@ -641,6 +737,12 @@
         "sharedVariableKeys": "cpp-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in cpp-sdk",
         "contextFetchCompression": "observed: cpp-sdk DefaultHTTPClient (libcurl) sets no CURLOPT_ACCEPT_ENCODING, so none is sent and gzip is not decoded; fix pending",
         "contextFetchBrotli": "observed: cpp-sdk libcurl handle sets no CURLOPT_ACCEPT_ENCODING, so none is sent and nothing decoded; `\"\"` would enable every coding the system libcurl has"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "elixir": {
@@ -676,6 +778,12 @@
         "sharedVariableKeys": "elixir-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 347-351, 356, 361-362); follow-up in elixir-sdk",
         "contextFetchCompression": "from code (the lane cannot build in the sandbox, hex.pm unreachable): elixir-sdk calls HTTPoison/hackney without auto_decompress, so no Accept-Encoding is sent; fix pending",
         "contextFetchBrotli": "from code (lane not built here, hex.pm unreachable): HTTPoison/hackney sends no Accept-Encoding; br is not in OTP (needs a NIF such as the `brotli` hex package)"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "react": {
@@ -711,6 +819,12 @@
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "vue2": {
@@ -746,6 +860,12 @@
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "vue3": {
@@ -781,6 +901,12 @@
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     },
     "angular": {
@@ -816,6 +942,12 @@
         "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
         "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
+      },
+      "e2e": {
+        "required": [],
+        "unsupported": {
+          "preReadyGoals": "The wrapper e2e creation path waits for readiness and has no gated pre-ready tracking hook; only javascript and python implement preReadyGoals in this round."
+        }
       }
     }
   }

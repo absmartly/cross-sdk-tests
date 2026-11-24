@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import base64
+import hashlib
+from collections import Counter
 import argparse
 import json
 import os
@@ -11,6 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+
+from e2e_cases import case_specs, eq_filter, matches, measured_total, metric_specs
 
 
 # Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
@@ -60,7 +65,12 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
         cmd += ["--profile", profile]
     if output_json:
         cmd += ["-o", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    for attempt in range(3):
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        if result.returncode == 0 or not re.search(r"\b429\b", result.stdout + result.stderr):
+            break
+        if attempt < 2:
+            time.sleep(120)
     output = result.stdout.strip()
     if result.returncode != 0 and result.stderr.strip():
         output = output + "\n" + result.stderr.strip() if output else result.stderr.strip()
@@ -122,6 +132,12 @@ class E2ERunner:
         self.owner_id: Optional[str] = None
         self.metric_id: Optional[str] = None
         self.goal_id: Optional[str] = None
+        self.case_metric_ids = {}
+        self.case_results = {}
+        with open(os.path.join(os.path.dirname(__file__), "expected-capabilities.json")) as src:
+            self.capability_policy = json.load(src)
+        self.session_experiment_id = None
+        self.session_experiment_name = None
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -150,7 +166,9 @@ class E2ERunner:
             self.ensure_resources()
             self.create_experiment()
             self.start_experiment()
+            self.create_session_experiment()
             self.run_sdk_scenarios()
+            self.run_event_cases()
             self.wait_for_metrics()
             results = self.verify_metrics()
             self.print_report(results)
@@ -169,6 +187,7 @@ class E2ERunner:
         self._ensure_owner()
         self._ensure_goal()
         self._ensure_metric()
+        self._ensure_case_metrics()
         print(f"  {Colors.GREEN}Resources ready{Colors.RESET} app={self.app_id} unit_type={self.unit_type} owner={self.owner_id} metric={self.metric_id}")
 
     def _ensure_application(self) -> None:
@@ -264,8 +283,276 @@ class E2ERunner:
 
         self.log(f"Created and activated metric 'e2e_purchase_count' with id={self.metric_id}")
 
+    def _ensure_case_metrics(self):
+        for key, spec in metric_specs().items():
+            metric_id = self._find_resource("metrics", spec["name"])
+            if not metric_id:
+                args = ["metrics", "create", "--name", spec["name"],
+                        "--type", spec["type"], "--description", "E2E collector-arrival check",
+                        "--goal-id", self.goal_id, "--owner", self.owner_id,
+                        "--outlier-limit-method", "unlimited"]
+                if "path" in spec:
+                    args += ["--value-source-property", spec["path"]]
+                if "filter" in spec:
+                    args += ["--property-filter", json.dumps(spec["filter"])]
+                rc, output = run_abs(args, self.profile)
+                if rc != 0:
+                    raise RuntimeError(f"Metric {spec['name']}: {output}")
+                metric_id = _extract_id(output)
+                if not metric_id:
+                    raise RuntimeError(f"Metric {spec['name']} missing id: {output}")
+                for action in ("request", "approve"):
+                    rc, output = run_abs(["metrics", "review", action, metric_id], self.profile)
+                    if rc:
+                        raise RuntimeError(f"Metric review {action}: {output}")
+                rc, output = run_abs(["metrics", "activate", metric_id, "--reason", "E2E testing"], self.profile)
+                if rc:
+                    raise RuntimeError(f"Metric activation: {output}")
+            rc, output = run_abs(["metrics", "get", metric_id], self.profile)
+            detail = parse_json_output(output) if rc == 0 else None
+            if not isinstance(detail, dict):
+                raise RuntimeError(f"Cannot validate existing metric {spec['name']}: {output}")
+            detail = detail.get("metric", detail)
+            if detail.get("type") != spec["type"] or str(detail.get("goal_id")) != str(self.goal_id):
+                raise RuntimeError(f"Metric {spec['name']} has the wrong type/goal")
+            if "path" in spec and detail.get("value_source_property") != spec["path"]:
+                raise RuntimeError(f"Metric {spec['name']} has the wrong property path")
+            raw_filter = detail.get("property_filter")
+            if isinstance(raw_filter, str) and raw_filter:
+                raw_filter = json.loads(raw_filter)
+            if "filter" in spec and raw_filter != spec["filter"]:
+                raise RuntimeError(f"Metric {spec['name']} has the wrong property filter")
+            if detail.get("outlier_limit_method") != "unlimited":
+                raise RuntimeError(f"Metric {spec['name']} must not limit outliers")
+            self.case_metric_ids[key] = metric_id
+
+    def create_session_experiment(self):
+        if self.dry_run:
+            return
+        session_type = self._find_resource("units", "session_id")
+        if not session_type:
+            rc, output = run_abs(["units", "create", "--name", "session_id",
+                                  "--description", "E2E multi-unit collector check"], self.profile)
+            session_type = _extract_id(output) if rc == 0 else None
+            if not session_type:
+                raise RuntimeError(f"Cannot provision session_id: {output}")
+        parent = self.experiment_id, self.experiment_name, self.unit_type
+        try:
+            self.unit_type = session_type
+            self.creating_session = True
+            self.experiment_id = None
+            self.create_experiment()
+        finally:
+            self.session_experiment_id = self.experiment_id if self.experiment_id and self.experiment_id != parent[0] else None
+            self.session_experiment_name = self.experiment_name if self.session_experiment_id else None
+            self.experiment_id, self.experiment_name, self.unit_type = parent
+            self.creating_session = False
+        if not self.session_experiment_id:
+            raise RuntimeError("Session experiment was not created")
+        rc, output = run_abs(["experiments", "start", str(self.session_experiment_id)], self.profile)
+        if rc:
+            raise RuntimeError(f"Start session experiment: {output}")
+        parent_id = self.experiment_id
+        try:
+            self.experiment_id = self.session_experiment_id
+            if not self._wait_for_experiment_in_context():
+                raise RuntimeError("Session experiment is not visible in the collector context")
+        finally:
+            self.experiment_id = parent_id
+
+    def _case_skip(self, sdk, case):
+        cap = case.get("capability")
+        entry = self.capability_policy["sdks"].get(sdk)
+        if entry is None:
+            raise RuntimeError(f"Missing capability policy for {sdk}")
+        if cap == "numericUnitIds":
+            if cap in entry["required"]:
+                return None
+            reason = entry["unsupported"].get(cap)
+        elif cap:
+            policy = entry.get("e2e", {})
+            if cap in policy.get("required", []):
+                return None
+            reason = policy.get("unsupported", {}).get(cap)
+        else:
+            return None
+        if not reason:
+            raise RuntimeError(f"Unclassified e2e capability {cap} for {sdk}")
+        return reason
+
+    def run_event_cases(self):
+        for sdk, base_url in self.sdks.items():
+            self.case_results[sdk] = {}
+            for case in case_specs(self.run_id, sdk):
+                name = case["name"]
+                try:
+                    reason = self._case_skip(sdk, case)
+                    if reason:
+                        self.case_results[sdk][name] = {"status": "unsupported", "reason": reason}
+                        continue
+                    if self.dry_run:
+                        self.case_results[sdk][name] = {"status": "dry_run"}
+                        continue
+                    self._send_event_case(sdk, base_url, case)
+                    self.case_results[sdk][name] = {"status": "sent"}
+                except Exception as exc:
+                    self.case_results[sdk][name] = {"status": "fail", "reason": str(exc)}
+
+    def _wrapper_post(self, url, body=None):
+        for attempt in range(3):
+            response = requests.post(url, json=body or {}, timeout=30)
+            if response.status_code != 429:
+                response.raise_for_status()
+                return response.json()
+            if attempt < 2:
+                time.sleep(120)
+        response.raise_for_status()
+
+    def _send_event_case(self, sdk, base_url, case):
+        units = {"user_id": case["uid"]}
+        if "session" in case:
+            units["session_id"] = case["session"]
+        payload = {"mode": "e2e", "units": units,
+                   "attributes": {"sdk_name": sdk, "e2e_case": case["name"]}}
+        if case.get("pre_ready"):
+            payload["preReadyGoals"] = [{"goalName": "purchase", "properties": g} for g in case["goals"]]
+        if case.get("pre_ready"):
+            # Establish the unit's exposure before the pre-ready achievement:
+            # analysis metrics count goals only after first exposure.
+            prime = dict(payload)
+            prime.pop("preReadyGoals")
+            primed = self._wrapper_post(base_url + "/context", prime)["result"]["contextId"]
+            prime_url = base_url + "/context/" + primed
+            self._wrapper_post(prime_url + "/treatment", {"experimentName": self.experiment_name})
+            self._wrapper_post(prime_url + "/publish")
+            requests.delete(prime_url, timeout=10).raise_for_status()
+        created = self._wrapper_post(base_url + "/context", payload)
+        result = created.get("result", {})
+        context_id = result.get("contextId")
+        if not context_id or result.get("ready") is not True or result.get("failed"):
+            raise RuntimeError(f"Context is not ready: {created}")
+        if case.get("pre_ready") and result.get("preReadyTracked") is not True:
+            raise RuntimeError("Wrapper did not confirm tracking in the SDK's not-ready state")
+        url = base_url + "/context/" + context_id
+        try:
+            self._wrapper_post(url + "/treatment", {"experimentName": self.experiment_name})
+            if "session" in case:
+                self._wrapper_post(url + "/treatment", {"experimentName": self.session_experiment_name})
+            if not case.get("pre_ready"):
+                for properties in case["goals"]:
+                    body = {"goalName": "purchase"}
+                    if not case.get("omit_properties"):
+                        body["properties"] = properties
+                    self._wrapper_post(url + "/track", body)
+            # Exactly one publish for the batch; close case must never publish explicitly.
+            self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"))
+        finally:
+            requests.delete(url, timeout=10).raise_for_status()
+
+    def _query_metric(self, metric_id, sdk, case="baseline", experiment_id=None):
+        rc, output = run_abs([
+            "experiments", "metrics", "results", str(experiment_id or self.experiment_id),
+            "--metric", str(metric_id), "--filter", json.dumps(eq_filter(sdk_name=sdk, e2e_case=case)),
+        ], self.profile)
+        if rc:
+            self.log(f"Unmeasurable {sdk}/{case}/{metric_id}: {output}")
+            return None
+        data = parse_json_output(output)
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+            if str(data[0].get("metric_id")) == str(metric_id):
+                return data[0]
+        return None
+
+    def verify_event_cases(self, results):
+        results["event_cases"] = {}
+        for sdk in self.sdks:
+            rows = results["event_cases"][sdk] = {}
+            for case in case_specs(self.run_id, sdk):
+                name = case["name"]
+                sent = self.case_results.get(sdk, {}).get(name, {"status": "fail", "reason": "Case was not executed"})
+                rows[name] = dict(sent)
+                if sent["status"] == "unsupported":
+                    continue
+                if sent["status"] != "sent":
+                    results["overall_pass"] = False
+                    continue
+                metrics = rows[name]["metrics"] = {}
+                cache = {}
+                for key, expected in case["expected"].items():
+                    source = "events" if key == "exposures" else key
+                    if source not in cache:
+                        cache[source] = self._query_metric(self.case_metric_ids[source], sdk, name)
+                    actual = measured_total(cache[source], "unit_count" if key == "exposures" else "count")
+                    metrics[key] = {"expected": str(expected), "actual": str(actual) if actual is not None else None,
+                                    "pass": matches(expected, actual)}
+                if "session" in case:
+                    metric = self._query_metric(self.case_metric_ids["events"], sdk, name, self.session_experiment_id)
+                    actual = measured_total(metric, "unit_count")
+                    metrics["session_exposures"] = {"expected": "1", "actual": str(actual) if actual is not None else None,
+                                                    "pass": matches(1, actual)}
+                arrival = self._verify_arrival(sdk, case)
+                rows[name]["arrival"] = arrival
+                rows[name]["status"] = "pass" if all(m["pass"] for m in metrics.values()) and arrival["pass"] else "fail"
+                if rows[name]["status"] != "pass":
+                    results["overall_pass"] = False
+
+    def _verify_arrival(self, sdk, case):
+        units = {"user_id": case["uid"]}
+        if "session" in case:
+            units["session_id"] = case["session"]
+        errors = []
+        for unit_type, uid in units.items():
+            hashed = base64.urlsafe_b64encode(hashlib.md5(str(uid).encode("utf-8")).digest()).decode().rstrip("=")
+            events = []
+            for offset in range(0, 5000, 500):
+                rc, output = run_abs(["events", "list", "--from", "1d", "--unit-uid", hashed,
+                                      "--items", "500", "--skip", str(offset)], self.profile)
+                page = parse_json_output(output) if rc == 0 else None
+                if not isinstance(page, list):
+                    return {"pass": False, "errors": ["Collector event query unmeasurable"]}
+                events.extend(page)
+                if len(page) < 500:
+                    break
+            else:
+                return {"pass": False, "errors": ["Collector event pagination limit exceeded"]}
+            own = [e for e in events if e.get("unit_uid") == hashed and e.get("unit_type") == unit_type
+                   and e.get("application_id") == int(self.app_id) and e.get("environment") == self.environment]
+            exposures = [e for e in own if e.get("event_type") == "exposure"
+                         and e.get("experiment_id") == (self.session_experiment_id if unit_type == "session_id" else self.experiment_id)]
+            if not exposures:
+                errors.append(f"No exposure for {unit_type}:{uid!r}")
+            language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
+                        "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript"}.get(sdk, sdk)
+            for event in own:
+                if not isinstance(event.get("agent"), str) or not re.fullmatch(r"absmartly-" + re.escape(language) + r"-sdk(?:/[^ ]+)?", event["agent"]):
+                    errors.append("Collector SDK agent missing or incorrect")
+            for exposure in exposures:
+                attrs = exposure.get("unit_attributes")
+                try:
+                    attrs = json.loads(attrs) if isinstance(attrs, str) else attrs
+                except ValueError:
+                    attrs = None
+                if not isinstance(attrs, dict) or attrs.get("sdk_name") != sdk or attrs.get("e2e_case") != case["name"]:
+                    errors.append("Exposure attributes changed")
+            if unit_type != "user_id":
+                continue
+            goals = [e for e in own if e.get("event_type") == "goal" and e.get("goal_name") == "purchase"]
+            def canonical(value):
+                if isinstance(value, str):
+                    value = json.loads(value)
+                return json.dumps(value if value is not None else {}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            try:
+                actual = Counter(canonical(e.get("properties")) for e in goals)
+                expected = Counter(canonical(g) for g in case["goals"])
+            except (ValueError, TypeError):
+                errors.append("Malformed collector properties")
+            else:
+                if actual != expected:
+                    errors.append("Collector goal count/properties differ from planned calls")
+        return {"pass": not errors, "errors": errors}
+
     def create_experiment(self) -> None:
-        self.experiment_name = f"e2e-{self.run_id}"
+        self.experiment_name = f"e2e-{self.run_id}" + ("-session" if getattr(self, "creating_session", False) else "")
         print(f"Creating experiment: {self.experiment_name}")
 
         if self.dry_run:
@@ -485,7 +772,7 @@ class E2ERunner:
                 ctx_resp = requests.post(f"{base_url}/context", json={
                     "mode": "e2e",
                     "units": {"user_id": unit_id},
-                    "attributes": {"sdk_name": sdk_name},
+                    "attributes": {"sdk_name": sdk_name, "e2e_case": "baseline"},
                 }, timeout=10)
             except requests.RequestException as exc:
                 self.log(f"{sdk_name} unit {i}: context creation failed: {exc}")
@@ -606,8 +893,11 @@ class E2ERunner:
             if metrics:
                 total_participants = self._extract_total_participants(metrics)
                 if total_participants >= total_expected_exposures:
-                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
-                    return
+                    checked = {"overall_pass": True}
+                    self.verify_event_cases(checked)
+                    if checked["overall_pass"]:
+                        print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
+                        return
                 if total_participants > 0:
                     self.log(f"Participants so far: {total_participants}/{total_expected_exposures}")
             time.sleep(5)
@@ -628,6 +918,8 @@ class E2ERunner:
 
         rc, output = run_abs([
             "experiments", "metrics", "results", str(self.experiment_id),
+            "--metric", str(self.metric_id),
+            "--filter", json.dumps(eq_filter(e2e_case="baseline")),
         ], self.profile)
 
         if rc != 0:
@@ -682,35 +974,6 @@ class E2ERunner:
                         break
         return total
 
-    def _extract_total_revenue(self, metrics: Any) -> Optional[float]:
-        """Revenue/value figure from a metric result, if the backend reports one.
-
-        The e2e metric is a goal_unique_count, which usually carries no monetary
-        value, so this returns None in the common case and the caller derives
-        revenue from goal count instead (labelled "derived"). If a
-        revenue/value/sum field is ever present, it is summed across variants so
-        revenue can be verified rather than assumed.
-        """
-        if not metrics:
-            return None
-
-        metric_list = metrics if isinstance(metrics, list) else [metrics]
-        total = 0.0
-        found = False
-        for metric in metric_list:
-            if not isinstance(metric, dict):
-                continue
-            for variant in metric.get("variants", []):
-                if not isinstance(variant, dict):
-                    continue
-                for field in ("revenue", "value", "value_sum", "sum", "total_value"):
-                    val = variant.get(field)
-                    if isinstance(val, (int, float)):
-                        total += float(val)
-                        found = True
-                        break
-        return total if found else None
-
     def _within_tolerance(self, expected: int, actual: Optional[int]) -> bool:
         """Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE.
 
@@ -725,47 +988,7 @@ class E2ERunner:
         return expected <= actual <= int(expected * OVER_PUBLISH_TOLERANCE)
 
     def _fetch_metrics_for_sdk(self, sdk_name: str) -> Optional[Dict[str, Any]]:
-        """Fetch metrics segmented to a single SDK via the sdk_name attribute.
-
-        Each e2e unit is created with attribute {"sdk_name": <sdk>}, so a filter
-        on that attribute gives per-SDK participant/goal counts. Returns None if
-        segmentation is unavailable (older backend / no segment support), in which
-        case the caller falls back to aggregate-only verification.
-        """
-        if not self.experiment_id:
-            return None
-        seg_filter = json.dumps({"attributes": {"sdk_name": sdk_name}})
-        rc, output = run_abs(
-            [
-                "experiments", "metrics", "results", str(self.experiment_id),
-                "--filter", seg_filter,
-            ],
-            self.profile,
-        )
-        if rc != 0:
-            # Always surface segmentation failures (not just under --verbose):
-            # a silent None here is what let fabricated per-SDK passes through.
-            # `output` already carries the CLI stderr (see run_abs).
-            print(
-                f"  {Colors.RED}Segmentation query failed for {sdk_name}"
-                f"{Colors.RESET} (abs rc={rc}): {output}"
-            )
-            return None
-        data = parse_json_output(output)
-        if data is None:
-            print(
-                f"  {Colors.RED}Segmentation output for {sdk_name} could not be "
-                f"parsed{Colors.RESET}: {output[:300]}"
-            )
-            return None
-        if isinstance(data, list) and data:
-            return data[0]
-        if isinstance(data, dict):
-            return data
-        # Parsed but empty (e.g. []): the backend has no segment support or no
-        # rows for this SDK. Treat as "unavailable" so the caller falls back to
-        # the aggregate gate rather than fabricating a pass.
-        return None
+        return self._query_metric(self.metric_id, sdk_name)
 
     def verify_metrics(self) -> Dict[str, Any]:
         results: Dict[str, Any] = {
@@ -815,6 +1038,7 @@ class E2ERunner:
 
         if not self.dry_run and self.experiment_id:
             self._verify_active_sdks(results, active)
+            self.verify_event_cases(results)
 
         # An all-skipped (or otherwise all-inactive) run verifies nothing: every
         # wrapper returning 501 when the e2e env is unset yields skipped rows
@@ -835,6 +1059,8 @@ class E2ERunner:
                 f"verified against the backend; failing the run"
             )
 
+        if not self.dry_run and (not self.experiment_id or not self.sdk_results):
+            results["overall_pass"] = False
         return results
 
     def _error_counts(self, sdk_result: Dict[str, Any]) -> Dict[str, int]:
@@ -844,159 +1070,26 @@ class E2ERunner:
             "track": sdk_result.get("track_errors", 0),
         }
 
-    def _verify_active_sdks(self, results: Dict[str, Any], active: Dict[str, Dict[str, Any]]) -> None:
-        # Aggregate backend numbers: both a cross-check and the reference for
-        # detecting a backend that ignores the segmentation --filter.
-        agg = self._fetch_metrics()
-        agg_participants = self._extract_total_participants(agg) if agg else 0
-        agg_goals = self._extract_total_goals(agg) if agg else 0
-
-        # First pass: pull per-SDK segmented actuals. None => not independently
-        # verifiable (segmentation unavailable / query failed / empty). Each
-        # tuple is (participants, goals, revenue-or-None); revenue is only set
-        # when the backend actually reports a monetary figure.
-        segmented: Dict[str, Optional[Tuple[int, int, Optional[float]]]] = {}
-        for sdk_name in active:
-            m = self._fetch_metrics_for_sdk(sdk_name)
-            if m is None:
-                segmented[sdk_name] = None
-            else:
-                segmented[sdk_name] = (
-                    self._extract_total_participants(m),
-                    self._extract_total_goals(m),
-                    self._extract_total_revenue(m),
-                )
-
-        # Filter-trust sanity checks. If the backend ignores --filter, every SDK
-        # comes back with the aggregate total and per-SDK "verification" passes
-        # everyone. Detect that and fall back to the aggregate gate.
-        seg_values = [v for v in segmented.values() if v is not None]
-        segmentation_trustworthy = True
-        seg_warning: Optional[str] = None
-        if len(seg_values) >= 2:
-            exp_actuals = [v[0] for v in seg_values]
-            # If the backend ignores --filter, every segmented query returns the
-            # unsegmented aggregate, so all SDKs report an identical participant
-            # count equal to the aggregate total. Planned volumes are identical
-            # across SDKs here, so we cannot rely on expected variance to detect
-            # this — key off the actuals collapsing onto the aggregate instead.
-            if (
-                len(set(exp_actuals)) == 1
-                and agg_participants > 0
-                and exp_actuals[0] == agg_participants
-            ):
-                segmentation_trustworthy = False
-                seg_warning = (
-                    "every SDK returned the same participant count equal to the "
-                    f"aggregate total ({agg_participants}) — the backend appears "
-                    "to ignore the segmentation filter"
-                )
-            elif sum(exp_actuals) > int(agg_participants * OVER_PUBLISH_TOLERANCE) and agg_participants > 0:
-                segmentation_trustworthy = False
-                seg_warning = (
-                    f"sum of per-SDK participants ({sum(exp_actuals)}) exceeds the "
-                    f"aggregate total ({agg_participants}) beyond tolerance — "
-                    "segmentation is double-counting or the filter is ignored"
-                )
-        if seg_warning:
-            print(f"  {Colors.RED}Segmentation unreliable{Colors.RESET}: {seg_warning}")
-
-        # Second pass: finalize each active SDK.
-        any_unverified = False
-        for sdk_name, sdk_result in active.items():
-            expected_exposures = sdk_result["planned_exposures"]
-            expected_goals = sdk_result["planned_goals"]
-            expected_revenue = expected_goals * 10
-            errors = self._error_counts(sdk_result)
-            has_errors = any(errors.values())
-
-            seg = segmented.get(sdk_name)
-            if segmentation_trustworthy and seg is not None:
-                actual_exposures, actual_goals, actual_revenue = seg
-                exposures_pass = self._within_tolerance(expected_exposures, actual_exposures)
-                goals_pass = self._within_tolerance(expected_goals, actual_goals)
-
-                # Verify revenue against the backend when it reports a real
-                # figure; otherwise derive it from the goal count (10/goal) and
-                # label it derived so the report doesn't imply it was verified.
-                if actual_revenue is not None:
-                    revenue_actual = actual_revenue
-                    revenue_pass = self._within_tolerance(expected_revenue, int(round(actual_revenue)))
-                    revenue_derived = False
-                else:
-                    revenue_actual = actual_goals * 10
-                    revenue_pass = goals_pass
-                    revenue_derived = True
-
-                sdk_pass = exposures_pass and goals_pass and revenue_pass and not has_errors
-
-                note = None
-                if actual_exposures > int(expected_exposures * OVER_PUBLISH_TOLERANCE):
-                    note = f"over-published exposures ({actual_exposures} > {expected_exposures})"
-                elif actual_goals > int(expected_goals * OVER_PUBLISH_TOLERANCE):
-                    note = f"over-published goals ({actual_goals} > {expected_goals})"
-                elif has_errors:
-                    note = (
-                        f"wrapper errors ctx={errors['context']} "
-                        f"treat={errors['treatment']} track={errors['track']}"
-                    )
-
-                results["sdks"][sdk_name] = {
-                    "status": "ok" if sdk_pass else "fail",
-                    "verified": "per-sdk",
-                    "errors": errors,
-                    "note": note,
-                    "exposures": {"expected": expected_exposures, "actual": actual_exposures, "pass": exposures_pass},
-                    "goals": {"expected": expected_goals, "actual": actual_goals, "pass": goals_pass},
-                    "revenue": {"expected": expected_revenue, "actual": revenue_actual, "pass": revenue_pass, "derived": revenue_derived},
-                }
-                if not sdk_pass:
-                    results["overall_pass"] = False
-            else:
-                # Not independently verifiable. Do NOT fabricate a pass: record
-                # the SDK as unverified with unknown actuals and let the
-                # aggregate cross-check below act as the gate. Wrapper errors
-                # still fail the SDK outright.
-                any_unverified = True
-                results["sdks"][sdk_name] = {
-                    "status": "fail" if has_errors else "unverified",
-                    "verified": "aggregate",
-                    "errors": errors,
-                    "note": (
-                        f"wrapper errors ctx={errors['context']} "
-                        f"treat={errors['treatment']} track={errors['track']}"
-                        if has_errors else None
-                    ),
-                    "exposures": {"expected": expected_exposures, "actual": None, "pass": False, "unverified": True},
-                    "goals": {"expected": expected_goals, "actual": None, "pass": False, "unverified": True},
-                    "revenue": {"expected": expected_revenue, "actual": None, "pass": False, "unverified": True, "derived": True},
-                }
-                if has_errors:
-                    results["overall_pass"] = False
-
-        # Aggregate cross-check. Expected is derived from PLANNED units (not
-        # successes) so a wrapper that dropped calls fails rather than shrinking
-        # its own target. The unsegmented aggregate query is unreliable on this
-        # backend (can report 0 while per-SDK segmentation returns real counts),
-        # so it only GATES when at least one SDK could not be verified per-SDK.
-        total_expected = sum(r["planned_exposures"] for r in active.values())
-        total_goals_expected = sum(r["planned_goals"] for r in active.values())
-        agg_gates = any_unverified
-        agg_pass = (
-            total_expected > 0
-            and self._within_tolerance(total_expected, agg_participants)
-            and self._within_tolerance(total_goals_expected, agg_goals)
-        )
-        results["aggregate"] = {
-            "expected_participants": total_expected,
-            "actual_participants": agg_participants,
-            "expected_goals": total_goals_expected,
-            "actual_goals": agg_goals,
-            "pass": agg_pass,
-            "gating": agg_gates,
-        }
-        if agg_gates and not agg_pass:
-            results["overall_pass"] = False
+    def _verify_active_sdks(self, results, active):
+        for sdk, planned in active.items():
+            counts = self._query_metric(self.metric_id, sdk)
+            revenue = self._query_metric(self.case_metric_ids["amount"], sdk)
+            expectations = {"exposures": planned["planned_exposures"],
+                            "goals": planned["planned_goals"],
+                            "revenue": planned["planned_goals"] * 10}
+            actuals = {"exposures": measured_total(counts, "unit_count"),
+                       "goals": measured_total(counts, "count"),
+                       "revenue": measured_total(revenue, "count")}
+            row = {"verified": "per-sdk", "errors": self._error_counts(planned)}
+            for key, expected in expectations.items():
+                actual = actuals[key]
+                row[key] = {"expected": expected, "actual": float(actual) if actual is not None else None,
+                            "pass": matches(expected, actual)}
+            passed = all(row[key]["pass"] for key in expectations) and not any(row["errors"].values())
+            row["status"] = "ok" if passed else "fail"
+            results["sdks"][sdk] = row
+            if not passed:
+                results["overall_pass"] = False
 
     def print_report(self, results: Dict[str, Any]) -> None:
         sdks = results.get("sdks", {})
@@ -1101,6 +1194,13 @@ class E2ERunner:
             )
             print()
 
+        for sdk, cases in results.get("event_cases", {}).items():
+            for name, result in cases.items():
+                print(f"  {sdk} / {name}: {result['status'].upper()} {result.get('reason', '')}")
+                for metric, value in result.get("metrics", {}).items():
+                    print(f"    {metric}: {value['actual']}/{value['expected']} "
+                          f"{'PASS' if value['pass'] else 'FAIL'}")
+
         if results.get("overall_pass"):
             print(f"  {Colors.GREEN}PASS{Colors.RESET} All metrics verified")
         else:
@@ -1111,7 +1211,7 @@ class E2ERunner:
         # Unverified rows are neither PASS nor FAIL: the backend never gave us a
         # trustworthy actual, so render them distinctly instead of as a green ✓.
         if metric.get("unverified") or metric.get("actual") is None:
-            return f"{Colors.YELLOW}?/{metric['expected']} UNVERIFIED{Colors.RESET}"
+            return f"{Colors.RED}?/{metric['expected']} FAIL (unmeasurable){Colors.RESET}"
         actual = metric["actual"]
         expected = metric["expected"]
         passed = metric.get("pass", False)
@@ -1133,6 +1233,13 @@ class E2ERunner:
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
+        if self.session_experiment_id:
+            parent = self.experiment_id
+            self.experiment_id, self.session_experiment_id = self.session_experiment_id, None
+            try:
+                self.cleanup_experiment()
+            finally:
+                self.experiment_id = parent
         if not self.experiment_id or self.dry_run:
             return
 
