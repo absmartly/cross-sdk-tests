@@ -467,9 +467,10 @@ class E2ERunner:
         return reason
 
     def run_event_cases(self):
-        # Sending every SDK's cases shares one budget of --timeout per SDK.
-        self.case_run_deadline = time.time() + self.timeout * max(1, len(self.sdks))
+        # Each SDK gets its own --timeout share for sending, so one slow wrapper
+        # cannot spend the budget of the SDKs after it.
         for sdk, base_url in self.sdks.items():
+            self.case_run_deadline = time.time() + self.timeout
             self.case_results[sdk] = {}
             for case in case_specs(self.run_id, sdk):
                 name = case["name"]
@@ -519,9 +520,11 @@ class E2ERunner:
             prime.pop("preReadyGoals")
             primed = self._wrapper_post(base_url + "/context", prime, deadline=deadline)["result"]["contextId"]
             prime_url = base_url + "/context/" + primed
-            self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
-            self._wrapper_post(prime_url + "/publish", deadline=deadline)
-            requests.delete(prime_url, timeout=10).raise_for_status()
+            try:
+                self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
+                self._wrapper_post(prime_url + "/publish", deadline=deadline)
+            finally:
+                requests.delete(prime_url, timeout=10).raise_for_status()
         created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
         result = created.get("result", {})
         context_id = result.get("contextId")

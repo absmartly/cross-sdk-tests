@@ -492,20 +492,22 @@ def test_case_deadline_never_exceeds_the_run_budget(runner):
     assert {c.kwargs.get("deadline") for c in post.call_args_list} == {25.0}
 
 
-def test_run_budget_is_set_once_for_all_sdks(runner, monkeypatch):
-    # The clock moves while sending: every SDK must see the budget set before the first one.
+def test_each_sdk_gets_its_own_send_budget(runner, monkeypatch):
+    # The clock moves while sending: each SDK's budget starts when that SDK starts,
+    # and holds for all of that SDK's cases.
     clock = [100.0]
     runner.timeout = 30
     runner.sdks = {"javascript": "http://a", "python": "http://b", "go": "http://c"}
-    seen = []
+    seen = {}
     def send(sdk, base_url, case):
-        seen.append(runner.case_run_deadline)
+        seen.setdefault(sdk, set()).add(runner.case_run_deadline)
         clock[0] += 1
     monkeypatch.setattr(runner, "_case_skip", lambda sdk, case: None)
     monkeypatch.setattr(runner, "_send_event_case", send)
     with patch("e2e_runner.time.time", side_effect=lambda: clock[0]):
         runner.run_event_cases()
-    assert set(seen) == {190.0}
+    n = len(case_specs(runner.run_id, "javascript"))
+    assert seen == {"javascript": {130.0}, "python": {130.0 + n}, "go": {130.0 + 2 * n}}
 
 
 def test_wrapper_call_after_budget_is_refused(runner):
@@ -526,7 +528,8 @@ def test_slow_wrapper_stops_at_the_budget(runner):
     with patch("e2e_runner.requests.post", side_effect=slow), patch("e2e_runner.requests.delete"), \
          patch("e2e_runner.time.time", side_effect=lambda: clock[0]), pytest.raises(RuntimeError, match="budget exhausted"):
         runner._send_event_case("javascript", "http://wrapper", case)
-    assert clock[0] <= 325
+    # Calls stop exactly at the budget: no call starts at t >= deadline.
+    assert clock[0] == 300
 
 
 def test_run_event_cases_sets_one_run_budget(runner, monkeypatch):
@@ -536,7 +539,7 @@ def test_run_event_cases_sets_one_run_budget(runner, monkeypatch):
     monkeypatch.setattr(runner, "_send_event_case", lambda *a: None)
     with patch("e2e_runner.time.time", return_value=100.0):
         runner.run_event_cases()
-    assert runner.case_run_deadline == 160.0
+    assert runner.case_run_deadline == 130.0
 
 
 def test_sentinel_reads_the_cases_experiment(runner):
@@ -764,3 +767,33 @@ def test_create_experiment_names_side_experiments(runner):
             runner.experiment_id = None
             runner.create_experiment()
     assert names == ["e2e-abcd1234-cases", "e2e-abcd1234-session", "e2e-abcd1234"]
+
+
+def test_slow_sdk_does_not_starve_the_next(runner, monkeypatch):
+    # sdk "slow" spends its whole share; "fast" still gets a full share and sends every case.
+    clock = [0.0]
+    runner.timeout = 60
+    runner.sdks = {"slow": "http://slow", "fast": "http://fast"}
+    monkeypatch.setattr(runner, "_case_skip", lambda sdk, case: None)
+    def post(url, **kw):
+        clock[0] += 25 if url.startswith("http://slow") else 0
+        return Mock(status_code=200, json=lambda: {"result": {"contextId": "c", "ready": True, "failed": False, "preReadyTracked": True}})
+    with patch("e2e_runner.requests.post", side_effect=post), patch("e2e_runner.requests.delete"), \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]):
+        runner.run_event_cases()
+    assert any(r["status"] == "fail" for r in runner.case_results["slow"].values())
+    assert all(r["status"] == "sent" for r in runner.case_results["fast"].values())
+
+
+@pytest.mark.parametrize("name", ["batch", "pre_ready"])
+def test_contexts_deleted_when_budget_runs_out(runner, name):
+    clock = [0.0]
+    def post(url, **kw):
+        clock[0] += 25
+        return Mock(status_code=200, json=lambda: {"result": {"contextId": "c", "ready": True, "failed": False, "preReadyTracked": True}})
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    runner.timeout = 60
+    with patch("e2e_runner.requests.post", side_effect=post), patch("e2e_runner.requests.delete") as delete, \
+         patch("e2e_runner.time.time", side_effect=lambda: clock[0]), pytest.raises(RuntimeError, match="budget exhausted"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert [c.args[0] for c in delete.call_args_list] == ["http://wrapper/context/c"]

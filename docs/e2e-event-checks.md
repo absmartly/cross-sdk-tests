@@ -41,8 +41,9 @@ is capped at 30s. An HTTP 429 (CLI text `Rate limit exceeded.`) sleeps 120s and 
 while that sleep ends before the deadline; every poll call, including the final fetch, carries
 the deadline, so a poll overruns `--timeout` by at most one in-flight call. The case check that
 follows gets its own `--timeout` budget the same way. Each case's wrapper calls get `--timeout` too,
-capped by one sending budget for the whole run (`--timeout` per SDK); no call starts after it,
-and a 429 wait never ends past it.
+capped by one sending share per SDK (`--timeout`, starting when that SDK starts, so a slow wrapper
+cannot use up the next SDK's share). No wrapper POST starts after it and a 429 wait never ends past
+it; the cleanup DELETE of a context still runs, bounded by 10s.
 Raw property comparison is by numeric value (10 equals 10.0); agents must carry a version
 unless the SDK's `xAgentHeader` policy is a reviewed exception.
 
