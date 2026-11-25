@@ -500,7 +500,16 @@ class ResourceAbs:
     def __call__(self, args, profile="", api_key="", endpoint="", output_json=True):
         self.calls.append(list(args))
         if args[:2] == ["metrics", "list"]:
-            return 0, json.dumps(self.metrics_list)
+            # Like the CLI: drafts and archived metrics are listed only on request.
+            listed = []
+            for item in self.metrics_list:
+                state = self.definition if item.get("id") == self.definition.get("id") else item
+                if state.get("lifecycle_status") == "draft" and "--include-drafts" not in args:
+                    continue
+                if state.get("archived") is True and "--archived" not in args:
+                    continue
+                listed.append(item)
+            return 0, json.dumps(listed)
         if args[:2] == ["metrics", "get"]:
             return 0, json.dumps(metric_get_output(self.definition, args))
         if args[:2] == ["metrics", "create"]:
@@ -838,29 +847,40 @@ APPROVE = ["metrics", "review", "approve", str(REVENUE_METRIC_ID)]
 ACTIVATE = ["metrics", "activate", str(REVENUE_METRIC_ID), "--reason", "E2E testing"]
 
 
-@pytest.mark.parametrize("status, review, expected", [
-    ("draft", None, [REQUEST, APPROVE, ACTIVATE]),
-    ("draft", "none", [REQUEST, APPROVE, ACTIVATE]),
-    ("archived", None, [REQUEST, APPROVE, ACTIVATE]),
+UNARCHIVE = ["metrics", "archive", str(REVENUE_METRIC_ID), "--unarchive"]
+
+
+@pytest.mark.parametrize("status, review, archived, expected", [
+    ("draft", None, False, [REQUEST, APPROVE, ACTIVATE]),
+    ("draft", "none", False, [REQUEST, APPROVE, ACTIVATE]),
+    ("inactive", None, False, [REQUEST, APPROVE, ACTIVATE]),
     # A run that failed after `review request` or after `approve` is resumed, not repeated.
-    ("draft", "pending", [APPROVE, ACTIVATE]),
-    ("draft", "approved", [ACTIVATE]),
-    ("active", None, []),
-    (None, None, []),
+    ("draft", "pending", False, [APPROVE, ACTIVATE]),
+    ("draft", "approved", False, [ACTIVATE]),
+    # Archived is a separate flag: unarchive, then activate if it is not active.
+    ("active", None, True, [UNARCHIVE]),
+    ("draft", "approved", True, [UNARCHIVE, ACTIVATE]),
+    ("active", None, False, []),
+    (None, None, False, []),
 ])
-def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, review, expected):
+def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, review, archived, expected):
     definition = dict(REVENUE_DEFINITION)
     if status is not None:
         definition["lifecycle_status"] = status
     if review is not None:
         definition["review_status"] = review
+    if archived:
+        definition["archived"] = True
     fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
     monkeypatch.setattr(e2e_runner, "run_abs", fake)
     runner = make_runner(sdks=("java",))
     runner.revenue_metric_id = None
     runner._ensure_revenue_metric()
-    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate")]
+    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate", "archive")]
     assert tail == expected
+    lookups = [c for c in fake.calls if c[:2] == ["metrics", "list"]]
+    assert lookups and all("--include-drafts" in c and "--archived" in c for c in lookups)
+    assert not [c for c in fake.calls if c[:2] == ["metrics", "create"]]
 
 
 def test_reactivation_failure_of_existing_metric_stops_the_run(monkeypatch):

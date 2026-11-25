@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
@@ -23,6 +23,11 @@ OVER_PUBLISH_TOLERANCE = 1.05
 # amount, so revenue is MEASURED by the backend, never computed from goals.
 REVENUE_METRIC_NAME = "e2e_purchase_revenue"
 REVENUE_PROPERTY = "amount"
+# `metrics list` omits drafts and archived metrics unless asked (absmartly/cli
+# src/commands/metrics/index.ts --include-drafts; src/lib/utils/list-command.ts
+# --archived), and a metric left inactive by a failed run is exactly what a
+# retry must find, or it would fail to re-create it ("already exists").
+REVENUE_LOOKUP_ARGS = ("--include-drafts", "--archived")
 # Amount sent with every tracked `purchase` (see _run_sdk_scenario). Only the
 # PLANNED revenue (planned goals x this) is computed; the actual is measured.
 PURCHASE_AMOUNT = 10
@@ -141,8 +146,8 @@ class E2ERunner:
         if self.verbose:
             print(f"  {Colors.CYAN}[debug]{Colors.RESET} {msg}")
 
-    def _find_resource(self, resource_type: str, name: str) -> Optional[str]:
-        rc, output = run_abs([resource_type, "list", "--items", "500"], self.profile)
+    def _find_resource(self, resource_type: str, name: str, extra_args: Sequence[str] = ()) -> Optional[str]:
+        rc, output = run_abs([resource_type, "list", "--items", "500", *extra_args], self.profile)
         if rc != 0:
             self.log(f"_find_resource({resource_type}, {name}) failed: {output}")
             return None
@@ -293,7 +298,7 @@ class E2ERunner:
         whether or not the experiment lists it (verified live on test-1), so
         the experiment keeps e2e_purchase_count as its only metric.
         """
-        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
+        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS)
         if self.revenue_metric_id:
             self._reuse_revenue_metric(self.revenue_metric_id)
             self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
@@ -310,7 +315,7 @@ class E2ERunner:
         ], self.profile)
 
         if rc != 0 and "already exists" in output:
-            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
+            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS)
             if self.revenue_metric_id:
                 self._reuse_revenue_metric(self.revenue_metric_id)
                 return
@@ -350,12 +355,20 @@ class E2ERunner:
         draft; later runs find it by name, so they re-run the activation instead
         of accepting a metric that measures nothing.
         """
-        status, review_status = self._check_revenue_metric_definition(metric_id)
+        status, review_status, archived = self._check_revenue_metric_definition(metric_id)
+        if archived:
+            # Archiving is a separate flag (absmartly/cli `metrics archive
+            # [--unarchive]`), not a lifecycle status.
+            self.log(f"Metric '{REVENUE_METRIC_NAME}' is archived; unarchiving it")
+            action = ["metrics", "archive", metric_id, "--unarchive"]
+            rc, output = run_abs(action, self.profile, output_json=False)
+            if rc != 0:
+                raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
         if status is not None and status != "active":
             self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
             self._review_and_activate_revenue_metric(metric_id, review_status)
 
-    def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str]]:
+    def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str], bool]:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
 
         A metric found by name alone could be a different type or property, and
@@ -363,7 +376,8 @@ class E2ERunner:
         returns the metric's `type` and `value_source_property` (absmartly/cli
         src/core/metrics/payload.ts). The goal is checked when the payload
         carries it as a nested goal or `goal_id`. Returns the metric's
-        (`lifecycle_status`, `review_status`), each None if absent.
+        (`lifecycle_status`, `review_status`, `archived`); the first two are
+        None if absent.
         """
         # `--raw`: without it the CLI prints a summary that has no
         # value_source_property and a plain-string goal (absmartly/cli
@@ -396,7 +410,8 @@ class E2ERunner:
         status = metric.get("lifecycle_status")
         review = metric.get("review_status")
         return (status if isinstance(status, str) else None,
-                review if isinstance(review, str) else None)
+                review if isinstance(review, str) else None,
+                metric.get("archived") is True)
 
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}"

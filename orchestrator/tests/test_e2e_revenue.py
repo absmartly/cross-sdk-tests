@@ -674,3 +674,69 @@ def test_wait_stops_early_on_an_over_published_sdk(monkeypatch, capsys, poll_clo
     results = runner.verify_metrics()
     assert results["sdks"]["java"]["status"] == "fail"
     assert E2ERunner.report_passes(results) is False
+
+
+def test_wait_keeps_polling_a_pending_sdk_when_another_is_over_published(monkeypatch, capsys, poll_clock):
+    # One decided (over-published) SDK must not end the wait while another is still
+    # pending, and the decided SDK is not re-queried.
+    sdks = ("java", "go")
+    backend = healthy_backend(sdks=sdks)
+    backend.revenue["java"] = revenue_result([57, 43], [540, 460])
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 12
+    java_calls = []
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        sdk = sdk_from_filter(args)
+        if sdk == "java":
+            java_calls.append(list(args))
+        if sdk == "go" and "--metric" in args and poll_clock.now == 0:
+            backend.calls.append(list(args))
+            return 0, "[]"
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 5
+    assert len(java_calls) == 2  # one round only: count and revenue
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_stops_early_when_goals_are_over_published(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([57, 43], [30, 26]))  # 56 goals > int(50 * 1.05)
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_treats_a_count_exactly_at_the_bound_as_ready(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([60, 45], [27, 23]))  # 105 == int(100 * 1.05)
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    out = capsys.readouterr().out
+    assert "Metrics ready" in out and "over-published" not in out

@@ -410,8 +410,10 @@ prints `PASS All metrics verified` and exits 0 only when every non-skipped SDK
 row was measured and passed. An existing `e2e_purchase_revenue` is read with `abs metrics get <id> --raw` and
 refused unless it is a goal_property metric on the `amount` property (and,
 when the payload names the goal, on `purchase`); one left inactive by a failed
-run is reviewed and activated again, resuming after any review step that
-run already completed. An SDK named with `--sdk` must be verified: if it
+run (looked up with `--include-drafts --archived`) is unarchived if needed and
+reviewed and activated again, resuming after any review step that run already
+completed. Readiness polling stops waiting on an SDK whose count is already
+past the over-publish bound, since it can no longer pass. An SDK named with `--sdk` must be verified: if it
 is skipped (its wrapper returns 501 for e2e mode) or unknown, the run fails.
 Only SDKs that were not requested (the default "all") may be skipped, and the
 report lists them; a run where every SDK is skipped fails. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
