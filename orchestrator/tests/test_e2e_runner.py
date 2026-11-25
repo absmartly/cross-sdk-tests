@@ -992,7 +992,7 @@ def test_duplicate_revenue_metric_names_are_refused(monkeypatch):
     monkeypatch.setattr(e2e_runner, "run_abs", fake)
     runner = make_runner(sdks=("java",))
     runner.revenue_metric_id = None
-    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'"):
+    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'.*rename the extra ones"):
         runner._ensure_revenue_metric()
 
 
@@ -1038,3 +1038,10 @@ def test_race_relookup_refuses_duplicate_names(monkeypatch):
     runner.revenue_metric_id = None
     with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'"):
         runner._ensure_revenue_metric()
+
+
+def test_find_resource_skips_non_dict_rows(monkeypatch):
+    rows = [None, "x", {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+    monkeypatch.setattr(e2e_runner, "run_abs", lambda args, *a, **kw: (0, json.dumps(rows)))
+    runner = make_runner(sdks=("java",))
+    assert runner._find_resource("metrics", "e2e_purchase_revenue", unique=True) == str(REVENUE_METRIC_ID)

@@ -169,7 +169,8 @@ class E2ERunner:
         if unique and len(matches) > 1:
             raise RuntimeError(
                 f"{len(matches)} {resource_type} named {name!r} (ids {', '.join(matches)}); "
-                "remove or rename the extra ones"
+                f"rename the extra ones (`abs {resource_type} update <id> --name <new>`); archiving "
+                "does not help, since the lookup includes archived items"
             )
         return matches[0] if matches else None
 
