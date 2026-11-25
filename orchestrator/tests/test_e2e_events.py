@@ -979,3 +979,13 @@ def test_final_call_error_wins_over_a_failed_delete(runner, name, failing_url):
          patch("e2e_runner.requests.delete", return_value=_http_error("500 on DELETE")), \
          pytest.raises(RuntimeError, match="final call failed"):
         runner._send_event_case("javascript", "http://wrapper", case)
+
+
+@pytest.mark.parametrize("name", ["null_properties", "no_properties"])
+def test_goal_without_properties_matches_an_empty_collector_row(runner, name):
+    # N2: a goal sent with null/no properties is stored as {} and must match it.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    rows = raw_fixture(runner, case)
+    rows[-1]["properties"] = "{}"
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
