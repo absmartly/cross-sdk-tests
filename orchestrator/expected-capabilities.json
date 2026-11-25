@@ -248,12 +248,12 @@
         "holdouts",
         "holdout_arms",
         "switchback",
-        "integralFloatAttributes"
+        "integralFloatAttributes",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
         "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "sharedVariableKeys": "go-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in go-sdk",
         "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",
         "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
       }

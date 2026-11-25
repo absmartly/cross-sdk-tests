@@ -44,3 +44,32 @@ func TestSwitchbackProjectionRetainsAllFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSharedVariableKeysBatteryPasses(t *testing.T) {
+	if err := sharedVariableKeysBattery(); err != nil {
+		t.Fatal(err)
+	}
+	if !sharedVariableKeysSupported() {
+		t.Fatal("capability false")
+	}
+}
+
+// Each check compares the value and the single exposure, so a different
+// winner, a fall-through value or an extra exposure fails the battery.
+func TestSharedVariableKeysCheckIsNotVacuous(t *testing.T) {
+	for _, c := range svkBattery {
+		var wrongWinner = c
+		wrongWinner.wantId = c.experiments[1].id + c.experiments[0].id - c.wantId
+		if wrongWinner.wantId == c.wantId {
+			wrongWinner.wantId++
+		}
+		if svkCheck("test", wrongWinner) == nil {
+			t.Errorf("%s: a different winner passed", c.label)
+		}
+		var wrongValue = c
+		wrongValue.wantValue = "fall-through"
+		if svkCheck("test", wrongValue) == nil {
+			t.Errorf("%s: a different value passed", c.label)
+		}
+	}
+}
