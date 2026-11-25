@@ -607,6 +607,7 @@ def test_every_wrapper_call_carries_the_case_deadline(runner, name):
          patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=10.0):
         runner._send_event_case("javascript", "http://wrapper", case)
     assert {c.kwargs.get("deadline") for c in post.call_args_list} == {50.0}
+    assert all(c.kwargs.get("timeout") is None for c in post.call_args_list)
     treated = [c.args[1]["experimentName"] for c in post.call_args_list if c.args[0].endswith("/treatment")]
     assert treated and runner.experiment_name not in treated
     assert set(treated) <= {"e2e-abcd1234-prime", "e2e-abcd1234-cases", "e2e-abcd1234-session"}
@@ -1216,3 +1217,22 @@ def test_wrapper_post_uses_remaining_budget_as_timeout(runner):
          patch("e2e_runner.requests.post", return_value=Mock(status_code=200, json=lambda: {"result": {}})) as post:
         runner._wrapper_post("http://wrapper/context", {}, deadline=40)
     assert post.call_args.kwargs["timeout"] == 5
+
+
+def test_wrapper_post_caps_long_remaining_budget_at_30_seconds(runner):
+    with patch("e2e_runner.time.time", return_value=10), \
+         patch("e2e_runner.requests.post", return_value=Mock(status_code=200, json=lambda: {})) as post:
+        runner._wrapper_post("http://wrapper/context", {}, deadline=100)
+    assert post.call_args.kwargs["timeout"] == 30
+
+
+def test_pre_ready_payload_contains_every_planned_goal(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    created = {"result": {"contextId": "ctx", "ready": True, "failed": False, "preReadyTracked": True}}
+    with patch.object(runner, "_wrapper_post", return_value=created) as post, \
+         patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=0):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    payloads = [c.args[1] for c in post.call_args_list if c.args[0].endswith("/context")]
+    assert len(payloads) == 2
+    goals = payloads[-1]["preReadyGoals"]
+    assert goals == [{"goalName": "purchase", "properties": g} for g in case["goals"]]
