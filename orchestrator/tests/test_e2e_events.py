@@ -1126,3 +1126,42 @@ def test_sentinel_deadline_matches_the_poll_deadline(runner, monkeypatch):
     with patches[0], patches[1], patches[2], patches[3], patch.object(runner, "_query_metric", side_effect=query):
         runner.wait_for_metrics()
     assert seen == [1030.0]
+
+
+def test_numeric_tolerance_boundary():
+    assert matches(Decimal('10.5'), Decimal('10.5000000005'))
+    assert not matches(Decimal('10.5'), Decimal('10.505'))
+    assert not matches(Decimal('1000016.6'), Decimal('1000016.595'))
+    assert not matches(Decimal('0.1'), Decimal('0.10000001'))
+
+
+def test_expired_cli_deadline_starts_no_process():
+    with patch('e2e_runner.time.time', return_value=5), patch('e2e_runner.subprocess.run') as process:
+        rc, output = run_abs(['events', 'list'], deadline=1)
+    assert rc != 0 and 'budget exhausted' in output
+    process.assert_not_called()
+
+
+def test_cli_timeout_is_remaining_budget():
+    import subprocess
+    with patch('e2e_runner.time.time', return_value=5), \
+         patch('e2e_runner.subprocess.run', side_effect=subprocess.TimeoutExpired('abs', 2)) as process:
+        rc, output = run_abs(['events', 'list'], deadline=7)
+    assert process.call_args.kwargs['timeout'] == 2
+    assert rc != 0 and 'timed out' in output
+
+
+def test_verifier_stops_starting_processes_after_deadline(runner):
+    clock = [0.0]
+    runner.timeout = 1
+    starts = []
+    def process(*a, **kw):
+        starts.append(clock[0])
+        assert kw['timeout'] <= 1
+        clock[0] += 30
+        return Mock(returncode=1, stdout='', stderr='backend unavailable')
+    with patch('e2e_runner.time.time', side_effect=lambda: clock[0]), \
+         patch('e2e_runner.subprocess.run', side_effect=process):
+        result = verify(runner)
+    assert starts == [0.0]
+    assert not result['overall_pass']

@@ -92,7 +92,13 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
     if output_json:
         cmd += ["-o", "json"]
     for attempt in range(3):
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        remaining = deadline - time.time() if deadline is not None else 30
+        if remaining <= 0:
+            return 1, "CLI call budget exhausted"
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=min(30, remaining))
+        except subprocess.TimeoutExpired:
+            return 1, "CLI call timed out"
         if result.returncode == 0 or not RATE_LIMITED_RE.search(result.stdout + result.stderr):
             break
         # Only a caller with a deadline opts into the 120 s 429 retry, so the baseline
