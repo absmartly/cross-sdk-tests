@@ -95,7 +95,9 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0 or not RATE_LIMITED_RE.search(result.stdout + result.stderr):
             break
-        if attempt == 2 or (deadline is not None and time.time() + RATE_LIMIT_SLEEP >= deadline):
+        # Only a caller with a deadline opts into the 120 s 429 retry, so the baseline
+        # poll and provisioning keep their single-call timing.
+        if attempt == 2 or deadline is None or time.time() + RATE_LIMIT_SLEEP >= deadline:
             break
         time.sleep(RATE_LIMIT_SLEEP)
     output = result.stdout.strip()
@@ -379,12 +381,13 @@ class E2ERunner:
         if not self.revenue_metric_id:
             raise RuntimeError(f"Could not determine revenue metric ID from output: {output}")
 
-        self._review_and_activate_revenue_metric(self.revenue_metric_id)
+        self._review_and_activate_metric(self.revenue_metric_id)
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
 
     def _ensure_case_metrics(self):
         for key, spec in metric_specs().items():
-            metric_id = self._find_resource("metrics", spec["name"])
+            lookup = ("--include-drafts", "--archived", "--search", spec["name"])
+            metric_id = self._find_resource("metrics", spec["name"], lookup, unique=True)
             if not metric_id:
                 args = ["metrics", "create", "--name", spec["name"],
                         "--type", spec["type"], "--description", "E2E collector-arrival check",
@@ -400,14 +403,9 @@ class E2ERunner:
                 metric_id = _extract_id(output)
                 if not metric_id:
                     raise RuntimeError(f"Metric {spec['name']} missing id: {output}")
-                for action in ("request", "approve"):
-                    rc, output = run_abs(["metrics", "review", action, metric_id], self.profile)
-                    if rc:
-                        raise RuntimeError(f"Metric review {action}: {output}")
-                rc, output = run_abs(["metrics", "activate", metric_id, "--reason", "E2E testing"], self.profile)
-                if rc:
-                    raise RuntimeError(f"Metric activation: {output}")
-            rc, output = run_abs(["metrics", "get", metric_id], self.profile)
+            # `--raw`: the CLI summary carries no goal_id, value_source_property,
+            # property_filter or outlier_limit_method (same as the revenue check).
+            rc, output = run_abs(["metrics", "get", metric_id, "--raw"], self.profile)
             detail = parse_json_output(output) if rc == 0 else None
             if not isinstance(detail, dict):
                 raise RuntimeError(f"Cannot validate existing metric {spec['name']}: {output}")
@@ -423,6 +421,18 @@ class E2ERunner:
                 raise RuntimeError(f"Metric {spec['name']} has the wrong property filter")
             if detail.get("outlier_limit_method") != "unlimited":
                 raise RuntimeError(f"Metric {spec['name']} must not limit outliers")
+            # A run whose review/activation failed left this metric archived or in
+            # draft; finish those steps instead of failing every later run.
+            if detail.get("archived") is True:
+                action = ["metrics", "archive", metric_id, "--unarchive"]
+                rc, output = run_abs(action, self.profile, output_json=False)
+                if rc != 0:
+                    raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
+            status = detail.get("lifecycle_status")
+            if status not in ACTIVE_LIFECYCLE_STATUSES:
+                review = detail.get("review")
+                review_status = review.get("status") if isinstance(review, dict) else None
+                self._review_and_activate_metric(metric_id, review_status)
             self.case_metric_ids[key] = metric_id
 
     def create_case_experiments(self):
@@ -496,6 +506,13 @@ class E2ERunner:
         for sdk, base_url in self.sdks.items():
             self.case_run_deadline = time.time() + self.timeout
             self.case_results[sdk] = {}
+            # A wrapper whose e2e mode is not configured (501) is skipped by the
+            # baseline unless named with --sdk; its cases follow the same rule.
+            if self.sdk_results.get(sdk, {}).get("status") == "skipped" and sdk not in self.requested_sdks:
+                for case in case_specs(self.run_id, sdk):
+                    self.case_results[sdk][case["name"]] = {"status": "unsupported",
+                                                            "reason": "e2e mode not configured (wrapper answered 501)"}
+                continue
             for case in case_specs(self.run_id, sdk):
                 name = case["name"]
                 try:
@@ -710,7 +727,7 @@ class E2ERunner:
                     errors.append("Collector goal count/properties differ from planned calls")
         return {"pass": not errors, "errors": errors}
 
-    def _review_and_activate_revenue_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
+    def _review_and_activate_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
         """Request review, approve and activate, skipping steps a failed run already did.
 
         A retry after a run that got past `review request` (the metric's
@@ -747,7 +764,7 @@ class E2ERunner:
                 raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
         if status is not None and status not in ACTIVE_LIFECYCLE_STATUSES:
             self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
-            self._review_and_activate_revenue_metric(metric_id, review_status)
+            self._review_and_activate_metric(metric_id, review_status)
 
     def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str], bool]:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.

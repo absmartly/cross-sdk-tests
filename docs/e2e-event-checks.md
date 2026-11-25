@@ -35,15 +35,17 @@ Comparisons use an absolute 1e-9 allowance for arithmetic noise, never rounding 
   `null_value` is a reviewed exception for python (`e2e.unsupported.nullPropertyValues`):
   python3-sdk serializes with `strip_nulls=True` and sends `{}`; that is an SDK release gate.
 
-Polling waits for baseline participants plus one sentinel query per SDK (the batch case's
-goal count); the full case check runs once afterwards. A CLI call
-is capped at 30s. An HTTP 429 (CLI text `Rate limit exceeded.`) sleeps 120s and retries only
-while that sleep ends before the deadline; every poll call, including the final fetch, carries
-the deadline, so a poll overruns `--timeout` by at most one in-flight call. The case check that
-follows gets its own `--timeout` budget the same way. Each case's wrapper calls get `--timeout` too,
-capped by one sending share per SDK (`--timeout`, starting when that SDK starts, so a slow wrapper
-cannot use up the next SDK's share). No wrapper POST starts after it and a 429 wait never ends past
-it; the cleanup DELETE of a context still runs, bounded by 10s.
+Polling is #52's per-SDK readiness loop (participants, goals and revenue per SDK, within
+`--timeout`), plus one condition from the cases: one sentinel query per SDK (the batch case's goal
+count) bounded by the same deadline. The full case check runs once afterwards. A CLI call is
+capped at 30s. Only calls made with a deadline retry an HTTP 429 (CLI text `Rate limit exceeded.`):
+they sleep 120s and retry while that sleep ends before the deadline. The baseline poll and
+provisioning pass no deadline, so they keep #52's single-call timing. The case check gets its own
+`--timeout` budget. Each case's wrapper calls get `--timeout` too, capped by one sending share per
+SDK (`--timeout`, starting when that SDK starts, so a slow wrapper cannot use up the next SDK's
+share). No wrapper POST starts after it and a 429 wait never ends past it; the cleanup DELETE of a
+context still runs, bounded by 10s. An SDK the baseline skips (its wrapper answers 501 and it was
+not named with `--sdk`) skips its cases too; a requested SDK runs them and fails if unmeasurable.
 Raw property comparison is by numeric value (10 equals 10.0); agents must carry a version
 unless the SDK's `xAgentHeader` policy is a reviewed exception.
 
@@ -74,8 +76,10 @@ export PATH="/tmp/abscli/node_modules/.bin:$PATH"
 ./run-e2e-tests.sh --sdk javascript,python --profile test-1 --units 10 --timeout 480 --verbose
 ```
 
-The runner finds metrics by name, otherwise creates them, requests/approves review, activates
-and validates type/goal/path/filter/outlier settings. Names are stable; experiments and unit
+The runner finds each case metric by name (drafts and archived included; a duplicate name is
+refused), otherwise creates it. It reads the definition with `metrics get --raw` and validates
+type/goal/path/filter/outlier settings, then finishes any review/approve/activate (or unarchive)
+step a failed run left undone. Names are stable; experiments and unit
 IDs are run-scoped. Both experiments are stopped/archived in finally. No analysis override,
 rule, deduplication or audience checks are included.
 

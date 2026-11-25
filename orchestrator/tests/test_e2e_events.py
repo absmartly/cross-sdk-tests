@@ -151,9 +151,18 @@ def test_429_sleeps_120_then_retries():
     # The exact text CLI 1.18.0 prints for an HTTP 429.
     fail = Mock(returncode=1, stdout="", stderr="Error: Rate limit exceeded.\nEndpoint: GET /experiments/1\nRetry after: 0 seconds")
     ok = Mock(returncode=0, stdout="[]", stderr="")
-    with patch("e2e_runner.subprocess.run", side_effect=[fail, ok]), patch("e2e_runner.time.sleep") as sleep:
-        assert run_abs(["metrics", "list"]) == (0, "[]")
+    with patch("e2e_runner.subprocess.run", side_effect=[fail, ok]), patch("e2e_runner.time.sleep") as sleep, \
+         patch("e2e_runner.time.time", return_value=0.0):
+        assert run_abs(["metrics", "list"], deadline=1000.0) == (0, "[]")
     sleep.assert_called_once_with(120)
+
+
+def test_429_without_a_deadline_does_not_retry():
+    # The baseline poll and provisioning pass no deadline: one call, no 120 s sleep.
+    fail = Mock(returncode=1, stdout="", stderr="Error: Rate limit exceeded.\nEndpoint: GET /experiments/1")
+    with patch("e2e_runner.subprocess.run", return_value=fail) as run, patch("e2e_runner.time.sleep") as sleep:
+        assert run_abs(["experiments", "metrics", "results", "1"])[0] == 1
+    assert run.call_count == 1 and not sleep.called
 
 
 def test_numeric_ids_distinct_for_every_lane(runner):
@@ -222,20 +231,129 @@ def test_session_requires_distinct_metric_and_raw_exposure(runner):
         assert verify(runner)['event_cases']['javascript']['multiple_units']['status']=='fail'
 
 
-@pytest.mark.parametrize('key,field,wrong', [('amount','value_source_property','wrong/path'),
-    ('nested','value_source_property','wrong/path'), ('eur','property_filter',{'filter':{'and':[]}}),
-    ('true','property_filter',{'filter':{'and':[]}}), ('false','property_filter',{'filter':{'and':[]}})])
-def test_existing_metric_validation(runner,key,field,wrong):
-    specs=metric_specs()
-    runner.goal_id='183'
-    def cli(args,*a,**kw):
-        spec=specs[next(k for k,v in runner.case_metric_ids.items() if v==args[2])]
-        detail={'type':spec['type'],'goal_id':183,'outlier_limit_method':'unlimited',
-                'value_source_property':spec.get('path'),'property_filter':spec.get('filter')}
-        if spec is specs[key]: detail[field]=wrong
-        return 0,json.dumps(detail)
-    with patch.object(runner,'_find_resource',side_effect=lambda resource,name: runner.case_metric_ids[next(k for k,s in specs.items() if s['name']==name)]), patch('e2e_runner.run_abs',side_effect=cli), pytest.raises(RuntimeError,match='wrong property'):
+def _metric_cli(runner, overrides=None, status="activated", review=None, archived=False):
+    """Fake `abs` for _ensure_case_metrics: every metric exists; `metrics get` returns the
+    CLI summary shape unless --raw is passed, as CLI 1.18.0 does."""
+    specs = metric_specs()
+    ids = {s["name"]: str(i) for i, s in enumerate(specs.values(), 300)}
+    calls = []
+    def cli(args, *a, **kw):
+        calls.append(list(args))
+        if args[:2] == ["metrics", "list"]:
+            name = args[args.index("--search") + 1]
+            return 0, json.dumps([{"id": int(ids[name]), "name": name}])
+        if args[:2] == ["metrics", "get"]:
+            name = next(n for n, i in ids.items() if i == args[2])
+            spec = next(s for s in specs.values() if s["name"] == name)
+            if "--raw" not in args:
+                return 0, json.dumps({"id": int(args[2]), "name": name, "type": spec["type"], "goal": "purchase"})
+            detail = {"type": spec["type"], "goal_id": 183, "outlier_limit_method": "unlimited",
+                      "value_source_property": spec.get("path"), "property_filter": spec.get("filter"),
+                      "lifecycle_status": status, "review": review, "archived": archived}
+            detail.update((overrides or {}).get(name, {}))
+            return 0, json.dumps(detail)
+        return 0, ""
+    runner.goal_id = "183"
+    return cli, calls, specs
+
+
+def test_case_metrics_read_the_raw_definition(runner):
+    cli, calls, specs = _metric_cli(runner)
+    with patch("e2e_runner.run_abs", side_effect=cli):
         runner._ensure_case_metrics()
+    gets = [c for c in calls if c[:2] == ["metrics", "get"]]
+    assert gets and all("--raw" in c for c in gets)
+    lists = [c for c in calls if c[:2] == ["metrics", "list"]]
+    assert all("--include-drafts" in c and "--archived" in c for c in lists)
+
+
+@pytest.mark.parametrize("key,field,wrong,match", [
+    ("amount", "value_source_property", "wrong/path", "wrong property path"),
+    ("nested", "value_source_property", "wrong/path", "wrong property path"),
+    ("eur", "property_filter", {"filter": {"and": []}}, "wrong property filter"),
+    ("true", "property_filter", {"filter": {"and": []}}, "wrong property filter"),
+    ("false", "property_filter", {"filter": {"and": []}}, "wrong property filter"),
+    ("events", "type", "goal_unique_count", "wrong type/goal"),
+    ("amount", "goal_id", 999, "wrong type/goal"),
+    ("eur", "outlier_limit_method", "quantile", "must not limit outliers"),
+])
+def test_existing_metric_validation(runner, key, field, wrong, match):
+    name = metric_specs()[key]["name"]
+    cli, calls, specs = _metric_cli(runner, {name: {field: wrong}})
+    with patch("e2e_runner.run_abs", side_effect=cli), pytest.raises(RuntimeError, match=match):
+        runner._ensure_case_metrics()
+
+
+def test_duplicate_case_metric_names_are_refused(runner):
+    def cli(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            name = args[args.index("--search") + 1]
+            return 0, json.dumps([{"id": 1, "name": name}, {"id": 2, "name": name}])
+        return 0, ""
+    runner.goal_id = "183"
+    with patch("e2e_runner.run_abs", side_effect=cli), pytest.raises(RuntimeError, match="named"):
+        runner._ensure_case_metrics()
+
+
+@pytest.mark.parametrize("status,review,archived,expected", [
+    ("activated", None, False, []),
+    ("draft", None, False, [["metrics", "review", "request"], ["metrics", "review", "approve"], ["metrics", "activate"]]),
+    ("draft", {"status": "pending"}, False, [["metrics", "review", "approve"], ["metrics", "activate"]]),
+    ("draft", {"status": "approved"}, False, [["metrics", "activate"]]),
+    ("activated", None, True, [["metrics", "archive"]]),
+])
+def test_case_metric_left_inactive_is_resumed(runner, status, review, archived, expected):
+    # A run whose review/activation failed left the metric draft or archived; resume it.
+    cli, calls, specs = _metric_cli(runner, status=status, review=review, archived=archived)
+    with patch("e2e_runner.run_abs", side_effect=cli):
+        runner._ensure_case_metrics()
+    tail = [c[:3] if c[1] == "review" else c[:2] for c in calls
+            if c[0] == "metrics" and c[1] in ("review", "activate", "archive")]
+    assert tail == expected * len(specs)
+
+
+def test_new_case_metric_is_reviewed_and_activated(runner):
+    created = {}
+    def cli(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            return 0, "[]"
+        if args[:2] == ["metrics", "create"]:
+            name = args[args.index("--name") + 1]
+            created[name] = str(500 + len(created))
+            return 0, json.dumps({"id": int(created[name])})
+        if args[:2] == ["metrics", "get"]:
+            assert "--raw" in args
+            name = next(n for n, i in created.items() if i == args[2])
+            spec = next(s for s in metric_specs().values() if s["name"] == name)
+            return 0, json.dumps({"type": spec["type"], "goal_id": 183, "outlier_limit_method": "unlimited",
+                                  "value_source_property": spec.get("path"), "property_filter": spec.get("filter"),
+                                  "lifecycle_status": "draft", "review": None})
+        calls.append(list(args))
+        return 0, ""
+    calls = []
+    runner.goal_id = "183"
+    with patch("e2e_runner.run_abs", side_effect=cli):
+        runner._ensure_case_metrics()
+    assert len(created) == len(metric_specs())
+    assert [c[:3] if c[1] == "review" else c[:2] for c in calls][:3] == [
+        ["metrics", "review", "request"], ["metrics", "review", "approve"], ["metrics", "activate"]]
+
+
+@pytest.mark.parametrize("requested,ran", [(False, False), (True, True)])
+def test_baseline_skipped_sdk_runs_cases_only_when_requested(runner, monkeypatch, requested, ran):
+    # A wrapper answering 501 is skipped by the baseline unless named with --sdk; its cases follow.
+    runner.sdk_results = {"javascript": {"status": "skipped"}}
+    runner.requested_sdks = {"javascript"} if requested else set()
+    sent = []
+    monkeypatch.setattr(runner, "_send_event_case", lambda sdk, url, case: sent.append(case["name"]))
+    runner.run_event_cases()
+    assert bool(sent) is ran
+    if not ran:
+        rows = runner.case_results["javascript"]
+        assert rows and {r["status"] for r in rows.values()} == {"unsupported"}
+        result = {"overall_pass": True}
+        runner.verify_event_cases(result)
+        assert result["overall_pass"]
 
 
 def test_metric_definitions_are_pinned_literally():
