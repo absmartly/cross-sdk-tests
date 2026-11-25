@@ -19,9 +19,12 @@ function harness({ unexpectedlyReady = false, fetchError = false, syncFetchError
       calls.push('createWith');
       return this.makeContext(data, options);
     }
+    setContextDataProvider(provider) { this.provider = provider; }
+    getClient() { return { getContext: () => { try { return this.getContextData(); } catch (error) { return Promise.reject(error); } } }; }
     createContext(config, options) {
       calls.push('create');
-      return this.makeContext(this.getContextData(), options);
+      const data = this.provider ? this.provider.getContextData(this) : this.getContextData();
+      return this.makeContext(data, options);
     }
     getContextData() {
       calls.push('fetch');
@@ -99,7 +102,7 @@ test('gates real SDK data until all tracks, measures each track, and sets attrib
     assert.equal(h.calls[h.calls.indexOf(tracks[i]) - 1], 'isReady:false');
     assert.ok(h.calls.indexOf(tracks[i]) < h.calls.indexOf('fetch'));
   }
-  assert.equal(h.calls[0], 'createWith');
+  assert.equal(h.calls[0], 'create');
   assert.equal(h.sdk.context.attrs.sdk_name, 'javascript');
   assert.equal(h.sdk.context.attrs.e2e_case, 'pre-ready');
   assert.equal(h.sdk.config.publisher._forwardToSdk, true);
@@ -113,7 +116,7 @@ test('omitted option leaves normal e2e creation unchanged; empty list still meas
   assert.equal(normal.calls[0], 'create');
   const empty = harness();
   assert.equal((await empty.create({ mode: 'e2e', preReadyGoals: [] })).body.result.preReadyTracked, true);
-  assert.equal(empty.calls[0], 'createWith');
+  assert.equal(empty.calls[0], 'create');
 });
 
 test('refuses to claim pre-ready tracking if SDK reports ready', async () => {

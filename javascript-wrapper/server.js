@@ -319,9 +319,19 @@ app.post('/context', async (req, res) => {
       let context;
       let preReadyTracked = false;
       if (Object.prototype.hasOwnProperty.call(req.body, 'preReadyGoals')) {
-        let releaseData;
-        const deferredData = new Promise(resolve => { releaseData = resolve; });
-        context = e2eSdk.createContextWith(contextConfig, deferredData, e2eOptions);
+        // Use the SDK's normal createContext/provider/client path, but hold the
+        // provider's real client request until all tracks have been made.
+        let releaseFetch;
+        const deferredData = new Promise((resolve, reject) => { releaseFetch = { resolve, reject }; });
+        const gatedProvider = {
+          getContextData(sdk, requestOptions) {
+            gatedProvider.request = () => sdk.getClient().getContext(requestOptions)
+              .then(releaseFetch.resolve, releaseFetch.reject);
+            return deferredData;
+          }
+        };
+        e2eSdk.setContextDataProvider(gatedProvider);
+        context = e2eSdk.createContext(contextConfig, e2eOptions);
         preReadyTracked = context.isReady() === false;
         if (!preReadyTracked) throw new Error('Expected a not-ready context before tracking');
         for (const goal of req.body.preReadyGoals) {
@@ -329,8 +339,8 @@ app.post('/context', async (req, res) => {
           if (context.isReady() !== false) throw new Error('Context became ready before tracking');
           context.track(goal.goalName, goal.properties);
         }
-        // Only now start the real SDK provider/client fetch, including SDK auth and parsing.
-        releaseData(Promise.resolve().then(() => e2eSdk.getContextData()));
+        // Release the provider's real Client.getContext request only after tracking.
+        gatedProvider.request();
       } else {
         context = e2eSdk.createContext(contextConfig, e2eOptions);
       }
