@@ -90,6 +90,9 @@ python -m pytest orchestrator/tests -q
 python -m unittest discover -s tests -q
 node --test javascript-wrapper/preReadyGoals.test.js
 # With python3-sdk and python-wrapper/requirements.txt installed:
+# From a sibling python3-sdk checkout:
+pip install -r python-wrapper/requirements.txt
+pip install -e ../python3-sdk
 python -m pytest python-wrapper/test_pre_ready_goals.py -q
 ```
 

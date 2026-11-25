@@ -678,8 +678,10 @@ class E2ERunner:
                    and e.get("application_id") == int(self.app_id) and e.get("environment") == self.environment]
             exposures = [e for e in own if e.get("event_type") == "exposure"
                          and e.get("experiment_id") == (self.session_experiment_id if unit_type == "session_id" else self.case_experiment_id)]
-            if not exposures:
-                errors.append(f"No exposure for {unit_type}:{uid!r}")
+            if len(exposures) != 1:
+                errors.append(
+                    f"Expected exactly one exposure for {unit_type}:{uid!r}, found {len(exposures)}"
+                )
             language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
                         "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript"}.get(sdk, sdk)
             versioned = "xAgentHeader" not in self.capability_policy["sdks"].get(sdk, {}).get("unsupported", {})

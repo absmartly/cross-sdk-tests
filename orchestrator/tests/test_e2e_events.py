@@ -401,6 +401,16 @@ def test_pre_ready_primes_exposure_before_goal_context(runner):
     assert kinds == ["context", "treatment", "publish", "context", "treatment", "publish"]
 
 
+def test_duplicate_exposures_fail_raw_arrival(runner):
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
+    rows = raw_fixture(runner, case)
+    rows.insert(1, dict(rows[0]))
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        result = runner._verify_arrival("javascript", case)
+    assert not result["pass"]
+    assert "exactly one exposure" in result["errors"][0]
+
+
 def test_foreign_unit_rows_are_ignored(runner):
     case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "strings")
     rows = raw_fixture(runner, case)
