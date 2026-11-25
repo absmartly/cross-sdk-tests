@@ -326,7 +326,7 @@ func switchbackContextBattery(prefix string) error {
 	})
 	// Published in memory: /capabilities must not wait on the network.
 	publisher := &switchbackCapturingPublisher{}
-	absmartly := sdk.Create(sdk.ABSmartlyConfig{Client_: client, ContextPublisher_: publisher, ContextEventLogger_: logger})
+	absmartly := sdk.Create(sdk.ABSmartlyConfig{Client_: client, ContextEventHandler_: publisher, ContextEventLogger_: logger})
 	config := sdk.CreateDefaultContextConfig()
 	config.Units_ = map[string]string{"unit_user": "probe-user", "unit_serving": "serving-9"}
 	config.PublishDelay_ = -1
