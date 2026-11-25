@@ -493,9 +493,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
 		a := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:             client,
-			ContextPublisher_:   customPublisher,
-			ContextEventLogger_: eventCollector,
+			Client_:              client,
+			ContextEventHandler_: customPublisher,
+			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
 	case req.Endpoint != "":
@@ -539,7 +539,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:              client,
 				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
-				ContextPublisher_:    customPublisher,
+				ContextEventHandler_: customPublisher,
 				ContextEventLogger_:  eventCollector,
 			})
 			absmartly = &a
@@ -555,9 +555,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
 			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
-				Client_:             client,
-				ContextPublisher_:   customPublisher,
-				ContextEventLogger_: eventCollector,
+				Client_:              client,
+				ContextEventHandler_: customPublisher,
+				ContextEventLogger_:  eventCollector,
 			})
 			absmartly = &a
 		}
@@ -573,7 +573,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		a := sdk.Create(sdk.ABSmartlyConfig{
 			Client_:              client,
 			ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
-			ContextPublisher_:    customPublisher,
+			ContextEventHandler_: customPublisher,
 			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
@@ -590,9 +590,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			Environment_: environment,
 		})
 		a := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:             client,
-			ContextPublisher_:   customPublisher,
-			ContextEventLogger_: eventCollector,
+			Client_:              client,
+			ContextEventHandler_: customPublisher,
+			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
 		data = &req.Data
