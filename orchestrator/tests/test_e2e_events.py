@@ -946,3 +946,36 @@ def test_good_case_inside_an_outer_handler_still_reports_a_failed_delete(runner)
         except ValueError:
             with pytest.raises(real_requests.HTTPError):
                 runner._send_event_case("javascript", "http://wrapper", case)
+
+
+def test_null_property_value_must_arrive_intact(runner):
+    # {"amount": null} reaching the collector as {} is the strip_nulls defect; it must fail.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "null_value")
+    rows = raw_fixture(runner, case)
+    assert json.loads(rows[-1]["properties"]) == {"amount": None}
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert runner._verify_arrival("javascript", case)["pass"]
+    rows[-1]["properties"] = "{}"
+    with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
+        assert not runner._verify_arrival("javascript", case)["pass"]
+
+
+@pytest.mark.parametrize("name,failing_url", [
+    ("batch", "http://wrapper/context/c/publish"),
+    ("close", "http://wrapper/context/c/finalize"),
+    ("pre_ready", "http://wrapper/context/p/publish"),
+])
+def test_final_call_error_wins_over_a_failed_delete(runner, name, failing_url):
+    # The success flag is set only after the last call: a failing publish/finalize plus a
+    # failing DELETE reports the publish/finalize error.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    def post(url, **kw):
+        if url == failing_url:
+            raise RuntimeError("final call failed")
+        reply = {"contextId": "p" if "preReadyGoals" not in kw.get("json", {}) and name == "pre_ready" else "c",
+                 "ready": True, "failed": False, "preReadyTracked": True}
+        return _ok(reply)
+    with patch("e2e_runner.requests.post", side_effect=post), \
+         patch("e2e_runner.requests.delete", return_value=_http_error("500 on DELETE")), \
+         pytest.raises(RuntimeError, match="final call failed"):
+        runner._send_event_case("javascript", "http://wrapper", case)
