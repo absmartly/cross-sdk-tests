@@ -223,7 +223,6 @@ def assert_retained_bytes(text, rendered, scenarios):
         tail_end = text.index(first_later)
     raw_tail = text[tail_start:tail_end]
     if later:
-        # The old last scenario gained a comma when the later groups were appended.
         assert raw_tail.endswith(b",")
         raw_tail = raw_tail[:-1] + b"\n]\n"
     assert text.startswith(rendered[:head_end])

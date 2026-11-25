@@ -10,6 +10,7 @@ Run from the repository root:  python3 -m pytest orchestrator/tests -q
 import json
 import os
 import re
+import subprocess
 import sys
 
 import pytest
@@ -876,3 +877,86 @@ def test_unverified_sdk_reports_unknown_not_zero_counts(monkeypatch):
     java = runner.verify_metrics()["sdks"]["java"]
     assert java["status"] == "fail"
     assert java["exposures"]["actual"] is None and java["goals"]["actual"] is None
+
+
+@pytest.mark.parametrize("metric", ["revenue", "count"])
+@pytest.mark.parametrize("segment", ["go", None])
+def test_run_preserves_report_and_cleanup_on_metric_query_timeout(
+        monkeypatch, capsys, poll_clock, metric, segment):
+    sdks = ("java", "go")
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 12
+    backend = healthy_backend(sdks=sdks)
+    events = []
+
+    def timed_out(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if ("--metric" in args) == (metric == "revenue") and sdk_from_filter(args) == segment:
+            raise subprocess.TimeoutExpired(["abs", *args], 30)
+        return backend(args, *a, **kw)
+
+    for name in ("ensure_resources", "create_experiment", "start_experiment", "run_sdk_scenarios"):
+        monkeypatch.setattr(runner, name, lambda: None)
+    real_report = runner.print_report
+
+    def report(results):
+        events.append("report")
+        real_report(results)
+
+    monkeypatch.setattr(runner, "print_report", report)
+    monkeypatch.setattr(runner, "cleanup_experiment", lambda: events.append("cleanup"))
+    monkeypatch.setattr(e2e_runner, "run_abs", timed_out)
+    results = runner.run()
+    out = capsys.readouterr().out
+    assert events == ["report", "cleanup"]
+    assert "E2E Results" in out and "Backend aggregate (info)" in out
+    assert set(results["sdks"]) == set(sdks)
+    assert results["sdks"]["java"]["status"] == "ok"
+    go = results["sdks"]["go"]
+    if segment is not None:
+        assert go["status"] == "fail"
+        measurement = go[metric if metric == "revenue" else "exposures"]
+        assert measurement["unverified"] is True
+        assert measurement["actual"] is None
+        assert "query timed out after 30s" in go["note"]
+        assert "UNVERIFIED" in out and "All metrics verified" not in out
+        assert results["overall_pass"] is False
+        assert E2ERunner.report_passes(results) is False
+        if metric == "revenue":
+            assert go["exposures"]["actual"] == 100
+            assert go["goals"]["actual"] == 50
+    else:
+        assert go["status"] == "ok"
+        assert results["overall_pass"] is True
+        assert E2ERunner.report_passes(results) is True
+        assert "All metrics verified" in out
+        if metric == "revenue":
+            assert results["aggregate"]["actual_revenue"] is None
+            assert results["aggregate"]["revenue_note"] == "revenue query timed out after 30s"
+        else:
+            assert results["aggregate"]["actual_participants"] == 0
+            assert results["aggregate"]["actual_goals"] == 0
+
+
+@pytest.mark.parametrize("aggregate", [500, 900])
+def test_available_revenue_aggregate_still_detects_inconsistent_segments(monkeypatch, capsys, aggregate):
+    sdks = ("java", "go")
+    backend = healthy_backend(sdks=sdks)
+    backend.revenue[None] = revenue_result([114, 86], [aggregate, 0])
+    results, out = run_verify(monkeypatch, capsys, make_runner(sdks=sdks), backend)
+    assert E2ERunner.report_passes(results) is False
+    assert "Revenue segmentation unreliable" in out
+    for sdk in sdks:
+        assert results["sdks"][sdk]["revenue"]["unverified"] is True
+
+
+@pytest.mark.parametrize("fetch", ["_fetch_revenue", "_fetch_metrics_for_sdk", "_fetch_metrics"])
+@pytest.mark.parametrize("failure", [FileNotFoundError, RuntimeError])
+def test_metric_fetches_do_not_swallow_unrelated_failures(monkeypatch, fetch, failure):
+    def broken(*args, **kwargs):
+        raise failure("unrelated failure")
+    monkeypatch.setattr(e2e_runner, "run_abs", broken)
+    runner = make_runner()
+    with pytest.raises(failure, match="unrelated failure"):
+        getattr(runner, fetch)(*(() if fetch == "_fetch_metrics" else ("java",)))

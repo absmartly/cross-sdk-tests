@@ -202,3 +202,47 @@ class SwiftSkippedTestsTest(unittest.TestCase):
             "\u2714 Test run with 3 tests in 1 suite passed after 0.01 seconds.\n"
         )
         self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (1, 0, 3))
+
+
+class SwiftSequentialTargetsTest(unittest.TestCase):
+    aggregate = MaintenanceUnitResultsTest.aggregate
+    assert_cli = SwiftUnitResultsTest.assert_cli
+
+    def test_completed_summary_and_truncated_target_preserve_all_results(self):
+        for marker in ("◇ Test run started.\n", ""):
+            for status in ("passed", "failed"):
+                with self.subTest(marker=marker, status=status):
+                    output = XCTEST_SUCCESS + SWIFT_TESTING_UI_TARGET + marker + (
+                        "✔ Test nextPass() passed after 0.1 seconds.\n"
+                        '➔ Test skipped() skipped: "needs network"\n'
+                        "✘ Test cancelled() was cancelled after 0.2 seconds.\n"
+                        f"✘ Test nextResult() {status} after 0.3 seconds.\n"
+                    )
+                    expected = (7, 0, 9) if status == "passed" else (6, 1, 9)
+                    self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), expected)
+                    result = self.assert_cli("swift", output, 0, int(status == "failed"))
+                    self.assertIn(f"{expected[0]}/{expected[2]}", result.stdout)
+
+    def test_completed_four_test_target_survives_two_trailing_failures(self):
+        output = SWIFT_TESTING_UI_TARGET + (
+            "◇ Test run started.\n"
+            "✘ Test firstFailure() failed after 0.1 seconds.\n"
+            "✘ Test secondFailure() failed after 0.2 seconds.\n"
+        )
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (4, 2, 6))
+        result = self.assert_cli("swift", output, 0, 1)
+        self.assertIn("4/6", result.stdout)
+
+    def test_failed_completed_target_does_not_borrow_trailing_failures(self):
+        output = ("✘ Test run with 4 tests failed after 0.1 seconds.\n"
+                  "◇ Test run started.\n"
+                  "✘ Test nextFailure() failed after 0.2 seconds.\n")
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (3, 2, 5))
+        result = self.assert_cli("swift", output, 0, 1)
+        self.assertIn("3/5", result.stdout)
+
+    def test_skip_only_truncated_target_has_measured_total(self):
+        output = "➔ Test a() skipped.\n✘ Test b() was cancelled after 0.1 seconds.\n"
+        self.assertEqual(results_aggregator.parse_unit_test_output("swift", output), (0, 0, 2))
+        result = self.assert_cli("swift", output, 0, 0)
+        self.assertIn("0/2", result.stdout)

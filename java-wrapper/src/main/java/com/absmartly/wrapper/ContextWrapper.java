@@ -17,7 +17,7 @@ public class ContextWrapper {
         this.eventCollector = eventCollector;
         this.transport = transport;
         this.owner = owner;
-        this.acceptsNewData = acceptsNewData;
+        this.acceptsNewData = acceptsNewData && transport != null && transport.fetchesFromMemory();
     }
 
     public Context getContext() {
@@ -33,7 +33,7 @@ public class ContextWrapper {
     }
 
     boolean acceptsNewData() {
-        return acceptsNewData && transport != null && transport.fetchesFromMemory();
+        return acceptsNewData;
     }
 
     public void setPublishFail(boolean publishFail) {

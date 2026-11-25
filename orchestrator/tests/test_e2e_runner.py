@@ -784,12 +784,13 @@ if [ "$1" = "orchestrator/e2e_runner.py" ]; then
   shift
   printf '%s\\n' "$@" > "$ARGV_FILE"
   printf '%s\\n' "$SDK_SERVICES" > "$ARGV_FILE.services"
+  if [ -n "$REAL_PYTHON" ]; then exec "$REAL_PYTHON" "$RUNNER_SHIM" "$@"; fi
 fi
 exit 0
 """
 
 
-def run_e2e_script(tmp_path, *script_args):
+def run_e2e_script(tmp_path, *script_args, expected_exit=0, runner_501=False):
     import shutil
     import subprocess
     repo = Path(__file__).resolve().parents[2]
@@ -804,9 +805,25 @@ def run_e2e_script(tmp_path, *script_args):
         stub.chmod(0o755)
     argv_file = tmp_path / "argv"
     env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "ARGV_FILE": str(argv_file), "HOME": str(tmp_path)}
+    if runner_501:
+        shim = tmp_path / "runner_shim.py"
+        shim.write_text(
+            "import sys\nfrom types import SimpleNamespace\n"
+            f"sys.path.insert(0, {str(repo / 'orchestrator')!r})\n"
+            "import e2e_runner as e\n"
+            "e.requests.get = lambda *a, **k: SimpleNamespace(status_code=200)\n"
+            "e.requests.post = lambda *a, **k: SimpleNamespace(status_code=501)\n"
+            "for name in ('ensure_resources', 'create_experiment', 'start_experiment', "
+            "'wait_for_metrics', 'cleanup_experiment'):\n"
+            "    setattr(e.E2ERunner, name, lambda self: None)\n"
+            "e.main()\n")
+        env.update(REAL_PYTHON=sys.executable, RUNNER_SHIM=str(shim))
     proc = subprocess.run(["bash", str(work / "run-e2e-tests.sh"), "--skip-build", *script_args],
                           cwd=work, env=env, capture_output=True, text=True, timeout=60)
-    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert proc.returncode == expected_exit, proc.stdout + proc.stderr
+    if runner_501:
+        assert "requested with --sdk but skipped" in proc.stdout
+        assert "All metrics verified" not in proc.stdout
     return argv_file.read_text().splitlines(), (tmp_path / "argv.services").read_text().strip()
 
 
@@ -922,18 +939,6 @@ def test_trailing_comma_in_sdk_list_is_ignored(monkeypatch):
     assert seen["sdks"] == ["java"]
 
 
-@pytest.mark.parametrize("names, expected", [("", []), ("java,php", ["--sdk", "java,php"])])
-def test_run_e2e_script_sdk_opt_args(names, expected):
-    script = Path(__file__).resolve().parents[2] / "run-e2e-tests.sh"
-    text = script.read_text()
-    start = text.index("sdk_opt_args() {")
-    func = text[start:text.index("\n}\n", start) + 3]
-    import subprocess
-    out = subprocess.run(["bash", "-c", func + 'sdk_opt_args "$1"', "_", names],
-                         capture_output=True, text=True, check=True).stdout
-    assert out.splitlines() == expected
-
-
 @pytest.mark.parametrize("value", [",", " ", " , "])
 def test_empty_sdk_list_exits_before_any_api_call(monkeypatch, capsys, value):
     monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
@@ -1045,3 +1050,9 @@ def test_find_resource_skips_non_dict_rows(monkeypatch):
     monkeypatch.setattr(e2e_runner, "run_abs", lambda args, *a, **kw: (0, json.dumps(rows)))
     runner = make_runner(sdks=("java",))
     assert runner._find_resource("metrics", "e2e_purchase_revenue", unique=True) == str(REVENUE_METRIC_ID)
+
+
+def test_run_e2e_script_explicitly_requested_501_fails(tmp_path):
+    argv, services = run_e2e_script(tmp_path, "--sdk", "java", expected_exit=1, runner_501=True)
+    assert argv[:2] == ["--sdk", "java"]
+    assert services == "java"

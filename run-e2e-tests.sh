@@ -341,12 +341,10 @@ VERBOSE_OPT=""
 
 # SDKs named with --sdk are passed on so a skipped one fails the run instead
 # of being skipped silently; with no --sdk, unrequested SDKs may be skipped.
-sdk_opt_args() {
-  # Print one arg per line: "--sdk" and the names when SDKs were requested.
-  if [ -n "$1" ]; then printf '%s\n' --sdk "$1"; fi
-}
 SDK_OPT=()
-while IFS= read -r arg; do SDK_OPT+=("$arg"); done < <(sdk_opt_args "$SDK_NAMES")
+if [ -n "$SDK_NAMES" ]; then
+  SDK_OPT=(--sdk "$SDK_NAMES")
+fi
 
 SDK_URLS_OVERRIDE="$SDK_URLS" \
 SDK_SERVICES="$TARGET_SDKS_CSV" \
