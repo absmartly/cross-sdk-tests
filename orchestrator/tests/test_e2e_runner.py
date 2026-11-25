@@ -858,8 +858,11 @@ UNARCHIVE = ["metrics", "archive", str(REVENUE_METRIC_ID), "--unarchive"]
     ("draft", "pending", False, [APPROVE, ACTIVATE]),
     ("draft", "approved", False, [ACTIVATE]),
     # Archived is a separate flag: unarchive, then activate if it is not active.
-    ("active", None, True, [UNARCHIVE]),
+    ("activated", None, True, [UNARCHIVE]),
     ("draft", "approved", True, [UNARCHIVE, ACTIVATE]),
+    # The API reports an active metric as "activated"; "active" is accepted too.
+    ("activated", None, False, []),
+    ("activated", "approved", False, []),
     ("active", None, False, []),
     (None, None, False, []),
 ])
@@ -868,7 +871,9 @@ def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch,
     if status is not None:
         definition["lifecycle_status"] = status
     if review is not None:
-        definition["review_status"] = review
+        # The API's shape: a nested review object (api-mocks MetricReview).
+        definition["review"] = None if review == "none" else {"id": 1, "metric_id": REVENUE_METRIC_ID,
+                                                              "status": review}
     if archived:
         definition["archived"] = True
     fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
@@ -966,7 +971,7 @@ def test_race_relookup_finds_a_draft_with_the_lookup_flags(monkeypatch):
 
 
 def test_unarchive_failure_stops_the_run(monkeypatch):
-    definition = {**REVENUE_DEFINITION, "lifecycle_status": "active", "archived": True}
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "activated", "archived": True}
     fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
 
     def failing(args, *a, **kw):
@@ -999,3 +1004,37 @@ def test_revenue_lookup_searches_by_name(monkeypatch):
     runner._ensure_revenue_metric()
     lookup = next(c for c in fake.calls if c[:2] == ["metrics", "list"])
     assert lookup[lookup.index("--search") + 1] == "e2e_purchase_revenue"
+
+
+def test_top_level_review_status_is_not_read(monkeypatch):
+    # The API has no top-level review_status (it is only a list filter): only the
+    # nested review.status may skip review steps.
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft", "review_status": "approved"}
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate")]
+    assert tail == [REQUEST, APPROVE, ACTIVATE]
+
+
+def test_race_relookup_refuses_duplicate_names(monkeypatch):
+    fake = ResourceAbs([])
+    state = {"lists": 0}
+
+    def raced(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            state["lists"] += 1
+            if state["lists"] == 2:
+                fake.metrics_list = [{"id": 1001, "name": "e2e_purchase_revenue"},
+                                     {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+        if args[:2] == ["metrics", "create"]:
+            return 1, "metric already exists"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", raced)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'"):
+        runner._ensure_revenue_metric()

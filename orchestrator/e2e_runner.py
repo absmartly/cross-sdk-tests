@@ -28,6 +28,9 @@ REVENUE_PROPERTY = "amount"
 # --archived), and a metric left inactive by a failed run is exactly what a
 # retry must find, or it would fail to re-create it ("already exists"). The
 # search keeps the metric on the first page however many metrics exist.
+# A metric's lifecycle_status is "draft" or "activated" (absmartly api-mocks
+# schema Metric.lifecycle_status); "active" is kept for older payloads.
+ACTIVE_LIFECYCLE_STATUSES = ("activated", "active")
 REVENUE_LOOKUP_ARGS = ("--include-drafts", "--archived", "--search", REVENUE_METRIC_NAME)
 # Amount sent with every tracked `purchase` (see _run_sdk_scenario). Only the
 # PLANNED revenue (planned goals x this) is computed; the actual is measured.
@@ -344,10 +347,10 @@ class E2ERunner:
     def _review_and_activate_revenue_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
         """Request review, approve and activate, skipping steps a failed run already did.
 
-        A retry after a run that got past `review request` (review_status
-        "pending") or past `approve` ("approved") must not repeat those steps,
-        which the API may reject (review_status values: absmartly/cli
-        src/commands/metrics/index.ts --review-status pending|approved|none).
+        A retry after a run that got past `review request` (the metric's
+        `review.status` is "pending") or past `approve` ("approved") must not
+        repeat those steps, which the API may reject (absmartly api-mocks
+        schema MetricReview.status).
         """
         actions = []
         if review_status not in ("pending", "approved"):
@@ -376,7 +379,7 @@ class E2ERunner:
             rc, output = run_abs(action, self.profile, output_json=False)
             if rc != 0:
                 raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
-        if status is not None and status != "active":
+        if status is not None and status not in ACTIVE_LIFECYCLE_STATUSES:
             self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
             self._review_and_activate_revenue_metric(metric_id, review_status)
 
@@ -388,7 +391,7 @@ class E2ERunner:
         returns the metric's `type` and `value_source_property` (absmartly/cli
         src/core/metrics/payload.ts). The goal is checked when the payload
         carries it as a nested goal or `goal_id`. Returns the metric's
-        (`lifecycle_status`, `review_status`, `archived`); the first two are
+        (`lifecycle_status`, `review.status`, `archived`); the first two are
         None if absent.
         """
         # `--raw`: without it the CLI prints a summary that has no
@@ -420,9 +423,13 @@ class E2ERunner:
                 + "; ".join(problems)
             )
         status = metric.get("lifecycle_status")
-        review = metric.get("review_status")
+        # The review is a nested object, `review: {status: "pending" | "approved"}`
+        # or null (absmartly api-mocks schema MetricReview). There is no top-level
+        # review_status on a metric; that name is only a `metrics list` filter.
+        review = metric.get("review")
+        review_status = review.get("status") if isinstance(review, dict) else None
         return (status if isinstance(status, str) else None,
-                review if isinstance(review, str) else None,
+                review_status if isinstance(review_status, str) else None,
                 metric.get("archived") is True)
 
     def create_experiment(self) -> None:
