@@ -1,4 +1,11 @@
-# Collector-arrival e2e checks
+# E2E event checks
+
+**Release gate:** the blocking check is the local collector
+(`./run-local-collector-tests.sh`, see README "E2E release gate"). It verifies
+raw SDK publishes field by field without any backend. Everything below runs
+against test-1 and is **optional, non-blocking smoke coverage**: report it
+separately and never let it block a release.
+
 
 These checks assert SDK events arrive, not analysis eligibility/dedup/audience semantics.
 They extend the baseline e2e run (per-SDK exposures, goals and measured revenue on the
