@@ -1228,6 +1228,7 @@ def test_wrapper_post_caps_long_remaining_budget_at_30_seconds(runner):
 
 def test_pre_ready_payload_contains_every_planned_goal(runner):
     case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    case = {**case, "goals": [{"amount": 7}, {"amount": 0.1}]}
     created = {"result": {"contextId": "ctx", "ready": True, "failed": False, "preReadyTracked": True}}
     with patch.object(runner, "_wrapper_post", return_value=created) as post, \
          patch("e2e_runner.requests.delete"), patch("e2e_runner.time.time", return_value=0):
