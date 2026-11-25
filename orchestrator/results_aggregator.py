@@ -242,7 +242,6 @@ def parse_swift_test(output):
     xc_failed = len(re.findall(r"Test Case '.*?' failed", output, re.MULTILINE))
 
     test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
-    st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
     st_failed = len(re.findall(test_line.format(status="failed"), output, re.MULTILINE))
     # A skipped test is in the run total but did not pass: "➔ Test name() skipped."
     # or, with a comment, 'Test name() skipped: "reason"'. A cancelled test
@@ -259,6 +258,9 @@ def parse_swift_test(output):
         st_failed = min(st_total, max(st_failed, failed_runs))
         st_skipped = min(st_skipped, st_total - st_failed)
         st_passed = st_total - st_failed - st_skipped
+    else:
+        # Without run summaries (truncated output), count the per-test pass lines.
+        st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
 
     passed, failed = xc_passed + st_passed, xc_failed + st_failed
     if passed or failed:

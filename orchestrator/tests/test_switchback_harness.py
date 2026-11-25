@@ -639,8 +639,6 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
 # legitimately changes them. The Context Fetch Compression group (270-274) is not one of main's
 # scenarios, so it is excluded from the kept set alongside this group.
-# Last changed when 148, 149 and 188 moved to the rejectsSettersAfterFinalize gate (php-sdk#12), then
-# when scenario 35 listed the released dart-sdk wording for absmartly_sdk 2.2.0.
 MAIN_SHA256 = "1e5ceba2abfc9900d6059b7b492188d36e13923b899c35dd8e8779210b043b00"
 
 

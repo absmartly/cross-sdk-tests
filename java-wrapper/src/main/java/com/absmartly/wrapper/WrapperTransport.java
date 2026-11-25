@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class WrapperTransport implements Transport {
     static final String EMPTY_CONTEXT = "{\"experiments\":[]}";
 
+    // The one HTTP transport both routes share, or null when neither goes over HTTP; closed once.
+    private final Transport http;
     private final Transport fetchDelegate;
     private final Transport publishDelegate;
     private final boolean failLoad;
@@ -32,7 +34,7 @@ final class WrapperTransport implements Transport {
      * @param publishOverHttp publish to the endpoint instead of answering 200 in memory
      */
     WrapperTransport(boolean fetchOverHttp, boolean publishOverHttp, boolean failLoad, long throttleMs) {
-        Transport http = (fetchOverHttp || publishOverHttp) ? JdkHttpTransport.create() : null;
+        this.http = (fetchOverHttp || publishOverHttp) ? JdkHttpTransport.create() : null;
         this.fetchDelegate = fetchOverHttp ? http : null;
         this.publishDelegate = publishOverHttp ? http : null;
         this.failLoad = failLoad;
@@ -86,11 +88,8 @@ final class WrapperTransport implements Transport {
 
     @Override
     public void close() {
-        if (fetchDelegate != null) {
-            fetchDelegate.close();
-        }
-        if (publishDelegate != null) {
-            publishDelegate.close();
+        if (http != null) {
+            http.close();
         }
     }
 }
