@@ -740,3 +740,44 @@ def test_wait_treats_a_count_exactly_at_the_bound_as_ready(monkeypatch, capsys, 
     runner.wait_for_metrics()
     out = capsys.readouterr().out
     assert "Metrics ready" in out and "over-published" not in out
+
+
+def test_wait_stops_early_one_past_the_bound(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([61, 45], [27, 23]))  # 106 == int(100 * 1.05) + 1
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_stops_early_when_nothing_was_planned_but_something_was_measured(monkeypatch, capsys, poll_clock):
+    # units=0: expected 0 with actual 3 can never pass (_within_tolerance needs actual == 0).
+    backend = healthy_backend()
+    runner = make_runner(units=0)
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if sdk_from_filter(args) == "java":
+            if "--metric" in args:
+                return 0, json.dumps([{"metric_id": int(REVENUE_METRIC_ID), "variants": [
+                    {"variant": 0, "unit_count": 0, "count": 0}]}])
+            return 0, json.dumps(count_result([2, 1], [0, 0]))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out

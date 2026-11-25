@@ -26,8 +26,9 @@ REVENUE_PROPERTY = "amount"
 # `metrics list` omits drafts and archived metrics unless asked (absmartly/cli
 # src/commands/metrics/index.ts --include-drafts; src/lib/utils/list-command.ts
 # --archived), and a metric left inactive by a failed run is exactly what a
-# retry must find, or it would fail to re-create it ("already exists").
-REVENUE_LOOKUP_ARGS = ("--include-drafts", "--archived")
+# retry must find, or it would fail to re-create it ("already exists"). The
+# search keeps the metric on the first page however many metrics exist.
+REVENUE_LOOKUP_ARGS = ("--include-drafts", "--archived", "--search", REVENUE_METRIC_NAME)
 # Amount sent with every tracked `purchase` (see _run_sdk_scenario). Only the
 # PLANNED revenue (planned goals x this) is computed; the actual is measured.
 PURCHASE_AMOUNT = 10
@@ -146,17 +147,28 @@ class E2ERunner:
         if self.verbose:
             print(f"  {Colors.CYAN}[debug]{Colors.RESET} {msg}")
 
-    def _find_resource(self, resource_type: str, name: str, extra_args: Sequence[str] = ()) -> Optional[str]:
+    def _find_resource(self, resource_type: str, name: str, extra_args: Sequence[str] = (),
+                       unique: bool = False) -> Optional[str]:
+        """Id of the resource named `name`, or None.
+
+        With `unique`, more than one match is an error rather than a guess: a
+        listing that includes drafts and archived items could otherwise pick a
+        stale row with the same name.
+        """
         rc, output = run_abs([resource_type, "list", "--items", "500", *extra_args], self.profile)
         if rc != 0:
             self.log(f"_find_resource({resource_type}, {name}) failed: {output}")
             return None
         data = parse_json_output(output)
-        if data and isinstance(data, list):
-            for item in data:
-                if item.get("name") == name:
-                    return str(item["id"])
-        return None
+        if not (data and isinstance(data, list)):
+            return None
+        matches = [str(item["id"]) for item in data if isinstance(item, dict) and item.get("name") == name]
+        if unique and len(matches) > 1:
+            raise RuntimeError(
+                f"{len(matches)} {resource_type} named {name!r} (ids {', '.join(matches)}); "
+                "remove or rename the extra ones"
+            )
+        return matches[0] if matches else None
 
     def run(self) -> Dict[str, Any]:
         print(f"\n{Colors.BOLD}E2E Test Run: {self.run_id}{Colors.RESET}")
@@ -298,7 +310,7 @@ class E2ERunner:
         whether or not the experiment lists it (verified live on test-1), so
         the experiment keeps e2e_purchase_count as its only metric.
         """
-        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS)
+        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
         if self.revenue_metric_id:
             self._reuse_revenue_metric(self.revenue_metric_id)
             self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
@@ -315,7 +327,7 @@ class E2ERunner:
         ], self.profile)
 
         if rc != 0 and "already exists" in output:
-            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS)
+            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
             if self.revenue_metric_id:
                 self._reuse_revenue_metric(self.revenue_metric_id)
                 return
@@ -778,7 +790,7 @@ class E2ERunner:
                 )
                 # Counts only grow, so a value already past the over-publish bound can
                 # never pass: that SDK's FAIL is decided and it no longer gates readiness.
-                if any(failure is None and actual is not None and expected > 0
+                if any(failure is None and actual is not None
                        and actual > int(expected * OVER_PUBLISH_TOLERANCE)
                        for _, expected, actual, failure in measurements):
                     decided.add(sdk_name)

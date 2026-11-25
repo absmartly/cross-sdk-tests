@@ -938,3 +938,64 @@ def test_empty_sdk_list_exits_before_any_api_call(monkeypatch, capsys, value):
         e2e_runner.main()
     assert exc.value.code != 0
     assert "No valid SDKs specified" in capsys.readouterr().out
+
+
+def test_race_relookup_finds_a_draft_with_the_lookup_flags(monkeypatch):
+    # The first lookup misses (created concurrently), create says "already exists",
+    # and the re-lookup must still pass --include-drafts --archived to find the draft.
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft"}
+    fake = ResourceAbs([], definition=definition)
+    state = {"lists": 0}
+
+    def raced(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            state["lists"] += 1
+            if state["lists"] == 2:
+                fake.metrics_list = [{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+        if args[:2] == ["metrics", "create"]:
+            fake.calls.append(list(args))
+            return 1, "metric already exists"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", raced)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    assert runner.revenue_metric_id == str(REVENUE_METRIC_ID)
+    assert ACTIVATE in fake.calls
+
+
+def test_unarchive_failure_stops_the_run(monkeypatch):
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "active", "archived": True}
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+
+    def failing(args, *a, **kw):
+        if args[:2] == ["metrics", "archive"]:
+            return 17, "unarchive denied"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", failing)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="unarchive denied"):
+        runner._ensure_revenue_metric()
+
+
+def test_duplicate_revenue_metric_names_are_refused(monkeypatch):
+    fake = ResourceAbs([{"id": 1001, "name": "e2e_purchase_revenue"},
+                        {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'"):
+        runner._ensure_revenue_metric()
+
+
+def test_revenue_lookup_searches_by_name(monkeypatch):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    lookup = next(c for c in fake.calls if c[:2] == ["metrics", "list"])
+    assert lookup[lookup.index("--search") + 1] == "e2e_purchase_revenue"
