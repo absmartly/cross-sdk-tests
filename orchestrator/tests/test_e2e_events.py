@@ -29,6 +29,8 @@ def runner():
     r.case_experiment_id = 102
     r.event_cases_expected = True
     r.case_experiment_name = "e2e-abcd1234-cases"
+    r.prime_experiment_id = 103
+    r.prime_experiment_name = "e2e-abcd1234-prime"
     return r
 
 
@@ -549,7 +551,7 @@ def test_cases_use_their_own_experiments(runner):
 
 def test_case_experiments_are_created_started_and_awaited(runner, monkeypatch):
     runner.unit_type = "34"
-    created = iter([501, 502])
+    created = iter([501, 502, 503])
     def create():
         runner.experiment_id = next(created)
     calls = []
@@ -560,9 +562,9 @@ def test_case_experiments_are_created_started_and_awaited(runner, monkeypatch):
                         lambda: calls.append(("wait", runner.experiment_id)) or True)
     with patch("e2e_runner.run_abs", side_effect=lambda args, *a, **k: calls.append(tuple(args)) or (0, "")):
         runner.create_case_experiments()
-    assert (runner.case_experiment_id, runner.session_experiment_id) == (501, 502)
-    assert runner.experiment_id == 100 and runner.side_experiment_ids == [501, 502]
-    assert calls == [("experiments", "start", "501"), ("wait", 501), ("experiments", "start", "502"), ("wait", 502)]
+    assert (runner.case_experiment_id, runner.prime_experiment_id, runner.session_experiment_id) == (501, 502, 503)
+    assert runner.experiment_id == 100 and runner.side_experiment_ids == [501, 502, 503]
+    assert calls == [("experiments", "start", "501"), ("wait", 501), ("experiments", "start", "502"), ("wait", 502), ("experiments", "start", "503"), ("wait", 503)]
 
 
 def test_invisible_case_experiment_raises(runner, monkeypatch):
@@ -605,7 +607,7 @@ def test_every_wrapper_call_carries_the_case_deadline(runner, name):
     assert {c.kwargs.get("deadline") for c in post.call_args_list} == {50.0}
     treated = [c.args[1]["experimentName"] for c in post.call_args_list if c.args[0].endswith("/treatment")]
     assert treated and runner.experiment_name not in treated
-    assert set(treated) <= {"e2e-abcd1234-cases", "e2e-abcd1234-session"}
+    assert set(treated) <= {"e2e-abcd1234-prime", "e2e-abcd1234-cases", "e2e-abcd1234-session"}
 
 
 def test_case_deadline_never_exceeds_the_run_budget(runner):
@@ -678,7 +680,7 @@ def test_sentinel_reads_the_cases_experiment(runner):
     assert json.loads(args[args.index("--filter") + 1]) == eq_filter(e2e_sdk="javascript", e2e_case="batch")
 
 
-def _side_runner(runner, monkeypatch, start_rc=0, ids=(501, 502)):
+def _side_runner(runner, monkeypatch, start_rc=0, ids=(501, 502, 503)):
     runner.unit_type = "34"
     made = []
     created = iter(ids)
@@ -698,9 +700,10 @@ def test_side_experiments_unit_types_and_names(runner, monkeypatch):
     made, patcher = _side_runner(runner, monkeypatch)
     with patcher:
         runner.create_case_experiments()
-    assert made == [("34", "cases"), ("79", "session")]
+    assert made == [("34", "cases"), ("34", "prime"), ("79", "session")]
     assert runner.case_experiment_name == "e2e-abcd1234-cases"
     assert runner.session_experiment_name == "e2e-abcd1234-session"
+    assert runner.prime_experiment_name == "e2e-abcd1234-prime"
     assert runner.unit_type == "34" and runner.experiment_suffix is None
 
 
@@ -1202,4 +1205,4 @@ def test_case_metrics_are_provisioned_with_case_experiments(runner, monkeypatch)
     monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
     monkeypatch.setattr(runner, "_create_side_experiment", lambda suffix, unit: calls.append(suffix) or (500, f"e2e-{suffix}"))
     runner.create_case_experiments()
-    assert calls == ["metrics", "cases", "session"]
+    assert calls == ["metrics", "cases", "prime", "session"]

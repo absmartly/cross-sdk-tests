@@ -177,6 +177,8 @@ class E2ERunner:
         self.session_experiment_name: Optional[str] = None
         self.case_experiment_id: Optional[int] = None
         self.case_experiment_name: Optional[str] = None
+        self.prime_experiment_id: Optional[int] = None
+        self.prime_experiment_name: Optional[str] = None
         self.experiment_suffix: Optional[str] = None
         # Every side experiment created, so cleanup archives it even after a later failure.
         self.side_experiment_ids: List[int] = []
@@ -444,6 +446,7 @@ class E2ERunner:
             if not session_type:
                 raise RuntimeError(f"Cannot provision session_id: {output}")
         self.case_experiment_id, self.case_experiment_name = self._create_side_experiment("cases", self.unit_type)
+        self.prime_experiment_id, self.prime_experiment_name = self._create_side_experiment("prime", self.unit_type)
         self.session_experiment_id, self.session_experiment_name = self._create_side_experiment("session", session_type)
 
     def _create_side_experiment(self, suffix, unit_type):
@@ -526,7 +529,10 @@ class E2ERunner:
             # The budget bounds the calls themselves, not only the 429 waits.
             if deadline is not None and time.time() >= deadline:
                 raise RuntimeError(f"Wrapper call budget exhausted before POST {url}")
-            response = requests.post(url, json=body or {}, timeout=30)
+            remaining = deadline - time.time() if deadline is not None else 30
+            if remaining <= 0:
+                raise RuntimeError(f"Wrapper call budget exhausted before POST {url}")
+            response = requests.post(url, json=body or {}, timeout=min(30, remaining))
             if response.status_code != 429:
                 response.raise_for_status()
                 return response.json()
@@ -556,7 +562,7 @@ class E2ERunner:
             prime_url = base_url + "/context/" + primed
             primed_ok = False
             try:
-                self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
+                self._wrapper_post(prime_url + "/treatment", {"experimentName": self.prime_experiment_name}, deadline=deadline)
                 self._wrapper_post(prime_url + "/publish", deadline=deadline)
                 primed_ok = True
             finally:
