@@ -301,6 +301,7 @@ def test_duplicate_case_metric_names_are_refused(runner):
     ("draft", {"status": "pending"}, False, [["metrics", "review", "approve"], ["metrics", "activate"]]),
     ("draft", {"status": "approved"}, False, [["metrics", "activate"]]),
     ("activated", None, True, [["metrics", "archive"]]),
+    ("draft", {"status": "approved"}, True, [["metrics", "archive"], ["metrics", "activate"]]),
 ])
 def test_case_metric_left_inactive_is_resumed(runner, status, review, archived, expected):
     # A run whose review/activation failed left the metric draft or archived; resume it.

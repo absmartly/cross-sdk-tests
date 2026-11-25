@@ -465,7 +465,6 @@ def test_aggregate_is_read_after_segments_advance(monkeypatch, capsys):
             return 0, json.dumps(count_result([57, 43], [27, 23]))
         return backend(args, *a, **kw)
 
-    # Before the segmented reads the backend has only one SDK's aggregate.
     assert json.loads(advancing(["--metric", REVENUE_METRIC_ID])[1])[0]["variants"][0]["count"] == 270
     runner = make_runner(sdks=sdks)
     results, _ = run_verify(monkeypatch, capsys, runner, advancing)
@@ -781,3 +780,99 @@ def test_wait_stops_early_when_nothing_was_planned_but_something_was_measured(mo
     runner.wait_for_metrics()
     assert poll_clock.now == 0
     assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_does_not_start_the_revenue_query_after_the_count_read_uses_the_budget(
+        monkeypatch, capsys, poll_clock):
+    # --timeout 6: the count read starts at 0 and returns at 7. The revenue query
+    # must not start at 7, and the run still reaches verification.
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 6
+    started = []
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        started.append((poll_clock.now, "--metric" in args))
+        poll_clock.now += 7
+        return 0, "[]"
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert started == [(0, False)]
+    out = capsys.readouterr().out
+    assert "Metrics incomplete" in out and "java revenue: None/500 (not polled before the deadline)" in out
+    monkeypatch.setattr(e2e_runner, "run_abs", backend)
+    results = runner.verify_metrics()
+    assert results["sdks"]["java"]["status"] == "ok"
+
+
+def test_revenue_query_not_started_when_count_read_ends_exactly_at_deadline(monkeypatch, capsys, poll_clock):
+    runner = make_runner()
+    runner.timeout = 6
+    started = []
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        started.append((poll_clock.now, "--metric" in args))
+        poll_clock.now += 6
+        return 0, "[]"
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert started == [(0, False)]
+
+
+@pytest.mark.parametrize("units, expected_line", [
+    ([30, 20], "java participants: 50/100; java goals: 15/50; java revenue: None/500"),
+])
+def test_wait_reports_the_counts_read_when_the_deadline_skips_revenue(
+        monkeypatch, capsys, poll_clock, units, expected_line):
+    runner = make_runner()
+    runner.timeout = 6
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        poll_clock.now += 7
+        return 0, json.dumps(count_result(units, [8, 7]))
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert expected_line in capsys.readouterr().out
+
+
+def test_wait_detects_over_publishing_even_when_the_deadline_skips_revenue(monkeypatch, capsys, poll_clock):
+    runner = make_runner()
+    runner.timeout = 6
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        poll_clock.now += 7
+        return 0, json.dumps(count_result([114, 86], [27, 23]))  # 200 exposures > int(100 * 1.05)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_unverified_sdk_reports_unknown_not_zero_counts(monkeypatch):
+    backend = healthy_backend()
+
+    def no_segment(args, *a, **kw):
+        if "--filter" in args and "--metric" not in args:
+            return 1, "segmentation rejected"
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", no_segment)
+    runner = make_runner()
+    java = runner.verify_metrics()["sdks"]["java"]
+    assert java["status"] == "fail"
+    assert java["exposures"]["actual"] is None and java["goals"]["actual"] is None

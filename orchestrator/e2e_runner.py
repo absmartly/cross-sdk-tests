@@ -353,10 +353,7 @@ class E2ERunner:
         whether or not the experiment lists it (verified live on test-1), so
         the experiment keeps e2e_purchase_count as its only metric.
         """
-        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
-        if self.revenue_metric_id:
-            self._reuse_revenue_metric(self.revenue_metric_id)
-            self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+        if self._find_and_reuse_revenue_metric():
             return
 
         rc, output = run_abs([
@@ -369,11 +366,8 @@ class E2ERunner:
             "--description", "E2E test metric summing the purchase goal amount property",
         ], self.profile)
 
-        if rc != 0 and "already exists" in output:
-            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
-            if self.revenue_metric_id:
-                self._reuse_revenue_metric(self.revenue_metric_id)
-                return
+        if rc != 0 and "already exists" in output and self._find_and_reuse_revenue_metric():
+            return
         if rc != 0:
             raise RuntimeError(f"Failed to create revenue metric: {output}")
 
@@ -726,6 +720,15 @@ class E2ERunner:
                 if actual != expected:
                     errors.append("Collector goal count/properties differ from planned calls")
         return {"pass": not errors, "errors": errors}
+
+    def _find_and_reuse_revenue_metric(self) -> bool:
+        """Find the existing revenue metric (refusing duplicates) and make it usable."""
+        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
+        if not self.revenue_metric_id:
+            return False
+        self._reuse_revenue_metric(self.revenue_metric_id)
+        self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+        return True
 
     def _review_and_activate_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
         """Request review, approve and activate, skipping steps a failed run already did.
@@ -1169,19 +1172,25 @@ class E2ERunner:
                     pending.append(f"{sdk_name}: not polled before the deadline")
                     continue
                 metric, reason = self._fetch_metrics_for_sdk(sdk_name)
-                revenue, revenue_reason = self._fetch_revenue(sdk_name)
+                # The count read may have used up the budget: never start another
+                # query after the deadline. The unread revenue stays unresolved (strict
+                # verification still reads it), while the counts just read are still
+                # reported and still checked for over-publishing.
+                if time.monotonic() >= deadline:
+                    revenue, revenue_reason = None, "not polled before the deadline"
+                else:
+                    revenue, revenue_reason = self._fetch_revenue(sdk_name)
                 expected_goals = sdk_result["planned_goals"]
+                participants, goals, _ = self._measured_counts(metric)
                 measurements = (
-                    ("participants", sdk_result["planned_exposures"],
-                     self._extract_total_participants(metric) if metric is not None else None, reason),
-                    ("goals", expected_goals,
-                     self._extract_total_goals(metric) if metric is not None else None, reason),
+                    ("participants", sdk_result["planned_exposures"], participants, reason),
+                    ("goals", expected_goals, goals, reason),
                     ("revenue", expected_goals * PURCHASE_AMOUNT, revenue, revenue_reason),
                 )
                 # Counts only grow, so a value already past the over-publish bound can
                 # never pass: that SDK's FAIL is decided and it no longer gates readiness.
                 if any(failure is None and actual is not None
-                       and actual > int(expected * OVER_PUBLISH_TOLERANCE)
+                       and actual > self._upper_bound(expected)
                        for _, expected, actual, failure in measurements):
                     decided.add(sdk_name)
                     continue
@@ -1208,7 +1217,6 @@ class E2ERunner:
             if remaining > 0:
                 time.sleep(min(5, remaining))
 
-        # Verification still reads and strictly gates every segmented metric.
         print(
             f"  {Colors.RED}Metrics incomplete{Colors.RESET} after {self.timeout}s: "
             + "; ".join(pending)
@@ -1373,6 +1381,13 @@ class E2ERunner:
             out.append({"variant": v.get("variant"), "unit_count": int(units), "count": int(count)})
         return out
 
+    def _measured_counts(self, metric: Any) -> Tuple[Optional[int], Optional[int], Optional[List[Dict[str, int]]]]:
+        """(exposures, goals, per-variant rows) from one parse of a MetricResult; Nones if unmeasured."""
+        variants = self._variant_counts(metric) if metric is not None else None
+        if not variants:
+            return None, None, variants
+        return (sum(v["unit_count"] for v in variants), sum(v["count"] for v in variants), variants)
+
     def _extract_total_participants(self, metrics: Any) -> int:
         """Sum of variants[].unit_count (exposed units); 0 if unavailable."""
         counts = self._variant_counts(metrics)
@@ -1382,6 +1397,11 @@ class E2ERunner:
         """Sum of variants[].count (goal_unique_count numerator); 0 if unavailable."""
         counts = self._variant_counts(metrics)
         return sum(v["count"] for v in counts) if counts else 0
+
+    @staticmethod
+    def _upper_bound(expected: int) -> int:
+        """Largest count that still passes for `expected` (the over-publish bound)."""
+        return int(expected * OVER_PUBLISH_TOLERANCE)
 
     def _within_tolerance(self, expected: int, actual: Optional[int]) -> bool:
         """Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE.
@@ -1394,7 +1414,7 @@ class E2ERunner:
             return False
         if expected <= 0:
             return actual == 0
-        return expected <= actual <= int(expected * OVER_PUBLISH_TOLERANCE)
+        return expected <= actual <= self._upper_bound(expected)
 
     @staticmethod
     def sdk_segment_filter(sdk_name: str) -> str:
@@ -1608,7 +1628,7 @@ class E2ERunner:
                     f"aggregate total ({agg_participants}); the backend appears "
                     "to ignore the segmentation filter"
                 )
-            elif sum(exp_actuals) > int(agg_participants * OVER_PUBLISH_TOLERANCE):
+            elif sum(exp_actuals) > self._upper_bound(agg_participants):
                 seg_warning = (
                     f"sum of per-SDK participants ({sum(exp_actuals)}) exceeds the "
                     f"aggregate total ({agg_participants}) beyond tolerance; "
@@ -1654,10 +1674,7 @@ class E2ERunner:
                 if has_errors else None
             )
 
-            metric = segmented.get(sdk_name)
-            variants = self._variant_counts(metric) if metric is not None else None
-            actual_exposures = sum(v["unit_count"] for v in variants) if variants else None
-            actual_goals = sum(v["count"] for v in variants) if variants else None
+            actual_exposures, actual_goals, variants = self._measured_counts(segmented.get(sdk_name))
 
             reason = unverified_reason.get(sdk_name)
             if reason is not None:
@@ -1687,9 +1704,9 @@ class E2ERunner:
             note = None
             if rev_reason is not None:
                 note = f"unverified: revenue {rev_reason}"
-            elif actual_exposures > int(expected_exposures * OVER_PUBLISH_TOLERANCE):
+            elif actual_exposures > self._upper_bound(expected_exposures):
                 note = f"over-published exposures ({actual_exposures} > {expected_exposures})"
-            elif actual_goals > int(expected_goals * OVER_PUBLISH_TOLERANCE):
+            elif actual_goals > self._upper_bound(expected_goals):
                 note = f"over-published goals ({actual_goals} > {expected_goals})"
             elif not exposures_pass or not goals_pass:
                 note = (
