@@ -520,17 +520,20 @@ class E2ERunner:
             prime.pop("preReadyGoals")
             primed = self._wrapper_post(base_url + "/context", prime, deadline=deadline)["result"]["contextId"]
             prime_url = base_url + "/context/" + primed
+            primed_ok = False
             try:
                 self._wrapper_post(prime_url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
                 self._wrapper_post(prime_url + "/publish", deadline=deadline)
+                primed_ok = True
             finally:
-                self._delete_context(prime_url)
+                self._delete_context(prime_url, failing=not primed_ok)
         created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
         result = created.get("result", {})
         context_id = result.get("contextId")
         if not context_id:
             raise RuntimeError(f"Context was not created: {created}")
         url = base_url + "/context/" + context_id
+        sent_ok = False
         try:
             # Inside the try: a context the wrapper reports as not ready is still deleted.
             if result.get("ready") is not True or result.get("failed"):
@@ -548,13 +551,13 @@ class E2ERunner:
                     self._wrapper_post(url + "/track", body, deadline=deadline)
             # Exactly one publish for the batch; close case must never publish explicitly.
             self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"), deadline=deadline)
+            sent_ok = True
         finally:
-            self._delete_context(url)
+            self._delete_context(url, failing=not sent_ok)
 
     @staticmethod
-    def _delete_context(url):
+    def _delete_context(url, failing=False):
         # A failing cleanup DELETE must not replace the error that ended the case.
-        failing = sys.exc_info()[1] is not None
         try:
             requests.delete(url, timeout=10).raise_for_status()
         except requests.RequestException:

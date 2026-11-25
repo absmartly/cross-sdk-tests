@@ -882,3 +882,67 @@ def test_failing_cleanup_delete_raises_when_the_case_succeeded():
     bad = Mock(); bad.raise_for_status.side_effect = real_requests.HTTPError("500 on DELETE")
     with patch("e2e_runner.requests.delete", return_value=bad), pytest.raises(real_requests.HTTPError):
         E2ERunner._delete_context("http://wrapper/context/c")
+
+
+def _ok(reply):
+    return Mock(status_code=200, json=lambda: {"result": reply})
+
+
+def _http_error(message):
+    import requests as real_requests
+    bad = Mock()
+    bad.raise_for_status.side_effect = real_requests.HTTPError(message)
+    return bad
+
+
+def test_failing_priming_delete_keeps_the_priming_error(runner):
+    # D4: the priming treatment fails and its DELETE fails too; the treatment error wins.
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    def post(url, **kw):
+        if url.endswith("/p/treatment"):
+            raise RuntimeError("priming treatment failed")
+        return _ok({"contextId": "p", "ready": True, "failed": False})
+    with patch("e2e_runner.requests.post", side_effect=post), \
+         patch("e2e_runner.requests.delete", return_value=_http_error("500 on DELETE")), \
+         pytest.raises(RuntimeError, match="priming treatment failed"):
+        runner._send_event_case("javascript", "http://wrapper", case)
+
+
+def test_failing_priming_delete_is_reported(runner):
+    # D5: an otherwise good priming context whose DELETE fails is not silently ignored.
+    import requests as real_requests
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "pre_ready")
+    deletes = []
+    def delete(url, **kw):
+        deletes.append(url)
+        return _http_error("500 on DELETE") if url.endswith("/p") else Mock()
+    with patch("e2e_runner.requests.post", return_value=_ok({"contextId": "p", "ready": True, "failed": False})), \
+         patch("e2e_runner.requests.delete", side_effect=delete), pytest.raises(real_requests.HTTPError):
+        runner._send_event_case("javascript", "http://wrapper", case)
+    assert deletes == ["http://wrapper/context/p"]
+
+
+@pytest.mark.parametrize("name", ["batch", "pre_ready"])
+def test_failing_delete_after_a_good_case_is_reported(runner, name):
+    # D8: a case that sent everything but cannot delete its context raises through _send_event_case.
+    import requests as real_requests
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == name)
+    reply = {"contextId": "c", "ready": True, "failed": False, "preReadyTracked": True}
+    def delete(url, **kw):
+        return _http_error("500 on DELETE") if url.endswith("/c") else Mock()
+    with patch("e2e_runner.requests.post", return_value=_ok(reply)), \
+         patch("e2e_runner.requests.delete", side_effect=delete), pytest.raises(real_requests.HTTPError):
+        runner._send_event_case("javascript", "http://wrapper", case)
+
+
+def test_good_case_inside_an_outer_handler_still_reports_a_failed_delete(runner):
+    # The flag is local: an exception an outer except block is handling does not hide the DELETE error.
+    import requests as real_requests
+    case = next(c for c in case_specs(runner.run_id, "javascript") if c["name"] == "batch")
+    with patch("e2e_runner.requests.post", return_value=_ok({"contextId": "c", "ready": True, "failed": False})), \
+         patch("e2e_runner.requests.delete", return_value=_http_error("500 on DELETE")):
+        try:
+            raise ValueError("outer")
+        except ValueError:
+            with pytest.raises(real_requests.HTTPError):
+                runner._send_event_case("javascript", "http://wrapper", case)
