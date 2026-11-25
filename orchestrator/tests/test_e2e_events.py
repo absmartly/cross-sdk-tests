@@ -401,6 +401,8 @@ def test_pre_ready_primes_exposure_before_goal_context(runner):
     calls = _sequence(runner, "pre_ready")
     kinds = [url.rsplit("/", 1)[-1] for url, _ in calls]
     assert kinds == ["context", "treatment", "publish", "context", "treatment", "publish"]
+    treatments = [body["experimentName"] for url, body in calls if url.endswith("/treatment")]
+    assert treatments == ["e2e-abcd1234-prime", "e2e-abcd1234-cases"]
 
 
 def test_duplicate_exposures_fail_raw_arrival(runner):
@@ -1206,3 +1208,11 @@ def test_case_metrics_are_provisioned_with_case_experiments(runner, monkeypatch)
     monkeypatch.setattr(runner, "_create_side_experiment", lambda suffix, unit: calls.append(suffix) or (500, f"e2e-{suffix}"))
     runner.create_case_experiments()
     assert calls == ["metrics", "cases", "prime", "session"]
+
+
+def test_wrapper_post_uses_remaining_budget_as_timeout(runner):
+    runner.timeout = 40
+    with patch("e2e_runner.time.time", return_value=35), \
+         patch("e2e_runner.requests.post", return_value=Mock(status_code=200, json=lambda: {"result": {}})) as post:
+        runner._wrapper_post("http://wrapper/context", {}, deadline=40)
+    assert post.call_args.kwargs["timeout"] == 5
