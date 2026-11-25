@@ -156,3 +156,20 @@ test('rejects malformed batches atomically, including non-e2e usage', async () =
     assert.equal(h.calls.length, 0);
   }
 });
+
+
+test('empty pre-ready batch still refuses an already-ready SDK', async () => {
+  const h = harness({ unexpectedlyReady: true });
+  const result = await h.create({ mode: 'e2e', preReadyGoals: [] });
+  assert.equal(result.status, 500);
+  assert.equal(h.calls.includes('fetch'), false);
+});
+
+test('released pre-ready provider uses the real client for later fetches', async () => {
+  const h = harness();
+  const result = await h.create({ mode: 'e2e', preReadyGoals: goals });
+  assert.equal(result.status, 200);
+  const before = h.calls.filter(call => call === 'fetch').length;
+  await h.sdk.provider.getContextData(h.sdk);
+  assert.equal(h.calls.filter(call => call === 'fetch').length, before + 1);
+});

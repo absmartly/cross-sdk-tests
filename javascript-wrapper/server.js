@@ -323,10 +323,14 @@ app.post('/context', async (req, res) => {
         // provider's real client request until all tracks have been made.
         let releaseFetch;
         const deferredData = new Promise((resolve, reject) => { releaseFetch = { resolve, reject }; });
+        let released = false;
         const gatedProvider = {
           getContextData(sdk, requestOptions) {
-            gatedProvider.request = () => sdk.getClient().getContext(requestOptions)
-              .then(releaseFetch.resolve, releaseFetch.reject);
+            if (released) return sdk.getClient().getContext(requestOptions);
+            gatedProvider.request = () => {
+              released = true;
+              return sdk.getClient().getContext(requestOptions).then(releaseFetch.resolve, releaseFetch.reject);
+            };
             return deferredData;
           }
         };
