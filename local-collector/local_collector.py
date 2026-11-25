@@ -22,6 +22,7 @@ collector never derives, merges or drops events. Validation lives in
 orchestrator/local_collector_gate.py.
 """
 
+import base64
 import gzip
 import json
 import os
@@ -120,11 +121,17 @@ def make_handler(store):
             return [[name, value] for name, value in self.headers.items()]
 
         def _read_body(self):
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length) if length else b""
-            if (self.headers.get("Content-Encoding") or "").lower() == "gzip":
-                return raw, gzip.decompress(raw)
-            return raw, raw
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length < 0 or length > 16 * 1024 * 1024:
+                    raise ValueError("invalid Content-Length")
+                raw = self.rfile.read(length) if length else b""
+                if len(raw) != length:
+                    raise ValueError("truncated request body")
+                decoded = gzip.decompress(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
+                return raw, decoded, None
+            except (ValueError, EOFError, OSError) as exc:
+                return b"", b"", str(exc)
 
         def do_GET(self):
             path = urlsplit(self.path).path
@@ -144,14 +151,18 @@ def make_handler(store):
             path = urlsplit(self.path).path
             if _strip_prefix(path) != "/context":
                 return self._send(404, {"error": "not found"})
-            raw, decoded = self._read_body()
+            raw, decoded, body_error = self._read_body()
             record = {"method": "PUT", "path": self.path, "headers": self._headers(),
                       "receivedAt": int(time.time() * 1000),
-                      "rawBody": decoded.decode("utf-8", errors="replace"),
+                      "rawBodyBytes": base64.b64encode(raw).decode("ascii"),
+                      "decodedBodyBytes": base64.b64encode(decoded).decode("ascii"),
                       "contentEncoding": self.headers.get("Content-Encoding")}
+            if body_error:
+                return self._send(400, {"error": body_error})
+            record["rawBody"] = decoded.decode("utf-8", errors="strict")
             try:
                 record["json"] = json.loads(decoded)
-            except ValueError as exc:
+            except (ValueError, UnicodeDecodeError) as exc:
                 record["json"] = None
                 record["parseError"] = str(exc)
             store.add_publish(record)

@@ -56,6 +56,7 @@ class CollectorServerTest(unittest.TestCase):
         _, stored = self.request("GET", "/publishes")
         record = stored["publishes"][0]
         self.assertEqual(record["rawBody"], raw)
+        self.assertEqual(__import__("base64").b64decode(record["decodedBodyBytes"]), raw.encode("utf-8"))
         self.assertEqual(record["json"], json.loads(raw))
         self.assertIsNone(record["json"]["goals"][0]["properties"]["n"])
         self.assertIn(["X-API-Key", "k"], record["headers"])
@@ -201,10 +202,24 @@ class GateRunTest(unittest.TestCase):
             record["headers"][0] = ["X-Agent", "absmartly-python-sdk/0.4.0"]
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
-             mock.patch.object(gate.requests, "delete"):
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_malformed_content_length_and_gzip_return_400(self):
+        status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
+        self.assertEqual(status, 400)
+        status, _ = self.request("PUT", "/context", b"not-gzip", {"Content-Encoding": "gzip"})
+        self.assertEqual(status, 400)
+
+    def test_gate_requires_application_environment_and_context_headers(self):
+        record = {"seq": 0, "json": {"hashed": True}, "headers": [["X-Agent", "absmartly-go-sdk/1"]]}
+        result = gate.verify("go", [], [record], "e2e-tests", "production", True)
+        self.assertFalse(result["pass"])
+        self.assertTrue(any("application header" in e for e in result["errors"]))

@@ -132,9 +132,9 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             or (not xagent_versioned and agent == prefix))
         if not agent_ok:
             errors.append(f"publish #{record['seq']} agent {agent!r} is not {prefix}{'/<version>' if xagent_versioned else ''}")
-        if _header(record, "X-Application") not in (application, None) and application:
+        if _header(record, "X-Application") != application:
             errors.append(f"publish #{record['seq']} application header {_header(record, 'X-Application')!r}")
-        if _header(record, "X-Environment") not in (environment, None) and environment:
+        if _header(record, "X-Environment") != environment:
             errors.append(f"publish #{record['seq']} environment header {_header(record, 'X-Environment')!r}")
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
@@ -250,6 +250,18 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     plans = {sdk: plan(run_id, sdk) for sdk in sdks}
     driver_errors = {sdk: drive(sdk, url, plans[sdk]) for sdk, url in sdks.items()}
     publishes = fetch_publishes(collector_url)
+    try:
+        request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests", [])
+    except requests.RequestException as exc:
+        results.setdefault("transport_errors", []).append(f"collector request log unavailable: {exc}")
+        request_rows = []
+    for request in request_rows:
+        if _header(request, "X-Application") != application:
+            results_error = f"context request application header {_header(request, 'X-Application')!r}"
+            results.setdefault("transport_errors", []).append(results_error)
+        if _header(request, "X-Environment") != environment:
+            results.setdefault("transport_errors", []).append(f"context request environment header {_header(request, 'X-Environment')!r}")
+
     for sdk in sdks:
         entry = policy.get(sdk, {})
         unsupported = entry.get("e2e", {}).get("unsupported", {})
@@ -261,6 +273,8 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
         outcome["pass"] = not outcome["errors"]
         results["sdks"][sdk] = outcome
         results["overall_pass"] &= outcome["pass"]
+    if results.get("transport_errors"):
+        results["overall_pass"] = False
     return results
 
 
