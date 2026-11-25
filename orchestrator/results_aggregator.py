@@ -341,6 +341,12 @@ def run_level_status(stats):
         return "DOWN"
     if stats.get("capabilities_failed"):
         return "CAPS FAIL"
+    if stats.get("measurement_failed"):
+        return "MEASURE FAIL"
+    if stats.get("harness_errors"):
+        # The harness failed during a scenario: the run fails, but the SDK is
+        # not blamed (harness errors are not in the failed tally).
+        return "HARNESS ERROR"
     if stats.get("capability_policy_violations"):
         return "CAPS POLICY"
     if stats.get("no_tests_run"):
@@ -350,6 +356,38 @@ def run_level_status(stats):
     if stats.get("consistency_unchecked"):
         return "UNCHECKED"
     return None
+
+
+def verify_status_lines(report, sdk, total):
+    """verify_sdk.sh's per-SDK lines, from test_runner's report.json.
+
+    The status comes from the scenario results and from the report's run-level
+    measurement failure: a failed measurement skips the scenarios that require
+    the capability (skips count as passes) but fails the SDK, so it must not
+    print PASS.
+    """
+    stats = report.get("sdk_stats", {}).get(sdk, {})
+    if stats.get("service_failed"):
+        return [f"\n{sdk}: DOWN"]
+    not_passed = [(sc["name"], sc["sdks"][sdk]) for sc in report.get("results", [])
+                  if not sc["sdks"].get(sdk, {}).get("passed", True)]
+    # A harness error with no SDK failure (e.g. a context-server control call
+    # failed) is the harness's, not the SDK's: list it apart, never as a FAIL.
+    harness = [(n, res) for n, res in not_passed if res.get("harness_error") and not res.get("failures")]
+    fails = [(n, res) for n, res in not_passed if (n, res) not in harness]
+    mark = "PASS" if not fails and not harness else ("FAIL" if fails else "HARNESS ERROR")
+    measurement_failed = stats.get("measurement_failed") or {}
+    if measurement_failed:
+        mark = "MEASURE FAIL" if mark == "PASS" else f"{mark} + MEASURE FAIL"
+    lines = [f"\n{sdk}: {total - len(not_passed)}/{total} {mark}"]
+    for cap, reason in sorted(measurement_failed.items()):
+        lines.append(f"  - MEASURE FAIL {cap} :: {str(reason)[:160]}")
+    for f, res in fails:
+        det = res.get("failures") or [{"error": res.get("error")}]
+        lines.append(f"  - FAIL {f} :: {json.dumps(det[:1])[:160]}")
+    for f, res in harness:
+        lines.append(f"  - HARNESS ERROR {f} :: {str(res['harness_error'])[:160]}")
+    return lines
 
 
 def load_cross_sdk_report(report_path):
@@ -384,6 +422,7 @@ def load_cross_sdk_report(report_path):
                 "failed": failed,
                 "total": tested,
                 "skipped": skipped,
+                "harness_errors": stats.get("harness_errors", 0),
                 "forced_status": forced_status,
             }
         return results
@@ -517,11 +556,15 @@ def print_results_table(unit_results, cross_sdk_results, all_sdks, has_unit, has
             c_skipped = cross.get("skipped") or 0
             forced_status = cross.get("forced_status")
             if forced_status:
-                # A run-level failure flag (DOWN / CAPS FAIL / CAPS POLICY /
-                # NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
+                # A run-level failure flag (DOWN / CAPS FAIL / MEASURE FAIL /
+                # HARNESS ERROR / CAPS POLICY / NO TESTS RUN / INCONSISTENT / UNCHECKED) overrides the
                 # passed/failed tally: the run failed even if zero individual
-                # scenarios reported a failure.
-                cells.append(f"{RED}{forced_status}{RESET}")
+                # scenarios reported a failure. SDK failures are still shown next
+                # to it, so e.g. a harness error never hides them.
+                label = forced_status
+                if c_failed:
+                    label = f"{format_result(c_passed, c_failed, c_total, c_skipped)} + {forced_status}"
+                cells.append(f"{RED}{label}{RESET}")
                 cross_sdk_total += 1
                 any_failure = True
             else:
