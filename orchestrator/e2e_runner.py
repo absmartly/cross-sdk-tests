@@ -791,12 +791,13 @@ class E2ERunner:
                     continue
                 metric, reason = self._fetch_metrics_for_sdk(sdk_name)
                 # The count read may have used up the budget: never start another
-                # query after the deadline. The unread revenue stays unresolved and
-                # strict verification still reads it.
+                # query after the deadline. The unread revenue stays unresolved (strict
+                # verification still reads it), while the counts just read are still
+                # reported and still checked for over-publishing.
                 if time.monotonic() >= deadline:
-                    pending.append(f"{sdk_name} revenue: not polled before the deadline")
-                    continue
-                revenue, revenue_reason = self._fetch_revenue(sdk_name)
+                    revenue, revenue_reason = None, "not polled before the deadline"
+                else:
+                    revenue, revenue_reason = self._fetch_revenue(sdk_name)
                 expected_goals = sdk_result["planned_goals"]
                 participants, goals, _ = self._measured_counts(metric)
                 measurements = (

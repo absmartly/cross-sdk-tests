@@ -367,7 +367,6 @@ class SdkRevisionPinTest(unittest.TestCase):
     def test_checkout_helper_checks_out_the_requested_sha(self):
         """Run sdk-checkout.sh's fetch_and_checkout_revision against a local remote whose tip
         is newer than the pin: the checked-out HEAD must be the pin, not the tip."""
-        import subprocess
         import tempfile
 
         def git(*args, cwd):
