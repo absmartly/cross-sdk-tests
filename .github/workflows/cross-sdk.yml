@@ -286,7 +286,7 @@ jobs:
           source sdk-checkout.sh
           for repo in "${{ matrix.sdk }}"; do
             branch="${SDK_BRANCHES[$repo]:-main}"
-            git clone --depth 1 --branch "$branch" "https://github.com/absmartly/$repo.git" "$repo"
+            git clone --depth 1 --branch "$branch" "https://x-access-token:${{ github.token }}@github.com/absmartly/$repo.git" "$repo"
           done
 
       - name: Build local collector, wrapper and orchestrator
