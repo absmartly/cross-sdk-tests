@@ -1579,16 +1579,19 @@ class TestOrchestrator:
                     if not harness_exc.served_fault:
                         failures.extend(self.validate_step(step_index, action, data, expected, responses))
                     raise
-                reference_events: List[Any] = []
+                # Unordered steps record their events in expected order, so references
+                # (sameShapeAs) use the same positions as validation.
+                reference_events: Optional[List[Any]] = (
+                    [] if expected.get("unorderedEvents") is True else None
+                )
                 step_failures = self.validate_step(
                     step_index, action, data, expected, responses, reference_events=reference_events
                 )
                 if step_failures:
                     failures.extend(step_failures)
-                # References use the same expected-event positions as validation. Keep the raw
-                # response untouched for observations and diagnostics.
+                # Keep the raw response untouched for observations and diagnostics.
                 responses[step_index] = data
-                if (expected.get("unorderedEvents") is True and isinstance(data, dict)
+                if (reference_events is not None and isinstance(data, dict)
                         and isinstance(data.get("events"), list)):
                     responses[step_index] = {**data, "events": reference_events}
                 failures.extend(wire_failures)

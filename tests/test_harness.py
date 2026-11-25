@@ -1423,6 +1423,9 @@ class StaticRepoChecks(unittest.TestCase):
         "elixir-wrapper/lib/elixir_wrapper/router.ex": "integralFloatAttributes: ElixirWrapper.SwitchbackSelfTest.switchback?()",
         "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java":
             'response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());',
+        "dart-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
+        "flutter-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
+        "dotnet-wrapper/Program.cs": "integralFloatAttributes = SwitchbackSelfTest.RunIntegralFloat(),",
     }
     INTEGRAL_FLOAT_PROBES = {
         "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
@@ -1433,6 +1436,16 @@ class StaticRepoChecks(unittest.TestCase):
         "cpp-wrapper/switchback_self_test.h": '"sb_float_value", 0',
         "elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex": '"sb_float_value", 0',
         "java-wrapper/src/main/java/com/absmartly/wrapper/SwitchbackSelfTest.java": '"integral float", "sb_float", 0',
+        "dart-wrapper/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
+        "flutter-wrapper/lib/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
+        "dotnet-wrapper/SwitchbackSelfTest.cs": '"integral float", "sb_integral_float", 0',
+    }
+    # The cached capability must gate the integral-float probe on the real switchback
+    # battery, not on a stub that always passes.
+    INTEGRAL_FLOAT_WIRING = {
+        "dotnet-wrapper/SwitchbackSelfTest.cs": "IntegralFloatResult = new(() => RunIntegralFloatAfter(Run));",
+        "dart-wrapper/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
+        "flutter-wrapper/lib/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
     }
 
     def test_integral_float_attributes_comes_from_the_switchback_self_test(self):
@@ -1440,7 +1453,7 @@ class StaticRepoChecks(unittest.TestCase):
         requiring = {sdk for sdk, e in policy["sdks"].items() if "integralFloatAttributes" in e["required"]}
         paths = {path.split("-wrapper/")[0] for path in self.INTEGRAL_FLOAT_SOURCES}
         self.assertEqual(requiring - {"java-v1"}, paths)
-        for table in (self.INTEGRAL_FLOAT_SOURCES, self.INTEGRAL_FLOAT_PROBES):
+        for table in (self.INTEGRAL_FLOAT_SOURCES, self.INTEGRAL_FLOAT_PROBES, self.INTEGRAL_FLOAT_WIRING):
             for path, needle in table.items():
                 with self.subTest(path=path):
                     with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:

@@ -339,9 +339,19 @@ trap cleanup_containers EXIT
 VERBOSE_OPT=""
 [ "$VERBOSE" = true ] && VERBOSE_OPT="--verbose"
 
+# SDKs named with --sdk are passed on so a skipped one fails the run instead
+# of being skipped silently; with no --sdk, unrequested SDKs may be skipped.
+sdk_opt_args() {
+  # Print one arg per line: "--sdk" and the names when SDKs were requested.
+  if [ -n "$1" ]; then printf '%s\n' --sdk "$1"; fi
+}
+SDK_OPT=()
+while IFS= read -r arg; do SDK_OPT+=("$arg"); done < <(sdk_opt_args "$SDK_NAMES")
+
 SDK_URLS_OVERRIDE="$SDK_URLS" \
 SDK_SERVICES="$TARGET_SDKS_CSV" \
 python3 orchestrator/e2e_runner.py \
+  "${SDK_OPT[@]}" \
   --units "$UNITS" \
   --profile "$PROFILE" \
   --timeout "$TIMEOUT_VAL" \

@@ -125,6 +125,34 @@ Future<bool>? _switchback;
 
 Future<bool> runSwitchback() => _switchback ??= _runSafely();
 
+Future<bool>? _integralFloat;
+
+/// Behind the `integralFloatAttributes` capability (scenario 426): an
+/// attribute value 3.0, decoded by jsonDecode as POST /context/{id}/attribute
+/// decodes it, gives no cluster value, while 3 keys "3". Under seed (0, 1) and
+/// 10 arms "3" draws 5 and a lax "3.0" would draw 7, so neither a lax reader
+/// nor one rejecting every number passes. Requires the switchback battery
+/// first.
+Future<bool> runIntegralFloat() =>
+    _integralFloat ??= runIntegralFloatAfter(runSwitchback);
+
+/// The integral-float probe gated on [battery]: false without running the
+/// probe when the battery fails. Takes the battery so tests can stub it.
+Future<bool> runIntegralFloatAfter(Future<bool> Function() battery) async {
+  if (!await battery()) {
+    return false;
+  }
+  try {
+    final bool passed = await checkIntegralFloat(
+        jsonDecode('{"f": 3.0, "i": 3}') as Map<String, dynamic>);
+    print('[integralFloatAttributes probe] ${passed ? 'PASSED' : 'FAILED'}');
+    return passed;
+  } catch (error) {
+    print('[integralFloatAttributes probe] FAILED with exception: $error');
+    return false;
+  }
+}
+
 Future<bool> _runSafely() async {
   try {
     if (!_checkGoldenSample() || !await _checkContextServing()) {
@@ -300,17 +328,7 @@ Future<bool> _checkContextServing() async {
 
   final log = _ExposureLog();
   final publisher = _Publisher();
-  final client = Client.create(
-      ClientConfig.create()
-          .setEndpoint('http://dummy')
-          .setAPIKey('dummy')
-          .setApplication('test')
-          .setEnvironment('test'),
-      httpClient: _NoHttpClient());
-  final sdk = ABSmartly(ABSmartlyConfig.create()
-      .setClient(client)
-      .setContextPublisher(publisher)
-      .setContextEventLogger(log));
+  final sdk = _sdk(log, publisher);
   // unit_user is set first, so declared order, not context order, must pick
   // the serving unit.
   final config = ContextConfig()
@@ -328,23 +346,82 @@ Future<bool> _checkContextServing() async {
   context.setAttribute('profile', {'city': 'market_1', 'zone': 'market_2'});
   context.setAttribute('store_number', 123456789);
 
-  bool expectServed(String check, String name, int treatment,
-      [List<_E> expected = const []]) {
-    final int before = log.exposures.length;
-    final int actual = context.getTreatment(name);
-    final emitted = log.exposures.sublist(before);
-    bool ok = actual == treatment && emitted.length == expected.length;
-    for (int i = 0; ok && i < expected.length; i++) {
-      ok = expected[i].matches(emitted[i]);
-    }
-    if (!ok) {
-      print('$_prefix check $check FAILED: expected treatment=$treatment '
-          'exposures=$expected, got treatment=$actual exposures='
-          '${emitted.map((e) => e.toMap()).toList()}');
-    }
-    return ok;
-  }
+  return _servingChecks(context, log, publisher, _expecter(context, log));
+}
 
+/// Serves `sb_integral_float` (keyed by attribute values['f']) and
+/// `sb_integer` (values['i']) through a real Context; true when the float
+/// gives no value (control 0, no exposure) and the integer serves variant 5.
+Future<bool> checkIntegralFloat(Map<String, dynamic> values) async {
+  final data = ContextData.fromMap({
+    'experiments': [
+      _switchbackExperiment(531, 'sb_integral_float', 0, 1, 10, [
+        ['unit_serving', 'v_float']
+      ]),
+      _switchbackExperiment(532, 'sb_integer', 0, 1, 10, [
+        ['unit_serving', 'v_int']
+      ]),
+    ]
+  });
+  final log = _ExposureLog();
+  final context = _sdk(log, _Publisher()).createContextWith(
+      ContextConfig()
+        ..setUnit('unit_serving', 'serving-9')
+        ..setPublishDelay(-1)
+        ..setRefreshInterval(0),
+      data);
+  await context.waitUntilReady();
+  try {
+    if (context.isFailed()) {
+      print('[integralFloatAttributes probe] FAILED: context failed to load');
+      return false;
+    }
+    context.setAttribute('v_float', values['f']);
+    context.setAttribute('v_int', values['i']);
+    final expectServed = _expecter(context, log);
+    return expectServed('integral float', 'sb_integral_float', 0) &&
+        expectServed('integer', 'sb_integer', 5,
+            [const _E(532, 'sb_integer', 'unit_serving', 5)]);
+  } finally {
+    await context.close();
+  }
+}
+
+ABSmartly _sdk(_ExposureLog log, _Publisher publisher) => ABSmartly(
+    ABSmartlyConfig.create()
+        .setClient(Client.create(
+            ClientConfig.create()
+                .setEndpoint('http://dummy')
+                .setAPIKey('dummy')
+                .setApplication('test')
+                .setEnvironment('test'),
+            httpClient: _NoHttpClient()))
+        .setContextPublisher(publisher)
+        .setContextEventLogger(log));
+
+typedef _ExpectServed = bool Function(String check, String name, int treatment,
+    [List<_E> expected]);
+
+_ExpectServed _expecter(Context context, _ExposureLog log) =>
+    (String check, String name, int treatment,
+        [List<_E> expected = const []]) {
+      final int before = log.exposures.length;
+      final int actual = context.getTreatment(name);
+      final emitted = log.exposures.sublist(before);
+      bool ok = actual == treatment && emitted.length == expected.length;
+      for (int i = 0; ok && i < expected.length; i++) {
+        ok = expected[i].matches(emitted[i]);
+      }
+      if (!ok) {
+        print('$_prefix check $check FAILED: expected treatment=$treatment '
+            'exposures=$expected, got treatment=$actual exposures='
+            '${emitted.map((e) => e.toMap()).toList()}');
+      }
+      return ok;
+    };
+
+Future<bool> _servingChecks(Context context, _ExposureLog log,
+    _Publisher publisher, _ExpectServed expectServed) async {
   try {
     final served = expectServed('agreement', 'sb_agree', 3,
             [const _E(521, 'sb_agree', 'unit_serving', 3)]) &&

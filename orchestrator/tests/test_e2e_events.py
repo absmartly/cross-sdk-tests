@@ -322,26 +322,6 @@ def test_python_null_value_is_reviewed_exception(runner):
     assert runner._case_skip("go", next(c for c in case_specs(runner.run_id, "go") if c["name"] == "null_value")) is None
 
 
-def test_poll_respects_deadline(runner):
-    clock = [0.0]
-    def slow_query(mid, sdk, name, *rest, **kw):
-        # Every SDK's batch lands except the last, so the loop must walk all of them.
-        clock[0] += 100
-        count = BATCH_SIZE if sdk != "sdk21" else 0
-        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
-    runner.timeout = 150
-    runner.sdks = {f"sdk{i}": "http://x" for i in range(22)}
-    runner.sdk_results = {s: {"status": "ok", "exposures_sent": 1} for s in runner.sdks}
-    runner.case_results = {s: {"batch": {"status": "sent"}} for s in runner.sdks}
-    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
-         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
-         patch("e2e_runner.run_abs", return_value=(0, "")), \
-         patch.object(runner, "_fetch_metrics", return_value={"variants": [{"variant": 0, "unit_count": 99, "count": 0}]}), \
-         patch.object(runner, "_query_metric", side_effect=slow_query) as q:
-        runner.wait_for_metrics()
-    assert q.call_count <= 3
-
-
 # --- Review round 3: one killing test per surviving false-pass mutant. ---
 
 def _all_backend(runner):
@@ -641,27 +621,6 @@ def test_repeated_goals_are_a_multiset(runner):
         assert not runner._verify_arrival("javascript", case)["pass"]
 
 
-def test_poll_waits_for_sentinels(runner):
-    # M1: baseline participants alone must not end the poll; the batch sentinel must land.
-    clock = [0.0]
-    runner.timeout = 60
-    runner.sdk_results = {"javascript": {"status": "ok", "exposures_sent": 1}}
-    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
-    landed = [False, False, True]
-    def query(mid, sdk, name, *rest, **kw):
-        assert (sdk, name) == ("javascript", "batch")
-        count = BATCH_SIZE if landed.pop(0) else 0
-        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
-    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
-         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
-         patch("e2e_runner.run_abs", return_value=(0, "")), \
-         patch.object(runner, "_fetch_metrics", return_value={"variants": [{"variant": 0, "unit_count": 99, "count": 0}]}), \
-         patch.object(runner, "_query_metric", side_effect=query) as q:
-        runner.wait_for_metrics()
-    assert q.call_count == 3 and not landed
-    assert clock[0] == 10
-
-
 def test_case_expectations_are_literal(runner):
     # M19/M21/M22: expected values pinned, not read back from the code under test.
     cases = {c["name"]: c["expected"] for c in case_specs(runner.run_id, "javascript")}
@@ -691,25 +650,6 @@ def test_429_retry_stops_at_deadline():
          patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)):
         run_abs(["metrics", "list"], deadline=150)
     assert run.call_count == 2 and clock[0] == 120
-
-
-def test_deadline_reaches_every_poll_cli_call(runner):
-    # Every CLI call made while polling, including the final fetch, carries the deadline.
-    clock = [1000.0]
-    runner.timeout = 30
-    runner.sdk_results = {"javascript": {"status": "ok", "exposures_sent": 1}}
-    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
-    deadlines = []
-    def cli(args, *a, **kw):
-        if args[:3] == ["experiments", "metrics", "results"]:
-            deadlines.append(kw.get("deadline"))
-            return 0, json.dumps([{"metric_id": 1, "variants": [{"variant": 0, "unit_count": 0, "count": 0}]}])
-        return 0, ""
-    with patch("e2e_runner.time.time", side_effect=lambda: clock[0]), \
-         patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)), \
-         patch("e2e_runner.run_abs", side_effect=cli):
-        runner.wait_for_metrics()
-    assert deadlines and set(deadlines) == {1030.0}
 
 
 def test_sentinel_query_carries_deadline(runner):
@@ -989,3 +929,81 @@ def test_goal_without_properties_matches_an_empty_collector_row(runner, name):
     rows[-1]["properties"] = "{}"
     with patch("e2e_runner.run_abs", return_value=(0, json.dumps(rows))):
         assert runner._verify_arrival("javascript", case)["pass"]
+
+
+# #52's readiness poll gates on per-SDK baseline metrics (monotonic clock). The event
+# cases add one condition to it: their batch sentinel must also have landed.
+
+def _ready_baseline(runner, monkeypatch):
+    runner.sdk_results = {"javascript": {"status": "ok", "planned_exposures": 2, "planned_goals": 1}}
+    monkeypatch.setattr(runner, "_fetch_metrics_for_sdk",
+                        lambda sdk: ({"variants": [{"variant": 0, "unit_count": 2, "count": 1}]}, None))
+    monkeypatch.setattr(runner, "_fetch_revenue", lambda sdk: (10, None))
+
+
+def _fake_clock():
+    clock = [1000.0]
+    return clock, (patch("e2e_runner.time.time", side_effect=lambda: clock[0]),
+                   patch("e2e_runner.time.monotonic", side_effect=lambda: clock[0]),
+                   patch("e2e_runner.time.sleep", side_effect=lambda t: clock.__setitem__(0, clock[0] + t)),
+                   patch("e2e_runner.run_abs", return_value=(0, "")))
+
+
+def test_poll_waits_for_sentinels(runner, monkeypatch):
+    # M1: a ready baseline alone does not end the poll; the event cases' batch must land.
+    _ready_baseline(runner, monkeypatch)
+    runner.timeout = 60
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    landed = [False, False, True]
+    def query(mid, sdk, name, *rest, **kw):
+        assert (sdk, name) == ("javascript", "batch")
+        count = BATCH_SIZE if landed.pop(0) else 0
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
+    clock, patches = _fake_clock()
+    with patches[0], patches[1], patches[2], patches[3], \
+         patch.object(runner, "_query_metric", side_effect=query) as q:
+        runner.wait_for_metrics()
+    assert q.call_count == 3 and not landed
+    assert clock[0] == 1010
+
+
+def test_poll_without_event_cases_ignores_sentinels(runner, monkeypatch):
+    # #52's own path (verify_metrics without run()) never queries the case experiments.
+    _ready_baseline(runner, monkeypatch)
+    runner.event_cases_expected = False
+    clock, patches = _fake_clock()
+    with patches[0], patches[1], patches[2], patches[3], patch.object(runner, "_query_metric") as q:
+        runner.wait_for_metrics()
+    assert not q.called and clock[0] == 1000
+
+
+def test_poll_respects_deadline_with_sentinels(runner, monkeypatch):
+    # Slow sentinel queries across 22 SDKs never carry the poll past --timeout.
+    _ready_baseline(runner, monkeypatch)
+    runner.timeout = 150
+    runner.sdks = {f"sdk{i}": "http://x" for i in range(22)}
+    runner.case_results = {s: {"batch": {"status": "sent"}} for s in runner.sdks}
+    clock, patches = _fake_clock()
+    def slow_query(mid, sdk, name, *rest, **kw):
+        clock[0] += 100
+        count = BATCH_SIZE if sdk != "sdk21" else 0
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": count}]}
+    with patches[0], patches[1], patches[2], patches[3], \
+         patch.object(runner, "_query_metric", side_effect=slow_query) as q:
+        runner.wait_for_metrics()
+    assert q.call_count <= 3 and clock[0] <= 1000 + 150 + 100
+
+
+def test_sentinel_deadline_matches_the_poll_deadline(runner, monkeypatch):
+    # The deadline the sentinel queries get equals the poll's own deadline.
+    _ready_baseline(runner, monkeypatch)
+    runner.timeout = 30
+    runner.case_results = {"javascript": {"batch": {"status": "sent"}}}
+    seen = []
+    def query(mid, sdk, name, *rest, deadline=None, **kw):
+        seen.append(deadline)
+        return {"metric_id": mid, "variants": [{"variant": 0, "unit_count": 1, "count": BATCH_SIZE}]}
+    clock, patches = _fake_clock()
+    with patches[0], patches[1], patches[2], patches[3], patch.object(runner, "_query_metric", side_effect=query):
+        runner.wait_for_metrics()
+    assert seen == [1030.0]

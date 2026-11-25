@@ -363,24 +363,38 @@ public class WrapperController {
                     .setApplication(e2eApplication)
                     .setEnvironment(e2eEnvironment);
                 Client e2eClient = Client.create(e2eClientConfig);
-                ABSmartlyConfig e2eSdkConfig = ABSmartlyConfig.create()
-                    .setClient(e2eClient)
-                    .setContextEventLogger(e2eCollector);
-                ABSmartly e2eSdk = ABSmartly.create(e2eSdkConfig);
-                Context e2eContext = e2eSdk.createContext(e2eContextConfig);
+                // Until the registry holds the wrapper, this request owns e2eClient (and the SDK built on it): a
+                // failure creating or loading the context releases them as deleteContext would.
+                ABSmartly e2eSdk = null;
+                Context e2eContext = null;
+                ContextWrapper e2eWrapper;
+                String e2eContextId;
+                try {
+                    ABSmartlyConfig e2eSdkConfig = ABSmartlyConfig.create()
+                        .setClient(e2eClient)
+                        .setContextEventLogger(e2eCollector);
+                    e2eSdk = ABSmartly.create(e2eSdkConfig);
+                    e2eContext = e2eSdk.createContext(e2eContextConfig);
 
-                if (e2eAttrs != null) {
-                    for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
-                        e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                    if (e2eAttrs != null) {
+                        for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
+                            e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                        }
                     }
+
+                    e2eContext.waitUntilReady();
+
+                    e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                    e2eWrapper = new ContextWrapper(e2eContext, e2eCollector, null, null);
+                    e2eWrapper.setSdk(e2eSdk);
+                    e2eWrapper.setClient(e2eClient);
+                } catch (Exception e) {
+                    ContextWrapper partial = new ContextWrapper(e2eContext, e2eCollector, null);
+                    partial.setSdk(e2eSdk);
+                    partial.setClient(e2eClient);
+                    partial.closeClient();
+                    throw e;
                 }
-
-                e2eContext.waitUntilReady();
-
-                String e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-                ContextWrapper e2eWrapper = new ContextWrapper(e2eContext, e2eCollector, null, null);
-                e2eWrapper.setSdk(e2eSdk);
-                e2eWrapper.setClient(e2eClient);
                 contexts.put(e2eContextId, e2eWrapper);
 
                 Map<String, Object> e2eResult = new HashMap<>();

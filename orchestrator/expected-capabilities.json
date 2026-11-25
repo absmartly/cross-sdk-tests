@@ -632,12 +632,12 @@
         "holdouts",
         "holdout_arms",
         "switchback",
+        "integralFloatAttributes",
         "contextFetchCompression"
       ],
       "unsupported": {
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io"
       },
       "e2e": {
@@ -675,12 +675,12 @@
         "holdouts",
         "holdout_arms",
         "switchback",
+        "integralFloatAttributes",
         "contextFetchCompression"
       ],
       "unsupported": {
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only"
       },
       "e2e": {
@@ -715,14 +715,14 @@
         "sharedVariableKeys",
         "holdouts",
         "holdout_arms",
-        "switchback"
+        "switchback",
+        "integralFloatAttributes"
       ],
       "unsupported": {
         "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07', which parses as version core '1E' with pre-release '07' and compares greater than '0.0000001' (semver_eq misses, semver_gt wrongly matches); a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk's SemverComparator (scenario 332 skips until then)",
-        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
         "contextFetchCompression": "from code (the lane cannot build in the sandbox, nuget.org unreachable): the wrapper injects its own HttpClient and the SDK's handler sets no AutomaticDecompression, so no Accept-Encoding is sent; fix pending",
         "contextFetchBrotli": "from code (lane not built here, nuget.org unreachable): no AutomaticDecompression on the SDK's handler or the wrapper's HttpClient, so no Accept-Encoding; needs DecompressionMethods.Brotli (built into .NET Core 3.0+)"
       },

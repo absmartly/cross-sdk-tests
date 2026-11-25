@@ -214,4 +214,39 @@ class ReviewRegressionTest {
             }
         }
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"creation", "creation-cleanup-fails", "setter"})
+    void e2eContextCreationFailureClosesTheClientWithoutMaskingTheFailure(String mode) {
+        ABsmartlyClient client = mock(ABsmartlyClient.class);
+        ABsmartlyClient.Builder builder = mock(ABsmartlyClient.Builder.class, RETURNS_SELF);
+        when(builder.build()).thenReturn(client);
+        IllegalStateException failure = new IllegalStateException("e2e context creation failed");
+        if (mode.startsWith("creation")) {
+            when(client.newContext(any())).thenThrow(failure);
+        } else {
+            Context context = mock(Context.class);
+            when(client.newContext(any())).thenReturn(context);
+            doThrow(failure).when(context).setAttribute(anyString(), any());
+        }
+        if (mode.endsWith("cleanup-fails")) doThrow(new IllegalStateException("cleanup failed")).when(client).close();
+        Map<String, String> environment = Map.of("ABSMARTLY_E2E_ENDPOINT", "https://example.test/v1",
+            "ABSMARTLY_E2E_API_KEY", "key", "ABSMARTLY_E2E_APPLICATION", "app", "ABSMARTLY_E2E_ENVIRONMENT", "env");
+        WrapperController controller = new WrapperController(SwitchbackFunctions.LINKED, environment::get);
+        try (var clients = mockStatic(ABsmartlyClient.class)) {
+            clients.when(ABsmartlyClient::builder).thenReturn(builder);
+            var response = controller.createContext(Map.of("mode", "e2e", "attributes", Map.of("country", "US")));
+            assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+            assertEquals(failure.getMessage(), ((Map<?, ?>) response.getBody()).get("error"));
+            verify(client).close();
+            assertTrue(((Map<?, ?>) ReflectionTestUtils.getField(controller, "contexts")).isEmpty());
+            // A failing cleanup is kept as suppressed on the original failure, not swallowed.
+            if (mode.endsWith("cleanup-fails")) {
+                assertEquals(1, failure.getSuppressed().length);
+                assertEquals("cleanup failed", failure.getSuppressed()[0].getMessage());
+            } else {
+                assertEquals(0, failure.getSuppressed().length);
+            }
+        }
+    }
 }

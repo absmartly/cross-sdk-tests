@@ -257,11 +257,13 @@ Future<void> startServer() async {
     final holdouts = await holdout_self_test.runHoldouts();
     final holdoutArms = await holdout_self_test.runHoldoutArms();
     final switchback = await switchback_self_test.runSwitchback();
+    final integralFloat = await switchback_self_test.runIntegralFloat();
     return shelf.Response.ok(
       jsonEncode({
         'holdouts': holdouts,
         'holdout_arms': holdoutArms,
         'switchback': switchback,
+        'integralFloatAttributes': integralFloat,
         'diagnostics': true,
         'diagnosticsUtf8': true,
         'attrsSeq': false,

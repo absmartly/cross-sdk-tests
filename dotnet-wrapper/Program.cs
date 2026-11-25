@@ -97,6 +97,7 @@ app.MapGet("/capabilities", () => Results.Ok(new
     holdouts = HoldoutSelfTest.RunHoldouts(),
     holdout_arms = HoldoutSelfTest.RunHoldoutArms(),
     switchback = SwitchbackSelfTest.Run(),
+    integralFloatAttributes = SwitchbackSelfTest.RunIntegralFloat(),
     sharedVariableKeys = true,
     assignmentRules = true,
     semverOperators = true,

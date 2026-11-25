@@ -1369,12 +1369,14 @@ from `3` (JavaScript, for one) sees the integer `3`, which it keys as `"3"`.
 Such an SDK advertises `integralFloatAttributes: false` and lists it as a
 reviewed exception (owner decision 2026-11-17); it still runs 411, which
 covers every other non-value. Ruby tells them apart, PHP's `json_decode`
-keeps `3.0` a float, rust-sdk's serde_json reads `3.0` as a float, and the
+keeps `3.0` a float, rust-sdk's serde_json reads `3.0` as a float, dotnet-sdk
+reads the JSON number token itself (`3.0` a float, `3` an integer), and the
 dart and flutter lanes run on the Dart VM, which keeps `3.0` a double
 (flutter-sdk documents that its web builds key `3.0` as `"3"`). A wrapper whose
 language keeps the two apart must pass attribute values through without losing
 it: the go wrapper decodes `value` with `UseNumber` and hands an integer literal
-to the SDK as an `int` and any other number as a `float64`.
+to the SDK as an `int` and any other number as a `float64`, and the dotnet
+wrapper hands the SDK the `JsonElement` number token unconverted.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for

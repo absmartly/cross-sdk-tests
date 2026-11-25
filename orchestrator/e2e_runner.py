@@ -12,7 +12,7 @@ import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
@@ -29,6 +29,15 @@ OVER_PUBLISH_TOLERANCE = 1.05
 # amount, so revenue is MEASURED by the backend, never computed from goals.
 REVENUE_METRIC_NAME = "e2e_purchase_revenue"
 REVENUE_PROPERTY = "amount"
+# `metrics list` omits drafts and archived metrics unless asked (absmartly/cli
+# src/commands/metrics/index.ts --include-drafts; src/lib/utils/list-command.ts
+# --archived), and a metric left inactive by a failed run is exactly what a
+# retry must find, or it would fail to re-create it ("already exists"). The
+# search keeps the metric on the first page however many metrics exist.
+# A metric's lifecycle_status is "draft" or "activated" (absmartly api-mocks
+# schema Metric.lifecycle_status); "active" is kept for older payloads.
+ACTIVE_LIFECYCLE_STATUSES = ("activated", "active")
+REVENUE_LOOKUP_ARGS = ("--include-drafts", "--archived", "--search", REVENUE_METRIC_NAME)
 # Amount sent with every tracked `purchase` (see _run_sdk_scenario). Only the
 # PLANNED revenue (planned goals x this) is computed; the actual is measured.
 PURCHASE_AMOUNT = 10
@@ -144,6 +153,10 @@ class E2ERunner:
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
         self.skipped_sdks: List[str] = []
+        # SDKs the user named explicitly (--sdk). A requested SDK that is skipped
+        # (e.g. its wrapper answers 501 for e2e mode) fails the run; only SDKs
+        # that were not requested (the default "all") may be skipped.
+        self.requested_sdks = set(config.get("requested_sdks") or ())
         self.experiment_context_ready = True
         self.app_id: Optional[str] = None
         self.unit_type: Optional[str] = None
@@ -169,17 +182,29 @@ class E2ERunner:
         if self.verbose:
             print(f"  {Colors.CYAN}[debug]{Colors.RESET} {msg}")
 
-    def _find_resource(self, resource_type: str, name: str) -> Optional[str]:
-        rc, output = run_abs([resource_type, "list", "--items", "500"], self.profile)
+    def _find_resource(self, resource_type: str, name: str, extra_args: Sequence[str] = (),
+                       unique: bool = False) -> Optional[str]:
+        """Id of the resource named `name`, or None.
+
+        With `unique`, more than one match is an error rather than a guess: a
+        listing that includes drafts and archived items could otherwise pick a
+        stale row with the same name.
+        """
+        rc, output = run_abs([resource_type, "list", "--items", "500", *extra_args], self.profile)
         if rc != 0:
             self.log(f"_find_resource({resource_type}, {name}) failed: {output}")
             return None
         data = parse_json_output(output)
-        if data and isinstance(data, list):
-            for item in data:
-                if item.get("name") == name:
-                    return str(item["id"])
-        return None
+        if not (data and isinstance(data, list)):
+            return None
+        matches = [str(item["id"]) for item in data if isinstance(item, dict) and item.get("name") == name]
+        if unique and len(matches) > 1:
+            raise RuntimeError(
+                f"{len(matches)} {resource_type} named {name!r} (ids {', '.join(matches)}); "
+                f"rename the extra ones (`abs {resource_type} update <id> --name <new>`); archiving "
+                "does not help, since the lookup includes archived items"
+            )
+        return matches[0] if matches else None
 
     def run(self) -> Dict[str, Any]:
         print(f"\n{Colors.BOLD}E2E Test Run: {self.run_id}{Colors.RESET}")
@@ -326,8 +351,9 @@ class E2ERunner:
         whether or not the experiment lists it (verified live on test-1), so
         the experiment keeps e2e_purchase_count as its only metric.
         """
-        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
+        self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
         if self.revenue_metric_id:
+            self._reuse_revenue_metric(self.revenue_metric_id)
             self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
             return
 
@@ -342,8 +368,9 @@ class E2ERunner:
         ], self.profile)
 
         if rc != 0 and "already exists" in output:
-            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME)
+            self.revenue_metric_id = self._find_resource("metrics", REVENUE_METRIC_NAME, REVENUE_LOOKUP_ARGS, unique=True)
             if self.revenue_metric_id:
+                self._reuse_revenue_metric(self.revenue_metric_id)
                 return
         if rc != 0:
             raise RuntimeError(f"Failed to create revenue metric: {output}")
@@ -352,10 +379,7 @@ class E2ERunner:
         if not self.revenue_metric_id:
             raise RuntimeError(f"Could not determine revenue metric ID from output: {output}")
 
-        for cmd in ["request", "approve"]:
-            run_abs(["metrics", "review", cmd, self.revenue_metric_id], self.profile, output_json=False)
-        run_abs(["metrics", "activate", self.revenue_metric_id, "--reason", "E2E testing"], self.profile, output_json=False)
-
+        self._review_and_activate_revenue_metric(self.revenue_metric_id)
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
 
     def _ensure_case_metrics(self):
@@ -686,6 +710,94 @@ class E2ERunner:
                     errors.append("Collector goal count/properties differ from planned calls")
         return {"pass": not errors, "errors": errors}
 
+    def _review_and_activate_revenue_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
+        """Request review, approve and activate, skipping steps a failed run already did.
+
+        A retry after a run that got past `review request` (the metric's
+        `review.status` is "pending") or past `approve` ("approved") must not
+        repeat those steps, which the API may reject (absmartly api-mocks
+        schema MetricReview.status).
+        """
+        actions = []
+        if review_status not in ("pending", "approved"):
+            actions.append(["metrics", "review", "request", metric_id])
+        if review_status != "approved":
+            actions.append(["metrics", "review", "approve", metric_id])
+        actions.append(["metrics", "activate", metric_id, "--reason", "E2E testing"])
+        for action in actions:
+            rc, output = run_abs(action, self.profile, output_json=False)
+            if rc != 0:
+                raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
+
+    def _reuse_revenue_metric(self, metric_id: str) -> None:
+        """Check an existing revenue metric and activate it if a run left it inactive.
+
+        A run whose review/approve/activate step failed leaves the metric in
+        draft; later runs find it by name, so they re-run the activation instead
+        of accepting a metric that measures nothing.
+        """
+        status, review_status, archived = self._check_revenue_metric_definition(metric_id)
+        if archived:
+            # Archiving is a separate flag (absmartly/cli `metrics archive
+            # [--unarchive]`), not a lifecycle status.
+            self.log(f"Metric '{REVENUE_METRIC_NAME}' is archived; unarchiving it")
+            action = ["metrics", "archive", metric_id, "--unarchive"]
+            rc, output = run_abs(action, self.profile, output_json=False)
+            if rc != 0:
+                raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
+        if status is not None and status not in ACTIVE_LIFECYCLE_STATUSES:
+            self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
+            self._review_and_activate_revenue_metric(metric_id, review_status)
+
+    def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str], bool]:
+        """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
+
+        A metric found by name alone could be a different type or property, and
+        its result would then be "measured" wrongly. `abs metrics get <id> --raw`
+        returns the metric's `type` and `value_source_property` (absmartly/cli
+        src/core/metrics/payload.ts). The goal is checked when the payload
+        carries it as a nested goal or `goal_id`. Returns the metric's
+        (`lifecycle_status`, `review.status`, `archived`); the first two are
+        None if absent.
+        """
+        # `--raw`: without it the CLI prints a summary that has no
+        # value_source_property and a plain-string goal (absmartly/cli
+        # src/core/metrics/get.ts -> summarizeMetric; --raw in api-helper.ts).
+        rc, output = run_abs(["metrics", "get", str(metric_id), "--raw"], self.profile)
+        metric = parse_json_output(output) if rc == 0 else None
+        if not isinstance(metric, dict):
+            raise RuntimeError(
+                f"Could not read metric '{REVENUE_METRIC_NAME}' (id={metric_id}) to check its definition: {output}"
+            )
+        problems = []
+        if metric.get("type") != "goal_property":
+            problems.append(f"type={metric.get('type')!r}, expected 'goal_property'")
+        if metric.get("value_source_property") != REVENUE_PROPERTY:
+            problems.append(
+                f"value_source_property={metric.get('value_source_property')!r}, expected {REVENUE_PROPERTY!r}"
+            )
+        goal = metric.get("goal")
+        goal_name = goal.get("name") if isinstance(goal, dict) else None
+        if goal_name is not None and goal_name != "purchase":
+            problems.append(f"goal={goal_name!r}, expected 'purchase'")
+        goal_id = metric.get("goal_id")
+        if goal_id is not None and self.goal_id is not None and str(goal_id) != str(self.goal_id):
+            problems.append(f"goal_id={goal_id!r}, expected {self.goal_id!r}")
+        if problems:
+            raise RuntimeError(
+                f"Existing metric '{REVENUE_METRIC_NAME}' (id={metric_id}) cannot measure revenue: "
+                + "; ".join(problems)
+            )
+        status = metric.get("lifecycle_status")
+        # The review is a nested object, `review: {status: "pending" | "approved"}`
+        # or null (absmartly api-mocks schema MetricReview). There is no top-level
+        # review_status on a metric; that name is only a `metrics list` filter.
+        review = metric.get("review")
+        review_status = review.get("status") if isinstance(review, dict) else None
+        return (status if isinstance(status, str) else None,
+                review_status if isinstance(review_status, str) else None,
+                metric.get("archived") is True)
+
     def create_experiment(self) -> None:
         self.experiment_name = f"e2e-{self.run_id}" + (f"-{self.experiment_suffix}" if self.experiment_suffix else "")
         print(f"Creating experiment: {self.experiment_name}")
@@ -1007,13 +1119,14 @@ class E2ERunner:
             print(f"\n{Colors.YELLOW}[dry-run]{Colors.RESET} Skipping metrics polling")
             return
 
-        active_sdks = {k: v for k, v in self.sdk_results.items() if v.get("status") == "ok"}
+        # An SDK with wrapper errors already fails verification, so waiting for its
+        # planned counts would only spend the whole timeout on a decided result.
+        active_sdks = {
+            k: v for k, v in self.sdk_results.items()
+            if v.get("status") == "ok" and not any(self._error_counts(v).values())
+        }
         if not active_sdks:
             print("\nNo active SDKs to verify metrics for")
-            return
-
-        total_expected_exposures = sum(r["exposures_sent"] for r in active_sdks.values())
-        if total_expected_exposures == 0:
             return
 
         rc, _ = run_abs(["experiments", "request-update", str(self.experiment_id)], self.profile, output_json=False)
@@ -1022,27 +1135,66 @@ class E2ERunner:
 
         print(f"\nWaiting for metrics (timeout: {self.timeout}s)...")
 
-        deadline = time.time() + self.timeout
-        while time.time() < deadline:
-            metrics = self._fetch_metrics(deadline)
-            if metrics:
-                total_participants = self._extract_total_participants(metrics)
-                if total_participants >= total_expected_exposures and self._sentinels_landed(deadline):
-                    # The full case check runs once, in verify_metrics, after the poll.
-                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} ({total_participants} participants)")
-                    return
-                if total_participants > 0:
-                    self.log(f"Participants so far: {total_participants}/{total_expected_exposures}")
-            time.sleep(min(5, max(0, deadline - time.time())))
+        # Participants, goals and revenue need not become available together.
+        # Readiness uses the same per-SDK measurements as the final strict gate;
+        # the unsegmented aggregate cannot establish readiness for an SDK.
+        deadline = time.monotonic() + self.timeout
+        pending = [f"{sdk}: not polled" for sdk in active_sdks]
+        decided: set = set()
+        while time.monotonic() < deadline:
+            pending = []
+            for sdk_name, sdk_result in active_sdks.items():
+                if sdk_name in decided:
+                    continue
+                # Each query can take up to run_abs's timeout, so check the
+                # deadline per SDK rather than only between rounds.
+                if time.monotonic() >= deadline:
+                    pending.append(f"{sdk_name}: not polled before the deadline")
+                    continue
+                metric, reason = self._fetch_metrics_for_sdk(sdk_name)
+                revenue, revenue_reason = self._fetch_revenue(sdk_name)
+                expected_goals = sdk_result["planned_goals"]
+                measurements = (
+                    ("participants", sdk_result["planned_exposures"],
+                     self._extract_total_participants(metric) if metric is not None else None, reason),
+                    ("goals", expected_goals,
+                     self._extract_total_goals(metric) if metric is not None else None, reason),
+                    ("revenue", expected_goals * PURCHASE_AMOUNT, revenue, revenue_reason),
+                )
+                # Counts only grow, so a value already past the over-publish bound can
+                # never pass: that SDK's FAIL is decided and it no longer gates readiness.
+                if any(failure is None and actual is not None
+                       and actual > int(expected * OVER_PUBLISH_TOLERANCE)
+                       for _, expected, actual, failure in measurements):
+                    decided.add(sdk_name)
+                    continue
+                for name, expected, actual, failure in measurements:
+                    if failure or not self._within_tolerance(expected, actual):
+                        pending.append(f"{sdk_name} {name}: {actual}/{expected}" +
+                                       (f" ({failure})" if failure else ""))
+            # The event cases (sent to their own experiments) must have landed too:
+            # one batch-sentinel query per SDK, bounded by the same deadline.
+            if not pending and self.event_cases_expected and not self._sentinels_landed(
+                    time.time() + max(0.0, deadline - time.monotonic())):
+                pending.append("event cases: batch sentinel not landed")
+            if not pending:
+                if decided:
+                    print(
+                        f"  {Colors.RED}Metrics over-published{Colors.RESET} for "
+                        f"{', '.join(sorted(decided))}; stopped waiting (verification fails them)"
+                    )
+                else:
+                    print(f"  {Colors.GREEN}Metrics ready{Colors.RESET} (all per-SDK metrics)")
+                return
+            self.log("Waiting for " + "; ".join(pending))
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(5, remaining))
 
-        # Metrics never reached the expected total within the timeout. This is a
-        # real failure (events did not land on the backend), not a soft note —
-        # verify_metrics() will see the shortfall and fail the run.
-        final = self._fetch_metrics(deadline)
-        final_participants = self._extract_total_participants(final) if final else 0
+        # Verification still reads and strictly gates every segmented metric.
         print(
-            f"  {Colors.RED}Metrics incomplete{Colors.RESET}: "
-            f"{final_participants}/{total_expected_exposures} participants after {self.timeout}s"
+            f"  {Colors.RED}Metrics incomplete{Colors.RESET} after {self.timeout}s: "
+            + "; ".join(pending)
         )
 
     def _sentinels_landed(self, deadline: float) -> bool:
@@ -1081,12 +1233,12 @@ class E2ERunner:
         effect?, variants: [VariantResult]} (absmartly/cli
         src/api-client/metric-results.ts, MetricResult/VariantResult and
         fetchAllMetricResults; printed raw by src/commands/experiments/metrics.ts
-        resultsCommand). Select ours by metric_id, falling back to the
-        "primary" entry; never guess at an arbitrary row.
+        resultsCommand). Select ours by metric_id. Only when no metric_id is
+        known fall back to the "primary" entry; a known id that is missing from
+        the output never selects some other row.
         """
-        metric = self._select_metric_by_id(data, self.metric_id)
-        if metric is not None:
-            return metric
+        if self.metric_id is not None:
+            return self._select_metric_by_id(data, self.metric_id)
         for m in self._metric_list(data):
             if m.get("type") == "primary":
                 return m
@@ -1268,8 +1420,9 @@ class E2ERunner:
             self.profile,
         )
         if rc != 0:
-            # `output` already carries the CLI stderr (see run_abs).
-            print(
+            # `output` already carries the CLI stderr (see run_abs). Readiness polls
+            # repeatedly, so each distinct failure is printed once per run.
+            self._print_once(
                 f"  {Colors.RED}Segmentation query failed for {sdk_name}"
                 f"{Colors.RESET} (abs rc={rc}): {output}"
             )
@@ -1278,7 +1431,7 @@ class E2ERunner:
             return None, f"{reason}: {first_line}" if first_line else reason
         data = parse_json_output(output)
         if data is None:
-            print(
+            self._print_once(
                 f"  {Colors.RED}Segmentation output for {sdk_name} could not be "
                 f"parsed{Colors.RESET}: {output[:300]}"
             )
@@ -1304,6 +1457,20 @@ class E2ERunner:
         active: Dict[str, Dict[str, Any]] = {}
         for sdk_name, sdk_result in self.sdk_results.items():
             status = sdk_result.get("status")
+            if status == "skipped" and sdk_name in self.requested_sdks:
+                results["sdks"][sdk_name] = {
+                    "status": "fail",
+                    "note": "requested with --sdk but skipped (wrapper reports no e2e mode)",
+                    "exposures": {"expected": sdk_result.get("planned_exposures", 0), "actual": None,
+                                  "pass": False, "unverified": True},
+                    "goals": {"expected": sdk_result.get("planned_goals", 0), "actual": None,
+                              "pass": False, "unverified": True},
+                    "revenue": {"expected": sdk_result.get("planned_goals", 0) * PURCHASE_AMOUNT, "actual": None,
+                                "pass": False, "unverified": True},
+                }
+                results["overall_pass"] = False
+                continue
+
             if status == "skipped":
                 results["sdks"][sdk_name] = {
                     "status": "skipped",
@@ -1369,6 +1536,12 @@ class E2ERunner:
 
         return results
 
+    def _print_once(self, message: str) -> None:
+        printed = self.__dict__.setdefault("_printed_messages", set())
+        if message not in printed:
+            printed.add(message)
+            print(message)
+
     def _error_counts(self, sdk_result: Dict[str, Any]) -> Dict[str, int]:
         return {
             "context": sdk_result.get("context_errors", 0),
@@ -1377,15 +1550,6 @@ class E2ERunner:
         }
 
     def _verify_active_sdks(self, results: Dict[str, Any], active: Dict[str, Dict[str, Any]]) -> None:
-        # Aggregate backend numbers: an informational cross-check and the
-        # reference for detecting a backend that ignores the segmentation filter.
-        agg = self._fetch_metrics()
-        agg_participants = self._extract_total_participants(agg) if agg else 0
-        agg_goals = self._extract_total_goals(agg) if agg else 0
-        agg_revenue, agg_revenue_reason = self._fetch_revenue()
-
-        # First pass: per-SDK segmented results. A missing result carries the
-        # reason it is unverified.
         segmented: Dict[str, Dict[str, Any]] = {}
         unverified_reason: Dict[str, str] = {}
         for sdk_name in active:
@@ -1405,6 +1569,13 @@ class E2ERunner:
                 revenue_reason[sdk_name] = reason or "unavailable"
             else:
                 revenue[sdk_name] = value
+
+        # Read aggregates last so a live update during segmented reads does not
+        # compare newer segment sums against an older aggregate snapshot.
+        agg = self._fetch_metrics()
+        agg_participants = self._extract_total_participants(agg) if agg else 0
+        agg_goals = self._extract_total_goals(agg) if agg else 0
+        agg_revenue, agg_revenue_reason = self._fetch_revenue()
 
         # Filter-trust sanity checks. If the backend ignores the filter, every
         # SDK comes back with the aggregate total and per-SDK "verification"
@@ -1453,7 +1624,6 @@ class E2ERunner:
                 revenue_reason[sdk_name] = rev_warning
                 del revenue[sdk_name]
 
-        # Second pass: finalize each active SDK. Unverified is a FAIL.
         for sdk_name, sdk_result in active.items():
             expected_exposures = sdk_result["planned_exposures"]
             expected_goals = sdk_result["planned_goals"]
@@ -1585,9 +1755,7 @@ class E2ERunner:
         total_goal_actual = 0
         total_rev_expected = 0
         total_rev_actual = 0
-        # Set when at least one verified row was excluded from the actual totals
-        # because it was unverified — the TOTAL actual is then a lower bound.
-        total_partially_unverified = False
+        partially_unverified = {"exposures": False, "goals": False, "revenue": False}
 
         for sdk_name, sdk_data in sdks.items():
             if sdk_data.get("status") == "skipped":
@@ -1616,14 +1784,15 @@ class E2ERunner:
             total_exp_expected += exp["expected"]
             total_goal_expected += goal["expected"]
             total_rev_expected += rev["expected"]
-            # Only sum actuals we actually verified. Unverified rows carry no
-            # trustworthy actual, so excluding them keeps the TOTAL honest.
-            if any(m.get("unverified") or m.get("actual") is None for m in (exp, goal, rev)):
-                total_partially_unverified = True
-            else:
-                total_exp_actual += exp.get("actual") or 0
-                total_goal_actual += goal.get("actual") or 0
-                total_rev_actual += rev.get("actual") or 0
+            for name, metric in (("exposures", exp), ("goals", goal), ("revenue", rev)):
+                if metric.get("unverified") or metric.get("actual") is None:
+                    partially_unverified[name] = True
+                elif name == "exposures":
+                    total_exp_actual += metric["actual"]
+                elif name == "goals":
+                    total_goal_actual += metric["actual"]
+                else:
+                    total_rev_actual += metric["actual"]
 
             exp_str = self._format_metric(exp)
             goal_str = self._format_metric(goal)
@@ -1649,14 +1818,20 @@ class E2ERunner:
 
         print(f"  {separator}")
 
-        total_exp = self._format_total(total_exp_expected, total_exp_actual, total_partially_unverified)
-        total_goal = self._format_total(total_goal_expected, total_goal_actual, total_partially_unverified)
-        total_rev = self._format_total(total_rev_expected, total_rev_actual, total_partially_unverified)
+        total_exp = self._format_total(total_exp_expected, total_exp_actual, partially_unverified["exposures"])
+        total_goal = self._format_total(total_goal_expected, total_goal_actual, partially_unverified["goals"])
+        total_rev = self._format_total(total_rev_expected, total_rev_actual, partially_unverified["revenue"])
 
         print(f"  {Colors.BOLD}{'TOTAL':<{col_sdk}}{Colors.RESET}{total_exp:<{col_data}}{total_goal:<{col_data}}{total_rev:<{col_data}}")
-        if total_partially_unverified:
-            print(f"  {Colors.YELLOW}(TOTAL actual excludes unverified SDKs — lower bound){Colors.RESET}")
+        if any(partially_unverified.values()):
+            print(f"  {Colors.YELLOW}(Partial TOTAL actuals exclude unverified measurements — lower bounds){Colors.RESET}")
         print()
+
+        skipped = sorted(name for name, row in sdks.items() if row.get("status") == "skipped")
+        if skipped:
+            # Only SDKs that were not requested with --sdk can be skipped.
+            print(f"  {Colors.YELLOW}Skipped (not requested, no e2e mode): {', '.join(skipped)}{Colors.RESET}")
+            print()
 
         agg = results.get("aggregate")
         if agg:
@@ -1693,7 +1868,7 @@ class E2ERunner:
 
     @staticmethod
     def report_passes(results: Dict[str, Any]) -> bool:
-        """PASS only if the run passed AND every SDK row was measured and passed.
+        """PASS only if the run passed AND every non-skipped SDK row was measured and passed.
 
         Gates both the PASS banner and the exit code. Computed from the rows as
         well as overall_pass, so a path that forgets to clear overall_pass can
@@ -1755,14 +1930,11 @@ class E2ERunner:
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def _format_total(self, expected: int, actual: int, partial: bool) -> str:
-        # With unverified SDKs excluded, `actual` is a lower bound, so an equality
-        # gate would be misleading; require only actual >= expected here and flag
-        # the caveat separately.
-        passed = actual >= expected if partial else self._within_tolerance(expected, actual)
-        color = Colors.YELLOW if partial else (Colors.GREEN if passed else Colors.RED)
-        label = "PASS" if passed else "FAIL"
         if partial:
-            label += "*"
+            return f"{Colors.YELLOW}{actual}/{expected} FAIL (partial/unverified){Colors.RESET}"
+        passed = self._within_tolerance(expected, actual)
+        color = Colors.GREEN if passed else Colors.RED
+        label = "PASS" if passed else "FAIL"
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
@@ -1900,16 +2072,20 @@ def main() -> None:
     all_sdks = discover_sdks()
 
     if args.sdk:
-        sdk_names = [s.strip() for s in args.sdk.split(",")]
+        sdk_names = [s.strip() for s in args.sdk.split(",") if s.strip()]
         sdks = {name: all_sdks[name] for name in sdk_names if name in all_sdks}
         invalid_sdks = [name for name in sdk_names if name not in all_sdks]
         if invalid_sdks:
-            print(f"Warning: Unknown SDK(s): {', '.join(invalid_sdks)}")
+            # A requested SDK that cannot be tested must fail, never be dropped.
+            print(f"Error: Unknown SDK(s): {', '.join(invalid_sdks)}. Available: {', '.join(all_sdks.keys())}")
+            sys.exit(1)
         if not sdks:
             print(f"No valid SDKs specified. Available: {', '.join(all_sdks.keys())}")
             sys.exit(1)
+        requested_sdks = list(sdks)
     else:
         sdks = all_sdks
+        requested_sdks = []
 
     config = {
         "profile": args.profile,
@@ -1917,6 +2093,7 @@ def main() -> None:
         "timeout": args.timeout,
         "verbose": args.verbose,
         "dry_run": args.dry_run,
+        "requested_sdks": requested_sdks,
     }
 
     runner = E2ERunner(sdks, config)

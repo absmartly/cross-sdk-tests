@@ -94,6 +94,83 @@ public static class SwitchbackSelfTest
 
     public static bool Run() => Result.Value;
 
+    private static readonly Lazy<bool> IntegralFloatResult = new(() => RunIntegralFloatAfter(Run));
+
+    // Behind the `integralFloatAttributes` capability (scenario 426): an attribute value 3.0, passed
+    // as the JSON number token POST /context/{id}/attribute hands the SDK, gives no cluster value,
+    // while 3 keys "3". Under seed (0, 1) and 10 arms "3" draws 5 and a lax "3.0" would draw 7, so
+    // neither a lax reader nor one rejecting every number passes. Requires the switchback battery first.
+    public static bool RunIntegralFloat() => IntegralFloatResult.Value;
+
+    // The integral-float probe gated on `battery`: false without running the probe when the battery
+    // fails. Takes the battery so tests can stub it.
+    public static bool RunIntegralFloatAfter(Func<bool> battery)
+    {
+        if (!battery()) return false;
+        try
+        {
+            using var values = JsonDocument.Parse("{\"f\": 3.0, \"i\": 3}");
+            var passed = CheckIntegralFloat(values.RootElement.GetProperty("f").Clone(),
+                values.RootElement.GetProperty("i").Clone());
+            Console.WriteLine("[integralFloatAttributes probe] " + (passed ? "PASSED" : "FAILED"));
+            return passed;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"[integralFloatAttributes probe] FAILED with error: {e}");
+            return false;
+        }
+    }
+
+    // Serves sb_integral_float (keyed by the attribute value floatValue) and sb_integer (intValue)
+    // through a real context: true when the float gives no value (control 0, no exposure) and the
+    // integer serves variant 5.
+    public static bool CheckIntegralFloat(object floatValue, object intValue)
+    {
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["experiments"] = new[]
+            {
+                Switchback(531, "sb_integral_float", 0, 1, 10, new[] { ("unit_serving", "v_float") }),
+                Switchback(532, "sb_integer", 0, 1, 10, new[] { ("unit_serving", "v_int") }),
+            }
+        });
+        var data = new DefaultContextDataDeserializer().Deserialize(new MemoryStream(Encoding.UTF8.GetBytes(payload)));
+        var log = new Log();
+        var config = new ContextConfig
+        {
+            PublishDelay = TimeSpan.FromMilliseconds(-1),
+            RefreshInterval = TimeSpan.FromMilliseconds(0)
+        };
+        config.Units["unit_serving"] = "serving-9";
+        var context = NewSdk(log, new CapturingPublisher()).CreateContextWith(config, data);
+        try
+        {
+            if (!context.IsReady() || context.IsFailed())
+            {
+                Console.WriteLine($"[integralFloatAttributes probe] FAILED: context not ready (failed={context.IsFailed()})");
+                return false;
+            }
+
+            context.SetAttribute("v_float", floatValue);
+            context.SetAttribute("v_int", intValue);
+            return Expect(context, log, "integral float", "sb_integral_float", 0)
+                   && Expect(context, log, "integer", "sb_integer", 5, (532, "sb_integer", "unit_serving", 5));
+        }
+        finally
+        {
+            (context as IDisposable)?.Dispose();
+        }
+    }
+
+    private static ABsmartly.Sdk NewSdk(Log log, CapturingPublisher publisher) =>
+        new(new DummyHttpClientFactory(),
+            new ABSmartlyServiceConfiguration
+            {
+                Endpoint = "http://127.0.0.1:9", ApiKey = "dummy", Application = "test", Environment = "test"
+            },
+            new ABsmartlyConfig { ContextEventLogger = log, ContextPublisher = publisher });
+
     private static bool RunSafely()
     {
         try
@@ -233,12 +310,7 @@ public static class SwitchbackSelfTest
 
         var log = new Log();
         var publisher = new CapturingPublisher();
-        var sdk = new ABsmartly.Sdk(new DummyHttpClientFactory(),
-            new ABSmartlyServiceConfiguration
-            {
-                Endpoint = "http://127.0.0.1:9", ApiKey = "dummy", Application = "test", Environment = "test"
-            },
-            new ABsmartlyConfig { ContextEventLogger = log, ContextPublisher = publisher });
+        var sdk = NewSdk(log, publisher);
         // unit_user is set first, so declared order, not context order, must pick the serving unit.
         var config = new ContextConfig
         {

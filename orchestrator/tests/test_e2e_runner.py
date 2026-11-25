@@ -477,15 +477,41 @@ def test_revenue_wording_banned_in_source_and_report(monkeypatch, capsys):
     assert BANNED_WORD not in json.dumps(results).lower()
 
 
+REVENUE_DEFINITION = {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue", "type": "goal_property",
+                      "value_source_property": "amount", "goal": {"name": "purchase"}}
+
+
+def metric_get_output(definition, args):
+    """What `abs metrics get <id> -o json` prints: the raw metric with --raw,
+    else the CLI summary (no value_source_property, goal as a plain string)."""
+    if "--raw" in args:
+        return definition
+    goal = definition.get("goal")
+    return {"id": definition.get("id"), "name": definition.get("name"), "type": definition.get("type"),
+            "goal": goal.get("name") if isinstance(goal, dict) else goal}
+
+
 class ResourceAbs:
-    def __init__(self, metrics_list):
+    def __init__(self, metrics_list, definition=REVENUE_DEFINITION):
         self.metrics_list = metrics_list
+        self.definition = definition
         self.calls = []
 
     def __call__(self, args, profile="", api_key="", endpoint="", output_json=True):
         self.calls.append(list(args))
         if args[:2] == ["metrics", "list"]:
-            return 0, json.dumps(self.metrics_list)
+            # Like the CLI: drafts and archived metrics are listed only on request.
+            listed = []
+            for item in self.metrics_list:
+                state = self.definition if item.get("id") == self.definition.get("id") else item
+                if state.get("lifecycle_status") == "draft" and "--include-drafts" not in args:
+                    continue
+                if state.get("archived") is True and "--archived" not in args:
+                    continue
+                listed.append(item)
+            return 0, json.dumps(listed)
+        if args[:2] == ["metrics", "get"]:
+            return 0, json.dumps(metric_get_output(self.definition, args))
         if args[:2] == ["metrics", "create"]:
             return 0, json.dumps({"id": REVENUE_METRIC_ID})
         return 0, ""
@@ -524,7 +550,86 @@ def test_ensure_revenue_metric_reuses_existing(monkeypatch):
     runner.revenue_metric_id = None
     runner._ensure_revenue_metric()
     assert runner.revenue_metric_id == str(REVENUE_METRIC_ID)
-    assert not [c for c in fake.calls if c[0] == "metrics" and c[1] != "list"]
+    assert [c for c in fake.calls if c[0] == "metrics" and c[1] != "list"] == [
+        ["metrics", "get", str(REVENUE_METRIC_ID), "--raw"]
+    ]
+
+
+@pytest.mark.parametrize("change, needle", [
+    ({"type": "goal_unique_count"}, "type="),
+    ({"value_source_property": "price"}, "value_source_property="),
+    ({"goal": {"name": "checkout"}}, "goal="),
+])
+def test_existing_revenue_metric_with_wrong_definition_is_refused(monkeypatch, change, needle):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}],
+                       definition={**REVENUE_DEFINITION, **change})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match=needle):
+        runner._ensure_revenue_metric()
+
+
+def test_unreadable_existing_revenue_metric_is_refused(monkeypatch):
+    def fake(args, profile="", api_key="", endpoint="", output_json=True):
+        if args[:2] == ["metrics", "list"]:
+            return 0, json.dumps([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+        return 1, "not found"
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="check its definition"):
+        runner._ensure_revenue_metric()
+
+
+def test_select_metric_never_falls_back_when_metric_id_is_known():
+    runner = make_runner(sdks=("java",))
+    other_primary = metric_result(JAVA_6143, metric_id=999, type_="primary")
+    assert runner._select_metric([other_primary]) is None
+    runner.metric_id = None
+    assert runner._select_metric([other_primary]) is other_primary
+
+
+def test_track_body_carries_the_purchase_amount(monkeypatch):
+    sent = []
+
+    class Resp:
+        def __init__(self, status=200, body=None):
+            self.status_code = status
+            self._body = body or {}
+
+        def json(self):
+            return self._body
+
+    def post(url, json=None, timeout=None):
+        sent.append((url.rsplit("/", 1)[-1], json))
+        if url.endswith("/context"):
+            return Resp(body={"result": {"contextId": "c1"}})
+        return Resp()
+
+    monkeypatch.setattr(e2e_runner.requests, "get", lambda url, timeout=None: Resp())
+    monkeypatch.setattr(e2e_runner.requests, "post", post)
+    runner = make_runner(sdks=("java",), units=2)
+    result = runner._run_sdk_scenario("java", "http://java")
+    assert result["status"] == "ok"
+    tracks = [body for name, body in sent if name == "track"]
+    assert tracks == [{"goalName": "purchase", "properties": {"amount": 10}}]
+    assert result["revenue_sent"] == 10
+
+
+def test_main_exits_nonzero_when_overall_pass_was_left_true(monkeypatch, capsys):
+    # A hand-built result whose overall_pass is wrongly True over an unverified row:
+    # main() must still exit non-zero (exit gate is report_passes, not overall_pass).
+    unverified = {"status": "fail", "note": "unverified: revenue no result",
+                  "exposures": {"expected": 100, "actual": 100, "pass": True},
+                  "goals": {"expected": 50, "actual": 50, "pass": True},
+                  "revenue": {"expected": 500, "actual": None, "pass": False, "unverified": True}}
+    monkeypatch.setattr(E2ERunner, "run", lambda self: {"overall_pass": True, "sdks": {"java": unverified}})
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py"])
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
 
 
 def test_dry_run_report_never_prints_pass(capsys):
@@ -597,3 +702,346 @@ def test_filter_ignored_all_equal_aggregate_fails_with_two_sdks(monkeypatch):
         assert results["sdks"][s]["status"] == "fail"
         assert "ignore the segmentation filter" in results["sdks"][s]["note"]
         assert results["sdks"][s]["note"].startswith("unverified: ")
+
+
+def test_requested_sdk_that_skips_fails_the_run(monkeypatch, capsys):
+    # Owner rule: an SDK named with --sdk that returns 501 (skipped) fails, never skips silently.
+    fake = FakeAbs(AGG_OK, {"php": ok(PHP_OK)})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java", "php"))
+    runner.requested_sdks = {"java", "php"}
+    runner.sdk_results["java"] = {"status": "skipped", "planned_exposures": 100, "planned_goals": 50}
+    results = runner.verify_metrics()
+    runner.print_report(results)
+    java = results["sdks"]["java"]
+    assert java["status"] == "fail" and "requested with --sdk" in java["note"]
+    assert results["overall_pass"] is False
+    assert E2ERunner.report_passes(results) is False
+    assert "All metrics verified" not in capsys.readouterr().out
+
+
+def test_unrequested_sdk_may_skip_and_is_listed(monkeypatch, capsys):
+    fake = FakeAbs(AGG_OK, {"php": ok(PHP_OK)})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java", "php"))
+    runner.requested_sdks = set()
+    runner.sdk_results["java"] = {"status": "skipped", "planned_exposures": 100, "planned_goals": 50}
+    results = runner.verify_metrics()
+    runner.print_report(results)
+    out = capsys.readouterr().out
+    assert results["sdks"]["java"]["status"] == "skipped"
+    assert "Skipped (not requested, no e2e mode): java" in out
+
+
+def test_unknown_requested_sdk_exits_nonzero(monkeypatch, capsys):
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java,rubyy"])
+    monkeypatch.setattr(E2ERunner, "run", lambda self: pytest.fail("must not run with an unknown SDK"))
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
+    assert "Unknown SDK(s): rubyy" in capsys.readouterr().out
+
+
+def test_main_passes_requested_sdks_to_the_runner(monkeypatch):
+    seen = {}
+
+    def fake_run(self):
+        seen["requested"] = set(self.requested_sdks)
+        return {"overall_pass": False, "sdks": {}}
+
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000,php=http://php-sdk:3000")
+    monkeypatch.setattr(E2ERunner, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["requested"] == {"java"}
+
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["requested"] == set()
+
+
+STUB_DOCKER = """#!/bin/bash
+# docker stub for running run-e2e-tests.sh without containers.
+if [ "$1" = run ]; then exit 0; fi
+if [ "$1" = compose ]; then
+  case "$2" in
+    config) printf '%s\\n' java-sdk php-sdk ruby-sdk context-server ;;
+    port) echo "0.0.0.0:3000" ;;
+    ps) echo "Up 5 seconds" ;;
+  esac
+  exit 0
+fi
+exit 0
+"""
+
+STUB_PYTHON = """#!/bin/bash
+# python3 stub: records the e2e runner's argv and environment.
+if [ "$1" = "-c" ]; then exit 0; fi
+if [ "$1" = "orchestrator/e2e_runner.py" ]; then
+  shift
+  printf '%s\\n' "$@" > "$ARGV_FILE"
+  printf '%s\\n' "$SDK_SERVICES" > "$ARGV_FILE.services"
+fi
+exit 0
+"""
+
+
+def run_e2e_script(tmp_path, *script_args):
+    import shutil
+    import subprocess
+    repo = Path(__file__).resolve().parents[2]
+    work = tmp_path / "repo"
+    work.mkdir()
+    shutil.copy(repo / "run-e2e-tests.sh", work / "run-e2e-tests.sh")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, body in (("docker", STUB_DOCKER), ("python3", STUB_PYTHON), ("sleep", "#!/bin/bash\nexit 0\n")):
+        stub = bin_dir / name
+        stub.write_text(body)
+        stub.chmod(0o755)
+    argv_file = tmp_path / "argv"
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "ARGV_FILE": str(argv_file), "HOME": str(tmp_path)}
+    proc = subprocess.run(["bash", str(work / "run-e2e-tests.sh"), "--skip-build", *script_args],
+                          cwd=work, env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return argv_file.read_text().splitlines(), (tmp_path / "argv.services").read_text().strip()
+
+
+def test_run_e2e_script_forwards_requested_sdks_to_the_runner(tmp_path):
+    argv, services = run_e2e_script(tmp_path, "--sdk", "java,php")
+    assert argv[:2] == ["--sdk", "java,php"]
+    assert services == "java,php"
+
+
+def test_run_e2e_script_requests_nothing_without_sdk(tmp_path):
+    argv, services = run_e2e_script(tmp_path)
+    assert "--sdk" not in argv
+    assert services == "java,php,ruby"
+
+
+def test_existing_revenue_metric_with_wrong_goal_id_is_refused(monkeypatch):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}],
+                       definition={**REVENUE_DEFINITION, "goal": None, "goal_id": 999})
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner.goal_id = "12"
+    with pytest.raises(RuntimeError, match="goal_id="):
+        runner._ensure_revenue_metric()
+
+
+def test_definition_check_refuses_the_cli_summary_shape(monkeypatch):
+    # What `metrics get` prints without --raw must not pass the definition check.
+    summary = metric_get_output(REVENUE_DEFINITION, ["metrics", "get", "2914"])
+    monkeypatch.setattr(e2e_runner, "run_abs", lambda args, *a, **kw: (0, json.dumps(summary)))
+    runner = make_runner(sdks=("java",))
+    with pytest.raises(RuntimeError, match="value_source_property=None"):
+        runner._check_revenue_metric_definition(REVENUE_METRIC_ID)
+
+
+REQUEST = ["metrics", "review", "request", str(REVENUE_METRIC_ID)]
+APPROVE = ["metrics", "review", "approve", str(REVENUE_METRIC_ID)]
+ACTIVATE = ["metrics", "activate", str(REVENUE_METRIC_ID), "--reason", "E2E testing"]
+
+
+UNARCHIVE = ["metrics", "archive", str(REVENUE_METRIC_ID), "--unarchive"]
+
+
+@pytest.mark.parametrize("status, review, archived, expected", [
+    ("draft", None, False, [REQUEST, APPROVE, ACTIVATE]),
+    ("draft", "none", False, [REQUEST, APPROVE, ACTIVATE]),
+    ("inactive", None, False, [REQUEST, APPROVE, ACTIVATE]),
+    # A run that failed after `review request` or after `approve` is resumed, not repeated.
+    ("draft", "pending", False, [APPROVE, ACTIVATE]),
+    ("draft", "approved", False, [ACTIVATE]),
+    # Archived is a separate flag: unarchive, then activate if it is not active.
+    ("activated", None, True, [UNARCHIVE]),
+    ("draft", "approved", True, [UNARCHIVE, ACTIVATE]),
+    # The API reports an active metric as "activated"; "active" is accepted too.
+    ("activated", None, False, []),
+    ("activated", "approved", False, []),
+    ("active", None, False, []),
+    (None, None, False, []),
+])
+def test_existing_inactive_revenue_metric_is_reviewed_and_activated(monkeypatch, status, review, archived, expected):
+    definition = dict(REVENUE_DEFINITION)
+    if status is not None:
+        definition["lifecycle_status"] = status
+    if review is not None:
+        # The API's shape: a nested review object (api-mocks MetricReview).
+        definition["review"] = None if review == "none" else {"id": 1, "metric_id": REVENUE_METRIC_ID,
+                                                              "status": review}
+    if archived:
+        definition["archived"] = True
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate", "archive")]
+    assert tail == expected
+    lookups = [c for c in fake.calls if c[:2] == ["metrics", "list"]]
+    assert lookups and all("--include-drafts" in c and "--archived" in c for c in lookups)
+    assert not [c for c in fake.calls if c[:2] == ["metrics", "create"]]
+
+
+def test_reactivation_failure_of_existing_metric_stops_the_run(monkeypatch):
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft"}
+
+    def fake(args, profile="", api_key="", endpoint="", output_json=True):
+        if args[:2] == ["metrics", "list"]:
+            return 0, json.dumps([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+        if args[:2] == ["metrics", "get"]:
+            return 0, json.dumps(metric_get_output(definition, args))
+        if args[:3] == ["metrics", "review", "approve"]:
+            return 1, "approval denied"
+        return 0, ""
+
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="approval denied"):
+        runner._ensure_revenue_metric()
+
+
+def test_trailing_comma_in_sdk_list_is_ignored(monkeypatch):
+    seen = {}
+
+    def fake_run(self):
+        seen["sdks"] = list(self.sdks)
+        return {"overall_pass": False, "sdks": {}}
+
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(E2ERunner, "run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", "java,"])
+    with pytest.raises(SystemExit):
+        e2e_runner.main()
+    assert seen["sdks"] == ["java"]
+
+
+@pytest.mark.parametrize("names, expected", [("", []), ("java,php", ["--sdk", "java,php"])])
+def test_run_e2e_script_sdk_opt_args(names, expected):
+    script = Path(__file__).resolve().parents[2] / "run-e2e-tests.sh"
+    text = script.read_text()
+    start = text.index("sdk_opt_args() {")
+    func = text[start:text.index("\n}\n", start) + 3]
+    import subprocess
+    out = subprocess.run(["bash", "-c", func + 'sdk_opt_args "$1"', "_", names],
+                         capture_output=True, text=True, check=True).stdout
+    assert out.splitlines() == expected
+
+
+@pytest.mark.parametrize("value", [",", " ", " , "])
+def test_empty_sdk_list_exits_before_any_api_call(monkeypatch, capsys, value):
+    monkeypatch.setenv("SDK_URLS_OVERRIDE", "java=http://java-sdk:3000")
+    monkeypatch.setattr(sys, "argv", ["e2e_runner.py", "--sdk", value])
+    monkeypatch.setattr(E2ERunner, "run", lambda self: pytest.fail("must not run with no SDKs"))
+    with pytest.raises(SystemExit) as exc:
+        e2e_runner.main()
+    assert exc.value.code != 0
+    assert "No valid SDKs specified" in capsys.readouterr().out
+
+
+def test_race_relookup_finds_a_draft_with_the_lookup_flags(monkeypatch):
+    # The first lookup misses (created concurrently), create says "already exists",
+    # and the re-lookup must still pass --include-drafts --archived to find the draft.
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft"}
+    fake = ResourceAbs([], definition=definition)
+    state = {"lists": 0}
+
+    def raced(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            state["lists"] += 1
+            if state["lists"] == 2:
+                fake.metrics_list = [{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+        if args[:2] == ["metrics", "create"]:
+            fake.calls.append(list(args))
+            return 1, "metric already exists"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", raced)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    assert runner.revenue_metric_id == str(REVENUE_METRIC_ID)
+    assert ACTIVATE in fake.calls
+
+
+def test_unarchive_failure_stops_the_run(monkeypatch):
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "activated", "archived": True}
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+
+    def failing(args, *a, **kw):
+        if args[:2] == ["metrics", "archive"]:
+            return 17, "unarchive denied"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", failing)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="unarchive denied"):
+        runner._ensure_revenue_metric()
+
+
+def test_duplicate_revenue_metric_names_are_refused(monkeypatch):
+    fake = ResourceAbs([{"id": 1001, "name": "e2e_purchase_revenue"},
+                        {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'.*rename the extra ones"):
+        runner._ensure_revenue_metric()
+
+
+def test_revenue_lookup_searches_by_name(monkeypatch):
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}])
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    lookup = next(c for c in fake.calls if c[:2] == ["metrics", "list"])
+    assert lookup[lookup.index("--search") + 1] == "e2e_purchase_revenue"
+
+
+def test_top_level_review_status_is_not_read(monkeypatch):
+    # The API has no top-level review_status (it is only a list filter): only the
+    # nested review.status may skip review steps.
+    definition = {**REVENUE_DEFINITION, "lifecycle_status": "draft", "review_status": "approved"}
+    fake = ResourceAbs([{"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}], definition=definition)
+    monkeypatch.setattr(e2e_runner, "run_abs", fake)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    runner._ensure_revenue_metric()
+    tail = [c for c in fake.calls if c[0] == "metrics" and c[1] in ("review", "activate")]
+    assert tail == [REQUEST, APPROVE, ACTIVATE]
+
+
+def test_race_relookup_refuses_duplicate_names(monkeypatch):
+    fake = ResourceAbs([])
+    state = {"lists": 0}
+
+    def raced(args, *a, **kw):
+        if args[:2] == ["metrics", "list"]:
+            state["lists"] += 1
+            if state["lists"] == 2:
+                fake.metrics_list = [{"id": 1001, "name": "e2e_purchase_revenue"},
+                                     {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+        if args[:2] == ["metrics", "create"]:
+            return 1, "metric already exists"
+        return fake(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", raced)
+    runner = make_runner(sdks=("java",))
+    runner.revenue_metric_id = None
+    with pytest.raises(RuntimeError, match="2 metrics named 'e2e_purchase_revenue'"):
+        runner._ensure_revenue_metric()
+
+
+def test_find_resource_skips_non_dict_rows(monkeypatch):
+    rows = [None, "x", {"id": REVENUE_METRIC_ID, "name": "e2e_purchase_revenue"}]
+    monkeypatch.setattr(e2e_runner, "run_abs", lambda args, *a, **kw: (0, json.dumps(rows)))
+    runner = make_runner(sdks=("java",))
+    assert runner._find_resource("metrics", "e2e_purchase_revenue", unique=True) == str(REVENUE_METRIC_ID)

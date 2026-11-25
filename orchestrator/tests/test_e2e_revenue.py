@@ -9,6 +9,7 @@ Run from the repository root:  python3 -m pytest orchestrator/tests -q
 
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -200,7 +201,6 @@ def test_unmeasurable_revenue_is_unverified_and_fails(monkeypatch, capsys, case)
     results, out = run_verify(monkeypatch, capsys, runner, backend)
 
     java = results["sdks"]["java"]
-    # Exposures/goals measured fine; revenue alone is unmeasurable.
     assert java["exposures"]["pass"] is True
     assert java["goals"]["pass"] is True
     assert java["revenue"]["actual"] is None
@@ -219,7 +219,7 @@ def test_unmeasurable_revenue_is_unverified_and_fails(monkeypatch, capsys, case)
 
 def test_unverified_segmentation_fails_even_when_aggregate_passes(monkeypatch, capsys):
     backend = healthy_backend()
-    backend.count["java"] = 1  # segmented count query fails
+    backend.count["java"] = 1
     runner = make_runner()
     results, out = run_verify(monkeypatch, capsys, runner, backend)
 
@@ -271,6 +271,12 @@ def test_unmeasured_revenue_report_has_no_computed_figure(monkeypatch, capsys):
     assert banned not in json.dumps(results).lower()
     assert banned not in out.lower()
     assert results["sdks"]["java"]["revenue"]["actual"] is None
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", out)
+    java_row = next(line for line in plain.splitlines() if line.strip().startswith("java "))
+    assert "?/500 FAIL (unverified)" in java_row
+    assert "500/500 PASS" not in java_row
+    assert results["aggregate"]["actual_revenue"] == 500
+    assert "Backend aggregate (info): participants 100/100, goals 50/50, revenue 500/500" in plain
 
 
 def test_main_exits_nonzero_when_unverified(monkeypatch, capsys):
@@ -306,6 +312,13 @@ class _ProvisioningBackend:
         self.calls.append(list(args))
         if args[:2] == ["metrics", "list"]:
             return 0, json.dumps(self.existing)
+        if args[:2] == ["metrics", "get"]:
+            raw = {"id": int(args[2]), "name": "e2e_purchase_revenue", "type": "goal_property",
+                   "value_source_property": "amount", "goal": {"name": "purchase"}}
+            if "--raw" not in args:
+                # The CLI summary: no value_source_property, goal as a string.
+                raw = {"id": raw["id"], "name": raw["name"], "type": raw["type"], "goal": "purchase"}
+            return 0, json.dumps(raw)
         if args[:2] == ["metrics", "create"]:
             return 0, self.create_output
         return 0, ""
@@ -370,3 +383,401 @@ def test_experiment_creation_does_not_attach_revenue_metric(monkeypatch):
     create = calls[0]
     assert create[create.index("--primary-metric") + 1] == COUNT_METRIC_ID
     assert REVENUE_METRIC_ID not in create
+
+
+@pytest.mark.parametrize("action", ["create", "request", "approve", "activate"])
+def test_revenue_provisioning_stops_on_failed_action(monkeypatch, capsys, action):
+    backend = _ProvisioningBackend()
+    calls = []
+    failed_command = []
+    output = "original backend error\nwith diagnostic details"
+
+    def fail_action(args, *a, **kw):
+        calls.append(list(args))
+        current = args[2] if args[:2] == ["metrics", "review"] else args[1]
+        if current == action:
+            failed_command.extend(args)
+            return 17, output
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", fail_action)
+    runner = make_runner(revenue_metric_id=None)
+    runner.verbose = True
+    with pytest.raises(RuntimeError) as exc:
+        runner._ensure_revenue_metric()
+    assert action in str(exc.value)
+    assert output in str(exc.value)
+    if action != "create":
+        assert " ".join(failed_command) in str(exc.value)
+        assert "rc=17" in str(exc.value)
+    assert calls[-1] == failed_command
+    assert "Created and activated" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("definition", ["valid", "wrong_type", "wrong_property", "wrong_goal", "unreadable"])
+def test_revenue_creation_race_checks_existing_definition(monkeypatch, definition):
+    backend = _ProvisioningBackend()
+    calls = []
+
+    def raced(args, *a, **kw):
+        calls.append(list(args))
+        if args[:2] == ["metrics", "list"]:
+            existing = [] if len(calls) == 1 else [{"id": 2914, "name": "e2e_purchase_revenue"}]
+            return 0, json.dumps(existing)
+        if args[:2] == ["metrics", "create"]:
+            return 1, "metric already exists"
+        if args[:2] == ["metrics", "get"]:
+            if definition == "unreadable":
+                return 1, "read failed"
+            rc, output = backend(args, *a, **kw)
+            metric = json.loads(output)
+            metric.update({
+                "wrong_type": {"type": "goal_unique_count"},
+                "wrong_property": {"value_source_property": "price"},
+                "wrong_goal": {"goal": {"name": "checkout"}},
+            }.get(definition, {}))
+            return rc, json.dumps(metric)
+        pytest.fail(f"Unexpected provisioning action after race: {args}")
+
+    monkeypatch.setattr(e2e_runner, "run_abs", raced)
+    runner = make_runner(revenue_metric_id=None)
+    if definition == "valid":
+        runner._ensure_revenue_metric()
+        assert runner.revenue_metric_id == REVENUE_METRIC_ID
+    else:
+        with pytest.raises(RuntimeError, match="cannot measure revenue|check its definition"):
+            runner._ensure_revenue_metric()
+    assert calls[-1] == ["metrics", "get", REVENUE_METRIC_ID, "--raw"]
+
+
+def test_aggregate_is_read_after_segments_advance(monkeypatch, capsys):
+    sdks = ("java", "go")
+    backend = healthy_backend(sdks=sdks)
+    segmented_reads = set()
+
+    def advancing(args, *a, **kw):
+        sdk = sdk_from_filter(args)
+        if sdk is not None:
+            segmented_reads.add((sdk, "revenue" if "--metric" in args else "count"))
+        elif len(segmented_reads) < 2 * len(sdks):
+            if "--metric" in args:
+                return 0, json.dumps(revenue_result([57, 43], [270, 230]))
+            return 0, json.dumps(count_result([57, 43], [27, 23]))
+        return backend(args, *a, **kw)
+
+    # Before the segmented reads the backend has only one SDK's aggregate.
+    assert json.loads(advancing(["--metric", REVENUE_METRIC_ID])[1])[0]["variants"][0]["count"] == 270
+    runner = make_runner(sdks=sdks)
+    results, _ = run_verify(monkeypatch, capsys, runner, advancing)
+    assert results["aggregate"]["actual_revenue"] == 1000
+    assert results["aggregate"]["actual_participants"] == 200
+    assert results["overall_pass"] is True
+    assert E2ERunner.report_passes(results) is True
+    assert all(sdk_from_filter(c) is None for c in backend.calls[-2:])
+
+
+@pytest.fixture
+def poll_clock(monkeypatch):
+    class Clock:
+        now = 0
+        reads = 0
+
+        def monotonic(self):
+            self.reads += 1
+            assert self.reads <= 100, "polling did not terminate at its deadline"
+            return self.now
+
+        def sleep(self, seconds):
+            assert 0 < seconds <= 5
+            self.now += seconds
+            assert self.now <= 12, "polling exceeded its timeout"
+
+    clock = Clock()
+    monkeypatch.setattr(e2e_runner.time, "monotonic", clock.monotonic)
+    monkeypatch.setattr(e2e_runner.time, "sleep", clock.sleep)
+    return clock
+
+
+@pytest.mark.parametrize("delayed", ["participants", "goals", "revenue"])
+def test_wait_polls_each_segmented_metric_until_ready(monkeypatch, capsys, poll_clock, delayed):
+    sdks = ("java", "go")
+    backend = healthy_backend(sdks=sdks)
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 12
+    runner.sdk_results["skipped"] = {"status": "skipped"}
+    runner.sdk_results["errored"] = {"status": "error"}
+
+    def delayed_results(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        sdk = sdk_from_filter(args)
+        assert sdk in sdks, "aggregate/inactive SDK must not gate readiness"
+        if sdk == "go" and poll_clock.now == 0:
+            if delayed == "revenue" and "--metric" in args:
+                backend.calls.append(list(args))
+                return 0, "[]"
+            if delayed != "revenue" and "--metric" not in args:
+                backend.calls.append(list(args))
+                units = [57, 42] if delayed == "participants" else [57, 43]
+                goals = [27, 22] if delayed == "goals" else [27, 23]
+                return 0, json.dumps(count_result(units, goals))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", delayed_results)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 5
+    assert len(backend.calls) == 8
+    out = capsys.readouterr().out
+    assert "Metrics ready" in out
+    assert "Metrics incomplete" not in out
+    monkeypatch.setattr(e2e_runner, "run_abs", backend)
+    results = runner.verify_metrics()
+    assert all(results["sdks"][sdk]["status"] == "ok" for sdk in sdks)
+    assert E2ERunner.report_passes(results) is False  # The errored SDK still fails the run.
+
+
+@pytest.mark.parametrize("missing", ["empty", "query_failed", "short", "no_metric_id"])
+def test_wait_revenue_timeout_is_bounded_and_verification_fails(monkeypatch, capsys, poll_clock, missing):
+    backend = healthy_backend()
+    backend.revenue["java"] = {
+        "empty": [], "query_failed": 1,
+        "short": revenue_result([57, 43], [270, 220]),
+    }.get(missing, [])
+    runner = make_runner(revenue_metric_id=None if missing == "no_metric_id" else REVENUE_METRIC_ID)
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 12
+    count_calls = [c for c in backend.calls if "--metric" not in c]
+    assert len(count_calls) == 3
+    assert all(sdk_from_filter(c) == "java" for c in backend.calls)
+    out = capsys.readouterr().out
+    assert "Metrics incomplete" in out and "java revenue" in out
+    assert "Metrics ready" not in out
+    results = runner.verify_metrics()
+    assert results["overall_pass"] is False
+    assert E2ERunner.report_passes(results) is False
+
+
+@pytest.mark.parametrize("sdks", [("java",), ("java", "go")])
+def test_totals_keep_measured_columns_when_only_revenue_missing(monkeypatch, capsys, sdks):
+    backend = healthy_backend(sdks=sdks)
+    backend.revenue["java"] = []
+    runner = make_runner(sdks=sdks)
+    results, out = run_verify(monkeypatch, capsys, runner, backend)
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", out)
+    total = next(line for line in plain.splitlines() if line.strip().startswith("TOTAL "))
+    n = len(sdks)
+    assert f"{100 * n}/{100 * n} PASS" in total
+    assert f"{50 * n}/{50 * n} PASS" in total
+    assert f"{500 * (n - 1)}/{500 * n} FAIL (partial/unverified)" in total
+    assert "lower bounds" in plain
+    assert "All metrics verified" not in plain
+    assert results["overall_pass"] is False
+
+
+def test_partial_total_never_passes_even_if_lower_bound_reaches_expected():
+    runner = make_runner()
+    total = runner._format_total(500, 500, partial=True)
+    assert "FAIL (partial/unverified)" in total
+    assert "PASS" not in total
+
+
+def test_wait_does_not_start_queries_after_the_deadline(monkeypatch, capsys, poll_clock):
+    # Each real query can take up to run_abs's timeout; queries that advance the clock
+    # past the deadline mid-round must stop further SDKs being polled in that round.
+    sdks = ("java", "go", "php", "dotnet")
+    backend = healthy_backend(sdks=sdks)
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 6
+    started_after_deadline = []
+
+    def slow(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if poll_clock.now >= 6:
+            started_after_deadline.append(list(args))
+        poll_clock.now += 4  # a slow query
+        return 0, "[]"  # never ready
+
+    monkeypatch.setattr(e2e_runner, "run_abs", slow)
+    monkeypatch.setattr(e2e_runner.time, "sleep", lambda s: None)
+    runner.wait_for_metrics()
+    assert started_after_deadline == []
+    assert "Metrics incomplete" in capsys.readouterr().out
+
+
+def test_wait_skips_sdks_whose_wrapper_errors_already_fail_them(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend(sdks=("java",))
+    runner = make_runner(sdks=("java",))
+    runner.timeout = 12
+    runner.sdk_results["java"]["treatment_errors"] = 100
+    calls = []
+
+    def record(args, *a, **kw):
+        calls.append(list(args))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", record)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert not [c for c in calls if c[:3] == ["experiments", "metrics", "results"]]
+    assert "No active SDKs" in capsys.readouterr().out
+
+
+def test_wait_prints_a_repeated_segmentation_failure_once(monkeypatch, capsys, poll_clock):
+    runner = make_runner(sdks=("java",))
+    runner.timeout = 12
+
+    def rejected(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        return 1, "filter rejected"
+
+    monkeypatch.setattr(e2e_runner, "run_abs", rejected)
+    runner.wait_for_metrics()
+    out = capsys.readouterr().out
+    assert out.count("Segmentation query failed for java") == 1
+    assert "Metrics incomplete" in out
+
+
+@pytest.mark.parametrize("column", ["participants", "revenue"])
+def test_wait_stops_early_on_an_over_published_sdk(monkeypatch, capsys, poll_clock, column):
+    # Counts only grow, so an SDK already past the over-publish bound can never pass:
+    # readiness stops waiting on it instead of spending the whole timeout.
+    backend = healthy_backend()
+    if column == "revenue":
+        backend.revenue["java"] = revenue_result([57, 43], [540, 460])
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if column == "participants" and "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([114, 86], [27, 23]))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    out = capsys.readouterr().out
+    assert "Metrics over-published" in out and "Metrics ready" not in out
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    results = runner.verify_metrics()
+    assert results["sdks"]["java"]["status"] == "fail"
+    assert E2ERunner.report_passes(results) is False
+
+
+def test_wait_keeps_polling_a_pending_sdk_when_another_is_over_published(monkeypatch, capsys, poll_clock):
+    # One decided (over-published) SDK must not end the wait while another is still
+    # pending, and the decided SDK is not re-queried.
+    sdks = ("java", "go")
+    backend = healthy_backend(sdks=sdks)
+    backend.revenue["java"] = revenue_result([57, 43], [540, 460])
+    runner = make_runner(sdks=sdks)
+    runner.timeout = 12
+    java_calls = []
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        sdk = sdk_from_filter(args)
+        if sdk == "java":
+            java_calls.append(list(args))
+        if sdk == "go" and "--metric" in args and poll_clock.now == 0:
+            backend.calls.append(list(args))
+            return 0, "[]"
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 5
+    assert len(java_calls) == 2  # one round only: count and revenue
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_stops_early_when_goals_are_over_published(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([57, 43], [30, 26]))  # 56 goals > int(50 * 1.05)
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_treats_a_count_exactly_at_the_bound_as_ready(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([60, 45], [27, 23]))  # 105 == int(100 * 1.05)
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    out = capsys.readouterr().out
+    assert "Metrics ready" in out and "over-published" not in out
+
+
+def test_wait_stops_early_one_past_the_bound(monkeypatch, capsys, poll_clock):
+    backend = healthy_backend()
+    runner = make_runner()
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if "--metric" not in args and sdk_from_filter(args) == "java":
+            backend.calls.append(list(args))
+            return 0, json.dumps(count_result([61, 45], [27, 23]))  # 106 == int(100 * 1.05) + 1
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out
+
+
+def test_wait_stops_early_when_nothing_was_planned_but_something_was_measured(monkeypatch, capsys, poll_clock):
+    # units=0: expected 0 with actual 3 can never pass (_within_tolerance needs actual == 0).
+    backend = healthy_backend()
+    runner = make_runner(units=0)
+    runner.timeout = 12
+
+    def waiting(args, *a, **kw):
+        if args[:2] == ["experiments", "request-update"]:
+            return 0, ""
+        if sdk_from_filter(args) == "java":
+            if "--metric" in args:
+                return 0, json.dumps([{"metric_id": int(REVENUE_METRIC_ID), "variants": [
+                    {"variant": 0, "unit_count": 0, "count": 0}]}])
+            return 0, json.dumps(count_result([2, 1], [0, 0]))
+        return backend(args, *a, **kw)
+
+    monkeypatch.setattr(e2e_runner, "run_abs", waiting)
+    runner.wait_for_metrics()
+    assert poll_clock.now == 0
+    assert "Metrics over-published" in capsys.readouterr().out
