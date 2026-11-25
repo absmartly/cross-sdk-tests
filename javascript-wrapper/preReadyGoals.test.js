@@ -12,6 +12,7 @@ function harness({ unexpectedlyReady = false, fetchError = false, syncFetchError
   const routes = new Map();
   const calls = [];
   let instance;
+  let fetches = 0;
   class Publisher { publish() { return Promise.resolve(); } }
   class SDK {
     constructor(config) { this.config = config; instance = this; }
@@ -20,16 +21,21 @@ function harness({ unexpectedlyReady = false, fetchError = false, syncFetchError
       return this.makeContext(data, options);
     }
     setContextDataProvider(provider) { this.provider = provider; }
-    getClient() { return { getContext: () => { try { return this.getContextData(); } catch (error) { return Promise.reject(error); } } }; }
+    getClient() { return { getContext: () => { try { return this.clientFetch(); } catch (error) { return Promise.reject(error); } } }; }
     createContext(config, options) {
       calls.push('create');
-      const data = this.provider ? this.provider.getContextData(this) : this.getContextData();
+      const data = this.getContextData();
       return this.makeContext(data, options);
     }
     getContextData() {
+      if (this.provider) return this.provider.getContextData(this);
+      return this.clientFetch();
+    }
+    clientFetch() {
       calls.push('fetch');
       if (syncFetchError) throw new Error('fetch failed');
-      return fetchError ? Promise.reject(new Error('fetch failed')) : Promise.resolve({ experiments: [] });
+      fetches += 1;
+      return fetchError ? Promise.reject(new Error('fetch failed')) : Promise.resolve({ experiments: [], fetch: fetches });
     }
     makeContext(data, options) {
       assert.equal(options.publishDelay, -1);
@@ -170,6 +176,7 @@ test('released pre-ready provider uses the real client for later fetches', async
   const result = await h.create({ mode: 'e2e', preReadyGoals: goals });
   assert.equal(result.status, 200);
   const before = h.calls.filter(call => call === 'fetch').length;
-  await h.sdk.provider.getContextData(h.sdk);
+  const refreshed = await h.sdk.getContextData();
   assert.equal(h.calls.filter(call => call === 'fetch').length, before + 1);
+  assert.equal(refreshed.fetch, 2);
 });
