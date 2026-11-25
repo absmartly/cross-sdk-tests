@@ -498,28 +498,44 @@ def test_direct_baseline_verification_skips_cases(runner, monkeypatch):
     assert not cases.called
 
 
-def test_run_expects_cases_even_if_a_stage_drops_them(runner, monkeypatch):
+def test_dropped_case_run_still_expects_cases(runner, monkeypatch):
     runner.event_cases_expected = False
-    for name in ("ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
-                 "create_case_experiments", "run_sdk_scenarios", "run_event_cases", "wait_for_metrics",
-                 "print_report", "cleanup_experiment"):
-        monkeypatch.setattr(runner, name, lambda *a: None)
-    monkeypatch.setattr(runner, "verify_metrics", lambda: {"expected": runner.event_cases_expected})
-    assert runner.run() == {"expected": True}
+    monkeypatch.setattr(runner, "_run_sdk_scenario", lambda sdk, url: {"status": "ok"})
+    monkeypatch.setattr(runner, "run_event_cases", lambda: None)
+    runner.run_sdk_scenarios()
+    assert runner.event_cases_expected is True
 
 
 def test_run_stage_order(runner, monkeypatch):
     order = []
-    for name in ("ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
-                 "create_case_experiments", "run_sdk_scenarios", "run_event_cases",
+    for name in ("ensure_resources", "create_experiment", "start_experiment", "run_sdk_scenarios",
                  "wait_for_metrics", "print_report", "cleanup_experiment"):
         monkeypatch.setattr(runner, name, (lambda n: lambda *a: order.append(n))(name))
     monkeypatch.setattr(runner, "verify_metrics", lambda: order.append("verify_metrics") or {})
     runner.run()
-    assert order == ["ensure_resources", "_ensure_case_metrics", "create_experiment", "start_experiment",
-                     "create_case_experiments", "run_sdk_scenarios", "run_event_cases",
+    assert order == ["ensure_resources", "create_experiment", "start_experiment", "run_sdk_scenarios",
                      "wait_for_metrics", "verify_metrics", "print_report", "cleanup_experiment"]
 
+
+def test_resource_and_experiment_stages_own_case_setup(runner, monkeypatch):
+    order = []
+    for name in ("_ensure_application", "_ensure_unit_type", "_ensure_owner", "_ensure_goal", "_ensure_metric",
+                 "_ensure_revenue_metric", "_ensure_case_metrics"):
+        monkeypatch.setattr(runner, name, (lambda n: lambda *a: order.append(n))(name))
+    runner.ensure_resources()
+    assert order[-1] == "_ensure_revenue_metric"
+    calls = []
+    monkeypatch.setattr(runner, "_wait_for_experiment_in_context", lambda: True)
+    monkeypatch.setattr(runner, "create_case_experiments", lambda: calls.append("cases"))
+    with patch("e2e_runner.run_abs", return_value=(0, "")):
+        runner.start_experiment()
+    assert calls == ["cases"]
+    events = []
+    runner.event_cases_expected = False
+    monkeypatch.setattr(runner, "_run_sdk_scenario", lambda sdk, url: {"status": "ok"})
+    monkeypatch.setattr(runner, "run_event_cases", lambda: events.append(runner.event_cases_expected))
+    runner.run_sdk_scenarios()
+    assert events == [True]
 
 def test_cases_use_their_own_experiments(runner):
     # Case exposures go to -cases / -session, never to the baseline experiment.
@@ -537,6 +553,7 @@ def test_case_experiments_are_created_started_and_awaited(runner, monkeypatch):
     def create():
         runner.experiment_id = next(created)
     calls = []
+    monkeypatch.setattr(runner, "_ensure_case_metrics", lambda: None)
     monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
     monkeypatch.setattr(runner, "create_experiment", create)
     monkeypatch.setattr(runner, "_wait_for_experiment_in_context",
@@ -549,6 +566,7 @@ def test_case_experiments_are_created_started_and_awaited(runner, monkeypatch):
 
 
 def test_invisible_case_experiment_raises(runner, monkeypatch):
+    monkeypatch.setattr(runner, "_ensure_case_metrics", lambda: None)
     monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
     monkeypatch.setattr(runner, "create_experiment", lambda: setattr(runner, "experiment_id", 501))
     monkeypatch.setattr(runner, "_wait_for_experiment_in_context", lambda: False)
@@ -668,6 +686,7 @@ def _side_runner(runner, monkeypatch, start_rc=0, ids=(501, 502)):
         made.append((runner.unit_type, runner.experiment_suffix))
         runner.experiment_id = next(created)
         runner.experiment_name = f"e2e-{runner.run_id}-{runner.experiment_suffix}"
+    monkeypatch.setattr(runner, "_ensure_case_metrics", lambda: None)
     monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
     monkeypatch.setattr(runner, "create_experiment", create)
     monkeypatch.setattr(runner, "_wait_for_experiment_in_context", lambda: True)
@@ -1175,3 +1194,12 @@ def test_verifier_stops_starting_processes_after_deadline(runner):
         result = verify(runner)
     assert starts == [0.0]
     assert not result['overall_pass']
+
+
+def test_case_metrics_are_provisioned_with_case_experiments(runner, monkeypatch):
+    calls = []
+    monkeypatch.setattr(runner, "_ensure_case_metrics", lambda: calls.append("metrics"))
+    monkeypatch.setattr(runner, "_find_resource", lambda kind, name: "79")
+    monkeypatch.setattr(runner, "_create_side_experiment", lambda suffix, unit: calls.append(suffix) or (500, f"e2e-{suffix}"))
+    runner.create_case_experiments()
+    assert calls == ["metrics", "cases", "session"]

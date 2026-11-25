@@ -242,28 +242,34 @@ def parse_swift_test(output):
     xc_failed = len(re.findall(r"Test Case '.*?' failed", output, re.MULTILINE))
 
     test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
-    st_failed = len(re.findall(test_line.format(status="failed"), output, re.MULTILINE))
-    # A skipped test is in the run total but did not pass: "➔ Test name() skipped."
-    # or, with a comment, 'Test name() skipped: "reason"'. A cancelled test
-    # ("Test name() was cancelled after N seconds") did not pass either.
-    st_skipped = len(re.findall(r'^\S+ Test (?!run with ).*? skipped(?:\.|: ".*")?\s*$', output, re.MULTILINE))
-    st_skipped += len(re.findall(r"^\S+ Test (?!run with ).*? was cancelled after [\d.]+ seconds", output, re.MULTILINE))
-    runs = re.findall(
-        r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after", output, re.MULTILINE)
-    if runs:
-        # The run summaries are authoritative for the total; a failed run counts
-        # at least one failure even if no single test reported one.
-        st_total = sum(int(n) for n, _ in runs)
-        failed_runs = sum(1 for _, status in runs if status == "failed")
-        st_failed = min(st_total, max(st_failed, failed_runs))
-        st_skipped = min(st_skipped, st_total - st_failed)
-        st_passed = st_total - st_failed - st_skipped
-    else:
-        # Without run summaries (truncated output), count the per-test pass lines.
-        st_passed = len(re.findall(test_line.format(status="passed"), output, re.MULTILINE))
+    st_passed = st_failed = st_skipped = 0
+    summary = r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after"
+    # Each target owns its summary and result lines. Completed summaries must not
+    # hide trailing results from a target whose output was truncated.
+    for target in re.split(r"^\S+ Test run started\.\s*$", output, flags=re.MULTILINE):
+        cursor = 0
+        runs = list(re.finditer(summary, target, re.MULTILINE))
+        for run in runs + [None]:
+            section = target[cursor:run.start()] if run else target[cursor:]
+            failed = len(re.findall(test_line.format(status="failed"), section, re.MULTILINE))
+            skipped = len(re.findall(
+                r'^\S+ Test (?!run with ).*? skipped(?:\.|: ".*")?\s*$', section, re.MULTILINE))
+            skipped += len(re.findall(
+                r"^\S+ Test (?!run with ).*? was cancelled after [\d.]+ seconds", section, re.MULTILINE))
+            if run:
+                total = int(run.group(1))
+                failed = min(total, max(failed, int(run.group(2) == "failed")))
+                skipped = min(skipped, total - failed)
+                passed = total - failed - skipped
+                cursor = run.end()
+            else:
+                passed = len(re.findall(test_line.format(status="passed"), section, re.MULTILINE))
+            st_passed += passed
+            st_failed += failed
+            st_skipped += skipped
 
     passed, failed = xc_passed + st_passed, xc_failed + st_failed
-    if passed or failed:
+    if passed or failed or st_skipped:
         return passed, failed, passed + failed + st_skipped
     return None, None, None
 

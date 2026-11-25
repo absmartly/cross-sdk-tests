@@ -161,9 +161,6 @@ class E2ERunner:
         self.dry_run = config.get("dry_run", False)
         self.sdk_results: Dict[str, Dict[str, Any]] = {}
         self.skipped_sdks: List[str] = []
-        # SDKs the user named explicitly (--sdk). A requested SDK that is skipped
-        # (e.g. its wrapper answers 501 for e2e mode) fails the run; only SDKs
-        # that were not requested (the default "all") may be skipped.
         self.requested_sdks = set(config.get("requested_sdks") or ())
         self.experiment_context_ready = True
         self.app_id: Optional[str] = None
@@ -221,16 +218,11 @@ class E2ERunner:
         print(f"  Profile: {self.profile}")
         print()
 
-        self.event_cases_expected = True
         try:
             self.ensure_resources()
-            if not self.dry_run:
-                self._ensure_case_metrics()
             self.create_experiment()
             self.start_experiment()
-            self.create_case_experiments()
             self.run_sdk_scenarios()
-            self.run_event_cases()
             self.wait_for_metrics()
             results = self.verify_metrics()
             self.print_report(results)
@@ -443,6 +435,7 @@ class E2ERunner:
         """
         if self.dry_run:
             return
+        self._ensure_case_metrics()
         session_type = self._find_resource("units", "session_id")
         if not session_type:
             rc, output = run_abs(["units", "create", "--name", "session_id",
@@ -921,6 +914,7 @@ class E2ERunner:
 
         print(f"  {Colors.GREEN}Started{Colors.RESET}")
         self.experiment_context_ready = self._wait_for_experiment_in_context()
+        self.create_case_experiments()
 
     def _wait_for_experiment_in_context(self) -> bool:
         """Poll the SDK endpoint until the started experiment is assignable.
@@ -998,6 +992,10 @@ class E2ERunner:
                             "treatment_errors": 0,
                             "track_errors": 0,
                         }
+        # The case layer starts only after the baseline lanes; from here on a run
+        # that does not send its cases fails with "Case was not executed".
+        self.event_cases_expected = True
+        self.run_event_cases()
 
     def _run_sdk_scenario(self, sdk_name: str, base_url: str) -> Dict[str, Any]:
         exposures_sent = 0
@@ -1248,9 +1246,13 @@ class E2ERunner:
         if not self.experiment_id:
             return None
 
-        rc, output = run_abs([
-            "experiments", "metrics", "results", str(self.experiment_id),
-        ], self.profile, **({"deadline": deadline} if deadline is not None else {}))
+        try:
+            rc, output = run_abs([
+                "experiments", "metrics", "results", str(self.experiment_id),
+            ], self.profile, **({"deadline": deadline} if deadline is not None else {}))
+        except subprocess.TimeoutExpired as exc:
+            self.log(f"Metrics query timed out after {exc.timeout}s")
+            return None
 
         if rc != 0:
             self.log(f"Metrics fetch failed: {output}")
@@ -1336,7 +1338,10 @@ class E2ERunner:
         ]
         if sdk_name is not None:
             args += ["--filter", self.sdk_segment_filter(sdk_name)]
-        rc, output = run_abs(args, self.profile)
+        try:
+            rc, output = run_abs(args, self.profile)
+        except subprocess.TimeoutExpired as exc:
+            return None, f"revenue query timed out after {exc.timeout}s"
         if rc != 0:
             first_line = (output.strip().splitlines() or [""])[0][:200]
             reason = f"query failed (abs rc={rc})"
@@ -1396,16 +1401,6 @@ class E2ERunner:
             return None, None, variants
         return (sum(v["unit_count"] for v in variants), sum(v["count"] for v in variants), variants)
 
-    def _extract_total_participants(self, metrics: Any) -> int:
-        """Sum of variants[].unit_count (exposed units); 0 if unavailable."""
-        counts = self._variant_counts(metrics)
-        return sum(v["unit_count"] for v in counts) if counts else 0
-
-    def _extract_total_goals(self, metrics: Any) -> int:
-        """Sum of variants[].count (goal_unique_count numerator); 0 if unavailable."""
-        counts = self._variant_counts(metrics)
-        return sum(v["count"] for v in counts) if counts else 0
-
     @staticmethod
     def _upper_bound(expected: int) -> int:
         """Largest count that still passes for `expected` (the over-publish bound)."""
@@ -1457,13 +1452,16 @@ class E2ERunner:
         """
         if not self.experiment_id:
             return None, "no experiment id"
-        rc, output = run_abs(
-            [
-                "experiments", "metrics", "results", str(self.experiment_id),
-                "--filter", self.sdk_segment_filter(sdk_name),
-            ],
-            self.profile,
-        )
+        try:
+            rc, output = run_abs(
+                [
+                    "experiments", "metrics", "results", str(self.experiment_id),
+                    "--filter", self.sdk_segment_filter(sdk_name),
+                ],
+                self.profile,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return None, f"segmentation query timed out after {exc.timeout}s"
         if rc != 0:
             # `output` already carries the CLI stderr (see run_abs). Readiness polls
             # repeatedly, so each distinct failure is printed once per run.
@@ -1618,15 +1616,16 @@ class E2ERunner:
         # Read aggregates last so a live update during segmented reads does not
         # compare newer segment sums against an older aggregate snapshot.
         agg = self._fetch_metrics()
-        agg_participants = self._extract_total_participants(agg) if agg else 0
-        agg_goals = self._extract_total_goals(agg) if agg else 0
+        agg_participants, agg_goals, _ = self._measured_counts(agg)
+        agg_participants = agg_participants or 0
+        agg_goals = agg_goals or 0
         agg_revenue, agg_revenue_reason = self._fetch_revenue()
 
         # Filter-trust sanity checks. If the backend ignores the filter, every
         # SDK comes back with the aggregate total and per-SDK "verification"
         # would pass everyone. Either condition below fails every segmented SDK.
         seg_warning: Optional[str] = None
-        exp_actuals = [self._extract_total_participants(m) for m in segmented.values()]
+        exp_actuals = [self._measured_counts(m)[0] or 0 for m in segmented.values()]
         if len(exp_actuals) >= 2 and agg_participants > 0:
             # Planned volumes are identical across SDKs, so key off the actuals
             # collapsing onto the aggregate, not off expected variance.
@@ -1871,7 +1870,6 @@ class E2ERunner:
 
         skipped = sorted(name for name, row in sdks.items() if row.get("status") == "skipped")
         if skipped:
-            # Only SDKs that were not requested with --sdk can be skipped.
             print(f"  {Colors.YELLOW}Skipped (not requested, no e2e mode): {', '.join(skipped)}{Colors.RESET}")
             print()
 
