@@ -284,9 +284,14 @@ jobs:
         run: |
           source sdk-branches.sh
           source sdk-checkout.sh
-          # Matrix names omit -sdk; wrapper Dockerfiles expect checkout directories
-          # with -sdk, and SDK_REPO_SOURCES maps aliases (python3-sdk, etc.).
-          repo="${{ matrix.sdk }}-sdk"
+          # Matrix names are wrapper lanes, not repository names. Keep this
+          # explicit: python's repository is python3-sdk while its Dockerfile
+          # COPY expects the python3-sdk directory; JavaScript is analogous.
+          case "${{ matrix.sdk }}" in
+            javascript) repo="javascript-sdk" ;;
+            python) repo="python3-sdk" ;;
+            *) echo "unsupported local collector SDK: ${{ matrix.sdk }}" >&2; exit 1 ;;
+          esac
           branch="${SDK_BRANCHES[$repo]:-main}"
           revision="${SDK_REVISIONS[$repo]:-}"
           source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
