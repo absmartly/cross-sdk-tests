@@ -55,6 +55,7 @@ _CONTEXT_SERVER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspa
 if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "negotiation.py")):
     sys.path.insert(0, _CONTEXT_SERVER_DIR)
 import negotiation  # noqa: E402
+from e2e_cases import AGENT_LANGUAGE  # noqa: E402
 
 
 # Checked-in capability policy: which `requires:` capabilities each SDK must
@@ -559,16 +560,7 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
 # The SDK language each lane's requests name (the <lang> of an X-Agent such as absmartly-<lang>-sdk/1.0.0)
 # where it is not the lane name: flutter uses the dart_sdk client, java-v1 is java-sdk 1.x, liquid wraps ruby-sdk, and the
 # framework wrappers wrap javascript-sdk.
-SDK_AGENT_LANGUAGE = {
-    "swift-v1": "swift",
-    "flutter": "dart",
-    "java-v1": "java",
-    "liquid": "ruby",
-    "react": "javascript",
-    "vue2": "javascript",
-    "vue3": "javascript",
-    "angular": "javascript",
-}
+SDK_AGENT_LANGUAGE = AGENT_LANGUAGE
 
 
 def _as_list(value: Any) -> List[Any]:

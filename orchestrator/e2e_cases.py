@@ -3,7 +3,38 @@ from decimal import Decimal
 import hashlib
 
 
+# The SDK language in a lane's X-Agent (absmartly-<language>-sdk/...) where it is not the lane name:
+# flutter uses the dart client, the -v1 lanes are the 1.x SDKs, liquid wraps ruby-sdk, and the
+# framework wrappers wrap javascript-sdk.
+AGENT_LANGUAGE = {
+    "swift-v1": "swift", "flutter": "dart", "java-v1": "java", "liquid": "ruby",
+    "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript",
+}
+
 NUMERIC_VALUES = (10, 10.5, 0.1, -4, 0, 1000000)
+
+
+def exact_number(value) -> str:
+    """A JSON number as an exact, comparable string: equal values (10, 10.0, 1e1) give the same
+    string and distinct values never do. No arithmetic, so no rounding and no exponent overflow."""
+    if isinstance(value, bool):
+        raise ValueError(f"not a number: {value!r}")
+    if isinstance(value, float):
+        value = Decimal(repr(value))
+    if isinstance(value, int):
+        value = Decimal(value)
+    if not isinstance(value, Decimal):
+        raise ValueError(f"not a number: {value!r}")
+    if not value.is_finite():
+        raise ValueError("non-finite number")
+    sign, digits, exponent = value.as_tuple()
+    digits = "".join(map(str, digits)).lstrip("0")
+    if not digits:
+        return "0"
+    stripped = digits.rstrip("0")
+    exponent += len(digits) - len(stripped)
+    return f"{'-' if sign else ''}{stripped}e{exponent}"
+
 BATCH_SIZE = 300
 
 

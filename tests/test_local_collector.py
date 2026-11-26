@@ -262,6 +262,38 @@ class GateRunTest(unittest.TestCase):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
+    def run_python(self, mutate=None):
+        cases = gate.plan("r", "python")
+        null_case = next(c for c in cases if c["name"] == "null_value")
+        publishes = _publishes_for("python", cases)
+        # Python's reviewed exception: its null property arrives as {} rather than {"amount": null}.
+        publishes[cases.index(null_case)]["json"]["goals"][0]["properties"] = {}
+        for record in publishes:
+            record["headers"][0] = ["X-Agent", "absmartly-python-sdk/0.4.0"]
+        if mutate:
+            mutate(publishes)
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+            return gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r"), cases
+
+    def test_the_python_null_property_exception_still_checks_that_publishs_transport(self):
+        result, _ = self.run_python()
+        self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
+
+        def corrupt(out, name):
+            index = [c["name"] for c in gate.plan("r", "python")].index(name)
+            out[index]["headers"] = []
+            out[index]["json"]["hashed"] = False
+        for name in ("null_value", "strings"):
+            with self.subTest(case=name):
+                result, _ = self.run_python(lambda out, name=name: corrupt(out, name))
+                self.assertFalse(result["overall_pass"])
+                errors = result["sdks"]["python"]["errors"]
+                for fragment in ("agent None", "application header None", "environment header None", "hashed=False"):
+                    self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
+
     def run_with(self, extra, mutate=None):
         cases = gate.plan("r", "javascript")
         publishes = _publishes_for("javascript", cases, mutate) + extra
@@ -566,7 +598,6 @@ class EmptySelectionTest(unittest.TestCase):
         import subprocess
         import tempfile
         with tempfile.TemporaryDirectory() as bin_dir:
-            # A docker that records any call: the launcher must refuse before it starts a container.
             calls = os.path.join(bin_dir, "calls")
             stub = os.path.join(bin_dir, "docker")
             with open(stub, "w") as out:
@@ -584,6 +615,53 @@ class EmptySelectionTest(unittest.TestCase):
     def test_run_refuses_an_empty_sdk_map(self):
         with self.assertRaises(ValueError):
             gate.run({}, "http://c", "e2e-tests", "production", "r")
+
+
+class CollectorResetTest(unittest.TestCase):
+    def test_a_failed_reset_writes_a_fresh_failing_report_and_drives_no_sdk(self):
+        import subprocess
+        import tempfile
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Unavailable(BaseHTTPRequestHandler):
+            def do_DELETE(self):
+                self.send_response(503)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            do_GET = do_POST = do_PUT = do_DELETE
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Unavailable)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report = os.path.join(tmp, "report.json")
+                with open(report, "w") as out:
+                    json.dump({"overall_pass": True, "sdks": {"javascript": {"pass": True}}}, out)
+                url = f"http://127.0.0.1:{server.server_address[1]}"
+                done = subprocess.run([sys.executable, os.path.join(ROOT, "orchestrator", "local_collector_gate.py"),
+                                       "--sdk", "javascript", "--collector", url, "--report", report],
+                                      capture_output=True, text=True, timeout=60,
+                                      env=dict(os.environ, SDK_URLS_OVERRIDE=f"javascript={url}"))
+                self.assertEqual(done.returncode, 1, done.stderr)
+                self.assertNotIn("Traceback", done.stderr)
+                with open(report) as src:
+                    written = json.load(src)
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertFalse(written["overall_pass"])
+        self.assertEqual(written["sdks"], {})
+        self.assertTrue(any("collector reset failed" in e for e in written["transport_errors"]))
+
+    def test_run_drives_no_sdk_when_the_reset_fails(self):
+        with mock.patch.object(gate.requests, "delete", side_effect=gate.requests.ConnectionError("down")), \
+             mock.patch.object(gate, "drive") as drive:
+            result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+        drive.assert_not_called()
+        self.assertFalse(result["overall_pass"])
 
 
 if __name__ == "__main__":

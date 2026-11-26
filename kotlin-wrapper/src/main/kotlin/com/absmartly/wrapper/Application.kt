@@ -439,7 +439,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             val request = call.receive<Map<String, Any>>()
             val unitType = request["unitType"] as? String
             try {
@@ -459,7 +459,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val result = wrapper.context.getUnit(request["unitType"] as String)
@@ -476,7 +476,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any?>>()
                 wrapper.context.setAttribute(request["name"] as String, request["value"])
@@ -492,7 +492,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val result = wrapper.context.getAttribute(request["name"] as String)
@@ -508,7 +508,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val variant = wrapper.context.getTreatment(request["experimentName"] as String)
@@ -525,7 +525,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val result = wrapper.context.peekTreatment(request["experimentName"] as String)
@@ -541,7 +541,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any?>>()
                 val result = wrapper.context.getVariableValue(request["key"] as String, request["defaultValue"])
@@ -558,7 +558,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any?>>()
                 val result = wrapper.context.peekVariableValue(request["key"] as String, request["defaultValue"])
@@ -575,7 +575,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any?>>()
                 val goalName = request["goalName"] as String
@@ -606,7 +606,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 wrapper.context.setOverride(
@@ -624,7 +624,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 wrapper.context.setOverride(
@@ -643,7 +643,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 wrapper.context.setCustomAssignment(
@@ -661,7 +661,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 wrapper.context.setCustomAssignment(
@@ -680,7 +680,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val result = wrapper.context.getCustomFieldValue(
@@ -699,7 +699,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val keys = wrapper.context.variableKeys
                 val result = keys.keys.toList()
@@ -715,7 +715,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val keys = wrapper.context.customFieldKeys
@@ -732,7 +732,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val result = wrapper.context.getCustomFieldValueType(
@@ -751,7 +751,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             call.respond(mapOf("result" to wrapper.context.pendingCount, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
         }
 
@@ -760,7 +760,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             call.respond(mapOf("result" to wrapper.context.isClosed, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
         }
 
@@ -769,7 +769,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             call.respond(mapOf("result" to wrapper.context.isReady, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
         }
 
@@ -778,7 +778,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             call.respond(mapOf("result" to wrapper.context.isFailed, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
         }
 
@@ -787,7 +787,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@get call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val result = wrapper.context.experiments
                 call.respond(mapOf("result" to result, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
@@ -801,7 +801,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val result = wrapper.context.getUnits()
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
@@ -816,7 +816,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val attrs = wrapper.context.getAttributes()
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
@@ -831,7 +831,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val error = wrapper.context.readyError()
                 val result = error?.let { mapOf("isError" to true, "message" to (it.message ?: it.toString())) }
@@ -846,7 +846,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val keys = wrapper.context.variableKeys
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
@@ -861,7 +861,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val keys = wrapper.context.customFieldKeys
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)
@@ -876,7 +876,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             wrapper.publisher?.setShouldFail(true)
             call.respond(mapOf("result" to null, "events" to wrapper.eventCollector.getNewEvents(eventsBefore)))
         }
@@ -886,7 +886,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 // Await the SDK publish so the collector PUT completes before we
                 // respond; otherwise e2e publish races the collector verification.
@@ -906,7 +906,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 val request = call.receive<Map<String, Any>>()
                 val newData = if (request.containsKey("newData")) {
@@ -932,7 +932,7 @@ fun Application.configureRouting(
             val wrapper = contexts[contextId] ?: return@post call.respond(
                 HttpStatusCode.NotFound, mapOf("error" to "Context not found")
             )
-            val eventsBefore = wrapper.eventCollector.getEvents().size
+            val eventsBefore = wrapper.eventCollector.eventCount()
             try {
                 wrapper.context.close()
                 val newEvents = wrapper.eventCollector.getNewEvents(eventsBefore)

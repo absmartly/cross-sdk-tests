@@ -68,6 +68,12 @@ open class EventCollector : ContextEventLogger {
         }
     }
 
+    fun eventCount(): Int {
+        synchronized(lock) {
+            return events.size
+        }
+    }
+
     fun getNewEvents(since: Int): List<Map<String, Any?>> {
         synchronized(lock) {
             if (since >= events.size) {

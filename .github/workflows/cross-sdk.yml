@@ -275,7 +275,6 @@ jobs:
         run: |
           source sdk-branches.sh
           source sdk-checkout.sh
-          # The lane's checkout directories come from the main matrix, so the two jobs cannot drift.
           repos=$(echo '${{ needs.harness.outputs.matrix }}' | jq -r --arg sdk "${{ matrix.sdk }}" \
             '.include[] | select(.sdk == $sdk) | .repos')
           [ -n "$repos" ] || { echo "no checkout mapping for ${{ matrix.sdk }}" >&2; exit 1; }
