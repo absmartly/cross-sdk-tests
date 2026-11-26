@@ -81,6 +81,12 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/v2/context")[0], 404)
         self.assertEqual(self.request("PUT", "/events", b"{}", {})[0], 404)
 
+    def test_malformed_content_length_and_gzip_return_400(self):
+        status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
+        self.assertEqual(status, 400)
+        status, _ = self.request("PUT", "/context", b"not-gzip", {"Content-Encoding": "gzip"})
+        self.assertEqual(status, 400)
+
 
 def _record(seq, body, agent="absmartly-javascript-sdk/1.14.0", app="e2e-tests", env="production"):
     return {"seq": seq, "json": body, "headers": [["X-Agent", agent], ["X-Application", app], ["X-Environment", env]]}
@@ -187,6 +193,12 @@ class GateVerifyTest(unittest.TestCase):
         self.assertNotEqual(gate._canonical({"a": 0.1}), gate._canonical({"a": 0.10000001}))
         self.assertNotEqual(gate._canonical({"a": True}), gate._canonical({"a": 1}))
 
+    def test_missing_application_and_environment_headers_fail(self):
+        result = self.check(lambda out: out[0].update(headers=out[0]["headers"][:1]))
+        self.assertFalse(result["pass"])
+        self.assertTrue(any("application header None" in e for e in result["errors"]))
+        self.assertTrue(any("environment header None" in e for e in result["errors"]))
+
 
 class GateRunTest(unittest.TestCase):
     def test_run_drives_wrapper_and_fails_closed_on_wrapper_errors(self):
@@ -218,16 +230,3 @@ class GateRunTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-    def test_malformed_content_length_and_gzip_return_400(self):
-        status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
-        self.assertEqual(status, 400)
-        status, _ = self.request("PUT", "/context", b"not-gzip", {"Content-Encoding": "gzip"})
-        self.assertEqual(status, 400)
-
-    def test_gate_requires_application_environment_and_context_headers(self):
-        record = {"seq": 0, "json": {"hashed": True}, "headers": [["X-Agent", "absmartly-go-sdk/1"]]}
-        result = gate.verify("go", [], [record], "e2e-tests", "production", True)
-        self.assertFalse(result["pass"])
-        self.assertTrue(any("application header" in e for e in result["errors"]))
