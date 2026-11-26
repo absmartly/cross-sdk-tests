@@ -17,8 +17,9 @@ done
 [ -n "$SDKS" ] || { echo "--sdk is required" >&2; exit 1; }
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.local-collector.yml)
 SERVICES=""; for s in ${SDKS//,/ }; do SERVICES="$SERVICES $s-sdk"; done
+[ -n "$SERVICES" ] || { echo "--sdk selects no SDK: '$SDKS'" >&2; exit 1; }
 [ "$SKIP_BUILD" = true ] || "${COMPOSE[@]}" build local-collector $SERVICES orchestrator
-trap '"${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true' EXIT
+trap '"${COMPOSE[@]}" down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
 "${COMPOSE[@]}" up -d --force-recreate local-collector $SERVICES
 mkdir -p test-results
 for service in $SERVICES; do

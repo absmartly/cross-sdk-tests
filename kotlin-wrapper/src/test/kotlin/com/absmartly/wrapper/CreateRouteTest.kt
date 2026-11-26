@@ -60,6 +60,7 @@ class CreateRouteTest {
             .header("Content-Type", "application/json")
             .method(method, HttpRequest.BodyPublishers.ofString(body)).build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+        assertEquals(200, response.statusCode(), "$method $path: ${response.body()}")
         return if (response.body().isBlank()) emptyMap() else mapper.readValue(response.body())
     }
 
@@ -70,6 +71,10 @@ class CreateRouteTest {
         @Suppress("UNCHECKED_CAST")
         val events = response["events"] as List<Map<String, Any?>>
         assertEquals(listOf(event), events.map { it["type"] })
+        // Deleting the context closes the SDK client the route created; stopping Netty alone would not.
+        @Suppress("UNCHECKED_CAST")
+        val contextId = (response["result"] as Map<String, Any?>)["contextId"]
+        send("DELETE", "/context/$contextId", "")
     }
 
     @Test

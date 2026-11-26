@@ -379,6 +379,8 @@ def load_policy() -> Dict[str, Any]:
 
 def run(sdks: Dict[str, str], collector_url: str, application: str, environment: str,
         run_id: str) -> Dict[str, Any]:
+    if not sdks:
+        raise ValueError("the release gate needs at least one SDK")
     policy = load_policy()["sdks"]
     results: Dict[str, Any] = {"run_id": run_id, "sdks": {}, "overall_pass": True}
     requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
@@ -442,6 +444,8 @@ def main() -> None:
     parser.add_argument("--report", default="")
     args = parser.parse_args()
     names = [s.strip() for s in args.sdk.split(",") if s.strip()]
+    if not names:
+        parser.error(f"--sdk selects no SDK: {args.sdk!r}")
     override = dict(e.split("=", 1) for e in os.getenv("SDK_URLS_OVERRIDE", "").split(",") if "=" in e)
     sdks = {name: override.get(name, f"http://{name}-sdk:3000") for name in names}
     results = run(sdks, args.collector, os.getenv("ABSMARTLY_E2E_APPLICATION", "e2e-tests"),
