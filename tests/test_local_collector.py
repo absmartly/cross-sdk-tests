@@ -65,14 +65,13 @@ class CollectorServerTest(unittest.TestCase):
     def test_gzip_body_is_decoded_and_bad_json_kept(self):
         raw = json.dumps({"hashed": True}).encode()
         self.request("PUT", "/context", gzip.compress(raw), {"Content-Encoding": "gzip"})
-        self.request("PUT", "/context", b"{not json", {})
+        bad_status, _ = self.request("PUT", "/context", b"{not json", {})
+        self.assertEqual(bad_status, 400)
         _, stored = self.request("GET", "/publishes")
-        first, second = stored["publishes"]
+        first = stored["publishes"][0]
         self.assertEqual(first["json"], {"hashed": True})
         self.assertEqual(first["contentEncoding"], "gzip")
-        self.assertIsNone(second["json"])
-        self.assertIn("parseError", second)
-        self.assertEqual([first["seq"], second["seq"]], [0, 1])
+        self.assertEqual(first["seq"], 0)
 
     def test_clear_and_unknown_routes(self):
         self.request("PUT", "/context", b"{}", {})
@@ -211,6 +210,12 @@ class GateRunTest(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+    def test_invalid_utf8_publish_returns_400_without_storing(self):
+        status, body = self.request("PUT", "/context", b"\xff", {"Content-Length": "1"})
+        self.assertEqual(status, 400)
+        self.assertIn("error", body)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
     def test_malformed_content_length_and_gzip_return_400(self):
         status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})

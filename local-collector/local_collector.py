@@ -159,12 +159,13 @@ def make_handler(store):
                       "contentEncoding": self.headers.get("Content-Encoding")}
             if body_error:
                 return self._send(400, {"error": body_error})
-            record["rawBody"] = decoded.decode("utf-8", errors="strict")
             try:
+                record["rawBody"] = decoded.decode("utf-8", errors="strict")
                 record["json"] = json.loads(decoded)
             except (ValueError, UnicodeDecodeError) as exc:
-                record["json"] = None
-                record["parseError"] = str(exc)
+                # Keep the base64 bytes for diagnosis, but return a deterministic
+                # 400 rather than letting a malformed publisher kill the handler.
+                return self._send(400, {"error": str(exc)})
             store.add_publish(record)
             return self._send(200, {})
 
