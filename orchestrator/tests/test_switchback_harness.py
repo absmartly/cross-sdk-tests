@@ -236,14 +236,19 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
+SWITCHBACK_REQUIRED = {"java", "dotnet"}
+
+
+def test_switchback_policy_requires_java_and_dotnet_and_excepts_every_other_sdk(runner):
     sdks = runner.policy["sdks"]
     assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
+    for sdk in SWITCHBACK_REQUIRED:
+        assert "switchback" in sdks[sdk]["required"], sdk
+        assert "switchback" not in sdks[sdk]["unsupported"], sdk
     for sdk, entry in sdks.items():
-        if sdk != "java":
+        if sdk not in SWITCHBACK_REQUIRED:
             assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+            assert entry["unsupported"]["switchback"].endswith("java-sdk and dotnet-sdk support R33"), sdk
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
 
 
@@ -269,8 +274,10 @@ def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_ta
     numbers = [int(s["name"].split(" - ", 1)[0]) for s in scenarios]
     assert numbers == sorted(set(numbers))
 
+    # The file's tail. It follows main's KEPT_COUNT scenarios (pinned by test_main_scenarios_are_untouched)
+    # and the Context Fetch Compression group (270-274), which sits between the round and parity groups.
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(KEPT_COUNT, len(scenarios)))
+    assert group == list(range(len(scenarios) - GROUP_SIZE, len(scenarios)))
     assert len(group) == GROUP_SIZE
     assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + GROUP_SIZE))
 
@@ -544,12 +551,14 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 
 # The 279 scenarios of main this group follows (the 2026-11 SDK round 230-253 and the feature-parity
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
-# legitimately changes them.
+# legitimately changes them. The Context Fetch Compression group (270-274) is not one of main's
+# scenarios, so it is excluded from the kept set alongside this group.
 MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    kept = [s for s in canonical()
+            if generator.GROUP_MARKER not in s["name"] and scenario_groups.CONTEXT_FETCH not in s["name"]]
     assert len(kept) == KEPT_COUNT
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 

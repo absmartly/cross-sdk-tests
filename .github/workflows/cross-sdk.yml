@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 305-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 310-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -64,11 +64,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install orchestrator requirements
-        run: pip install -r orchestrator/requirements.txt
+      - name: Install harness test requirements
+        # requirements-test.txt = requirements.txt + brotli (the br tests import
+        # it at module level, so without it they fail, never skip).
+        run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
         run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
@@ -83,6 +85,9 @@ jobs:
 
       - name: Switchback scenarios match their generator
         run: python generate_switchback_scenarios.py --check
+
+      - name: Context-fetch compression scenarios match their generator
+        run: python generate_context_compression_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}
@@ -120,7 +125,7 @@ jobs:
         working-directory: cross-sdk-tests
         env:
           COMPOSE_PROJECT_NAME: csdk
-        run: docker compose build ${{ matrix.sdk }}-sdk orchestrator
+        run: docker compose build ${{ matrix.sdk }}-sdk context-server orchestrator
 
       - name: Run cross-SDK suite
         working-directory: cross-sdk-tests
@@ -130,11 +135,28 @@ jobs:
           set -euo pipefail
           mkdir -p test-results
           rm -f test-results/report.json
-          docker compose up -d --force-recreate ${{ matrix.sdk }}-sdk
+          # context-server: the negotiating GET /context server the SDK fetches
+          # from in the Context Fetch Compression scenarios (270-274: gzip 270-272,
+          # br 273-274).
+          docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
           test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
+
+      # Live HTTP regressions for the dotnet wrapper's input and report boundaries, against the
+      # wrapper the suite just ran (orchestrator/tests/test_dotnet_wrapper_http.py).
+      - name: Dotnet wrapper HTTP regressions
+        if: matrix.sdk == 'dotnet'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          docker compose run --rm --no-deps \
+            -v "$PWD/orchestrator/tests:/app/tests:ro" \
+            -e "DOTNET_WRAPPER_URL=http://dotnet-sdk:3000" \
+            orchestrator sh -c "pip install --quiet pytest && python -m pytest -q tests/test_dotnet_wrapper_http.py"
 
       - name: Upload results
         if: always()

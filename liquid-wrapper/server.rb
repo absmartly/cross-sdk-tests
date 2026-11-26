@@ -6,8 +6,8 @@ require 'uri'
 require 'absmartly/liquid'
 require 'context_data_provider'
 require 'default_context_data_provider'
-require 'context_publisher'
-require 'default_context_publisher'
+require 'context_event_handler'
+require 'default_context_event_handler'
 require 'a_b_smartly_config'
 require 'default_context_data_deserializer'
 require 'hashing'
@@ -187,10 +187,10 @@ rescue ArgumentError, TypeError
 end
 
 # Test contexts publish nowhere: a publish succeeds without sending anything.
-# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextEventHandler
 # as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
 # Either way /publishFail arms a one-shot failure of the next publish.
-class CustomPublisher < ContextPublisher
+class CustomPublisher < ContextEventHandler
   attr_accessor :should_fail
 
   def initialize(event_collector, sdk_publisher = nil)
@@ -426,7 +426,7 @@ post '/context' do
   client.define_singleton_method(:environment) { nil } if lc_environment.nil?
 
   # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
-  sdk_publisher = DefaultContextPublisher.new(client) if req_data[:publishToEndpoint] && endpoint
+  sdk_publisher = DefaultContextEventHandler.new(client) if req_data[:publishToEndpoint] && endpoint
   publisher = CustomPublisher.new(event_collector, sdk_publisher)
 
   sdk_config = ABSmartlyConfig.new

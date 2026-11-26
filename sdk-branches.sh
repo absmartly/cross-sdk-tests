@@ -14,12 +14,12 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
-# dotnet-sdk is on feat/holdouts (its open holdouts PR) until that PR merges, then
-# back to main.
+# dotnet-sdk is on feat/switchbacks (dotnet-sdk#16; the holdouts PR #15 merged and shipped as 1.5.0)
+# until dotnet-sdk#16 merges, then back to main.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"
-  ["dotnet-sdk"]="feat/holdouts"
+  ["dotnet-sdk"]="feat/switchbacks"
   ["elixir-sdk"]="main"
   ["flutter-sdk"]="main"
   ["go-sdk"]="main"
