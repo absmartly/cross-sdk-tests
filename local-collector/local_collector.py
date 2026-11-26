@@ -133,9 +133,9 @@ def body_length_error(length):
 def gunzip_capped(raw):
     """Inflate every gzip member of a body, refusing to grow past MAX_BODY_BYTES.
 
-    gzip.decompress reads concatenated members, so this does too; a member that
-    does not end cleanly, or bytes after the last member that are not another
-    member, is malformed.
+    gzip.decompress reads concatenated members and skips zero padding after a member,
+    so this does too; a member that does not end cleanly, or other bytes after the
+    last member that are not another member, is malformed.
     """
     out = bytearray()
     data = raw
@@ -147,7 +147,7 @@ def gunzip_capped(raw):
             raise ValueError("decoded body exceeds the size limit")
         if not inflater.eof:
             raise ValueError("truncated gzip body")
-        data = inflater.unused_data
+        data = inflater.unused_data.lstrip(b"\0")
     return bytes(out)
 
 
@@ -225,14 +225,25 @@ def make_handler(store):
             deadline = _monotonic() + REQUEST_DEADLINE_S
             chunks = []
             remaining = length
-            while remaining:
+            try:
+                while remaining:
+                    budget = deadline - _monotonic()
+                    if budget <= 0:
+                        raise ValueError("request body not received within the deadline")
+                    # No single read may wait past the whole-body deadline.
+                    self.connection.settimeout(min(REQUEST_TIMEOUT_S, budget))
+                    try:
+                        chunk = self.rfile.read1(min(remaining, 65536))
+                    except TimeoutError:
+                        raise ValueError("request body not received within the deadline") from None
+                    if not chunk:
+                        raise ValueError("truncated request body")
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
                 if _monotonic() > deadline:
                     raise ValueError("request body not received within the deadline")
-                chunk = self.rfile.read1(min(remaining, 65536))
-                if not chunk:
-                    raise ValueError("truncated request body")
-                chunks.append(chunk)
-                remaining -= len(chunk)
+            finally:
+                self.connection.settimeout(REQUEST_TIMEOUT_S)
             return b"".join(chunks)
 
         def _read_body(self):
@@ -243,8 +254,7 @@ def make_handler(store):
                     # SDK publishers always send a plain Content-Length.
                     raise ValueError("Transfer-Encoding is not supported")
                 length = parse_content_length(self.headers.get_all("Content-Length") or [])
-                length_error = body_length_error(length)
-                if length_error:
+                if length_error := body_length_error(length):
                     raise ValueError(length_error)
                 raw = self._read_exact(length)
                 self.body_consumed = True

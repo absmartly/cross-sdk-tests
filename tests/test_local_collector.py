@@ -130,13 +130,7 @@ class CollectorServerTest(unittest.TestCase):
         self.assertOnlyRejectedStored()
 
     def test_truncated_body_returns_400_and_is_not_accepted(self):
-        import socket
-        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
-            sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
-            sock.shutdown(socket.SHUT_WR)
-            reply = b""
-            while chunk := sock.recv(4096):
-                reply += chunk
+        reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100", b"{}")
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
         self.assertOnlyRejectedStored()
 
@@ -189,11 +183,28 @@ class CollectorServerTest(unittest.TestCase):
         self.assertTrue(reply == b"" or reply.startswith(b"HTTP/1.1 400"), reply[:80])
 
     def test_gzip_bomb_is_rejected_without_full_inflation(self):
-        bomb = gzip.compress(b"\0" * (collector.MAX_BODY_BYTES + 1))
-        with mock.patch.object(collector.zlib, "decompressobj", wraps=collector.zlib.decompressobj) as inflater:
+        # Twice the cap, so inflating it whole would yield more than MAX_BODY_BYTES + 1 bytes.
+        bomb = gzip.compress(b"\0" * (2 * collector.MAX_BODY_BYTES))
+        inflated = []
+        real = collector.zlib.decompressobj
+
+        class Spy:
+            def __init__(self, *a):
+                self.inner = real(*a)
+
+            def decompress(self, *args):
+                chunk = self.inner.decompress(*args)
+                inflated.append(len(chunk))
+                return chunk
+
+            def __getattr__(self, name):
+                return getattr(self.inner, name)
+
+        with mock.patch.object(collector.zlib, "decompressobj", Spy):
             status, _ = self.request("PUT", "/context", bomb, {"Content-Encoding": "gzip"}, timeout=30)
         self.assertEqual(status, 400)
-        self.assertTrue(inflater.called)
+        self.assertTrue(inflated)
+        self.assertLessEqual(sum(inflated), collector.MAX_BODY_BYTES + 1)
         self.assertOnlyRejectedStored()
         with self.assertRaisesRegex(ValueError, "size limit"):
             collector.gunzip_capped(bomb)
@@ -250,9 +261,19 @@ class CollectorServerTest(unittest.TestCase):
         status, _ = self.request("PUT", "/context", one + two, {"Content-Encoding": "gzip"})
         self.assertEqual(status, 200)
         self.request("DELETE", "/publishes")
-        # Bytes after the last member that are not a member, or a second member that
+        # Zero padding after a member is skipped, as gzip.decompress skips it.
+        for padding in (b"\0", b"\0" * 512):
+            with self.subTest(padding=len(padding)):
+                self.assertEqual(collector.gunzip_capped(one + padding), b'{"hashed":')
+                body = gzip.compress(b'{"hashed":true}') + padding
+                self.assertEqual(self.request("PUT", "/context", body, {"Content-Encoding": "gzip"})[0], 200)
+                self.request("DELETE", "/publishes")
+        # Other bytes after the last member (also after padding), or a second member that
         # makes the JSON invalid, are rejected and not accepted.
         for body in (gzip.compress(b'{"hashed":true}') + b"JUNK",
+                     gzip.compress(b'{"hashed":true}') + b"\0\0JUNK",
+                     gzip.compress(b'{"hashed":true}') + b"\0J",
+                     gzip.compress(b'{"hashed":true}') + b"\0\x1f",
                      gzip.compress(b'{"hashed":true}') + gzip.compress(b'{"evil":1}')):
             with self.subTest(body=body[-12:]):
                 status, _ = self.request("PUT", "/context", body, {"Content-Encoding": "gzip"})
@@ -356,6 +377,53 @@ class CollectorServerTest(unittest.TestCase):
                 elapsed = clock.monotonic() - started
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
         self.assertLess(elapsed, 3)
+
+    def test_a_body_completed_after_the_deadline_is_rejected(self):
+        # The last bytes arrive after the whole-body deadline: no read may wait past it, so the
+        # publish is rejected rather than accepted late.
+        import socket, time as clock
+        with mock.patch.object(collector, "REQUEST_DEADLINE_S", 1):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=15) as sock:
+                sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n")
+                clock.sleep(1.5)
+                try:
+                    sock.sendall(b"{}")
+                    sock.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+                reply = b""
+                try:
+                    while chunk := sock.recv(4096):
+                        reply += chunk
+                except OSError:
+                    pass
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertOnlyRejectedStored(count=1)
+
+    def test_a_stalled_body_is_answered_at_the_deadline_not_the_socket_timeout(self):
+        # One read must not wait the full per-read timeout once the body deadline is nearer.
+        import socket, time as clock
+        self.assertGreater(collector.REQUEST_TIMEOUT_S, 5)
+        with mock.patch.object(collector, "REQUEST_DEADLINE_S", 1):
+            with socket.create_connection(("127.0.0.1", self.port), timeout=15) as sock:
+                sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n")
+                started = clock.monotonic()
+                reply = sock.recv(4096)
+                elapsed = clock.monotonic() - started
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertLess(elapsed, 3)
+
+    def test_a_read_that_completes_past_the_deadline_is_rejected(self):
+        # The clock is checked again after the final read, not only before each one.
+        import io
+        handler = collector.make_handler(collector.Store())
+        fake = handler.__new__(handler)
+        fake.rfile = io.BytesIO(b"{}")
+        fake.connection = mock.Mock()
+        with mock.patch.object(collector, "_monotonic", side_effect=[0, 0, collector.REQUEST_DEADLINE_S + 1]):
+            with self.assertRaisesRegex(ValueError, "deadline"):
+                fake._read_exact(2)
+        fake.connection.settimeout.assert_called_with(collector.REQUEST_TIMEOUT_S)
 
     def test_client_reset_does_not_raise_out_of_the_handler(self):
         handler = collector.make_handler(collector.Store())
@@ -874,8 +942,14 @@ class GateNumberTest(unittest.TestCase):
     """Gate-side number handling, reachable only if a collector stores such a body."""
 
     def test_huge_wire_numbers_compare_exactly_against_the_plan(self):
+        def canonical(token):
+            return gate._canonical({"amount": Decimal(token)})
         for token in ("1e999999999", "-1e99999999"):
-            self.assertNotEqual(gate._canonical({"amount": Decimal(token)}), gate._canonical({"amount": 10}))
+            self.assertNotEqual(canonical(token), gate._canonical({"amount": 10}))
+        # Distinct huge values stay distinct: no exponent clamp or rounding collapses them.
+        tokens = ("1e999999999", "1e999999998", "-1e999999999", "1e-999999999", "2e999999999")
+        self.assertEqual(len({canonical(t) for t in tokens}), len(tokens))
+        self.assertEqual(canonical("10e999999998"), canonical("1e999999999"))
         self.assertEqual(gate._canonical({"amount": Decimal("1e1")}), gate._canonical({"amount": 10}))
 
     def test_an_unrepresentable_raw_body_is_reported_unparseable(self):
