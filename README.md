@@ -244,7 +244,7 @@ across languages.
   dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
   merged, which its pinned `feat/switchbacks` branch contains), and so do
   javascript, react, vue2, vue3 and angular, which build javascript-sdk
-  [#69](https://github.com/absmartly/javascript-sdk/pull/69) pinned at 2aa9a2d
+  [#69](https://github.com/absmartly/javascript-sdk/pull/69) (merged) pinned at its merge commit 95fe105
   and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
   Every other SDK lists a reviewed exception naming its divergence.
 
