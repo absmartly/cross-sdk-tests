@@ -596,7 +596,8 @@ class CapabilityPolicyTests(unittest.TestCase):
             with self.subTest(sdk=sdk):
                 self.assertLessEqual({"holdouts", "holdout_arms"}, set(policy["sdks"][sdk]["required"]))
         # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
-        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift-v1", "vue2", "vue3"])
+        # swift: swift-wrapper/Sources/App/HoldoutSelfTest.swift gates both flags on swift-sdk 2.1.0+ behaviour.
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift", "swift-v1", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )

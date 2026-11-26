@@ -406,7 +406,7 @@ func makeClient(
 
 func routes(_ app: VaporApplication) throws {
     app.get("health") { _ -> HTTPResponse in
-        return try reply(["status": "healthy", "sdk": "swift", "version": "2.0.0"])
+        return try reply(["status": "healthy", "sdk": "swift", "version": "2.1.0"])
     }
 
     app.get("capabilities") { _ -> HTTPResponse in
@@ -433,6 +433,8 @@ func routes(_ app: VaporApplication) throws {
             "xAgentHeader": true,
             "clientRejectsBlankApplication": true,
             "clientAcceptsBlankApplication": false,
+            "holdouts": HoldoutSelfTest.runHoldouts(),
+            "holdout_arms": HoldoutSelfTest.runHoldoutArms(),
         ])
     }
 
