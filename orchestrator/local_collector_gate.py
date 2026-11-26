@@ -243,11 +243,15 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
     for key in sorted(set(want_goals) | set(goals), key=str):
         if goals[key] != want_goals[key]:
             errors.append(f"goal {key[1]} {key[2]} received {goals[key]}x, expected {want_goals[key]}x")
-    revenue = sum(received_amounts, Decimal(0))
     planned = sum(planned_amounts, Decimal(0))
-    if revenue != planned:
+    try:
+        revenue = sum(received_amounts, Decimal(0))
+    except ArithmeticError as exc:  # e.g. a string amount like "1e999999999" overflows the sum
+        errors.append(f"purchase.amount sum is not representable: {exc!r}")
+        revenue = None
+    if revenue is not None and revenue != planned:
         errors.append(f"purchase.amount sum {revenue} != planned {planned}")
-    return {"pass": not errors, "errors": errors, "revenue": str(revenue), "planned_revenue": str(planned),
+    return {"pass": not errors, "errors": errors, "revenue": None if revenue is None else str(revenue), "planned_revenue": str(planned),
             "exposures": sum(exposures.values()), "goals": sum(goals.values())}
 
 

@@ -192,6 +192,11 @@ class GateVerifyTest(unittest.TestCase):
                                     out[0]["json"]["goals"][5]["properties"].update(amount=value))
                 self.assertFalse(result["pass"])
                 self.assertTrue(any("purchase.amount is not numeric" in error for error in result["errors"]))
+        # Finite on its own, but the revenue sum overflows.
+        result = self.check(lambda out: out[0]["json"]["goals"][5]["properties"].update(amount="1e999999999"))
+        self.assertFalse(result["pass"])
+        self.assertIsNone(result["revenue"])
+        self.assertTrue(any("sum is not representable" in error for error in result["errors"]))
 
     def test_rejects_json_type_confusions(self):
         cases = self.cases
