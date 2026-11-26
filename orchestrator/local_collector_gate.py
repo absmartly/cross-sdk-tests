@@ -230,16 +230,19 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
     return errors
 
 
-def fetch_publishes(collector_url: str, settle: float = 2.0, timeout: float = 30) -> List[Dict[str, Any]]:
-    """Read publishes once their count stops changing (publish is async in some SDKs)."""
+def fetch_publishes(collector_url: str, expected: int, settle: float = 2.0, timeout: float = 30,
+                    poll: float = 0.5) -> List[Dict[str, Any]]:
+    """Read publishes once `expected` have arrived (publish is async in some SDKs), plus one
+    settle interval so a late duplicate is still seen; on timeout, whatever arrived."""
     deadline = time.monotonic() + timeout
-    last = -1
     while True:
         publishes = requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
-        if len(publishes) == last or time.monotonic() >= deadline:
+        if len(publishes) >= expected:
+            time.sleep(settle)
+            return requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
+        if time.monotonic() >= deadline:
             return publishes
-        last = len(publishes)
-        time.sleep(settle)
+        time.sleep(poll)
 
 
 def load_policy() -> Dict[str, Any]:
@@ -255,7 +258,17 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
     plans = {sdk: plan(run_id, sdk) for sdk in sdks}
     driver_errors = {sdk: drive(sdk, url, plans[sdk]) for sdk, url in sdks.items()}
-    publishes = fetch_publishes(collector_url)
+    # Every case ends in one /publish call with at least one exposure queued.
+    publishes = fetch_publishes(collector_url, sum(len(cases) for cases in plans.values()))
+    planned_units = {(unit_type, unit_hash(uid)) for cases in plans.values()
+                     for case in cases for unit_type, uid in case["units"].items()}
+    for record in publishes:
+        body = record.get("json")
+        units = {(u.get("type"), u.get("uid")) for u in body.get("units") or [] if isinstance(u, dict)} \
+            if isinstance(body, dict) else set()
+        if isinstance(body, dict) and not units & planned_units:
+            results.setdefault("transport_errors", []).append(
+                f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")
     try:
         request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests", [])
     except requests.RequestException as exc:

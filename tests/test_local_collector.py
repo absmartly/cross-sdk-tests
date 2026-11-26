@@ -227,6 +227,40 @@ class GateRunTest(unittest.TestCase):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
+    def run_with(self, extra):
+        cases = gate.plan("r", "javascript")
+        publishes = _publishes_for("javascript", cases) + extra
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+            return gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+
+    def test_every_publish_must_belong_to_the_plan(self):
+        self.assertTrue(self.run_with([])["overall_pass"])
+        stray = _record(99, {"hashed": True, "units": [{"type": "user_id", "uid": gate.unit_hash("stray")}],
+                             "exposures": [], "goals": []})
+        for label, extra in (("unplanned unit", [stray]), ("no units", [_record(99, {"hashed": True})]),
+                             ("malformed json", [{"seq": 99, "json": None, "parseError": "x", "headers": []}])):
+            with self.subTest(label):
+                self.assertFalse(self.run_with(extra)["overall_pass"], label)
+
+
+class FetchPublishesTest(unittest.TestCase):
+    def fetch(self, counts, expected, clock):
+        reads = iter(counts)
+        get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": [{}] * next(reads)}))
+        with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
+             mock.patch.object(gate.time, "monotonic", side_effect=clock):
+            return len(gate.fetch_publishes("http://c", expected, timeout=30)), get.call_count
+
+    def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
+        # Two stable zero reads used to end the wait; the late publishes must still be read.
+        self.assertEqual(self.fetch([0, 0, 0, 2, 3], 2, iter([0] + [1] * 10)), (3, 5))
+
+    def test_timeout_returns_what_arrived(self):
+        self.assertEqual(self.fetch([0, 1, 1], 2, iter([0, 10, 20, 31])), (1, 3))
+
 
 if __name__ == "__main__":
     unittest.main()
