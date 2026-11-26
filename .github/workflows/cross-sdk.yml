@@ -284,18 +284,19 @@ jobs:
         run: |
           source sdk-branches.sh
           source sdk-checkout.sh
-          for repo in "${{ matrix.sdk }}"; do
-            branch="${SDK_BRANCHES[$repo]:-main}"
-            revision="${SDK_REVISIONS[$repo]:-}"
-            source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
-            checkout_dir="$source_repo"
-            if [ -n "$revision" ]; then
-              git init -q "$checkout_dir"
-              fetch_and_checkout_revision "$checkout_dir" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$revision"
-            else
-              git clone --depth 1 --branch "$branch" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$checkout_dir"
-            fi
-          done
+          # Matrix names omit -sdk; wrapper Dockerfiles expect checkout directories
+          # with -sdk, and SDK_REPO_SOURCES maps aliases (python3-sdk, etc.).
+          repo="${{ matrix.sdk }}-sdk"
+          branch="${SDK_BRANCHES[$repo]:-main}"
+          revision="${SDK_REVISIONS[$repo]:-}"
+          source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
+          checkout_dir="$repo"
+          if [ -n "$revision" ]; then
+            git init -q "$checkout_dir"
+            fetch_and_checkout_revision "$checkout_dir" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$revision"
+          else
+            git clone --depth 1 --branch "$branch" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$checkout_dir"
+          fi
 
       - name: Build local collector, wrapper and orchestrator
         working-directory: cross-sdk-tests
