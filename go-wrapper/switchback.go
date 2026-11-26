@@ -316,7 +316,7 @@ func switchbackContextBattery(prefix string) error {
 	if err != nil {
 		return err
 	}
-	data, err := sdk.DefaultContextDataDeserializer{}.Deserialize(payload)
+	data, err := sdk.DefaultContextDataDeserializer{}.DeserializePayload(payload)
 	if err != nil {
 		return fmt.Errorf("%s FAILED: payload: %v", prefix, err)
 	}
@@ -331,7 +331,7 @@ func switchbackContextBattery(prefix string) error {
 	config.Units_ = map[string]string{"unit_user": "probe-user", "unit_serving": "serving-9"}
 	config.PublishDelay_ = -1
 	config.RefreshInterval_ = 0
-	context := absmartly.CreateContextWith(config, data)
+	context := absmartly.CreateContextWithPayload(config, data)
 	context.WaitUntilReady()
 	if !context.IsReady() || context.IsFailed() {
 		return fmt.Errorf("%s FAILED: context not ready", prefix)

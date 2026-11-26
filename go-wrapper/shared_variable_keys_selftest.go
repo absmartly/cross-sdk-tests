@@ -67,14 +67,14 @@ var svkBattery = []svkCase{
 
 // svkData builds the payload as JSON, in the collector's shape; split [0, 1]
 // assigns every unit variant 1.
-func svkData(experiments []svkExperiment) (jsonmodels.ContextData, error) {
+func svkData(experiments []svkExperiment) (jsonmodels.ContextPayload, error) {
 	var exps []map[string]interface{}
 	for _, e := range experiments {
 		var variants []map[string]interface{}
 		for i, config := range e.configs {
 			var text, err = json.Marshal(config)
 			if err != nil {
-				return jsonmodels.ContextData{}, err
+				return jsonmodels.ContextPayload{}, err
 			}
 			variants = append(variants, map[string]interface{}{"name": string(rune('A' + i)), "config": string(text)})
 		}
@@ -91,9 +91,9 @@ func svkData(experiments []svkExperiment) (jsonmodels.ContextData, error) {
 	}
 	var raw, err = json.Marshal(map[string]interface{}{"experiments": exps})
 	if err != nil {
-		return jsonmodels.ContextData{}, err
+		return jsonmodels.ContextPayload{}, err
 	}
-	return sdk.DefaultContextDataDeserializer{}.Deserialize(raw)
+	return sdk.DefaultContextDataDeserializer{}.DeserializePayload(raw)
 }
 
 func svkCheck(prefix string, c svkCase) error {
