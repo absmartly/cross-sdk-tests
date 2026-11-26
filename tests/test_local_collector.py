@@ -292,8 +292,12 @@ class GateRunTest(unittest.TestCase):
     def test_malformed_exposure_goal_and_header_entries_fail_with_a_diagnostic(self):
         for label, mutate, diagnostic in (
             ("exposure entry", lambda out: out[0]["json"]["exposures"].append("x"), "malformed exposures entry"),
+            ("list exposure unit", lambda out: out[0]["json"]["exposures"][0].update(unit=["x"]), "malformed exposures entry"),
+            ("object goal name", lambda out: out[0]["json"]["goals"][0].update(name={}), "malformed goals entry"),
             ("goals not array", lambda out: out[0]["json"].update(goals="x"), "goals is not an array"),
             ("header pair", lambda out: out[0].update(headers=[["X-Agent"]] + out[0]["headers"][1:]), "agent None"),
+            ("non-dict record", lambda out: out.append(7), "malformed collector record"),
+            ("record without seq", lambda out: out.append({"json": {"hashed": True}}), "malformed collector record"),
         ):
             with self.subTest(label):
                 result = self.run_with([], mutate)
@@ -315,8 +319,8 @@ class GateRunTest(unittest.TestCase):
 
 class FetchPublishesTest(unittest.TestCase):
     PLANNED = {("user_id", "u")}
-    MINE = {"json": {"units": [{"type": "user_id", "uid": "u"}]}}
-    STRAY = {"json": {"units": [{"type": "user_id", "uid": "stray"}]}}
+    MINE = {"seq": 0, "json": {"units": [{"type": "user_id", "uid": "u"}]}}
+    STRAY = {"seq": 1, "json": {"units": [{"type": "user_id", "uid": "stray"}]}}
 
     def fetch(self, reads, expected_cases, clock):
         reads = iter(reads)
@@ -331,7 +335,7 @@ class FetchPublishesTest(unittest.TestCase):
 
     def test_stray_publishes_do_not_count_toward_expected(self):
         m, s = self.MINE, self.STRAY
-        m2 = {"json": {"units": [{"type": "user_id", "uid": "missing"}]}}
+        m2 = {"seq": 2, "json": {"units": [{"type": "user_id", "uid": "missing"}]}}
         self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m, m2], [m, s, m, m2]],
                                     [{("user_id", "u")}, {("user_id", "missing")}], iter([0] + [1] * 10)), (4, 4))
 
@@ -340,17 +344,17 @@ class FetchPublishesTest(unittest.TestCase):
         self.assertEqual(self.fetch([[], [m], [m]], [{("user_id", "u")}, {("user_id", "missing")}], iter([0, 10, 20, 31])), (1, 3))
 
     def test_one_publish_combining_two_cases_does_not_complete_both(self):
-        both = {"json": {"units": [{"type": "user_id", "uid": "u"}, {"type": "user_id", "uid": "missing"}]}}
+        both = {"seq": 0, "json": {"units": [{"type": "user_id", "uid": "u"}, {"type": "user_id", "uid": "missing"}]}}
         self.assertEqual(self.fetch([[both], [both], [both]], [{("user_id", "u")}, {("user_id", "missing")}],
                                     iter([0, 10, 20, 31])), (1, 3))
 
     def test_a_multi_unit_case_completes_from_its_own_publish(self):
-        multi = {"json": {"units": [{"type": "user_id", "uid": "mu"}, {"type": "session_id", "uid": "mu-s"}]}}
+        multi = {"seq": 0, "json": {"units": [{"type": "user_id", "uid": "mu"}, {"type": "session_id", "uid": "mu-s"}]}}
         self.assertEqual(self.fetch([[multi], [multi]], [{("user_id", "mu"), ("session_id", "mu-s")}],
                                     iter([0] + [1] * 10)), (1, 2))
 
     def test_malformed_unit_entries_do_not_abort_polling(self):
-        bad = {"json": {"units": [{"type": "user_id", "uid": []}, "user_id", {"type": "user_id", "uid": "u"}]}}
+        bad = {"seq": 0, "json": {"units": [{"type": "user_id", "uid": []}, "user_id", {"type": "user_id", "uid": "u"}]}}
         self.assertEqual(self.fetch([[bad], [bad]], [{("user_id", "u")}], iter([0] + [1] * 10)), (1, 2))
 
 

@@ -133,24 +133,38 @@ def _header(record: Any, name: str) -> Optional[str]:
     return values[0] if len(values) == 1 else None
 
 
-def _entries(record: Dict[str, Any], field: str, errors: List[str]) -> List[Dict[str, Any]]:
-    """The object entries of a publish's `field` array; a diagnostic for anything else."""
+def _entries(record: Dict[str, Any], field: str, keys: Tuple[str, ...], errors: List[str]) -> List[Dict[str, Any]]:
+    """The entries of a publish's `field` array that are objects with string `keys`; a diagnostic
+    for anything else."""
     raw = record["json"].get(field)
     if raw is None:
         return []
     if not isinstance(raw, list):
         errors.append(f"publish #{record.get('seq')} {field} is not an array: {raw!r}")
         return []
+    valid = []
     for entry in raw:
-        if not isinstance(entry, dict):
+        if isinstance(entry, dict) and all(isinstance(entry.get(k), str) for k in keys):
+            valid.append(entry)
+        else:
             errors.append(f"publish #{record.get('seq')} has a malformed {field} entry: {entry!r}")
-    return [entry for entry in raw if isinstance(entry, dict)]
+    return valid
+
+
+def _normalized(publishes: Any) -> List[Dict[str, Any]]:
+    """The collector's publish list with every record a dict carrying a `seq`, so a corrupt record
+    is reported as a non-JSON publish instead of raising."""
+    records = publishes if isinstance(publishes, list) else []
+    return [record if isinstance(record, dict) and "seq" in record
+            else {"seq": index, "json": None, "parseError": f"malformed collector record: {record!r}"}
+            for index, record in enumerate(records)]
 
 
 def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]],
            application: str, environment: str, xagent_versioned: bool = True) -> Dict[str, Any]:
     """Check this SDK's publishes against its plan; returns {pass, errors, revenue}."""
     errors: List[str] = []
+    publishes = _normalized(publishes)
     language = AGENT_LANGUAGE.get(sdk, sdk)
     expected_units = {(unit_type, unit_hash(uid)) for case in cases for unit_type, uid in case["units"].items()}
 
@@ -181,7 +195,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record['seq']} environment header {_header(record, 'X-Environment')!r}")
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
-        for exposure in _entries(record, "exposures", errors):
+        for exposure in _entries(record, "exposures", ("unit", "name"), errors):
             unit_type = exposure.get("unit")
             uid = next((u for t, u in mine if t == unit_type), None)
             exp_id, exp_name = ((SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME) if unit_type == "session_id"
@@ -194,7 +208,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
                 errors.append(f"exposure for {unit_type} assigned/eligible not true")
             exposures[(unit_type, uid, exposure.get("name"))] += 1
         user = next((u for t, u in mine if t == "user_id"), None)
-        for goal in _entries(record, "goals", errors):
+        for goal in _entries(record, "goals", ("name",), errors):
             properties = goal.get("properties")
             try:
                 key = (user, goal.get("name"), _canonical(properties if properties is not None else {}))
@@ -286,11 +300,11 @@ def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float
     or one publish combining two cases does not satisfy a missing case; on timeout, whatever arrived."""
     deadline = time.monotonic() + timeout
     while True:
-        publishes = requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
+        publishes = _normalized(requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"])
         arrived = [_publish_units(r)[0] for r in publishes]
         if all(any(_covers(units, case_units) for units in arrived) for case_units in expected_cases):
             time.sleep(settle)
-            return requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
+            return _normalized(requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"])
         if time.monotonic() >= deadline:
             return publishes
         time.sleep(poll)
@@ -313,7 +327,8 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
                         for case in cases} for sdk, cases in plans.items()}
     planned_units = set().union(*(units for cases in case_units.values() for units in cases.values()))
     # Every case ends in one /publish call with at least one exposure queued.
-    publishes = fetch_publishes(collector_url, [units for cases in case_units.values() for units in cases.values()])
+    publishes = _normalized(fetch_publishes(collector_url, [units for cases in case_units.values()
+                                                            for units in cases.values()]))
     arrived = []
     for record in publishes:
         units, unit_errors = _publish_units(record)
