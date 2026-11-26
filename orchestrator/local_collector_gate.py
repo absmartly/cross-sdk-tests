@@ -176,7 +176,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
-        if not any(units <= case for case in case_units):
+        if not any(_covers(units, case) for case in case_units):
             errors.append(f"publish #{record['seq']} carries units from more than one planned case")
         if units - expected_units - excepted_units:
             errors.append(f"publish #{record['seq']} carries unplanned units "

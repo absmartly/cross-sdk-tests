@@ -18,10 +18,12 @@ done
 COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.local-collector.yml)
 SERVICES=""; for s in ${SDKS//,/ }; do SERVICES="$SERVICES $s-sdk"; done
 [ -n "$SERVICES" ] || { echo "--sdk selects no SDK: '$SDKS'" >&2; exit 1; }
+# A report from an earlier run must never stand in for this one if a later step fails.
+mkdir -p test-results
+rm -f test-results/local-collector.json
 [ "$SKIP_BUILD" = true ] || "${COMPOSE[@]}" build local-collector $SERVICES orchestrator
 trap '"${COMPOSE[@]}" down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
 "${COMPOSE[@]}" up -d --force-recreate local-collector $SERVICES
-mkdir -p test-results
 for service in $SERVICES; do
   ready=false
   for _ in {1..60}; do
