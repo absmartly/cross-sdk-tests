@@ -279,6 +279,7 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
                 errors.append(f"{case['name']}: context not ready: {created.text[:200]}")
                 continue
             url = f"{base_url}/context/{context_id}"
+            case_error = None
             try:
                 requests.post(f"{url}/treatment", json={"experimentName": EXPERIMENT_NAME},
                               timeout=timeout).raise_for_status()
@@ -291,8 +292,15 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
                         body["properties"] = properties
                     requests.post(f"{url}/track", json=body, timeout=timeout).raise_for_status()
                 requests.post(f"{url}/publish", timeout=timeout).raise_for_status()
+            except requests.RequestException as exc:
+                case_error = f"{case['name']}: wrapper call failed: {exc}"
             finally:
-                requests.delete(url, timeout=10)
+                try:
+                    requests.delete(url, timeout=10).raise_for_status()
+                except requests.RequestException as cleanup_exc:
+                    errors.append(f"{case['name']}: context cleanup failed: {cleanup_exc}")
+            if case_error:
+                errors.append(case_error)
         except requests.RequestException as exc:
             errors.append(f"{case['name']}: wrapper call failed: {exc}")
     return errors

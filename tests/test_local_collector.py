@@ -713,6 +713,23 @@ class CollectorResetTest(unittest.TestCase):
         self.assertEqual(written["sdks"], {})
         self.assertTrue(any("collector reset failed" in e for e in written["transport_errors"]))
 
+    def test_drive_preserves_primary_case_error_when_cleanup_also_fails(self):
+        cases = gate.plan("r", "javascript")[:1]
+        response = mock.Mock(status_code=200, text='{"result":{"contextId":"c","ready":true,"failed":false}}',
+                             json=lambda: {"result": {"contextId": "c", "ready": True, "failed": False}})
+        def post(url, **kwargs):
+            if url.endswith("/context"):
+                return response
+            bad = mock.Mock()
+            bad.raise_for_status.side_effect = requests.HTTPError("treatment failed")
+            return bad
+        import requests
+        with mock.patch.object(gate.requests, "post", side_effect=post), \
+             mock.patch.object(gate.requests, "delete", side_effect=requests.ReadTimeout("cleanup slow")):
+            errors = gate.drive("javascript", "http://w", cases)
+        self.assertTrue(any("wrapper call failed" in e and "treatment failed" in e for e in errors))
+        self.assertTrue(any("cleanup failed" in e for e in errors))
+
     def test_run_drives_no_sdk_when_the_reset_fails(self):
         for error in (gate.requests.ConnectionError("down"), ValueError("bad json"), TypeError("bad response")):
             with self.subTest(error=type(error).__name__), \
