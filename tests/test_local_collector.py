@@ -1011,32 +1011,26 @@ class EmptySelectionTest(unittest.TestCase):
 
 class LauncherStaleReportTest(unittest.TestCase):
     def test_a_failed_launch_never_leaves_an_earlier_pass_report(self):
+        # The launcher runs from a temporary checkout copy, so the real release report is never touched.
         import shutil
         import subprocess
         import tempfile
-        report = os.path.join(ROOT, "test-results", "local-collector.json")
-        saved = open(report).read() if os.path.exists(report) else None
-        try:
-            os.makedirs(os.path.dirname(report), exist_ok=True)
+        with tempfile.TemporaryDirectory() as checkout, tempfile.TemporaryDirectory() as bin_dir:
+            launcher = os.path.join(checkout, "run-local-collector-tests.sh")
+            shutil.copy2(os.path.join(ROOT, "run-local-collector-tests.sh"), launcher)
+            report = os.path.join(checkout, "test-results", "local-collector.json")
+            os.makedirs(os.path.dirname(report))
             with open(report, "w") as out:
                 json.dump({"run_id": "previous-run", "overall_pass": True}, out)
-            with tempfile.TemporaryDirectory() as bin_dir:
-                stub = os.path.join(bin_dir, "docker")
-                with open(stub, "w") as out:
-                    out.write("#!/bin/sh\ncase \"$*\" in *\" up \"*) exit 37;; esac\nexit 0\n")
-                os.chmod(stub, 0o755)
-                done = subprocess.run([shutil.which("bash"), os.path.join(ROOT, "run-local-collector-tests.sh"),
-                                       "--sdk", "swift", "--skip-build"], capture_output=True, text=True,
-                                      timeout=60, env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}"))
+            stub = os.path.join(bin_dir, "docker")
+            with open(stub, "w") as out:
+                out.write("#!/bin/sh\ncase \"$*\" in *\" up \"*) exit 37;; esac\nexit 0\n")
+            os.chmod(stub, 0o755)
+            done = subprocess.run([shutil.which("bash"), launcher, "--sdk", "swift", "--skip-build"],
+                                  capture_output=True, text=True, timeout=60,
+                                  env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}"))
             self.assertEqual(done.returncode, 37, done.stderr)
             self.assertFalse(os.path.exists(report), "the earlier PASS report must be gone")
-        finally:
-            if saved is None:
-                if os.path.exists(report):
-                    os.remove(report)
-            else:
-                with open(report, "w") as out:
-                    out.write(saved)
 
 
 class CollectorResetTest(unittest.TestCase):
