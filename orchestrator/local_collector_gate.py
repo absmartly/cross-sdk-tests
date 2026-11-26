@@ -58,7 +58,6 @@ GOAL_CASES: List[Tuple[str, List[Optional[Dict[str, Any]]]]] = [
     ("no_properties", [None]),
     ("repeated", [{"amount": 1}] * 5),
 ]
-EXPOSURE_ONLY_CASES = ["unicode_unit", "multiple_units"]
 
 
 def unit_hash(uid: Any) -> str:
@@ -100,6 +99,30 @@ def _canonical(value: Any) -> str:
     return json.dumps(walk(parsed), ensure_ascii=False, separators=(",", ":"))
 
 
+def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
+    """The publish's (type, uid) units and a diagnostic for each malformed entry."""
+    body = record.get("json")
+    if not isinstance(body, dict):
+        return set(), []
+    raw = body.get("units")
+    if raw is None:
+        return set(), []
+    if not isinstance(raw, list):
+        return set(), [f"publish #{record.get('seq')} units is not an array: {raw!r}"]
+    units, errors = set(), []
+    for entry in raw:
+        if isinstance(entry, dict) and isinstance(entry.get("type"), str) and isinstance(entry.get("uid"), str):
+            units.add((entry["type"], entry["uid"]))
+        else:
+            errors.append(f"publish #{record.get('seq')} has a malformed unit entry: {entry!r}")
+    return units, errors
+
+
+def _covers(units: set, case_units: set) -> bool:
+    """Whether a publish with `units` is this case's own publish (no other case's units)."""
+    return bool(units) and units <= case_units
+
+
 def _header(record: Dict[str, Any], name: str) -> Optional[str]:
     values = [v for k, v in record.get("headers", []) if k.lower() == name.lower()]
     return values[0] if len(values) == 1 else None
@@ -110,10 +133,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
     """Check this SDK's publishes against its plan; returns {pass, errors, revenue}."""
     errors: List[str] = []
     language = AGENT_LANGUAGE.get(sdk, sdk)
-    expected_units = {}
-    for case in cases:
-        for unit_type, uid in case["units"].items():
-            expected_units[(unit_type, unit_hash(uid))] = (case, unit_type)
+    expected_units = {(unit_type, unit_hash(uid)) for case in cases for unit_type, uid in case["units"].items()}
 
     exposures = Counter()
     goals = Counter()
@@ -123,12 +143,12 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         if not isinstance(body, dict):
             errors.append(f"publish #{record.get('seq')} is not a JSON object: {record.get('parseError')}")
             continue
-        units = {(u.get("type"), u.get("uid")) for u in body.get("units") or [] if isinstance(u, dict)}
-        mine = units & set(expected_units)
+        units, _ = _publish_units(record)
+        mine = units & expected_units
         if not mine:
             continue  # another SDK's publish
-        if units - set(expected_units):
-            errors.append(f"publish #{record['seq']} carries unplanned units {sorted(units - set(expected_units))}")
+        if units - expected_units:
+            errors.append(f"publish #{record['seq']} carries unplanned units {sorted(units - expected_units)}")
         agent = _header(record, "X-Agent")
         prefix = f"absmartly-{language}-sdk"
         agent_ok = isinstance(agent, str) and (
@@ -209,7 +229,13 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
             if created.status_code == 501:
                 return [f"{sdk}: e2e mode not configured (501)"]
             created.raise_for_status()
-            result = created.json().get("result", {})
+            try:
+                result = created.json().get("result")
+            except (ValueError, AttributeError):
+                result = None
+            if not isinstance(result, dict):
+                errors.append(f"{case['name']}: wrapper returned an invalid /context response: {created.text[:200]}")
+                continue
             context_id = result.get("contextId")
             if not context_id or result.get("ready") is not True or result.get("failed"):
                 errors.append(f"{case['name']}: context not ready: {created.text[:200]}")
@@ -234,13 +260,6 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
     return errors
 
 
-def _publish_units(record: Dict[str, Any]) -> set:
-    body = record.get("json")
-    if not isinstance(body, dict):
-        return set()
-    return {(u.get("type"), u.get("uid")) for u in body.get("units") or [] if isinstance(u, dict)}
-
-
 def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float = 2.0,
                     timeout: float = 30, poll: float = 0.5) -> List[Dict[str, Any]]:
     """Read publishes until every planned case has its own publish, then settle and re-read.
@@ -249,8 +268,8 @@ def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float
     deadline = time.monotonic() + timeout
     while True:
         publishes = requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
-        arrived = [_publish_units(r) for r in publishes]
-        if all(any(units and units <= case_units for units in arrived) for case_units in expected_cases):
+        arrived = [_publish_units(r)[0] for r in publishes]
+        if all(any(_covers(units, case_units) for units in arrived) for case_units in expected_cases):
             time.sleep(settle)
             return requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
         if time.monotonic() >= deadline:
@@ -271,17 +290,19 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
     plans = {sdk: plan(run_id, sdk) for sdk in sdks}
     driver_errors = {sdk: drive(sdk, url, plans[sdk]) for sdk, url in sdks.items()}
-    planned_units = {(unit_type, unit_hash(uid)) for cases in plans.values()
-                     for case in cases for unit_type, uid in case["units"].items()}
+    case_units = {sdk: {case["name"]: {(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
+                        for case in cases} for sdk, cases in plans.items()}
+    planned_units = set().union(*(units for cases in case_units.values() for units in cases.values()))
     # Every case ends in one /publish call with at least one exposure queued.
-    expected_cases = [{(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
-                      for cases in plans.values() for case in cases]
-    publishes = fetch_publishes(collector_url, expected_cases)
+    publishes = fetch_publishes(collector_url, [units for cases in case_units.values() for units in cases.values()])
+    arrived = []
     for record in publishes:
-        units = _publish_units(record)
+        units, unit_errors = _publish_units(record)
+        arrived.append(units)
         if isinstance(record.get("json"), dict) and not units & planned_units:
-            results.setdefault("transport_errors", []).append(
-                f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")
+            unit_errors.append(f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")
+        if unit_errors:
+            results.setdefault("transport_errors", []).extend(unit_errors)
     try:
         request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests", [])
     except requests.RequestException as exc:
@@ -301,7 +322,10 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
                      if not (c["name"] == "null_value" and "nullPropertyValues" in unsupported)]
         versioned = "xAgentHeader" not in entry.get("unsupported", {})
         outcome = verify(sdk, sdk_cases, publishes, application, environment, versioned)
-        outcome["errors"] = driver_errors[sdk] + outcome["errors"]
+        missing = [case["name"] for case in sdk_cases
+                   if not any(_covers(units, case_units[sdk][case["name"]]) for units in arrived)]
+        outcome["errors"] = driver_errors[sdk] + outcome["errors"] + [
+            f"case {name}: no publish carrying only this case's units" for name in missing]
         outcome["pass"] = not outcome["errors"]
         results["sdks"][sdk] = outcome
         results["overall_pass"] &= outcome["pass"]

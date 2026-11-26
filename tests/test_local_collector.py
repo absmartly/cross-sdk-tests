@@ -244,9 +244,9 @@ class GateRunTest(unittest.TestCase):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
-    def run_with(self, extra):
+    def run_with(self, extra, mutate=None):
         cases = gate.plan("r", "javascript")
-        publishes = _publishes_for("javascript", cases) + extra
+        publishes = _publishes_for("javascript", cases, mutate) + extra
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
              mock.patch.object(gate.requests, "delete"), \
@@ -255,12 +255,39 @@ class GateRunTest(unittest.TestCase):
 
     def test_every_publish_must_belong_to_the_plan(self):
         self.assertTrue(self.run_with([])["overall_pass"])
+        self.assertNotIn("transport_errors", self.run_with([]))
         stray = _record(99, {"hashed": True, "units": [{"type": "user_id", "uid": gate.unit_hash("stray")}],
                              "exposures": [], "goals": []})
         for label, extra in (("unplanned unit", [stray]), ("no units", [_record(99, {"hashed": True})]),
                              ("malformed json", [{"seq": 99, "json": None, "parseError": "x", "headers": []}])):
             with self.subTest(label):
                 self.assertFalse(self.run_with(extra)["overall_pass"], label)
+
+    def test_a_case_without_its_own_publish_fails_even_with_matching_totals(self):
+        # Every exposure and goal still arrives, but multiple_units' session unit and exposure ride on
+        # purchase_amounts' publish, so purchase_amounts has no publish carrying only its own units.
+        def merge(out):
+            names = [c["name"] for c in gate.plan("r", "javascript")]
+            donor, target = out[names.index("multiple_units")]["json"], out[names.index("purchase_amounts")]["json"]
+            session = [u for u in donor["units"] if u["type"] == "session_id"]
+            donor["units"] = [u for u in donor["units"] if u["type"] != "session_id"]
+            target["units"] += session
+            target["exposures"] += [e for e in donor["exposures"] if e["unit"] == "session_id"]
+            donor["exposures"] = [e for e in donor["exposures"] if e["unit"] != "session_id"]
+        result = self.run_with([], merge)
+        self.assertFalse(result["overall_pass"])
+        self.assertEqual([e for e in result["sdks"]["javascript"]["errors"] if e.startswith("case ")],
+                         ["case purchase_amounts: no publish carrying only this case's units"])
+
+    def test_malformed_unit_entries_fail_with_a_diagnostic(self):
+        for label, bad in (("string entry", "user_id"), ("list uid", {"type": "user_id", "uid": []}),
+                           ("missing type", {"uid": "x"})):
+            with self.subTest(label):
+                result = self.run_with([], lambda out, bad=bad: out[0]["json"]["units"].append(bad))
+                self.assertFalse(result["overall_pass"])
+                self.assertTrue(any("malformed unit entry" in e for e in result["transport_errors"]))
+        result = self.run_with([], lambda out: out[0]["json"].update(units="user_id"))
+        self.assertTrue(any("units is not an array" in e for e in result["transport_errors"]))
 
 
 class FetchPublishesTest(unittest.TestCase):
@@ -276,7 +303,6 @@ class FetchPublishesTest(unittest.TestCase):
             return len(gate.fetch_publishes("http://c", expected_cases, timeout=30)), get.call_count
 
     def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
-        # Two stable zero reads used to end the wait; the late publishes must still be read.
         m = self.MINE
         self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], [{("user_id", "u")}], iter([0] + [1] * 10)), (3, 5))
 
@@ -299,6 +325,35 @@ class FetchPublishesTest(unittest.TestCase):
         multi = {"json": {"units": [{"type": "user_id", "uid": "mu"}, {"type": "session_id", "uid": "mu-s"}]}}
         self.assertEqual(self.fetch([[multi], [multi]], [{("user_id", "mu"), ("session_id", "mu-s")}],
                                     iter([0] + [1] * 10)), (1, 2))
+
+    def test_malformed_unit_entries_do_not_abort_polling(self):
+        bad = {"json": {"units": [{"type": "user_id", "uid": []}, "user_id", {"type": "user_id", "uid": "u"}]}}
+        self.assertEqual(self.fetch([[bad], [bad]], [{("user_id", "u")}], iter([0] + [1] * 10)), (1, 2))
+
+
+class WrapperResponseTest(unittest.TestCase):
+    def drive_with(self, payload):
+        created = mock.Mock(status_code=200, text=str(payload), json=mock.Mock(return_value=payload))
+        with mock.patch.object(gate.requests, "post", return_value=created) as post, \
+             mock.patch.object(gate.requests, "delete"):
+            errors = gate.drive("javascript", "http://w", gate.plan("r", "javascript")[:1])
+        return errors, post.call_count
+
+    def test_a_wrong_shaped_2xx_context_response_is_a_reported_wrapper_failure(self):
+        for label, payload in (("null result", {"result": None}), ("string result", {"result": "ok"}),
+                               ("list body", ["ok"]), ("missing result", {})):
+            with self.subTest(label):
+                errors, posts = self.drive_with(payload)
+                self.assertEqual(len(errors), 1)
+                self.assertIn("invalid /context response", errors[0])
+                self.assertEqual(posts, 1)
+
+    def test_malformed_json_in_a_2xx_context_response_is_a_reported_wrapper_failure(self):
+        created = mock.Mock(status_code=200, text="{not json", json=mock.Mock(side_effect=ValueError("bad json")))
+        with mock.patch.object(gate.requests, "post", return_value=created), mock.patch.object(gate.requests, "delete"):
+            errors = gate.drive("javascript", "http://w", gate.plan("r", "javascript")[:1])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("invalid /context response", errors[0])
 
 
 if __name__ == "__main__":
