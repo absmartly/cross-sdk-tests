@@ -1543,3 +1543,14 @@ for that transition (for example a legacy `close` followed by `finalize`) report
 `false` and lists a reviewed exception; its wrapper returns every event unchanged.
 Every scenario with a `finalize` step requires it (19, 131, 147-149, 186,
 188-192, 228).
+
+### E2E pre-ready goal hook
+
+JavaScript and Python accept `preReadyGoals: [{"goalName":"purchase","properties":{"amount":7}}]`
+on `POST /context` with `mode: "e2e"`. The SDK data provider remains unresolved while the
+wrapper checks the SDK's own not-ready state immediately before every track call. Only then
+is the real SDK client/provider fetch released; creation still waits until ready. The response
+adds `result.preReadyTracked: true`. No automatic publication is enabled. Malformed batches
+are rejected atomically (400); the hook is not accepted outside e2e mode. Support/explicit
+exceptions live under each SDK's `e2e` entry in `orchestrator/expected-capabilities.json`;
+these are runner hooks, not advertised SDK capabilities.

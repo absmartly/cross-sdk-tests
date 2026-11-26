@@ -454,6 +454,15 @@ services:
     ports:
       - "8080"
 
+  # Blocking SDK event-emission gate (local-collector/local_collector.py); see
+  # docker-compose.local-collector.yml and run-local-collector-tests.sh.
+  local-collector:
+    build:
+      context: .
+      dockerfile: local-collector/Dockerfile
+    ports:
+      - "8090"
+
   orchestrator:
     build:
       context: .

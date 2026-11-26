@@ -365,7 +365,40 @@ pip install -r orchestrator/requirements-test.txt
 python3 -m unittest discover -s tests -v
 ```
 
-## E2E mode (live collector)
+## E2E release gate: local collector (blocking)
+
+The blocking SDK e2e gate runs each wrapper's real SDK client and default
+publisher against `local-collector/local_collector.py`, a stdlib HTTP collector, so it
+needs no credentials and is deterministic:
+
+```bash
+./run-local-collector-tests.sh --sdk swift            # one SDK
+./run-local-collector-tests.sh --sdk swift,javascript  # several
+```
+
+The collector serves a fixed `GET {endpoint}/context` (every unit gets variant 1)
+and stores every `PUT {endpoint}/context` publish verbatim (raw body, parsed JSON,
+all headers). `orchestrator/local_collector_gate.py` then checks per SDK, from the
+raw publishes:
+
+- exactly one exposure per planned unit and experiment, with the experiment
+  id/name, variant 1, assigned/eligible, hashed units (UTF-8 MD5, base64url);
+- the exact multiset of goals and their properties: nested objects, booleans,
+  numbers by value (integer, 10.5, 0.1, negative, zero, large), Unicode and
+  null; a missing, extra, duplicated or mutated event fails;
+- revenue as the sum of the received `purchase` `amount` properties, never a
+  goal count times a price;
+- `X-Agent` (versioned unless `xAgentHeader` is a reviewed exception),
+  `X-Application` and `X-Environment` on every publish.
+
+This verifies what the SDK emits and transports, not the analysis backend. A
+release requires this gate to pass. The report is written to
+`test-results/local-collector.json`.
+
+## E2E smoke: test-1 (optional, non-blocking)
+
+The test-1 run below is optional smoke coverage of the real ABsmartly pipeline.
+Report its result separately; it does not block a release.
 
 The e2e suite creates a real experiment on a test ABsmartly environment, has
 each SDK send real exposures and goals, polls the metrics API, and verifies the

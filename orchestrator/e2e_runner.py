@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import argparse
+import base64
+import hashlib
+from collections import Counter
+from decimal import Decimal
 import json
 import os
 import re
@@ -11,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
+
+from e2e_cases import case_specs, eq_filter, matches, measured_total, metric_specs
 
 
 # Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
@@ -70,7 +76,14 @@ def generate_run_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str = "", output_json: bool = True) -> Tuple[int, str]:
+# Only an HTTP 429 from the API retries; a "429" elsewhere (an ID) does not. CLI 1.18.0
+# reports a 429 as "Rate limit exceeded." (lib/api/axios-adapter.js handleError).
+RATE_LIMITED_RE = re.compile(r"(^|\n)(Error: )?Rate limit exceeded\.|status code 429|HTTP 429|\b429 Too Many Requests")
+RATE_LIMIT_SLEEP = 120
+
+
+def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str = "", output_json: bool = True,
+            deadline: Optional[float] = None) -> Tuple[int, str]:
     cmd = ["abs"] + args
     if api_key and endpoint:
         cmd += ["--api-key", api_key, "--endpoint", endpoint]
@@ -78,7 +91,21 @@ def run_abs(args: List[str], profile: str = "", api_key: str = "", endpoint: str
         cmd += ["--profile", profile]
     if output_json:
         cmd += ["-o", "json"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    for attempt in range(3):
+        remaining = deadline - time.time() if deadline is not None else 30
+        if remaining <= 0:
+            return 1, "CLI call budget exhausted"
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=min(30, remaining))
+        except subprocess.TimeoutExpired:
+            return 1, "CLI call timed out"
+        if result.returncode == 0 or not RATE_LIMITED_RE.search(result.stdout + result.stderr):
+            break
+        # Only a caller with a deadline opts into the 120 s 429 retry, so the baseline
+        # poll and provisioning keep their single-call timing.
+        if attempt == 2 or deadline is None or time.time() + RATE_LIMIT_SLEEP >= deadline:
+            break
+        time.sleep(RATE_LIMIT_SLEEP)
     output = result.stdout.strip()
     if result.returncode != 0 and result.stderr.strip():
         output = output + "\n" + result.stderr.strip() if output else result.stderr.strip()
@@ -142,6 +169,21 @@ class E2ERunner:
         self.metric_id: Optional[str] = None
         self.goal_id: Optional[str] = None
         self.revenue_metric_id: Optional[str] = None
+        self.case_metric_ids: Dict[str, str] = {}
+        self.case_results: Dict[str, Dict[str, Any]] = {}
+        with open(os.path.join(os.path.dirname(__file__), "expected-capabilities.json")) as src:
+            self.capability_policy = json.load(src)
+        self.session_experiment_id: Optional[int] = None
+        self.session_experiment_name: Optional[str] = None
+        self.case_experiment_id: Optional[int] = None
+        self.case_experiment_name: Optional[str] = None
+        self.prime_experiment_id: Optional[int] = None
+        self.prime_experiment_name: Optional[str] = None
+        self.experiment_suffix: Optional[str] = None
+        # Every side experiment created, so cleanup archives it even after a later failure.
+        self.side_experiment_ids: List[int] = []
+        self.event_cases_expected = False
+        self.case_run_deadline: Optional[float] = None
 
     def log(self, msg: str) -> None:
         if self.verbose:
@@ -333,8 +375,358 @@ class E2ERunner:
         if not self.revenue_metric_id:
             raise RuntimeError(f"Could not determine revenue metric ID from output: {output}")
 
-        self._review_and_activate_revenue_metric(self.revenue_metric_id)
+        self._review_and_activate_metric(self.revenue_metric_id)
         self.log(f"Created and activated metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
+
+    def _ensure_case_metrics(self):
+        for key, spec in metric_specs().items():
+            lookup = ("--include-drafts", "--archived", "--search", spec["name"])
+            metric_id = self._find_resource("metrics", spec["name"], lookup, unique=True)
+            if not metric_id:
+                args = ["metrics", "create", "--name", spec["name"],
+                        "--type", spec["type"], "--description", "E2E collector-arrival check",
+                        "--goal-id", self.goal_id, "--owner", self.owner_id,
+                        "--outlier-limit-method", "unlimited"]
+                if "path" in spec:
+                    args += ["--value-source-property", spec["path"]]
+                if "filter" in spec:
+                    args += ["--property-filter", json.dumps(spec["filter"])]
+                rc, output = run_abs(args, self.profile)
+                if rc != 0:
+                    raise RuntimeError(f"Metric {spec['name']}: {output}")
+                metric_id = _extract_id(output)
+                if not metric_id:
+                    raise RuntimeError(f"Metric {spec['name']} missing id: {output}")
+            # `--raw`: the CLI summary carries no goal_id, value_source_property,
+            # property_filter or outlier_limit_method (same as the revenue check).
+            rc, output = run_abs(["metrics", "get", metric_id, "--raw"], self.profile)
+            detail = parse_json_output(output) if rc == 0 else None
+            if not isinstance(detail, dict):
+                raise RuntimeError(f"Cannot validate existing metric {spec['name']}: {output}")
+            detail = detail.get("metric", detail)
+            if detail.get("type") != spec["type"] or str(detail.get("goal_id")) != str(self.goal_id):
+                raise RuntimeError(f"Metric {spec['name']} has the wrong type/goal")
+            if "path" in spec and detail.get("value_source_property") != spec["path"]:
+                raise RuntimeError(f"Metric {spec['name']} has the wrong property path")
+            raw_filter = detail.get("property_filter")
+            if isinstance(raw_filter, str) and raw_filter:
+                raw_filter = json.loads(raw_filter)
+            if "filter" in spec and raw_filter != spec["filter"]:
+                raise RuntimeError(f"Metric {spec['name']} has the wrong property filter")
+            if detail.get("outlier_limit_method") != "unlimited":
+                raise RuntimeError(f"Metric {spec['name']} must not limit outliers")
+            # A run whose review/activation failed left this metric archived or in
+            # draft; finish those steps instead of failing every later run.
+            if detail.get("archived") is True:
+                action = ["metrics", "archive", metric_id, "--unarchive"]
+                rc, output = run_abs(action, self.profile, output_json=False)
+                if rc != 0:
+                    raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
+            status = detail.get("lifecycle_status")
+            if status not in ACTIVE_LIFECYCLE_STATUSES:
+                review = detail.get("review")
+                review_status = review.get("status") if isinstance(review, dict) else None
+                self._review_and_activate_metric(metric_id, review_status)
+            self.case_metric_ids[key] = metric_id
+
+    def create_case_experiments(self):
+        """Two run-scoped side experiments, so case units never touch the baseline experiment.
+
+        `-cases` (user_id) carries every case's user exposure and goals; `-session`
+        (session_id) carries the multiple-units case's second exposure.
+        """
+        if self.dry_run:
+            return
+        self._ensure_case_metrics()
+        session_type = self._find_resource("units", "session_id")
+        if not session_type:
+            rc, output = run_abs(["units", "create", "--name", "session_id",
+                                  "--description", "E2E multi-unit collector check"], self.profile)
+            session_type = _extract_id(output) if rc == 0 else None
+            if not session_type:
+                raise RuntimeError(f"Cannot provision session_id: {output}")
+        self.case_experiment_id, self.case_experiment_name = self._create_side_experiment("cases", self.unit_type)
+        self.prime_experiment_id, self.prime_experiment_name = self._create_side_experiment("prime", self.unit_type)
+        self.session_experiment_id, self.session_experiment_name = self._create_side_experiment("session", session_type)
+
+    def _create_side_experiment(self, suffix, unit_type):
+        parent = self.experiment_id, self.experiment_name, self.unit_type
+        created = None
+        try:
+            self.unit_type = unit_type
+            self.experiment_suffix = suffix
+            self.experiment_id = None
+            self.create_experiment()
+            created = (self.experiment_id, self.experiment_name) if self.experiment_id else None
+        finally:
+            self.experiment_id, self.experiment_name, self.unit_type = parent
+            self.experiment_suffix = None
+            if created:
+                self.side_experiment_ids.append(created[0])
+        if not created:
+            raise RuntimeError(f"The {suffix} experiment was not created")
+        rc, output = run_abs(["experiments", "start", str(created[0])], self.profile)
+        if rc:
+            raise RuntimeError(f"Start {suffix} experiment: {output}")
+        try:
+            self.experiment_id = created[0]
+            if not self._wait_for_experiment_in_context():
+                raise RuntimeError(f"The {suffix} experiment is not visible in the collector context")
+        finally:
+            self.experiment_id = parent[0]
+        return created
+
+    def _case_skip(self, sdk, case):
+        cap = case.get("capability")
+        entry = self.capability_policy["sdks"].get(sdk)
+        if entry is None:
+            raise RuntimeError(f"Missing capability policy for {sdk}")
+        if cap == "numericUnitIds":
+            if cap in entry["required"]:
+                return None
+            reason = entry["unsupported"].get(cap)
+        elif cap:
+            policy = entry.get("e2e", {})
+            if cap in policy.get("required", []):
+                return None
+            reason = policy.get("unsupported", {}).get(cap)
+        else:
+            return None
+        if not reason:
+            raise RuntimeError(f"Unclassified e2e capability {cap} for {sdk}")
+        return reason
+
+    def run_event_cases(self):
+        # Each SDK gets its own --timeout share for sending, so one slow wrapper
+        # cannot spend the budget of the SDKs after it.
+        for sdk, base_url in self.sdks.items():
+            self.case_run_deadline = time.time() + self.timeout
+            self.case_results[sdk] = {}
+            # A wrapper whose e2e mode is not configured (501) is skipped by the
+            # baseline unless named with --sdk; its cases follow the same rule.
+            if self.sdk_results.get(sdk, {}).get("status") == "skipped" and sdk not in self.requested_sdks:
+                for case in case_specs(self.run_id, sdk):
+                    self.case_results[sdk][case["name"]] = {"status": "unsupported",
+                                                            "reason": "e2e mode not configured (wrapper answered 501)"}
+                continue
+            for case in case_specs(self.run_id, sdk):
+                name = case["name"]
+                try:
+                    reason = self._case_skip(sdk, case)
+                    if reason:
+                        self.case_results[sdk][name] = {"status": "unsupported", "reason": reason}
+                        continue
+                    if self.dry_run:
+                        self.case_results[sdk][name] = {"status": "dry_run"}
+                        continue
+                    self._send_event_case(sdk, base_url, case)
+                    self.case_results[sdk][name] = {"status": "sent"}
+                except Exception as exc:
+                    self.case_results[sdk][name] = {"status": "fail", "reason": str(exc)}
+
+    def _wrapper_post(self, url, body=None, deadline=None):
+        for attempt in range(3):
+            # The budget bounds the calls themselves, not only the 429 waits.
+            if deadline is not None and time.time() >= deadline:
+                raise RuntimeError(f"Wrapper call budget exhausted before POST {url}")
+            remaining = deadline - time.time() if deadline is not None else 30
+            if remaining <= 0:
+                raise RuntimeError(f"Wrapper call budget exhausted before POST {url}")
+            response = requests.post(url, json=body or {}, timeout=min(30, remaining))
+            if response.status_code != 429:
+                response.raise_for_status()
+                return response.json()
+            if attempt == 2 or (deadline is not None and time.time() + RATE_LIMIT_SLEEP >= deadline):
+                break
+            time.sleep(RATE_LIMIT_SLEEP)
+        response.raise_for_status()
+
+    def _send_event_case(self, sdk, base_url, case):
+        # A rate-limited wrapper never sleeps past this case's budget, nor the run's.
+        deadline = time.time() + self.timeout
+        if self.case_run_deadline is not None:
+            deadline = min(deadline, self.case_run_deadline)
+        units = {"user_id": case["uid"]}
+        if "session" in case:
+            units["session_id"] = case["session"]
+        payload = {"mode": "e2e", "units": units,
+                   "attributes": {"e2e_sdk": sdk, "e2e_case": case["name"]}}
+        if case.get("pre_ready"):
+            payload["preReadyGoals"] = [{"goalName": "purchase", "properties": g} for g in case["goals"]]
+        if case.get("pre_ready"):
+            # Establish the unit's exposure before the pre-ready achievement:
+            # analysis metrics count goals only after first exposure.
+            prime = dict(payload)
+            prime.pop("preReadyGoals")
+            primed = self._wrapper_post(base_url + "/context", prime, deadline=deadline)["result"]["contextId"]
+            prime_url = base_url + "/context/" + primed
+            primed_ok = False
+            try:
+                self._wrapper_post(prime_url + "/treatment", {"experimentName": self.prime_experiment_name}, deadline=deadline)
+                self._wrapper_post(prime_url + "/publish", deadline=deadline)
+                primed_ok = True
+            finally:
+                self._delete_context(prime_url, failing=not primed_ok)
+        created = self._wrapper_post(base_url + "/context", payload, deadline=deadline)
+        result = created.get("result", {})
+        context_id = result.get("contextId")
+        if not context_id:
+            raise RuntimeError(f"Context was not created: {created}")
+        url = base_url + "/context/" + context_id
+        sent_ok = False
+        try:
+            # Inside the try: a context the wrapper reports as not ready is still deleted.
+            if result.get("ready") is not True or result.get("failed"):
+                raise RuntimeError(f"Context is not ready: {created}")
+            if case.get("pre_ready") and result.get("preReadyTracked") is not True:
+                raise RuntimeError("Wrapper did not confirm tracking in the SDK's not-ready state")
+            self._wrapper_post(url + "/treatment", {"experimentName": self.case_experiment_name}, deadline=deadline)
+            if "session" in case:
+                self._wrapper_post(url + "/treatment", {"experimentName": self.session_experiment_name}, deadline=deadline)
+            if not case.get("pre_ready"):
+                for properties in case["goals"]:
+                    body = {"goalName": "purchase"}
+                    if not case.get("omit_properties"):
+                        body["properties"] = properties
+                    self._wrapper_post(url + "/track", body, deadline=deadline)
+            # Exactly one publish for the batch; close case must never publish explicitly.
+            self._wrapper_post(url + ("/finalize" if case.get("close") else "/publish"), deadline=deadline)
+            sent_ok = True
+        finally:
+            self._delete_context(url, failing=not sent_ok)
+
+    @staticmethod
+    def _delete_context(url, failing=False):
+        # A failing cleanup DELETE must not replace the error that ended the case.
+        try:
+            requests.delete(url, timeout=10).raise_for_status()
+        except requests.RequestException:
+            if not failing:
+                raise
+
+    def _query_metric(self, metric_id, sdk, case, experiment_id=None, deadline=None):
+        rc, output = run_abs([
+            "experiments", "metrics", "results", str(experiment_id or self.case_experiment_id),
+            "--metric", str(metric_id), "--filter", json.dumps(eq_filter(e2e_sdk=sdk, e2e_case=case)),
+        ], self.profile, deadline=deadline)
+        if rc:
+            self.log(f"Unmeasurable {sdk}/{case}/{metric_id}: {output}")
+            return None
+        data = parse_json_output(output)
+        if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+            if str(data[0].get("metric_id")) == str(metric_id):
+                return data[0]
+        return None
+
+    def verify_event_cases(self, results):
+        # The case check has its own budget: on a rate-limited backend no single 429
+        # sleep starts past it, so verification cannot run for hours.
+        deadline = time.time() + self.timeout
+        results["event_cases"] = {}
+        for sdk in self.sdks:
+            rows = results["event_cases"][sdk] = {}
+            for case in case_specs(self.run_id, sdk):
+                name = case["name"]
+                sent = self.case_results.get(sdk, {}).get(name, {"status": "fail", "reason": "Case was not executed"})
+                rows[name] = dict(sent)
+                if sent["status"] == "unsupported":
+                    continue
+                if sent["status"] != "sent":
+                    results["overall_pass"] = False
+                    continue
+                metrics = rows[name]["metrics"] = {}
+                cache = {}
+                for key, expected in case["expected"].items():
+                    source = "events" if key == "exposures" else key
+                    if source not in cache:
+                        cache[source] = self._query_metric(self.case_metric_ids[source], sdk, name, deadline=deadline)
+                    actual = measured_total(cache[source], "unit_count" if key == "exposures" else "count")
+                    metrics[key] = {"expected": str(expected), "actual": str(actual) if actual is not None else None,
+                                    "pass": matches(expected, actual)}
+                if "session" in case:
+                    metric = self._query_metric(self.case_metric_ids["events"], sdk, name, self.session_experiment_id, deadline=deadline)
+                    actual = measured_total(metric, "unit_count")
+                    metrics["session_exposures"] = {"expected": "1", "actual": str(actual) if actual is not None else None,
+                                                    "pass": matches(1, actual)}
+                arrival = self._verify_arrival(sdk, case, deadline)
+                rows[name]["arrival"] = arrival
+                rows[name]["status"] = "pass" if all(m["pass"] for m in metrics.values()) and arrival["pass"] else "fail"
+                if rows[name]["status"] != "pass":
+                    results["overall_pass"] = False
+
+    def _verify_arrival(self, sdk, case, deadline=None):
+        units = {"user_id": case["uid"]}
+        if "session" in case:
+            units["session_id"] = case["session"]
+        errors = []
+        for unit_type, uid in units.items():
+            hashed = base64.urlsafe_b64encode(hashlib.md5(str(uid).encode("utf-8")).digest()).decode().rstrip("=")
+            events = []
+            for offset in range(0, 5000, 500):
+                rc, output = run_abs(["events", "list", "--from", "1d", "--unit-uid", hashed,
+                                      "--items", "500", "--skip", str(offset)], self.profile, deadline=deadline)
+                page = parse_json_output(output) if rc == 0 else None
+                if not isinstance(page, list):
+                    return {"pass": False, "errors": ["Collector event query unmeasurable"]}
+                events.extend(page)
+                if len(page) < 500:
+                    break
+            else:
+                return {"pass": False, "errors": ["Collector event pagination limit exceeded"]}
+            own = [e for e in events if e.get("unit_uid") == hashed and e.get("unit_type") == unit_type
+                   and e.get("application_id") == int(self.app_id) and e.get("environment") == self.environment]
+            exposures = [e for e in own if e.get("event_type") == "exposure"
+                         and e.get("experiment_id") == (self.session_experiment_id if unit_type == "session_id" else self.case_experiment_id)]
+            if len(exposures) != 1:
+                errors.append(
+                    f"Expected exactly one exposure for {unit_type}:{uid!r}, found {len(exposures)}"
+                )
+            language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
+                        "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript"}.get(sdk, sdk)
+            versioned = "xAgentHeader" not in self.capability_policy["sdks"].get(sdk, {}).get("unsupported", {})
+            agent_re = r"absmartly-" + re.escape(language) + r"-sdk" + (r"/[^ /]+" if versioned else r"(?:/[^ /]+)?")
+            for event in own:
+                if not isinstance(event.get("agent"), str) or not re.fullmatch(agent_re, event["agent"]):
+                    errors.append("Collector SDK agent missing or incorrect")
+            for exposure in exposures:
+                attrs = exposure.get("unit_attributes")
+                try:
+                    attrs = json.loads(attrs) if isinstance(attrs, str) else attrs
+                except ValueError:
+                    attrs = None
+                if not isinstance(attrs, dict) or attrs.get("e2e_sdk") != sdk or attrs.get("e2e_case") != case["name"]:
+                    errors.append("Exposure attributes changed")
+            if unit_type != "user_id":
+                continue
+            goals = [e for e in own if e.get("event_type") == "goal" and e.get("goal_name") == "purchase"]
+            def numbers(value):
+                # Compare numbers by value: 10 and 10.0 are the same amount.
+                if isinstance(value, dict):
+                    return {k: numbers(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [numbers(v) for v in value]
+                if isinstance(value, Decimal):
+                    if not value.is_finite():
+                        raise ValueError("non-finite property")
+                    return {"$number": format(value.normalize(), "f") if value else "0"}
+                return value
+
+            def canonical(value):
+                if isinstance(value, str):
+                    value = json.loads(value, parse_float=Decimal, parse_int=Decimal)
+                else:
+                    value = json.loads(json.dumps(value), parse_float=Decimal, parse_int=Decimal)
+                return json.dumps(numbers(value if value is not None else {}), sort_keys=True,
+                                  ensure_ascii=False, separators=(",", ":"))
+            try:
+                actual = Counter(canonical(e.get("properties")) for e in goals)
+                expected = Counter(canonical(g) for g in case["goals"])
+            except (ValueError, TypeError):
+                errors.append("Malformed collector properties")
+            else:
+                if actual != expected:
+                    errors.append("Collector goal count/properties differ from planned calls")
+        return {"pass": not errors, "errors": errors}
 
     def _find_and_reuse_revenue_metric(self) -> bool:
         """Find the existing revenue metric (refusing duplicates) and make it usable."""
@@ -345,7 +737,7 @@ class E2ERunner:
         self.log(f"Found metric '{REVENUE_METRIC_NAME}' with id={self.revenue_metric_id}")
         return True
 
-    def _review_and_activate_revenue_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
+    def _review_and_activate_metric(self, metric_id: str, review_status: Optional[str] = None) -> None:
         """Request review, approve and activate, skipping steps a failed run already did.
 
         A retry after a run that got past `review request` (the metric's
@@ -382,7 +774,7 @@ class E2ERunner:
                 raise RuntimeError(f"Failed to run {' '.join(action)} (abs rc={rc}): {output}")
         if status is not None and status not in ACTIVE_LIFECYCLE_STATUSES:
             self.log(f"Metric '{REVENUE_METRIC_NAME}' is {status!r} (review {review_status!r}); activating it")
-            self._review_and_activate_revenue_metric(metric_id, review_status)
+            self._review_and_activate_metric(metric_id, review_status)
 
     def _check_revenue_metric_definition(self, metric_id: str) -> Tuple[Optional[str], Optional[str], bool]:
         """Refuse an existing e2e_purchase_revenue that does not sum purchase.amount.
@@ -434,7 +826,7 @@ class E2ERunner:
                 metric.get("archived") is True)
 
     def create_experiment(self) -> None:
-        self.experiment_name = f"e2e-{self.run_id}"
+        self.experiment_name = f"e2e-{self.run_id}" + (f"-{self.experiment_suffix}" if self.experiment_suffix else "")
         print(f"Creating experiment: {self.experiment_name}")
 
         if self.dry_run:
@@ -528,6 +920,7 @@ class E2ERunner:
 
         print(f"  {Colors.GREEN}Started{Colors.RESET}")
         self.experiment_context_ready = self._wait_for_experiment_in_context()
+        self.create_case_experiments()
 
     def _wait_for_experiment_in_context(self) -> bool:
         """Poll the SDK endpoint until the started experiment is assignable.
@@ -605,6 +998,10 @@ class E2ERunner:
                             "treatment_errors": 0,
                             "track_errors": 0,
                         }
+        # The case layer starts only after the baseline lanes; from here on a run
+        # that does not send its cases fails with "Case was not executed".
+        self.event_cases_expected = True
+        self.run_event_cases()
 
     def _run_sdk_scenario(self, sdk_name: str, base_url: str) -> Dict[str, Any]:
         exposures_sent = 0
@@ -813,6 +1210,11 @@ class E2ERunner:
                     if failure or not self._within_tolerance(expected, actual):
                         pending.append(f"{sdk_name} {name}: {actual}/{expected}" +
                                        (f" ({failure})" if failure else ""))
+            # The event cases (sent to their own experiments) must have landed too:
+            # one batch-sentinel query per SDK, bounded by the same deadline.
+            if not pending and self.event_cases_expected and not self._sentinels_landed(
+                    time.time() + max(0.0, deadline - time.monotonic())):
+                pending.append("event cases: batch sentinel not landed")
             if not pending:
                 if decided:
                     print(
@@ -832,7 +1234,20 @@ class E2ERunner:
             + "; ".join(pending)
         )
 
-    def _fetch_metrics(self) -> Optional[Dict[str, Any]]:
+    def _sentinels_landed(self, deadline: float) -> bool:
+        """One cheap query per SDK: the batch case's goal count (its largest event volume)."""
+        for sdk in self.sdks:
+            if time.time() >= deadline:
+                return False
+            if self.case_results.get(sdk, {}).get("batch", {}).get("status") != "sent":
+                continue
+            batch = next(c for c in case_specs(self.run_id, sdk) if c["name"] == "batch")
+            metric = self._query_metric(self.case_metric_ids["events"], sdk, "batch", deadline=deadline)
+            if not matches(batch["expected"]["events"], measured_total(metric, "count")):
+                return False
+        return True
+
+    def _fetch_metrics(self, deadline: Optional[float] = None) -> Optional[Dict[str, Any]]:
         """Unsegmented metric result for the e2e metric (aggregate across SDKs)."""
         if not self.experiment_id:
             return None
@@ -840,7 +1255,7 @@ class E2ERunner:
         try:
             rc, output = run_abs([
                 "experiments", "metrics", "results", str(self.experiment_id),
-            ], self.profile)
+            ], self.profile, **({"deadline": deadline} if deadline is not None else {}))
         except subprocess.TimeoutExpired as exc:
             self.log(f"Metrics query timed out after {exc.timeout}s")
             return None
@@ -1139,6 +1554,10 @@ class E2ERunner:
 
         if not self.dry_run and self.experiment_id:
             self._verify_active_sdks(results, active)
+            # run() sets this before any stage, so a run that never sends the cases
+            # still checks them and fails with "Case was not executed".
+            if self.event_cases_expected:
+                self.verify_event_cases(results)
 
         # An all-skipped (or otherwise all-inactive) run verifies nothing: every
         # wrapper returning 501 when the e2e env is unset yields skipped rows
@@ -1473,6 +1892,16 @@ class E2ERunner:
             )
             print()
 
+        for sdk, cases in results.get("event_cases", {}).items():
+            for name, result in cases.items():
+                print(f"  {sdk} / {name}: {result['status'].upper()} {result.get('reason', '')}")
+                for error in result.get("arrival", {}).get("errors", []):
+                    print(f"    arrival: {error}")
+                for metric, value in result.get("metrics", {}).items():
+                    print(f"    {metric}: {value['actual']}/{value['expected']} "
+                          f"{'PASS' if value['pass'] else 'FAIL'}")
+        print()
+
         if self.dry_run:
             print(f"  {Colors.YELLOW}DRY-RUN{Colors.RESET} Nothing was verified against the backend")
         elif self.report_passes(results):
@@ -1527,6 +1956,10 @@ class E2ERunner:
             if status != "ok" and not row_problems:
                 row_problems.append(f"{sdk_name}: {row.get('note') or status}")
             problems.extend(row_problems)
+        for sdk_name, cases in results.get("event_cases", {}).items():
+            for name, row in cases.items():
+                if row.get("status") not in ("pass", "unsupported"):
+                    problems.append(f"{sdk_name} event case {name}: {row.get('status')} {row.get('reason', '')}".rstrip())
         return problems
 
     def _format_metric(self, metric: Dict[str, Any]) -> str:
@@ -1551,6 +1984,17 @@ class E2ERunner:
         return f"{color}{actual}/{expected} {label}{Colors.RESET}"
 
     def cleanup_experiment(self) -> None:
+        parent = self.experiment_id
+        for side_id in self.side_experiment_ids:
+            self.experiment_id = side_id
+            try:
+                self._archive_experiment()
+            finally:
+                self.experiment_id = parent
+        self.side_experiment_ids = []
+        self._archive_experiment()
+
+    def _archive_experiment(self) -> None:
         if not self.experiment_id or self.dry_run:
             return
 

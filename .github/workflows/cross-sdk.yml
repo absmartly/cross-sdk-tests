@@ -72,10 +72,10 @@ jobs:
         run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py orchestrator/local_collector_gate.py local-collector/local_collector.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
-        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
+        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh run-local-collector-tests.sh; do bash -n "$f"; done
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
@@ -262,3 +262,68 @@ jobs:
           name: cross-sdk-consistency
           path: consistency-report.json
           if-no-files-found: warn
+
+  # Blocking local collector release gate. test-1 is intentionally not part of CI;
+  # run-e2e-tests.sh remains optional smoke coverage for a real ABsmartly environment.
+  local-collector-gate:
+    name: local-collector-gate (${{ matrix.sdk }})
+    needs: harness
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [javascript, python]
+    steps:
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+        with:
+          path: cross-sdk-tests
+
+      - name: Checkout SDK source repos
+        working-directory: cross-sdk-tests
+        run: |
+          source sdk-branches.sh
+          source sdk-checkout.sh
+          # Matrix names are wrapper lanes, not repository names. Keep this
+          # explicit: python's repository is python3-sdk while its Dockerfile
+          # COPY expects the python3-sdk directory; JavaScript is analogous.
+          case "${{ matrix.sdk }}" in
+            javascript) repo="javascript-sdk" ;;
+            python) repo="python3-sdk" ;;
+            *) echo "unsupported local collector SDK: ${{ matrix.sdk }}" >&2; exit 1 ;;
+          esac
+          branch="${SDK_BRANCHES[$repo]:-main}"
+          revision="${SDK_REVISIONS[$repo]:-}"
+          source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
+          # The compose build context is `..` relative to cross-sdk-tests,
+          # so SDKs must be siblings of cross-sdk-tests, not nested inside it.
+          checkout_dir="../$repo"
+          if [ -n "$revision" ]; then
+            git init -q "$checkout_dir"
+            fetch_and_checkout_revision "$checkout_dir" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$revision"
+          else
+            git clone --depth 1 --branch "$branch" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$checkout_dir"
+          fi
+
+      - name: Build local collector, wrapper and orchestrator
+        working-directory: cross-sdk-tests
+        run: docker compose -f docker-compose.yml -f docker-compose.local-collector.yml build local-collector ${{ matrix.sdk }}-sdk orchestrator
+
+      - name: Run blocking local collector gate
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk-local-gate
+        run: ./run-local-collector-tests.sh --sdk "${{ matrix.sdk }}" --skip-build
+
+      - name: Upload local collector report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-collector-${{ matrix.sdk }}
+          path: cross-sdk-tests/test-results/local-collector.json
+          if-no-files-found: error
+
+      - name: Tear down local collector gate
+        if: always()
+        working-directory: cross-sdk-tests
+        run: docker compose -f docker-compose.yml -f docker-compose.local-collector.yml down --remove-orphans --volumes || true
