@@ -4,10 +4,9 @@ import com.absmartly.sdk.Context
 import com.absmartly.sdk.ContextEventLogger
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 
-class EventCollector : ContextEventLogger {
+open class EventCollector : ContextEventLogger {
     private val lock = Object()
     private val events = mutableListOf<Map<String, Any?>>()
-    // Released when the context's creation event (ready or error) is logged.
     private val created = java.util.concurrent.CountDownLatch(1)
     private val objectMapper = jacksonObjectMapper()
 
@@ -61,7 +60,7 @@ class EventCollector : ContextEventLogger {
     // kotlin-sdk sets the context ready before it logs the matching event (Context.create: setData, then
     // logEvent(Ready)), so a caller that sees isReady may be a moment ahead of this logger. Wait for the
     // creation event itself (ready, or error for a failed load); nothing is synthesized if it never arrives.
-    fun awaitCreationEvent(timeoutMs: Long) {
+    open fun awaitCreationEvent(timeoutMs: Long) {
         try {
             created.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {

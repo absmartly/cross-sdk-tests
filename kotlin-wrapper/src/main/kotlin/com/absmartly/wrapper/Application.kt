@@ -30,7 +30,11 @@ fun main() {
     }.start(wait = true)
 }
 
-fun Application.configureRouting() {
+fun Application.configureRouting(
+    ownPort: Int = System.getenv("PORT")?.toIntOrNull() ?: 3000,
+    newCollector: () -> EventCollector = { EventCollector() },
+    env: (String) -> String? = System::getenv,
+) {
     install(ContentNegotiation) {
         jackson {}
     }
@@ -44,7 +48,6 @@ fun Application.configureRouting() {
         val list = capturedRequests.computeIfAbsent(payloadId) { java.util.Collections.synchronizedList(mutableListOf()) }
         list.add(mapOf("method" to request.httpMethod.value, "headers" to request.headers.entries().associate { it.key to it.value.joinToString(", ") }))
     }
-    val ownPort = System.getenv("PORT")?.toIntOrNull() ?: 3000
 
     // The orchestrator addresses the wrapper by its host-mapped port; inside the
     // container that wrapper listens on its own port.
@@ -167,15 +170,15 @@ fun Application.configureRouting() {
         }
 
         post("/context") {
-            val eventCollector = EventCollector()
+            val eventCollector = newCollector()
             try {
                 val request = call.receive<Map<String, Any>>()
 
                 if (request["mode"] == "e2e") {
-                    val e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT")
-                    val e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY")
-                    val e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION")
-                    val e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT")
+                    val e2eEndpoint = env("ABSMARTLY_E2E_ENDPOINT")
+                    val e2eApiKey = env("ABSMARTLY_E2E_API_KEY")
+                    val e2eApplication = env("ABSMARTLY_E2E_APPLICATION")
+                    val e2eEnvironment = env("ABSMARTLY_E2E_ENVIRONMENT")
                     if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
                         call.respond(HttpStatusCode.NotImplemented, mapOf("error" to "e2e mode not configured"))
                         return@post
@@ -186,7 +189,7 @@ fun Application.configureRouting() {
                     @Suppress("UNCHECKED_CAST")
                     val e2eAttrs = request["attributes"] as? Map<String, Any>
 
-                    val e2eCollector = EventCollector()
+                    val e2eCollector = newCollector()
                     val e2eContextConfig = ContextConfig.create()
                         .setPublishDelay(-1)
                         .setRefreshInterval(0)

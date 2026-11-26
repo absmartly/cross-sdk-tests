@@ -40,7 +40,15 @@ class EventCollectorTest {
             com.absmartly.sdk.ClientConfig.create().setEndpoint("http://localhost").setAPIKey("test")
                 .setApplication("test-app").setEnvironment("test-env"))
         val sdk = ABsmartly.create(ABSmartlyConfig.create().setClient(client).setContextDataProvider(provider))
+        sdks.add(sdk)
         return sdk.createContext(ContextConfig.create().setUnits(mapOf("session_id" to "u")).setEventLogger(logger))
+    }
+
+    private val sdks = mutableListOf<ABsmartly>()
+
+    @kotlin.test.AfterTest
+    fun closeSdks() {
+        sdks.forEach { it.close() }
     }
 
     @Test
@@ -74,11 +82,14 @@ class EventCollectorTest {
             assertTrue(logger.inReady.await(5, TimeUnit.SECONDS))
             context.waitUntilReady()
             val answered = CompletableFuture<List<Map<String, Any?>>>()
+            val waiting = CountDownLatch(1)
             pool.submit {
+                waiting.countDown()
                 collector.awaitCreationEvent(5000)
                 answered.complete(collector.getEvents())
             }
-            Thread.sleep(200)
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            // The ready event cannot be collected before release, so the waiter cannot have answered yet.
             assertTrue(!answered.isDone, "must not answer while the ready event is still pending")
             logger.release.countDown()
             val events = answered.get(5, TimeUnit.SECONDS)
