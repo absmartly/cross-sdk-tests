@@ -2,7 +2,9 @@
 import copy
 import gzip
 import http.client
+import itertools
 import json
+from decimal import Decimal
 import os
 import sys
 import threading
@@ -505,6 +507,18 @@ class GateVerifyTest(unittest.TestCase):
         self.assertEqual(gate._canonical({"a": 10}), gate._canonical({"a": 10.0}))
         self.assertNotEqual(gate._canonical({"a": 0.1}), gate._canonical({"a": 0.10000001}))
         self.assertNotEqual(gate._canonical({"a": True}), gate._canonical({"a": 1}))
+        D = gate.Decimal
+        self.assertEqual(gate._canonical({"a": 10}), gate._canonical({"a": D("1e1")}))
+        self.assertEqual(gate._canonical({"a": 0}), gate._canonical({"a": D("-0.0")}))
+        # Past Decimal's default 28 significant digits: distinct values must stay distinct.
+        self.assertNotEqual(gate._canonical({"a": D("0.1")}), gate._canonical({"a": D("0.10000000000000000000000000001")}))
+        self.assertNotEqual(gate._canonical({"a": D("1e999999999")}), gate._canonical({"a": D("1e999999998")}))
+
+    def test_exact_sum_traps_rounding(self):
+        D = gate.Decimal
+        self.assertEqual(gate._exact_sum([D("0.1"), D("0.2")]), D("0.3"))
+        with self.assertRaises(ArithmeticError):
+            gate._exact_sum([D("1e500"), D("1e-600")])
 
     def test_non_object_publish_fails_closed(self):
         # A record whose body is valid JSON but not an object is reported, not skipped.
@@ -732,7 +746,6 @@ class CollectorEndToEndTest(unittest.TestCase):
         cases = gate.plan("r", "javascript")
         for record in _publishes_for("javascript", cases):
             self.put(edit(json.dumps(record["json"], ensure_ascii=False)), dict(record["headers"]), compress)
-        real_get = gate.requests.get
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate.requests, "delete"), \
              mock.patch.object(gate.time, "sleep"):
@@ -747,25 +760,59 @@ class CollectorEndToEndTest(unittest.TestCase):
 
     def test_a_numerically_distinct_wire_amount_fails(self):
         # 0.1 and 0.100000000000000001 are the same float; only the raw body distinguishes them.
-        for compress in (False, True):
-            with self.subTest(gzip=compress):
-                result = self.run_gate(lambda text: text.replace('"amount": 0.1}', '"amount": 0.100000000000000001}'),
-                                       compress)
-                self.assertFalse(result["overall_pass"])
-                self.assertTrue(any("0.100000000000000001" in e for e in result["sdks"]["javascript"]["errors"]))
+        # 0.10000000000000000000000000001 differs from 0.1 past Decimal's default 28 digits.
+        for token in ("0.100000000000000001", "0.10000000000000000000000000001"):
+            for compress in (False, True):
+                with self.subTest(token=token, gzip=compress):
+                    result = self.run_gate(lambda text: text.replace('"amount": 0.1}', f'"amount": {token}}}'), compress)
+                    self.assertFalse(result["overall_pass"])
+                    errors = result["sdks"]["javascript"]["errors"]
+                    self.assertTrue(any("purchase.amount sum" in e for e in errors), errors)
+                    self.assertTrue(any(e.startswith("goal purchase") for e in errors), errors)
 
     def test_an_out_of_range_wire_number_is_a_reported_failure(self):
-        for token in ("1e999999999", "1e1000000", "-1e99999999"):
+        # Each overflows a float, so the collector rejects the publish before the gate compares it;
+        # the gate's own exact comparison and unparseable-body paths are pinned in GateNumberTest.
+        for token in ("1e999999999", "1e1000000", "-1e99999999", "1e9999999999999999999"):
+            diagnostic = f"is not a JSON object: number out of range: {token}"
             with self.subTest(token=token):
-                result = self.run_gate(lambda text, token=token: text.replace('"amount": 10}', f'"amount": {token}}}'))
+                with mock.patch.object(gate.time, "monotonic", side_effect=itertools.count(0, 100)):
+                    result = self.run_gate(lambda text, token=token: text.replace('"amount": 10}', f'"amount": {token}}}'))
                 self.assertFalse(result["overall_pass"])
                 errors = result["sdks"]["javascript"]["errors"]
-                self.assertTrue(any("number out of range" in e for e in errors), errors)
+                self.assertTrue(any(diagnostic in e for e in errors), errors)
                 json.dumps(result)
 
     def test_an_equivalent_number_spelling_still_matches(self):
         result = self.run_gate(lambda text: text.replace('"amount": 10}', '"amount": 10.0}'))
         self.assertTrue(result["overall_pass"], result["sdks"]["javascript"]["errors"])
+
+
+class GateNumberTest(unittest.TestCase):
+    """Gate-side number handling, reachable only if a collector stores such a body."""
+
+    def test_huge_wire_numbers_compare_exactly_against_the_plan(self):
+        for token in ("1e999999999", "-1e99999999"):
+            self.assertNotEqual(gate._canonical({"amount": Decimal(token)}), gate._canonical({"amount": 10}))
+        self.assertEqual(gate._canonical({"amount": Decimal("1e1")}), gate._canonical({"amount": 10}))
+
+    def test_an_unrepresentable_raw_body_is_reported_unparseable(self):
+        record = {"seq": 0, "json": {"amount": 1.0}, "rawBody": '{"amount": 1e9999999999999999999}'}
+        out = gate._lossless(record)
+        self.assertIsNone(out["json"])
+        self.assertIn("raw body does not parse", out["parseError"])
+
+    def test_a_rejected_record_is_never_reparsed_into_an_accepted_publish(self):
+        cases = gate.plan("r", "javascript")
+        good = _publishes_for("javascript", cases)
+        rejected = [{**r, "json": None, "parseError": "JSON nested deeper than 64 levels",
+                     "rawBody": json.dumps(r["json"])} for r in good]
+        normalized = [gate._lossless(r) for r in rejected]
+        self.assertTrue(all(r["json"] is None for r in normalized))
+        result = gate.verify("javascript", cases, normalized, "e2e-tests", "production", False)
+        self.assertFalse(result["pass"])
+        self.assertTrue(any("is not a JSON object: JSON nested deeper" in e for e in result["errors"]),
+                        result["errors"])
 
 
 class PublishLogFailureTest(unittest.TestCase):

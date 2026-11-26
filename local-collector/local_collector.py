@@ -151,6 +151,11 @@ def gunzip_capped(raw):
     return bytes(out)
 
 
+# Bound at import so a test that fakes the gate's clock (the same `time` module) cannot
+# expire request deadlines inside the collector's server threads.
+_monotonic = time.monotonic
+
+
 def _reject_constant(name):
     raise ValueError(f"non-standard JSON constant {name}")
 
@@ -217,11 +222,11 @@ def make_handler(store):
             return [[name, value] for name, value in self.headers.items()]
 
         def _read_exact(self, length):
-            deadline = time.monotonic() + REQUEST_DEADLINE_S
+            deadline = _monotonic() + REQUEST_DEADLINE_S
             chunks = []
             remaining = length
             while remaining:
-                if time.monotonic() > deadline:
+                if _monotonic() > deadline:
                     raise ValueError("request body not received within the deadline")
                 chunk = self.rfile.read1(min(remaining, 65536))
                 if not chunk:
