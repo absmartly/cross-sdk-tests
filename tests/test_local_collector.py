@@ -87,6 +87,35 @@ class CollectorServerTest(unittest.TestCase):
             self.assertIn("error", body)
             self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
+    def test_content_length_must_be_plain_digits(self):
+        for value in ("1_0", "+2", " 2", "2 ", "0x2", "2.0", "-0", "\u0662"):
+            with self.subTest(value=value):
+                self.assertIsNone(collector.parse_content_length(value))
+                self.assertEqual(collector.body_length_error(collector.parse_content_length(value)),
+                                 "invalid Content-Length")
+        self.assertEqual(collector.parse_content_length("10"), 10)
+        self.assertEqual(collector.parse_content_length(None), 0)
+        status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "1_0"})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
+    def test_truncated_body_returns_400_without_storing(self):
+        import socket
+        with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
+            sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
+            sock.shutdown(socket.SHUT_WR)
+            reply = b""
+            while chunk := sock.recv(4096):
+                reply += chunk
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
+    def test_deeply_nested_json_returns_400(self):
+        payload = b"[" * 100000 + b"]" * 100000
+        status, _ = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
     def test_content_length_limit_is_exactly_16_mib(self):
         self.assertEqual(collector.MAX_BODY_BYTES, 16 * 1024 * 1024)
         self.assertIsNone(collector.body_length_error(16 * 1024 * 1024))
@@ -211,6 +240,13 @@ class GateVerifyTest(unittest.TestCase):
         self.assertEqual(gate._canonical({"a": 10}), gate._canonical({"a": 10.0}))
         self.assertNotEqual(gate._canonical({"a": 0.1}), gate._canonical({"a": 0.10000001}))
         self.assertNotEqual(gate._canonical({"a": True}), gate._canonical({"a": 1}))
+
+    def test_non_object_publish_fails_closed(self):
+        # A record whose body is valid JSON but not an object is reported, not skipped.
+        result = gate.verify("javascript", self.cases, [{"seq": 0, "json": [], "headers": []}],
+                             "e2e-tests", "production", False)
+        self.assertFalse(result["pass"])
+        self.assertIn("publish #0 is not a JSON object", result["errors"])
 
     def test_gate_requires_application_and_environment_headers(self):
         # Missing (not just wrong) headers on a planned publish fail the gate.

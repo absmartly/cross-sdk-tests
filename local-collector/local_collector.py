@@ -101,8 +101,20 @@ class Store:
 
 
 
+def parse_content_length(value):
+    """Content-Length as an int per RFC 9110 (1*DIGIT), or None when invalid.
+
+    int() alone accepts "1_0", "+5", " 7" and other non-HTTP spellings.
+    """
+    if value is None or value == "":
+        return 0
+    if not value.isascii() or not value.isdigit():
+        return None
+    return int(value)
+
+
 def body_length_error(length):
-    if length < 0 or length > MAX_BODY_BYTES:
+    if length is None or length < 0 or length > MAX_BODY_BYTES:
         return "invalid Content-Length"
     return None
 
@@ -132,7 +144,7 @@ def make_handler(store):
 
         def _read_body(self):
             try:
-                length = int(self.headers.get("Content-Length") or 0)
+                length = parse_content_length(self.headers.get("Content-Length"))
                 length_error = body_length_error(length)
                 if length_error:
                     raise ValueError(length_error)
@@ -173,7 +185,7 @@ def make_handler(store):
             try:
                 record["rawBody"] = decoded.decode("utf-8", errors="strict")
                 record["json"] = json.loads(decoded)
-            except (ValueError, UnicodeDecodeError) as exc:
+            except (ValueError, UnicodeDecodeError, RecursionError) as exc:
                 # Reject with a deterministic 400 rather than letting a malformed body
                 # kill the request handler.
                 return self._send(400, {"error": str(exc)})
