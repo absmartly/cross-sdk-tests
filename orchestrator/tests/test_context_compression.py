@@ -176,16 +176,14 @@ def test_place_group_rejects_a_split_group():
                                     generator.build_group, first_number=270)
 
 
-# sha256 of test_scenarios_complete.json at ae86279 (#20), main's 305 scenarios plus 270-272, without
-# the Switchback group (400+). The file with the br scenarios (273 up to, not including, 300) and the
-# generator-owned groups below removed must render to exactly those bytes: the only change the br
-# follow-up may make is that insertion after 272. Last changed when 148, 149 and 188 moved to the
-# rejectsSettersAfterFinalize gate (php-sdk#12), then when scenario 35 listed the dart 2.2.0 wording.
+# sha256 of test_scenarios_complete.json with the br scenarios (273 up to, not including, 300) and the
+# generator-owned groups below removed: the br scenarios may only be inserted after 272, so the rest
+# must render to exactly these bytes. Update it only when a non-br scenario legitimately changes.
 BEFORE_BR_SHA256 = "6c9a6f5215ea16b421599f19d1720453356f36f69625db43cbe418341379468b"
 BEFORE_BR_COUNT = 282
 # Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
-# verified by its own --check, and the Shared Variable Key and Holdout Conformance groups, which
-# landed after the br follow-up.
+# verified by its own --check, and the Shared Variable Key and Holdout Conformance groups, which own
+# their numbering and are checked by their own tests.
 LATER_GROUP_MARKERS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
                        scenario_groups.HOLDOUT_CONFORMANCE)
 
