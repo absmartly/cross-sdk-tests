@@ -652,7 +652,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
         self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "java-v1", "javascript", "kotlin",
-                                   "react", "vue2", "vue3"])
+                                   "react", "swift", "vue2", "vue3"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))

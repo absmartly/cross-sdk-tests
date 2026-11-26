@@ -435,6 +435,8 @@ func routes(_ app: VaporApplication) throws {
             "clientAcceptsBlankApplication": false,
             "holdouts": HoldoutSelfTest.runHoldouts(),
             "holdout_arms": HoldoutSelfTest.runHoldoutArms(),
+            // swift-sdk 2.x resolves shared keys as java-sdk does (scenarios 340-368 pass at the pin).
+            "sharedVariableKeys": true,
         ])
     }
 
