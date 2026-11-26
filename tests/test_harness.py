@@ -1490,7 +1490,7 @@ class StaticRepoChecks(unittest.TestCase):
         "dotnet-sdk": ("feat/switchbacks", None),
         "elixir-sdk": ("feat/switchbacks", None),
         "flutter-sdk": ("feat/switchbacks", None),
-        "go-sdk": ("feat/switchbacks", None),
+        "go-sdk": ("feat/switchbacks-v1", "f15726497eea336be0aa757cd46a5c2a4be1e405"),
         "java-sdk": ("next/major", None),
         "java-sdk-v1": ("v1.9.0", None),
         "javascript-sdk": ("main", "95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"),

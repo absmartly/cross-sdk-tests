@@ -125,8 +125,9 @@ across languages.
   feature-parity round (java-sdk#22). The java-v1 lane pins the 1.x line to
   `v1.9.0`, which predates switchback, so it lists switchback as unsupported
   until `release/1.x` is cut from main.
-  The go lane pins `go-sdk` to its switchback branch (`feat/switchbacks`) until
-  it merges. The go wrapper decodes attribute values with `UseNumber`, so a
+  The go lane pins `go-sdk` to `feat/switchbacks-v1` at `f157264`, the switchback
+  branch before `7bf9229` moved `ContextData.Holdouts` to `ContextPayload`, which
+  the go wrapper does not use yet. The go wrapper decodes attribute values with `UseNumber`, so a
   JSON integer reaches the SDK as an integer and `3.0` as a float (scenario
   411), and advertises `switchback` from a behavioural self-test
   (`go-wrapper/switchback.go`) that fails closed on a sorted cluster map.
