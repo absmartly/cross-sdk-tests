@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
-from e2e_cases import AGENT_LANGUAGE, case_specs, eq_filter, exact_number, matches, measured_total, metric_specs
+from e2e_cases import AGENT_LANGUAGE, case_specs, eq_filter, exact_json, matches, measured_total, metric_specs
 
 
 # Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
@@ -698,22 +698,11 @@ class E2ERunner:
             if unit_type != "user_id":
                 continue
             goals = [e for e in own if e.get("event_type") == "goal" and e.get("goal_name") == "purchase"]
-            def numbers(value):
-                # Type-tagged, with numbers compared exactly: 10 and 10.0 match, distinct values never do.
-                if isinstance(value, dict):
-                    return ["object", [[k, numbers(value[k])] for k in sorted(value)]]
-                if isinstance(value, list):
-                    return ["array", [numbers(v) for v in value]]
-                if isinstance(value, bool) or value is None or isinstance(value, str):
-                    return [type(value).__name__, value]
-                return ["number", exact_number(value)]
-
             def canonical(value):
                 # The collector API may return properties as a JSON string or already decoded.
                 if isinstance(value, str):
                     value = json.loads(value, parse_float=Decimal)
-                return json.dumps(numbers(value if value is not None else {}), ensure_ascii=False,
-                                  separators=(",", ":"))
+                return exact_json(value if value is not None else {})
             try:
                 actual = Counter(canonical(e.get("properties")) for e in goals)
                 expected = Counter(canonical(g) for g in case["goals"])

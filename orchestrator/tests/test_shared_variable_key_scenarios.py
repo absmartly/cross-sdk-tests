@@ -364,36 +364,6 @@ class SdkRevisionPinTest(unittest.TestCase):
                 self.assertIn('&& [ -z "$status" ]; then echo "$head"; fi > /root/.m2/sdk-commit.txt', dockerfile)
                 self.assertNotIn("--untracked-files=no", dockerfile)
 
-    def test_checkout_helper_checks_out_the_requested_sha(self):
-        """Run sdk-checkout.sh's fetch_and_checkout_revision against a local remote whose tip
-        is newer than the pin: the checked-out HEAD must be the pin, not the tip."""
-        import tempfile
-
-        def git(*args, cwd):
-            return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
-                                  text=True).stdout.strip()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            remote = os.path.join(tmp, "remote")
-            os.mkdir(remote)
-            git("init", "-q", cwd=remote)
-            git("config", "uploadpack.allowReachableSHA1InWant", "true", cwd=remote)
-            for n in ("pin", "tip"):
-                with open(os.path.join(remote, "f"), "w") as f:
-                    f.write(n)
-                git("add", "f", cwd=remote)
-                git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", n, cwd=remote)
-            tip = git("rev-parse", "HEAD", cwd=remote)
-            pin = git("rev-parse", "HEAD~1", cwd=remote)
-            checkout = os.path.join(tmp, "checkout")
-            os.mkdir(checkout)
-            git("init", "-q", cwd=checkout)
-            helper = os.path.join(REPO_ROOT, "sdk-checkout.sh")
-            subprocess.run(["bash", "-c", f'source "{helper}"; fetch_and_checkout_revision "$1" "$2" "$3"',
-                            "_", checkout, "file://" + remote, pin], check=True, capture_output=True)
-            self.assertNotEqual(pin, tip)
-            self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), pin)
-
     def test_checkout_sdk_applies_the_exact_pin_over_a_newer_branch_tip(self):
         """checkout_sdk itself, as both CI jobs call it: an SDK_REVISIONS pin wins over its branch even
         when the branch tip is newer, and a repo with only a branch pin gets that branch."""

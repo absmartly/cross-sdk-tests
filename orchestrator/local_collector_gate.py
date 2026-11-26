@@ -40,7 +40,7 @@ import requests
 for _dir in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "local-collector"), "/local-collector"):
     sys.path.insert(0, _dir)
 from local_collector import EXPERIMENT_ID, EXPERIMENT_NAME, SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME  # noqa: E402
-from e2e_cases import AGENT_LANGUAGE, exact_number as _exact_number  # noqa: E402
+from e2e_cases import AGENT_LANGUAGE, exact_json  # noqa: E402
 
 # The planned cases: (case, goals). Properties cover nested objects, booleans,
 # integer/decimal/negative/zero/large numbers, Unicode, null and no properties.
@@ -74,21 +74,7 @@ def plan(run_id: str, sdk: str) -> List[Dict[str, Any]]:
 
 def _canonical(value: Any) -> str:
     """JSON value as a comparable string; numbers compared by value without type collisions."""
-    def walk(v):
-        if isinstance(v, dict):
-            return ["object", [[k, walk(v[k])] for k in sorted(v)]]
-        if isinstance(v, list):
-            return ["array", [walk(x) for x in v]]
-        if isinstance(v, bool):
-            return ["boolean", v]
-        if v is None:
-            return ["null"]
-        if isinstance(v, (int, float, Decimal)):
-            return ["number", _exact_number(v)]
-        if isinstance(v, str):
-            return ["string", v]
-        raise ValueError(f"unexpected JSON value {v!r}")
-    return json.dumps(walk(value), ensure_ascii=False, separators=(",", ":"))
+    return exact_json(value)
 
 
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
@@ -203,6 +189,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
+        if units & excepted_units and units & expected_units:
+            errors.append(f"publish #{record['seq']} mixes an excepted case with an applicable case")
         if units - expected_units - excepted_units:
             errors.append(f"publish #{record['seq']} carries unplanned units "
                           f"{sorted(units - expected_units - excepted_units)}")
@@ -220,7 +208,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
         if not mine:
-            continue  # an excepted case's publish: transport checked, events not verified
+            continue
         for exposure in _entries(record, "exposures", ("unit", "name"), errors):
             unit_type = exposure.get("unit")
             uid = next((u for t, u in mine if t == unit_type), None)
@@ -391,7 +379,7 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     arrived = []
     for record in publishes:
         units, unit_errors = _publish_units(record)
-        record["_units"] = units  # verify() reuses this attribution instead of re-parsing
+        record["_units"] = units
         arrived.append(units)
         if isinstance(record.get("json"), dict) and not units & planned_units:
             unit_errors.append(f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")

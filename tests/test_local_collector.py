@@ -593,6 +593,20 @@ class GateRunTest(unittest.TestCase):
              mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
             return gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r"), cases
 
+    def test_an_excepted_unit_cannot_ride_on_an_applicable_case_publish(self):
+        names = [c["name"] for c in gate.plan("r", "python")]
+
+        def add_mixed(out):
+            mixed = copy.deepcopy(out[names.index("strings")])
+            mixed["seq"] = len(out)
+            mixed["json"]["units"] += out[names.index("null_value")]["json"]["units"]
+            mixed["json"]["exposures"], mixed["json"]["goals"] = [], []
+            out.append(mixed)
+        result, _ = self.run_python(add_mixed)
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(any("mixes an excepted case with an applicable case" in e
+                            for e in result["sdks"]["python"]["errors"]), result["sdks"]["python"]["errors"])
+
     def test_the_python_null_property_exception_still_checks_that_publishs_transport(self):
         result, _ = self.run_python()
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])

@@ -1,6 +1,7 @@
 """Collector-arrival cases. Expectations describe calls planned, never wrapper successes."""
 from decimal import Decimal
 import hashlib
+import json
 
 
 # The SDK language in a lane's X-Agent (absmartly-<language>-sdk/...) where it is not the lane name:
@@ -136,3 +137,21 @@ def matches(expected, actual):
     # Absolute arithmetic noise only: no relative tolerance that would hide 0.1
     # being rounded away when combined with the large value.
     return actual.is_finite() and abs(expected - actual) <= Decimal("0.000000001")
+
+
+
+def exact_json(value) -> str:
+    """A type-tagged JSON value with exact numbers, as a comparable string."""
+    def walk(v):
+        if isinstance(v, dict):
+            return ["object", [[k, walk(v[k])] for k in sorted(v)]]
+        if isinstance(v, list):
+            return ["array", [walk(x) for x in v]]
+        if isinstance(v, bool):
+            return ["boolean", v]
+        if v is None:
+            return ["null"]
+        if isinstance(v, str):
+            return ["string", v]
+        return ["number", exact_number(v)]
+    return json.dumps(walk(value), ensure_ascii=False, separators=(",", ":"))
