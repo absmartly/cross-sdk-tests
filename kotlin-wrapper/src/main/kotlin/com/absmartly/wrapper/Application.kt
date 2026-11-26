@@ -211,7 +211,7 @@ fun Application.configureRouting() {
                     }
 
                     e2eContext.waitUntilReady()
-                    e2eCollector.awaitEvent(0, 2000, "ready", "error")
+                    e2eCollector.awaitCreationEvent(2000)
 
                     val e2eContextId = "ctx-${System.currentTimeMillis()}-${UUID.randomUUID()}"
                     contexts[e2eContextId] = ContextWrapper(e2eContext, e2eCollector, null)
@@ -314,7 +314,7 @@ fun Application.configureRouting() {
                         .setContextPublisher(customPublisher)
                     sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContextWith(contextConfig, contextData)
-                    eventCollector.awaitEvent(0, 2000, "ready", "error")
+                    eventCollector.awaitCreationEvent(2000)
                 } else if (endpoint != null) {
                     // The SDK's own Client fetches GET {endpoint}/context and
                     // deserializes the payload, exactly as against the collector.
@@ -353,7 +353,7 @@ fun Application.configureRouting() {
                         // SDK's fetch is an HTTP request back to this server.
                         withContext(Dispatchers.IO) {
                             context.waitUntilReadyAsync().get(5, TimeUnit.SECONDS)
-                            eventCollector.awaitEvent(0, 2000, "ready", "error")
+                            eventCollector.awaitCreationEvent(2000)
                         }
                     }
                 } else if (failLoad) {
@@ -386,7 +386,7 @@ fun Application.configureRouting() {
                     sdk = ABsmartly.create(sdkConfig)
                     context = sdk.createContext(contextConfig)
                     context.waitUntilReady()
-                    eventCollector.awaitEvent(0, 2000, "ready", "error")
+                    eventCollector.awaitCreationEvent(2000)
                 } else {
                     call.respond(HttpStatusCode.BadRequest, mapOf(
                         "error" to "One of data, endpoint or failLoad is required"

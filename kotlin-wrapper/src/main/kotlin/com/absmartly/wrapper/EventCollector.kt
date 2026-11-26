@@ -7,6 +7,8 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 class EventCollector : ContextEventLogger {
     private val lock = Object()
     private val events = mutableListOf<Map<String, Any?>>()
+    // Released when the context's creation event (ready or error) is logged.
+    private val created = java.util.concurrent.CountDownLatch(1)
     private val objectMapper = jacksonObjectMapper()
 
     override fun handleEvent(context: Context, type: ContextEventLogger.EventType, data: Any?) {
@@ -17,6 +19,9 @@ class EventCollector : ContextEventLogger {
         )
         synchronized(lock) {
             events.add(event)
+        }
+        if (type == ContextEventLogger.EventType.Ready || type == ContextEventLogger.EventType.Error) {
+            created.countDown()
         }
     }
 
@@ -55,19 +60,12 @@ class EventCollector : ContextEventLogger {
 
     // kotlin-sdk sets the context ready before it logs the matching event (Context.create: setData, then
     // logEvent(Ready)), so a caller that sees isReady may be a moment ahead of this logger. Wait for the
-    // event itself; nothing is synthesized if it never arrives.
-    fun awaitEvent(since: Int, timeoutMs: Long, vararg types: String) {
-        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
-        while (System.nanoTime() < deadline) {
-            synchronized(lock) {
-                if ((since until events.size).any { events[it]["type"] in types }) return
-            }
-            try {
-                Thread.sleep(2)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return
-            }
+    // creation event itself (ready, or error for a failed load); nothing is synthesized if it never arrives.
+    fun awaitCreationEvent(timeoutMs: Long) {
+        try {
+            created.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
         }
     }
 

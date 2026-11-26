@@ -278,7 +278,7 @@ class ValidateStepTests(unittest.TestCase):
 
         def matches(candidate, event, index):
             calls.append((id(candidate), index))
-            # A call-count bound, not a wall-clock timeout: the old factorial search fails fast.
+            # A call-count bound, not a wall-clock timeout, so a super-polynomial search fails deterministically.
             self.assertLessEqual(len(calls), len(actual) * len(expected))
             return values_match(candidate, event)
 
