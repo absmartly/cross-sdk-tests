@@ -85,7 +85,7 @@ func variantsJSON(n int) []map[string]interface{} {
 
 // probeData builds the context payload as JSON, in the collector's shape, and
 // decodes it into the SDK's model.
-func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmodels.ContextData, error) {
+func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmodels.ContextPayload, error) {
 	var payload = map[string]interface{}{}
 	var exps []map[string]interface{}
 	for _, e := range experiments {
@@ -117,14 +117,14 @@ func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmode
 	payload["holdouts"] = hos
 	var raw, err = json.Marshal(payload)
 	if err != nil {
-		return jsonmodels.ContextData{}, err
+		return jsonmodels.ContextPayload{}, err
 	}
-	var data jsonmodels.ContextData
+	var data jsonmodels.ContextPayload
 	err = json.Unmarshal(raw, &data)
 	return data, err
 }
 
-func probeContext(data jsonmodels.ContextData, units map[string]string) (*sdk.Context, *exposureLog) {
+func probeContext(data jsonmodels.ContextPayload, units map[string]string) (*sdk.Context, *exposureLog) {
 	var logger = &exposureLog{}
 	var client = sdk.CreateDefaultClient(sdk.ClientConfig{
 		Endpoint_: "http://localhost", ApiKey_: "probe", Application_: "website", Environment_: "test",
@@ -134,7 +134,7 @@ func probeContext(data jsonmodels.ContextData, units map[string]string) (*sdk.Co
 	config.Units_ = units
 	config.PublishDelay_ = -1
 	config.RefreshInterval_ = 0
-	var context = absmartly.CreateContextWith(config, data)
+	var context = absmartly.CreateContextWithPayload(config, data)
 	context.WaitUntilReady()
 	return context, logger
 }
