@@ -40,11 +40,7 @@ import requests
 for _dir in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "local-collector"), "/local-collector"):
     sys.path.insert(0, _dir)
 from local_collector import EXPERIMENT_ID, EXPERIMENT_NAME, SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME  # noqa: E402
-
-AGENT_LANGUAGE = {
-    "swift-v1": "swift", "flutter": "dart", "java-v1": "java", "liquid": "ruby",
-    "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript",
-}
+from e2e_cases import AGENT_LANGUAGE, exact_number as _exact_number  # noqa: E402
 
 # The planned cases: (case, goals). Properties cover nested objects, booleans,
 # integer/decimal/negative/zero/large numbers, Unicode, null and no properties.
@@ -96,7 +92,9 @@ def _canonical(value: Any) -> str:
 
 
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
-    """The publish's (type, uid) units and a diagnostic for each malformed entry."""
+    """The publish's (type, uid) units and a diagnostic for each malformed entry; parsed once per record."""
+    if "_units" in record:
+        return record["_units"], []
     body = record.get("json")
     if not isinstance(body, dict):
         return set(), []
@@ -147,28 +145,6 @@ def _entries(record: Dict[str, Any], field: str, keys: Tuple[str, ...], errors: 
     return valid
 
 
-def _exact_number(value: Any) -> str:
-    """A JSON number as an exact, comparable string: equal values (10, 10.0, 1e1) give the same
-    string and distinct values never do. No arithmetic, so no rounding and no exponent overflow."""
-    if isinstance(value, bool):
-        raise ValueError(f"not a number: {value!r}")
-    if isinstance(value, float):
-        value = Decimal(repr(value))
-    if isinstance(value, int):
-        value = Decimal(value)
-    if not isinstance(value, Decimal):
-        raise ValueError(f"not a number: {value!r}")
-    if not value.is_finite():
-        raise ValueError("non-finite number")
-    sign, digits, exponent = value.as_tuple()
-    digits = "".join(map(str, digits)).lstrip("0")
-    if not digits:
-        return "0"
-    stripped = digits.rstrip("0")
-    exponent += len(digits) - len(stripped)
-    return f"{'-' if sign else ''}{stripped}e{exponent}"
-
-
 def _exact_sum(amounts: List[Decimal]) -> Decimal:
     """The exact sum; raises ArithmeticError instead of rounding."""
     with localcontext() as ctx:
@@ -201,12 +177,18 @@ def _normalized(publishes: Any) -> List[Dict[str, Any]]:
 
 
 def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]],
-           application: str, environment: str, xagent_versioned: bool = True) -> Dict[str, Any]:
-    """Check this SDK's publishes against its plan; returns {pass, errors, revenue}."""
+           application: str, environment: str, xagent_versioned: bool = True,
+           excepted: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Check this SDK's publishes against its plan; returns {pass, errors, revenue}.
+
+    `excepted` cases were driven but their events are not verified (a reviewed policy exception);
+    their publishes still get every transport check (headers, hashing, units)."""
     errors: List[str] = []
     publishes = _normalized(publishes)
     language = AGENT_LANGUAGE.get(sdk, sdk)
     expected_units = {(unit_type, unit_hash(uid)) for case in cases for unit_type, uid in case["units"].items()}
+    excepted_units = {(unit_type, unit_hash(uid)) for case in excepted or []
+                      for unit_type, uid in case["units"].items()}
 
     exposures = Counter()
     goals = Counter()
@@ -219,10 +201,11 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             continue
         units, _ = _publish_units(record)
         mine = units & expected_units
-        if not mine:
+        if not mine and not units & excepted_units:
             continue  # another SDK's publish
-        if units - expected_units:
-            errors.append(f"publish #{record['seq']} carries unplanned units {sorted(units - expected_units)}")
+        if units - expected_units - excepted_units:
+            errors.append(f"publish #{record['seq']} carries unplanned units "
+                          f"{sorted(units - expected_units - excepted_units)}")
         agent = _header(record, "X-Agent")
         prefix = f"absmartly-{language}-sdk"
         agent_ok = isinstance(agent, str) and (
@@ -236,6 +219,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record['seq']} environment header {_header(record, 'X-Environment')!r}")
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
+        if not mine:
+            continue  # an excepted case's publish: transport checked, events not verified
         for exposure in _entries(record, "exposures", ("unit", "name"), errors):
             unit_type = exposure.get("unit")
             uid = next((u for t, u in mine if t == unit_type), None)
@@ -383,7 +368,11 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
         raise ValueError("the release gate needs at least one SDK")
     policy = load_policy()["sdks"]
     results: Dict[str, Any] = {"run_id": run_id, "sdks": {}, "overall_pass": True}
-    requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
+    try:
+        requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+        # A stale log would mix an earlier run's publishes into this verdict; fail before driving any SDK.
+        return {**results, "overall_pass": False, "transport_errors": [f"collector reset failed: {exc!r}"]}
     plans = {sdk: plan(run_id, sdk) for sdk in sdks}
     driver_errors = {sdk: drive(sdk, url, plans[sdk]) for sdk, url in sdks.items()}
     case_units = {sdk: {case["name"]: {(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
@@ -402,6 +391,7 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     arrived = []
     for record in publishes:
         units, unit_errors = _publish_units(record)
+        record["_units"] = units  # verify() reuses this attribution instead of re-parsing
         arrived.append(units)
         if isinstance(record.get("json"), dict) and not units & planned_units:
             unit_errors.append(f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")
@@ -424,7 +414,8 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     for sdk in sdks:
         sdk_cases = applicable[sdk]
         versioned = "xAgentHeader" not in policy.get(sdk, {}).get("unsupported", {})
-        outcome = verify(sdk, sdk_cases, publishes, application, environment, versioned)
+        excepted = [case for case in plans[sdk] if case not in sdk_cases]
+        outcome = verify(sdk, sdk_cases, publishes, application, environment, versioned, excepted)
         missing = [case["name"] for case in sdk_cases
                    if not any(_covers(units, case_units[sdk][case["name"]]) for units in arrived)]
         outcome["errors"] = driver_errors[sdk] + outcome["errors"] + [

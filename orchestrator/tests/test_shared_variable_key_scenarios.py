@@ -394,10 +394,42 @@ class SdkRevisionPinTest(unittest.TestCase):
             self.assertNotEqual(pin, tip)
             self.assertEqual(git("rev-parse", "HEAD", cwd=checkout), pin)
 
+    def test_checkout_sdk_applies_the_exact_pin_over_a_newer_branch_tip(self):
+        """checkout_sdk itself, as both CI jobs call it: an SDK_REVISIONS pin wins over its branch even
+        when the branch tip is newer, and a repo with only a branch pin gets that branch."""
+        import tempfile
+
+        def git(*args, cwd):
+            return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
+                                  text=True).stdout.strip()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = os.path.join(tmp, "github.com", "absmartly", "demo-sdk.git")
+            os.makedirs(remote)
+            git("init", "-q", "-b", "feat/x", cwd=remote)
+            git("config", "uploadpack.allowReachableSHA1InWant", "true", cwd=remote)
+            for n in ("pin", "tip"):
+                with open(os.path.join(remote, "f"), "w") as f:
+                    f.write(n)
+                git("add", "f", cwd=remote)
+                git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", n, cwd=remote)
+            tip, pin = git("rev-parse", "HEAD", cwd=remote), git("rev-parse", "HEAD~1", cwd=remote)
+            script = f'''
+                source "{REPO_ROOT}/sdk-checkout.sh"
+                declare -A SDK_BRANCHES=([demo-sdk]=feat/x [branch-only]=feat/x)
+                declare -A SDK_REVISIONS=([demo-sdk]={pin})
+                declare -A SDK_REPO_SOURCES=([branch-only]=demo-sdk)
+                SDK_CLONE_PREFIX="file://{tmp}/"
+                checkout_sdk demo-sdk "$1/pinned" && checkout_sdk branch-only "$1/branch"
+            '''
+            subprocess.run(["bash", "-c", script, "_", tmp], check=True, capture_output=True)
+            self.assertNotEqual(pin, tip)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=os.path.join(tmp, "pinned")), pin)
+            self.assertEqual(git("rev-parse", "HEAD", cwd=os.path.join(tmp, "branch")), tip)
+
     def test_ci_and_local_setup_call_the_checkout_helper(self):
         workflow = self.read(".github", "workflows", "cross-sdk.yml")
         helper = self.read("sdk-checkout.sh")
-        # Both CI jobs check out every SDK through checkout_sdk, which applies the exact-commit pin.
         self.assertEqual(workflow.count('checkout_sdk "$repo"'), 2)
         self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', helper)
         self.assertIn('fetch_and_checkout_revision "$dest" "$url" "$revision"', helper)

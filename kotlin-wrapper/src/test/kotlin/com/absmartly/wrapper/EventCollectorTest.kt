@@ -89,7 +89,6 @@ class EventCollectorTest {
                 collector.awaitCreationEvent(30_000)
                 answered.complete(collector.getEvents())
             }
-            // Release the callback only once the waiter is parked inside awaitCreationEvent.
             val parkedBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (waiter.get()?.state != Thread.State.TIMED_WAITING && System.nanoTime() < parkedBy) Thread.onSpinWait()
             assertEquals(Thread.State.TIMED_WAITING, waiter.get()?.state)

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
-from e2e_cases import case_specs, eq_filter, matches, measured_total, metric_specs
+from e2e_cases import AGENT_LANGUAGE, case_specs, eq_filter, exact_number, matches, measured_total, metric_specs
 
 
 # Pass iff expected <= actual <= expected * OVER_PUBLISH_TOLERANCE. The small
@@ -681,8 +681,7 @@ class E2ERunner:
                 errors.append(
                     f"Expected exactly one exposure for {unit_type}:{uid!r}, found {len(exposures)}"
                 )
-            language = {"swift-v1": "swift", "java-v1": "java", "liquid": "ruby", "flutter": "dart",
-                        "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript"}.get(sdk, sdk)
+            language = AGENT_LANGUAGE.get(sdk, sdk)
             versioned = "xAgentHeader" not in self.capability_policy["sdks"].get(sdk, {}).get("unsupported", {})
             agent_re = r"absmartly-" + re.escape(language) + r"-sdk" + (r"/[^ /]+" if versioned else r"(?:/[^ /]+)?")
             for event in own:
@@ -700,24 +699,21 @@ class E2ERunner:
                 continue
             goals = [e for e in own if e.get("event_type") == "goal" and e.get("goal_name") == "purchase"]
             def numbers(value):
-                # Compare numbers by value: 10 and 10.0 are the same amount.
+                # Type-tagged, with numbers compared exactly: 10 and 10.0 match, distinct values never do.
                 if isinstance(value, dict):
-                    return {k: numbers(v) for k, v in value.items()}
+                    return ["object", [[k, numbers(value[k])] for k in sorted(value)]]
                 if isinstance(value, list):
-                    return [numbers(v) for v in value]
-                if isinstance(value, Decimal):
-                    if not value.is_finite():
-                        raise ValueError("non-finite property")
-                    return {"$number": format(value.normalize(), "f") if value else "0"}
-                return value
+                    return ["array", [numbers(v) for v in value]]
+                if isinstance(value, bool) or value is None or isinstance(value, str):
+                    return [type(value).__name__, value]
+                return ["number", exact_number(value)]
 
             def canonical(value):
+                # The collector API may return properties as a JSON string or already decoded.
                 if isinstance(value, str):
-                    value = json.loads(value, parse_float=Decimal, parse_int=Decimal)
-                else:
-                    value = json.loads(json.dumps(value), parse_float=Decimal, parse_int=Decimal)
-                return json.dumps(numbers(value if value is not None else {}), sort_keys=True,
-                                  ensure_ascii=False, separators=(",", ":"))
+                    value = json.loads(value, parse_float=Decimal)
+                return json.dumps(numbers(value if value is not None else {}), ensure_ascii=False,
+                                  separators=(",", ":"))
             try:
                 actual = Counter(canonical(e.get("properties")) for e in goals)
                 expected = Counter(canonical(g) for g in case["goals"])
