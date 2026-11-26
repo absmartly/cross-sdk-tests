@@ -90,11 +90,15 @@ class CollectorServerTest(unittest.TestCase):
     def test_content_length_must_be_plain_digits(self):
         for value in ("1_0", "+2", " 2", "2 ", "0x2", "2.0", "-0", "\u0662"):
             with self.subTest(value=value):
-                self.assertIsNone(collector.parse_content_length(value))
-                self.assertEqual(collector.body_length_error(collector.parse_content_length(value)),
+                self.assertIsNone(collector.parse_content_length([value]))
+                self.assertEqual(collector.body_length_error(collector.parse_content_length([value])),
                                  "invalid Content-Length")
-        self.assertEqual(collector.parse_content_length("10"), 10)
-        self.assertEqual(collector.parse_content_length(None), 0)
+        self.assertEqual(collector.parse_content_length(["10"]), 10)
+        self.assertEqual(collector.parse_content_length([]), 0)
+        # Duplicate lines: identical values are one length, conflicting values are ambiguous.
+        self.assertEqual(collector.parse_content_length(["2", "2"]), 2)
+        self.assertIsNone(collector.parse_content_length(["2", "100"]))
+        self.assertIsNone(collector.parse_content_length(["100", "2"]))
         status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "1_0"})
         self.assertEqual(status, 400)
         self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
@@ -115,6 +119,98 @@ class CollectorServerTest(unittest.TestCase):
         status, _ = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
         self.assertEqual(status, 400)
         self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
+    def raw_put(self, head, body=b"", half_close=True):
+        """Send a hand-built request; returns the raw reply bytes."""
+        import socket
+        with socket.create_connection(("127.0.0.1", self.port), timeout=15) as sock:
+            sock.sendall(head + b"\r\n\r\n" + body)
+            if half_close:
+                sock.shutdown(socket.SHUT_WR)
+            reply = b""
+            while chunk := sock.recv(4096):
+                reply += chunk
+        return reply
+
+    def test_conflicting_duplicate_content_length_returns_400(self):
+        for first, second in ((b"2", b"100"), (b"100", b"2")):
+            with self.subTest(order=(first, second)):
+                reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: " + first
+                                     + b"\r\nContent-Length: " + second, b"{}")
+                self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
+    def test_stalled_body_times_out_instead_of_hanging(self):
+        # Declared 100 bytes, sent 2, socket left open: the handler must give up.
+        with mock.patch.object(collector, "REQUEST_TIMEOUT_S", 1):
+            server = collector.make_server("127.0.0.1", 0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            import socket
+            with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=15) as sock:
+                sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
+                reply = b""
+                while chunk := sock.recv(4096):
+                    reply += chunk
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertTrue(reply == b"" or reply.startswith(b"HTTP/1.1 400"), reply[:80])
+
+    def test_gzip_bomb_is_rejected_without_full_inflation(self):
+        bomb = gzip.compress(b"\0" * (collector.MAX_BODY_BYTES + 1))
+        with mock.patch.object(collector.zlib, "decompressobj", wraps=collector.zlib.decompressobj) as inflater:
+            status, _ = self.request("PUT", "/context", bomb, {"Content-Encoding": "gzip"}, timeout=30)
+        self.assertEqual(status, 400)
+        self.assertTrue(inflater.called)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            collector.gunzip_capped(bomb)
+        self.assertEqual(collector.gunzip_capped(gzip.compress(b"{}")), b"{}")
+
+    def test_gzip_inflation_stops_at_the_cap(self):
+        # The inflater is asked for at most MAX_BODY_BYTES + 1 bytes, never the whole bomb.
+        calls = []
+        real = collector.zlib.decompressobj
+
+        class Spy:
+            def __init__(self, *a):
+                self.inner = real(*a)
+
+            def decompress(self, data, max_length=0):
+                calls.append(max_length)
+                return self.inner.decompress(data, max_length)
+
+            def __getattr__(self, name):
+                return getattr(self.inner, name)
+
+        with mock.patch.object(collector.zlib, "decompressobj", Spy):
+            with self.assertRaises(ValueError):
+                collector.gunzip_capped(gzip.compress(b"\0" * (collector.MAX_BODY_BYTES + 1)))
+        self.assertEqual(calls, [collector.MAX_BODY_BYTES + 1])
+
+    def test_truncated_gzip_stream_is_rejected(self):
+        whole = gzip.compress(b'{"hashed":true}')
+        with self.assertRaisesRegex(ValueError, "truncated gzip"):
+            collector.gunzip_capped(whole[:-8])
+        status, _ = self.request("PUT", "/context", whole[:-8], {"Content-Encoding": "gzip"})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+
+    def test_json_nested_too_deep_is_rejected_and_store_stays_readable(self):
+        # 985 levels parses on 3.11 but then breaks json.dumps of /publishes.
+        for depth in (collector.MAX_JSON_DEPTH + 1, 985):
+            payload = b'{"hashed":true,"x":' + b"[" * depth + b"]" * depth + b"}"
+            with self.subTest(depth=depth):
+                status, _ = self.request("PUT", "/context", payload)
+                self.assertEqual(status, 400)
+        self.request("PUT", "/context", b'{"hashed":true,"units":[]}')
+        status, stored = self.request("GET", "/publishes")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(stored["publishes"]), 1)
+        self.assertIsNone(collector.json_depth_error({"a": [[1]]}))
+        self.assertIsNone(collector.json_depth_error(["x"] * 5, limit=1))
+        self.assertIsNotNone(collector.json_depth_error([[1]], limit=1))
 
     def test_content_length_limit_is_exactly_16_mib(self):
         self.assertEqual(collector.MAX_BODY_BYTES, 16 * 1024 * 1024)
@@ -205,7 +301,7 @@ class GateVerifyTest(unittest.TestCase):
             "wrong application": lambda out: out[0]["headers"].__setitem__(1, ["X-Application", "other"]),
             "wrong environment": lambda out: out[0]["headers"].__setitem__(2, ["X-Environment", "dev"]),
             "whole publish lost": lambda out: out.pop(0),
-            "bad json": lambda out: out[0].update(json=None, parseError="x"),
+            "bad json": lambda out: out[0].update(json=None),
             "unicode unit rehashed": lambda out: out[-2]["json"]["units"][0].update(uid=gate.unit_hash("ascii")),
         }
         for label, mutate in mutations.items():
@@ -284,6 +380,51 @@ class GateRunTest(unittest.TestCase):
              mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
+
+    def run_with(self, extra):
+        cases = gate.plan("r", "javascript")
+        publishes = _publishes_for("javascript", cases) + extra
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+            return gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+
+    def test_every_publish_must_belong_to_the_plan(self):
+        self.assertTrue(self.run_with([])["overall_pass"])
+        stray = _record(99, {"hashed": True, "units": [{"type": "user_id", "uid": gate.unit_hash("stray")}],
+                             "exposures": [], "goals": []})
+        for label, extra in (("unplanned unit", [stray]), ("no units", [_record(99, {"hashed": True})]),
+                             ("malformed json", [{"seq": 99, "json": None, "headers": []}])):
+            with self.subTest(label):
+                self.assertFalse(self.run_with(extra)["overall_pass"], label)
+
+
+class FetchPublishesTest(unittest.TestCase):
+    PLANNED = {("user_id", "u")}
+    MINE = {"json": {"units": [{"type": "user_id", "uid": "u"}]}}
+    STRAY = {"json": {"units": [{"type": "user_id", "uid": "stray"}]}}
+
+    def fetch(self, reads, expected, clock):
+        reads = iter(reads)
+        get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": next(reads)}))
+        with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
+             mock.patch.object(gate.time, "monotonic", side_effect=clock):
+            return len(gate.fetch_publishes("http://c", expected, self.PLANNED, timeout=30)), get.call_count
+
+    def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
+        # Two stable zero reads used to end the wait; the late publishes must still be read.
+        m = self.MINE
+        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], 2, iter([0] + [1] * 10)), (3, 5))
+
+    def test_stray_publishes_do_not_count_toward_expected(self):
+        m, s = self.MINE, self.STRAY
+        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m]], 2, iter([0] + [1] * 10)), (3, 3))
+
+    def test_timeout_returns_what_arrived(self):
+        m = self.MINE
+        self.assertEqual(self.fetch([[], [m], [m]], 2, iter([0, 10, 20, 31])), (1, 3))
+
 
 if __name__ == "__main__":
     unittest.main()

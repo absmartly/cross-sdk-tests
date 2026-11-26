@@ -23,17 +23,22 @@ orchestrator/local_collector_gate.py.
 """
 
 import base64
-import gzip
 import json
 import os
 import sys
 import threading
-import zlib
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 MAX_BODY_BYTES = 16 * 1024 * 1024
+# A real publish nests a few levels; json.loads accepts ~990 on 3.11, and a body
+# that deep breaks json.dumps when /publishes is read back, so reject it on PUT.
+MAX_JSON_DEPTH = 64
+# A client that sends fewer body bytes than Content-Length and keeps the socket open
+# would otherwise hold a handler thread forever.
+REQUEST_TIMEOUT_S = 10
 EXPERIMENT_ID = 9001
 EXPERIMENT_NAME = "e2e_local_collector"
 SESSION_EXPERIMENT_ID = 9002
@@ -99,23 +104,51 @@ class Store:
             self.requests.clear()
 
 
-
-
-def parse_content_length(value):
+def parse_content_length(values):
     """Content-Length as an int per RFC 9110 (1*DIGIT), or None when invalid.
 
-    int() alone accepts "1_0", "+5", " 7" and other non-HTTP spellings.
+    `values` is every Content-Length header line. int() alone accepts "1_0", "+5"
+    and " 7"; conflicting duplicate lines are ambiguous framing, so both are invalid.
     """
-    if value is None or value == "":
+    values = [v for v in values if v != ""]
+    if not values:
         return 0
+    if len(set(values)) > 1:
+        return None
+    value = values[0]
     if not value.isascii() or not value.isdigit():
         return None
     return int(value)
 
 
 def body_length_error(length):
-    if length is None or length < 0 or length > MAX_BODY_BYTES:
+    # parse_content_length never returns a negative number, so None covers "invalid".
+    if length is None or length > MAX_BODY_BYTES:
         return "invalid Content-Length"
+    return None
+
+
+def gunzip_capped(raw):
+    """Inflate a gzip body, refusing to grow past MAX_BODY_BYTES (gzip bombs)."""
+    inflater = zlib.decompressobj(31)
+    decoded = inflater.decompress(raw, MAX_BODY_BYTES + 1)
+    if len(decoded) > MAX_BODY_BYTES or inflater.unconsumed_tail:
+        raise ValueError("decoded body exceeds the size limit")
+    if not inflater.eof:
+        raise ValueError("truncated gzip body")
+    return decoded
+
+
+def json_depth_error(value, limit=MAX_JSON_DEPTH):
+    """Iteratively measure nesting so the check itself cannot recurse too deep."""
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if isinstance(node, (dict, list)):
+            if depth > limit:
+                return f"JSON nested deeper than {limit} levels"
+            children = node.values() if isinstance(node, dict) else node
+            stack.extend((child, depth + 1) for child in children)
     return None
 
 
@@ -126,6 +159,7 @@ def _strip_prefix(path):
 def make_handler(store):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        timeout = REQUEST_TIMEOUT_S
 
         def log_message(self, fmt, *args):
             if os.environ.get("COLLECTOR_VERBOSE"):
@@ -144,14 +178,14 @@ def make_handler(store):
 
         def _read_body(self):
             try:
-                length = parse_content_length(self.headers.get("Content-Length"))
+                length = parse_content_length(self.headers.get_all("Content-Length") or [])
                 length_error = body_length_error(length)
                 if length_error:
                     raise ValueError(length_error)
                 raw = self.rfile.read(length) if length else b""
                 if len(raw) != length:
                     raise ValueError("truncated request body")
-                decoded = gzip.decompress(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
+                decoded = gunzip_capped(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
             except (ValueError, EOFError, OSError, zlib.error) as exc:
                 return b"", b"", str(exc)
@@ -181,10 +215,15 @@ def make_handler(store):
                       "decodedBodyBytes": base64.b64encode(decoded).decode("ascii"),
                       "contentEncoding": self.headers.get("Content-Encoding")}
             if body_error:
+                # Broken framing leaves the stream position unknown; never reuse it.
+                self.close_connection = True
                 return self._send(400, {"error": body_error})
             try:
                 record["rawBody"] = decoded.decode("utf-8", errors="strict")
                 record["json"] = json.loads(decoded)
+                depth_error = json_depth_error(record["json"])
+                if depth_error:
+                    raise ValueError(depth_error)
             except (ValueError, UnicodeDecodeError, RecursionError) as exc:
                 # Reject with a deterministic 400 rather than letting a malformed body
                 # kill the request handler.
