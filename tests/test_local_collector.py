@@ -247,19 +247,29 @@ class GateRunTest(unittest.TestCase):
 
 
 class FetchPublishesTest(unittest.TestCase):
-    def fetch(self, counts, expected, clock):
-        reads = iter(counts)
-        get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": [{}] * next(reads)}))
+    PLANNED = {("user_id", "u")}
+    MINE = {"json": {"units": [{"type": "user_id", "uid": "u"}]}}
+    STRAY = {"json": {"units": [{"type": "user_id", "uid": "stray"}]}}
+
+    def fetch(self, reads, expected, clock):
+        reads = iter(reads)
+        get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": next(reads)}))
         with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
              mock.patch.object(gate.time, "monotonic", side_effect=clock):
-            return len(gate.fetch_publishes("http://c", expected, timeout=30)), get.call_count
+            return len(gate.fetch_publishes("http://c", expected, self.PLANNED, timeout=30)), get.call_count
 
     def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
         # Two stable zero reads used to end the wait; the late publishes must still be read.
-        self.assertEqual(self.fetch([0, 0, 0, 2, 3], 2, iter([0] + [1] * 10)), (3, 5))
+        m = self.MINE
+        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], 2, iter([0] + [1] * 10)), (3, 5))
+
+    def test_stray_publishes_do_not_count_toward_expected(self):
+        m, s = self.MINE, self.STRAY
+        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m]], 2, iter([0] + [1] * 10)), (3, 3))
 
     def test_timeout_returns_what_arrived(self):
-        self.assertEqual(self.fetch([0, 1, 1], 2, iter([0, 10, 20, 31])), (1, 3))
+        m = self.MINE
+        self.assertEqual(self.fetch([[], [m], [m]], 2, iter([0, 10, 20, 31])), (1, 3))
 
 
 if __name__ == "__main__":
