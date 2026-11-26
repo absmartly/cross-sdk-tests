@@ -74,6 +74,15 @@ class CollectorServerTest(unittest.TestCase):
         self.assertIn("parseError", second)
         self.assertEqual([first["seq"], second["seq"]], [0, 1])
 
+    def test_malformed_bytes_are_retained_and_rejected(self):
+        for headers, body in (({}, b"\xff"), ({"Content-Encoding": "gzip"}, b"not-gzip")):
+            with self.subTest(headers=headers):
+                status, _ = self.request("PUT", "/context", body, headers)
+                self.assertEqual(status, 400)
+        _, stored = self.request("GET", "/publishes")
+        self.assertEqual(len(stored["publishes"]), 2)
+        self.assertTrue(all(record["json"] is None and "parseError" in record for record in stored["publishes"]))
+
     def test_clear_and_unknown_routes(self):
         self.request("PUT", "/context", b"{}", {})
         self.assertEqual(self.request("DELETE", "/publishes")[0], 200)
@@ -184,7 +193,15 @@ class GateVerifyTest(unittest.TestCase):
                 self.assertFalse(result["pass"])
                 self.assertTrue(any("purchase.amount is not numeric" in error for error in result["errors"]))
 
-    def test_unit_hash_is_utf8_md5_base64url(self):
+    def test_rejects_json_type_confusions(self):
+        cases = self.cases
+        for label, mutate in (
+            ("boolean variant", lambda out: out[0]["json"]["exposures"][0].update(variant=True)),
+            ("numeric wrapper object", lambda out: out[0]["json"]["goals"][0]["properties"].update(amount={"$n": "10"})),
+        ):
+            with self.subTest(label):
+                self.assertFalse(self.check(mutate)["pass"])
+
         # Independent literal: md5("e2e-0c11789c-go-94") as observed on test-1.
         self.assertEqual(gate.unit_hash("e2e-0c11789c-go-94"), "OSS6pz0j4iJ-ymv9M3DHvg")
 
@@ -251,25 +268,27 @@ class FetchPublishesTest(unittest.TestCase):
     MINE = {"json": {"units": [{"type": "user_id", "uid": "u"}]}}
     STRAY = {"json": {"units": [{"type": "user_id", "uid": "stray"}]}}
 
-    def fetch(self, reads, expected, clock):
+    def fetch(self, reads, expected_cases, clock):
         reads = iter(reads)
         get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": next(reads)}))
         with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
              mock.patch.object(gate.time, "monotonic", side_effect=clock):
-            return len(gate.fetch_publishes("http://c", expected, self.PLANNED, timeout=30)), get.call_count
+            return len(gate.fetch_publishes("http://c", expected_cases, timeout=30)), get.call_count
 
     def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
         # Two stable zero reads used to end the wait; the late publishes must still be read.
         m = self.MINE
-        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], 2, iter([0] + [1] * 10)), (3, 5))
+        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], [{("user_id", "u")}], iter([0] + [1] * 10)), (3, 5))
 
     def test_stray_publishes_do_not_count_toward_expected(self):
         m, s = self.MINE, self.STRAY
-        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m]], 2, iter([0] + [1] * 10)), (3, 3))
+        m2 = {"json": {"units": [{"type": "user_id", "uid": "missing"}]}}
+        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m, m2], [m, s, m, m2]],
+                                    [{("user_id", "u")}, {("user_id", "missing")}], iter([0] + [1] * 10)), (4, 4))
 
     def test_timeout_returns_what_arrived(self):
         m = self.MINE
-        self.assertEqual(self.fetch([[], [m], [m]], 2, iter([0, 10, 20, 31])), (1, 3))
+        self.assertEqual(self.fetch([[], [m], [m]], [{("user_id", "u")}, {("user_id", "missing")}], iter([0, 10, 20, 31])), (1, 3))
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ import os
 import sys
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -121,6 +122,7 @@ def make_handler(store):
             return [[name, value] for name, value in self.headers.items()]
 
         def _read_body(self):
+            raw = b""
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 if length < 0 or length > 16 * 1024 * 1024:
@@ -130,8 +132,8 @@ def make_handler(store):
                     raise ValueError("truncated request body")
                 decoded = gzip.decompress(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
-            except (ValueError, EOFError, OSError) as exc:
-                return b"", b"", str(exc)
+            except (ValueError, UnicodeDecodeError, gzip.BadGzipFile, EOFError, OSError, zlib.error) as exc:
+                return raw, b"", str(exc)
 
         def do_GET(self):
             path = urlsplit(self.path).path
@@ -158,8 +160,18 @@ def make_handler(store):
                       "decodedBodyBytes": base64.b64encode(decoded).decode("ascii"),
                       "contentEncoding": self.headers.get("Content-Encoding")}
             if body_error:
+                record["json"] = None
+                record["parseError"] = body_error
+                store.add_publish(record)
                 return self._send(400, {"error": body_error})
-            record["rawBody"] = decoded.decode("utf-8", errors="strict")
+            try:
+                record["rawBody"] = decoded.decode("utf-8", errors="strict")
+            except UnicodeDecodeError as exc:
+                record["rawBody"] = decoded.decode("utf-8", errors="replace")
+                record["json"] = None
+                record["parseError"] = str(exc)
+                store.add_publish(record)
+                return self._send(400, {"error": str(exc)})
             try:
                 record["json"] = json.loads(decoded)
             except (ValueError, UnicodeDecodeError) as exc:

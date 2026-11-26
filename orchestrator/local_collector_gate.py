@@ -78,22 +78,26 @@ def plan(run_id: str, sdk: str) -> List[Dict[str, Any]]:
 
 
 def _canonical(value: Any) -> str:
-    """JSON value as a comparable string; numbers compared by value (10 == 10.0)."""
+    """JSON value as a comparable string; numbers compared by value without type collisions."""
     def walk(v):
         if isinstance(v, dict):
-            return {k: walk(x) for k, x in v.items()}
+            return ["object", [[k, walk(v[k])] for k in sorted(v)]]
         if isinstance(v, list):
-            return [walk(x) for x in v]
-        if isinstance(v, bool) or v is None or isinstance(v, str):
-            return v
+            return ["array", [walk(x) for x in v]]
+        if isinstance(v, bool):
+            return ["boolean", v]
+        if v is None:
+            return ["null"]
         if isinstance(v, (int, float, Decimal)):
             d = Decimal(str(v))
             if not d.is_finite():
                 raise ValueError("non-finite number")
-            return {"$n": format(d.normalize(), "f") if d else "0"}
+            return ["number", format(d.normalize(), "f") if d else "0"]
+        if isinstance(v, str):
+            return ["string", v]
         raise ValueError(f"unexpected JSON value {v!r}")
     parsed = json.loads(json.dumps(value), parse_float=Decimal, parse_int=Decimal)
-    return json.dumps(walk(parsed), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(walk(parsed), ensure_ascii=False, separators=(",", ":"))
 
 
 def _header(record: Dict[str, Any], name: str) -> Optional[str]:
@@ -145,7 +149,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
                                 else (EXPERIMENT_ID, EXPERIMENT_NAME))
             if exposure.get("id") != exp_id or exposure.get("name") != exp_name:
                 errors.append(f"exposure for {unit_type} names {exposure.get('id')}/{exposure.get('name')}")
-            if exposure.get("variant") != 1:
+            if type(exposure.get("variant")) is not int or exposure.get("variant") != 1:
                 errors.append(f"exposure for {unit_type} has variant {exposure.get('variant')!r}, expected 1")
             if exposure.get("assigned") is not True or exposure.get("eligible") is not True:
                 errors.append(f"exposure for {unit_type} assigned/eligible not true")
@@ -237,15 +241,15 @@ def _publish_units(record: Dict[str, Any]) -> set:
     return {(u.get("type"), u.get("uid")) for u in body.get("units") or [] if isinstance(u, dict)}
 
 
-def fetch_publishes(collector_url: str, expected: int, planned_units: set, settle: float = 2.0,
+def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float = 2.0,
                     timeout: float = 30, poll: float = 0.5) -> List[Dict[str, Any]]:
-    """Read publishes once `expected` carrying a planned unit have arrived (publish is async in
-    some SDKs), plus one settle interval so a late duplicate is still seen; on timeout, whatever
-    arrived. Stray publishes do not count toward `expected`."""
+    """Read publishes until every planned case has arrived, then settle and re-read.
+    Stray or duplicate publishes do not satisfy a missing case; on timeout, whatever arrived."""
     deadline = time.monotonic() + timeout
     while True:
         publishes = requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
-        if sum(1 for r in publishes if _publish_units(r) & planned_units) >= expected:
+        arrived = [_publish_units(r) for r in publishes]
+        if all(any(units & case_units for units in arrived) for case_units in expected_cases):
             time.sleep(settle)
             return requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
         if time.monotonic() >= deadline:
@@ -269,7 +273,9 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     planned_units = {(unit_type, unit_hash(uid)) for cases in plans.values()
                      for case in cases for unit_type, uid in case["units"].items()}
     # Every case ends in one /publish call with at least one exposure queued.
-    publishes = fetch_publishes(collector_url, sum(len(cases) for cases in plans.values()), planned_units)
+    expected_cases = [{(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
+                      for cases in plans.values() for case in cases]
+    publishes = fetch_publishes(collector_url, expected_cases)
     for record in publishes:
         units = _publish_units(record)
         if isinstance(record.get("json"), dict) and not units & planned_units:
