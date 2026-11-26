@@ -243,13 +243,14 @@ def _publish_units(record: Dict[str, Any]) -> set:
 
 def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float = 2.0,
                     timeout: float = 30, poll: float = 0.5) -> List[Dict[str, Any]]:
-    """Read publishes until every planned case has arrived, then settle and re-read.
-    Stray or duplicate publishes do not satisfy a missing case; on timeout, whatever arrived."""
+    """Read publishes until every planned case has its own publish, then settle and re-read.
+    A case counts only for a publish whose units all belong to that case, so a stray, a duplicate
+    or one publish combining two cases does not satisfy a missing case; on timeout, whatever arrived."""
     deadline = time.monotonic() + timeout
     while True:
         publishes = requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
         arrived = [_publish_units(r) for r in publishes]
-        if all(any(units & case_units for units in arrived) for case_units in expected_cases):
+        if all(any(units and units <= case_units for units in arrived) for case_units in expected_cases):
             time.sleep(settle)
             return requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"]
         if time.monotonic() >= deadline:

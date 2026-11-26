@@ -290,6 +290,16 @@ class FetchPublishesTest(unittest.TestCase):
         m = self.MINE
         self.assertEqual(self.fetch([[], [m], [m]], [{("user_id", "u")}, {("user_id", "missing")}], iter([0, 10, 20, 31])), (1, 3))
 
+    def test_one_publish_combining_two_cases_does_not_complete_both(self):
+        both = {"json": {"units": [{"type": "user_id", "uid": "u"}, {"type": "user_id", "uid": "missing"}]}}
+        self.assertEqual(self.fetch([[both], [both], [both]], [{("user_id", "u")}, {("user_id", "missing")}],
+                                    iter([0, 10, 20, 31])), (1, 3))
+
+    def test_a_multi_unit_case_completes_from_its_own_publish(self):
+        multi = {"json": {"units": [{"type": "user_id", "uid": "mu"}, {"type": "session_id", "uid": "mu-s"}]}}
+        self.assertEqual(self.fetch([[multi], [multi]], [{("user_id", "mu"), ("session_id", "mu-s")}],
+                                    iter([0] + [1] * 10)), (1, 2))
+
 
 if __name__ == "__main__":
     unittest.main()
