@@ -274,6 +274,8 @@ class CollectorServerTest(unittest.TestCase):
                      gzip.compress(b'{"hashed":true}') + b"\0\0JUNK",
                      gzip.compress(b'{"hashed":true}') + b"\0J",
                      gzip.compress(b'{"hashed":true}') + b"\0\x1f",
+                     gzip.compress(b'{"hashed":true}') + b"\0\n",
+                     gzip.compress(b'{"hashed":true}') + b" ",
                      gzip.compress(b'{"hashed":true}') + gzip.compress(b'{"evil":1}')):
             with self.subTest(body=body[-12:]):
                 status, _ = self.request("PUT", "/context", body, {"Content-Encoding": "gzip"})
@@ -424,6 +426,19 @@ class CollectorServerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "deadline"):
                 fake._read_exact(2)
         fake.connection.settimeout.assert_called_with(collector.REQUEST_TIMEOUT_S)
+
+    def test_the_socket_timeout_is_restored_after_a_bounded_read(self):
+        # A read near the deadline shortens the socket timeout; the next request must not inherit it.
+        import io
+        deadline = collector.REQUEST_DEADLINE_S
+        handler = collector.make_handler(collector.Store())
+        fake = handler.__new__(handler)
+        fake.rfile = io.BytesIO(b"{}")
+        fake.connection = mock.Mock()
+        with mock.patch.object(collector, "_monotonic", side_effect=[0, deadline - 1, deadline - 0.5]):
+            self.assertEqual(fake._read_exact(2), b"{}")
+        self.assertEqual(fake.connection.settimeout.call_args_list,
+                         [mock.call(1), mock.call(collector.REQUEST_TIMEOUT_S)])
 
     def test_client_reset_does_not_raise_out_of_the_handler(self):
         handler = collector.make_handler(collector.Store())
