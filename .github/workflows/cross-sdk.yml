@@ -283,17 +283,11 @@ jobs:
           export SDK_CLONE_PREFIX="https://x-access-token:${{ github.token }}@"
           for repo in $repos; do checkout_sdk "$repo" "../$repo"; done
 
-      - name: Build local collector, wrapper and orchestrator
+      - name: Build and run blocking local collector gate
         working-directory: cross-sdk-tests
         env:
           COMPOSE_PROJECT_NAME: csdk-local-gate
-        run: docker compose -f docker-compose.yml -f docker-compose.local-collector.yml build local-collector ${{ matrix.sdk }}-sdk orchestrator
-
-      - name: Run blocking local collector gate
-        working-directory: cross-sdk-tests
-        env:
-          COMPOSE_PROJECT_NAME: csdk-local-gate
-        run: ./run-local-collector-tests.sh --sdk "${{ matrix.sdk }}" --skip-build
+        run: ./run-local-collector-tests.sh --sdk "${{ matrix.sdk }}"
 
       - name: Upload local collector report
         if: always()
