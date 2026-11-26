@@ -32,7 +32,7 @@ import os
 import sys
 import time
 from collections import Counter
-from decimal import Decimal
+from decimal import Decimal, Inexact, InvalidOperation, Overflow, localcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -88,13 +88,7 @@ def _canonical(value: Any) -> str:
         if v is None:
             return ["null"]
         if isinstance(v, (int, float, Decimal)):
-            d = Decimal(str(v))
-            if not d.is_finite():
-                raise ValueError("non-finite number")
-            try:
-                return ["number", format(d.normalize(), "f") if d else "0"]
-            except ArithmeticError as exc:  # e.g. 1e999999999, exact now that numbers stay Decimal
-                raise ValueError(f"number out of range: {v}") from exc
+            return ["number", _exact_number(v)]
         if isinstance(v, str):
             return ["string", v]
         raise ValueError(f"unexpected JSON value {v!r}")
@@ -153,18 +147,48 @@ def _entries(record: Dict[str, Any], field: str, keys: Tuple[str, ...], errors: 
     return valid
 
 
+def _exact_number(value: Any) -> str:
+    """A JSON number as an exact, comparable string: equal values (10, 10.0, 1e1) give the same
+    string and distinct values never do. No arithmetic, so no rounding and no exponent overflow."""
+    if isinstance(value, bool):
+        raise ValueError(f"not a number: {value!r}")
+    if isinstance(value, float):
+        value = Decimal(repr(value))
+    if isinstance(value, int):
+        value = Decimal(value)
+    if not isinstance(value, Decimal):
+        raise ValueError(f"not a number: {value!r}")
+    if not value.is_finite():
+        raise ValueError("non-finite number")
+    sign, digits, exponent = value.as_tuple()
+    digits = "".join(map(str, digits)).lstrip("0")
+    if not digits:
+        return "0"
+    stripped = digits.rstrip("0")
+    exponent += len(digits) - len(stripped)
+    return f"{'-' if sign else ''}{stripped}e{exponent}"
+
+
+def _exact_sum(amounts: List[Decimal]) -> Decimal:
+    """The exact sum; raises ArithmeticError instead of rounding."""
+    with localcontext() as ctx:
+        ctx.prec, ctx.Emax, ctx.Emin = 1000, 10 ** 9, -(10 ** 9)
+        ctx.traps[Inexact] = ctx.traps[Overflow] = ctx.traps[InvalidOperation] = True
+        return sum(amounts, Decimal(0))
+
+
 def _lossless(record: Dict[str, Any]) -> Dict[str, Any]:
     """The record with `json` re-parsed from its raw body, decimal numbers kept exact.
 
     The collector's own parse and its JSON response both turn numbers into floats, so 0.1 and
     0.100000000000000001 would arrive equal; the verbatim body tells them apart."""
     raw = record.get("rawBody")
-    if record.get("json") is None or not isinstance(raw, str):
+    if record.get("lossless") or record.get("json") is None or not isinstance(raw, str):
         return record
     try:
-        return {**record, "json": json.loads(raw, parse_float=Decimal)}
-    except ValueError as exc:
-        return {**record, "json": None, "parseError": f"raw body does not parse: {exc}"}
+        return {**record, "json": json.loads(raw, parse_float=Decimal), "lossless": True}
+    except (ValueError, ArithmeticError) as exc:
+        return {**record, "json": None, "parseError": f"raw body does not parse: {exc!r}"}
 
 
 def _normalized(publishes: Any) -> List[Dict[str, Any]]:
@@ -259,10 +283,10 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
     for key in sorted(set(want_goals) | set(goals), key=str):
         if goals[key] != want_goals[key]:
             errors.append(f"goal {key[1]} {key[2]} received {goals[key]}x, expected {want_goals[key]}x")
-    planned = sum(planned_amounts, Decimal(0))
+    planned = _exact_sum(planned_amounts)
     try:
-        revenue = sum(received_amounts, Decimal(0))
-    except ArithmeticError as exc:  # e.g. a string amount like "1e999999999" overflows the sum
+        revenue = _exact_sum(received_amounts)
+    except ArithmeticError as exc:  # the exact sum needs more digits or exponent than is sane
         errors.append(f"purchase.amount sum is not representable: {exc!r}")
         revenue = None
     if revenue is not None and revenue != planned:
