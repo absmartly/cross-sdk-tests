@@ -121,7 +121,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
     for record in publishes:
         body = record.get("json")
         if not isinstance(body, dict):
-            errors.append(f"publish #{record.get('seq')} is not a JSON object")
+            errors.append(f"publish #{record.get('seq')} is not a JSON object"
+                          + (f": {record['parseError']}" if record.get("parseError") else ""))
             continue
         units = {(u.get("type"), u.get("uid")) for u in body.get("units") or [] if isinstance(u, dict)}
         mine = units & set(expected_units)

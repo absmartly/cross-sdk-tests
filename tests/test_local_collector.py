@@ -267,6 +267,40 @@ class CollectorServerTest(unittest.TestCase):
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
         self.assertOnlyRejectedStored(count=1)
 
+    def test_body_on_a_route_that_ignores_it_closes_the_connection(self):
+        smuggled = b'{"hashed":true,"units":[]}'
+        pipelined = (b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                     + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled)
+        for method, path in ((b"PUT", b"/events"), (b"GET", b"/health"), (b"DELETE", b"/nope")):
+            with self.subTest(method=method, path=path):
+                reply = self.raw_put(method + b" " + path + b" HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                                     + str(len(pipelined)).encode(), pipelined)
+                self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
+                self.assertIn(b"Connection: close", reply)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        # A bodiless request, and a publish whose body was read, keep the connection reusable.
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        for method, path, body in (("GET", "/health", None), ("PUT", "/context", smuggled),
+                                   ("PUT", "/context", smuggled)):
+            conn.request(method, path, body=body)
+            response = conn.getresponse()
+            response.read()
+            self.assertEqual(response.status, 200)
+            self.assertIsNone(response.getheader("Connection"))
+        conn.close()
+        self.assertEqual(len(self.request("GET", "/publishes")[1]["publishes"]), 2)
+
+    def test_numbers_overflowing_to_infinity_are_rejected(self):
+        for body in (b'{"amount":1e400}', b'{"amount":-1e400}', b'{"a":[1.5e999]}'):
+            with self.subTest(body=body):
+                status, _ = self.request("PUT", "/context", body)
+                self.assertEqual(status, 400)
+        status, stored = self.request("GET", "/publishes")
+        self.assertEqual(status, 200)
+        self.assertOnlyRejectedStored(count=3)
+        self.request("DELETE", "/publishes")
+        self.assertEqual(self.request("PUT", "/context", b'{"amount":1.7976931348623157e308}')[0], 200)
+
     def test_transfer_encoding_is_rejected(self):
         reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n"
                              b"Content-Length: 2", b"{}")
@@ -456,6 +490,10 @@ class GateVerifyTest(unittest.TestCase):
                              "e2e-tests", "production", False)
         self.assertFalse(result["pass"])
         self.assertIn("publish #0 is not a JSON object", result["errors"])
+        rejected = gate.verify("javascript", self.cases,
+                               [{"seq": 3, "json": None, "parseError": "truncated request body", "headers": []}],
+                               "e2e-tests", "production", False)
+        self.assertIn("publish #3 is not a JSON object: truncated request body", rejected["errors"])
 
     def test_gate_requires_application_and_environment_headers(self):
         # Missing (not just wrong) headers on a planned publish fail the gate.

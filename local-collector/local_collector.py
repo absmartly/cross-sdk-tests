@@ -24,6 +24,7 @@ orchestrator/local_collector_gate.py.
 
 import base64
 import json
+import math
 import os
 import sys
 import threading
@@ -154,6 +155,14 @@ def _reject_constant(name):
     raise ValueError(f"non-standard JSON constant {name}")
 
 
+def _finite_float(text):
+    # 1e400 is valid JSON but overflows to Infinity, which GET /publishes could not re-emit as JSON.
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError(f"number {text} is out of range")
+    return value
+
+
 def json_depth_error(value, limit=MAX_JSON_DEPTH):
     """Iteratively measure nesting so the check itself cannot recurse too deep."""
     stack = [(value, 1)]
@@ -180,12 +189,24 @@ def make_handler(store):
             if os.environ.get("COLLECTOR_VERBOSE"):
                 sys.stderr.write("collector: " + fmt % args + "\n")
 
+        def _unread_body(self):
+            if getattr(self, "body_consumed", True) or self.headers is None:
+                return False
+            lengths = self.headers.get_all("Content-Length") or []
+            return bool(self.headers.get_all("Transfer-Encoding")) or any(v.strip() != "0" for v in lengths)
+
         def _send(self, status, body):
             raw = json.dumps(body).encode()
+            if self._unread_body():
+                # A body this route never read (unknown path, GET with a body) would otherwise be
+                # parsed as the next request on this connection; never reuse the connection.
+                self.close_connection = True
             try:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
+                if self.close_connection:
+                    self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(raw)
             except (BrokenPipeError, ConnectionResetError):
@@ -221,10 +242,15 @@ def make_handler(store):
                 if length_error:
                     raise ValueError(length_error)
                 raw = self._read_exact(length)
+                self.body_consumed = True
                 decoded = gunzip_capped(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
             except (ValueError, EOFError, OSError, zlib.error) as exc:
                 return raw, b"", str(exc)
+
+        def parse_request(self):
+            self.body_consumed = False
+            return super().parse_request()
 
         def do_GET(self):
             path = urlsplit(self.path).path
@@ -266,7 +292,7 @@ def make_handler(store):
                 record["rawBody"] = decoded.decode("utf-8", errors="replace")
                 return self._reject(record, str(exc))
             try:
-                record["json"] = json.loads(decoded, parse_constant=_reject_constant)
+                record["json"] = json.loads(decoded, parse_constant=_reject_constant, parse_float=_finite_float)
                 depth_error = json_depth_error(record["json"])
                 if depth_error:
                     raise ValueError(depth_error)
