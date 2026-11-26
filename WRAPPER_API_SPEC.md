@@ -1528,7 +1528,7 @@ exposures for the candidates it visits (a held-out candidate never exposes
 itself). `peekVariableValue` exposes nothing. A constant `true` is allowed for
 the SDKs that require it; scenarios 340-368 verify it. The javascript, react,
 vue2, vue3 and angular wrappers require it too (javascript-sdk pinned at
-2aa9a2d) but derive it from a behavioral self-test
+95fe105) but derive it from a behavioral self-test
 (`javascript-wrapper/sharedVariableKeysSelfTest.js`, as scenarios 341, 350 and
 351): a strict-mismatched lower-id candidate is skipped and never exposed, the
 lower id wins even when the payload lists it second, and a winner whose variant

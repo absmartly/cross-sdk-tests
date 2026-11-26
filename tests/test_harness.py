@@ -1493,7 +1493,7 @@ class StaticRepoChecks(unittest.TestCase):
         "go-sdk": ("feat/switchbacks", None),
         "java-sdk": ("next/major", None),
         "java-sdk-v1": ("v1.9.0", None),
-        "javascript-sdk": ("feat/switchbacks", "2aa9a2df4a3b636375edae8df077bd10fd5a6b32"),
+        "javascript-sdk": ("main", "95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"),
         "php-sdk": ("feat/switchbacks", None),
         "python3-sdk": ("feat/switchbacks", None),
         "ruby-sdk": ("feat/switchbacks", None),
