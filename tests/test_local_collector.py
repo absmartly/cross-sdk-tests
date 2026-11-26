@@ -621,7 +621,7 @@ class GateRunTest(unittest.TestCase):
             out.append(mixed)
         result, _ = self.run_python(add_mixed)
         self.assertFalse(result["overall_pass"])
-        self.assertTrue(any("mixes an excepted case with an applicable case" in e
+        self.assertTrue(any("carries units from more than one planned case" in e
                             for e in result["sdks"]["python"]["errors"]), result["sdks"]["python"]["errors"])
 
     def test_the_python_null_property_exception_still_checks_that_publishs_transport(self):
@@ -639,6 +639,25 @@ class GateRunTest(unittest.TestCase):
                 errors = result["sdks"]["python"]["errors"]
                 for fragment in ("agent None", "application header None", "environment header None", "hashed=False"):
                     self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
+
+    def test_an_exposure_from_one_case_cannot_ride_on_another_cases_publish(self):
+        names = [c["name"] for c in gate.plan("r", "javascript")]
+
+        def move_session(out):
+            source = out[names.index("multiple_units")]["json"]
+            target = out[names.index("purchase_amounts")]
+            mixed = copy.deepcopy(target)
+            mixed["seq"] = len(out)
+            mixed["json"]["units"] += [u for u in source["units"] if u["type"] == "session_id"]
+            mixed["json"]["exposures"] = [e for e in source["exposures"] if e["unit"] == "session_id"]
+            mixed["json"]["goals"] = []
+            source["units"] = [u for u in source["units"] if u["type"] != "session_id"]
+            source["exposures"] = [e for e in source["exposures"] if e["unit"] != "session_id"]
+            out.append(mixed)
+        result = self.run_with([], move_session)
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(any("carries units from more than one planned case" in e
+                            for e in result["sdks"]["javascript"]["errors"]), result["sdks"]["javascript"]["errors"])
 
     def run_with(self, extra, mutate=None):
         cases = gate.plan("r", "javascript")
@@ -681,7 +700,7 @@ class GateRunTest(unittest.TestCase):
             with self.subTest(label):
                 result = self.run_with([], lambda out, bad=bad: out[0]["json"]["units"].append(bad))
                 self.assertFalse(result["overall_pass"])
-                self.assertTrue(any("malformed unit entry" in e for e in result["transport_errors"]))
+                self.assertTrue(any("malformed units entry" in e for e in result["transport_errors"]))
         result = self.run_with([], lambda out: out[0]["json"].update(units="user_id"))
         self.assertTrue(any("units is not an array" in e for e in result["transport_errors"]))
 
@@ -988,6 +1007,36 @@ class EmptySelectionTest(unittest.TestCase):
     def test_run_refuses_an_empty_sdk_map(self):
         with self.assertRaises(ValueError):
             gate.run({}, "http://c", "e2e-tests", "production", "r")
+
+
+class LauncherStaleReportTest(unittest.TestCase):
+    def test_a_failed_launch_never_leaves_an_earlier_pass_report(self):
+        import shutil
+        import subprocess
+        import tempfile
+        report = os.path.join(ROOT, "test-results", "local-collector.json")
+        saved = open(report).read() if os.path.exists(report) else None
+        try:
+            os.makedirs(os.path.dirname(report), exist_ok=True)
+            with open(report, "w") as out:
+                json.dump({"run_id": "previous-run", "overall_pass": True}, out)
+            with tempfile.TemporaryDirectory() as bin_dir:
+                stub = os.path.join(bin_dir, "docker")
+                with open(stub, "w") as out:
+                    out.write("#!/bin/sh\ncase \"$*\" in *\" up \"*) exit 37;; esac\nexit 0\n")
+                os.chmod(stub, 0o755)
+                done = subprocess.run([shutil.which("bash"), os.path.join(ROOT, "run-local-collector-tests.sh"),
+                                       "--sdk", "swift", "--skip-build"], capture_output=True, text=True,
+                                      timeout=60, env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}"))
+            self.assertEqual(done.returncode, 37, done.stderr)
+            self.assertFalse(os.path.exists(report), "the earlier PASS report must be gone")
+        finally:
+            if saved is None:
+                if os.path.exists(report):
+                    os.remove(report)
+            else:
+                with open(report, "w") as out:
+                    out.write(saved)
 
 
 class CollectorResetTest(unittest.TestCase):

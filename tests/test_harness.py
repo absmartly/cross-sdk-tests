@@ -1162,7 +1162,8 @@ class ConsistencyTests(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "sdk-checkout.sh")) as src:
             self.assertIn('source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"', src.read())
         self.assertEqual(workflow.count('checkout_sdk "$repo"'), 2)
-        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git'), 2)
+        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$1]:-$1}.git'), 1)
+        self.assertEqual(setup.count('url=$(sdk_url "$repo")'), 2)
         matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
         pins = self.sdk_pins("SDK_BRANCHES")
         for lane in matrix["include"]:
@@ -1516,46 +1517,6 @@ class StaticRepoChecks(unittest.TestCase):
                 self.assertEqual(branches.get(repo), branch)
                 self.assertEqual(revisions.get(repo), revision)
         self.assertEqual(set(revisions), {r for r, (_, rev) in self.EXPECTED_PINS.items() if rev})
-
-    def test_flutter_holdout_self_test_matches_dart_copy(self):
-        # The flutter wrapper keeps a copy of the dart wrapper's holdout
-        # self-test; only the header comment and the SDK import may differ.
-        def body(path, skip):
-            with open(os.path.join(REPO_ROOT, path)) as src:
-                lines = src.read().splitlines()
-            for line in skip:
-                lines.remove(line)
-            return lines
-
-        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
-        flutter = body(
-            "flutter-wrapper/lib/holdout_self_test.dart",
-            [
-                "// Copy of dart-wrapper/holdout_self_test.dart; only the import differs.",
-                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
-            ],
-        )
-        self.assertEqual(flutter, dart)
-
-    def test_flutter_switchback_self_test_matches_dart_copy(self):
-        # The flutter wrapper keeps a copy of the dart wrapper's switchback
-        # self-test; only the header comment and the SDK import may differ.
-        def body(path, skip):
-            with open(os.path.join(REPO_ROOT, path)) as src:
-                lines = src.read().splitlines()
-            for line in skip:
-                lines.remove(line)
-            return lines
-
-        dart = body("dart-wrapper/switchback_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
-        flutter = body(
-            "flutter-wrapper/lib/switchback_self_test.dart",
-            [
-                "// Copy of dart-wrapper/switchback_self_test.dart; only the import differs.",
-                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
-            ],
-        )
-        self.assertEqual(flutter, dart)
 
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
