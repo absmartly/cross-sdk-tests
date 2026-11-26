@@ -922,7 +922,7 @@ func sanitizeForJSON(_ value: Any?) -> Any {
     }
 
     if let num = v as? NSNumber {
-        // Check if NSNumber is actually a boolean
+        // A JSON boolean decodes as an NSNumber too; keep it a Bool on the wire.
         let objCType = String(cString: num.objCType)
         if objCType == "c" || objCType == "B" {
             return num.boolValue

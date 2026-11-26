@@ -6,7 +6,7 @@ COPY kotlin-sdk /build/kotlin-sdk
 COPY cross-sdk-tests/kotlin-wrapper /build/kotlin-wrapper
 
 WORKDIR /build/kotlin-wrapper
-RUN gradle shadowJar --no-daemon
+RUN gradle test shadowJar --no-daemon
 
 FROM build AS tester
 WORKDIR /build/kotlin-sdk
