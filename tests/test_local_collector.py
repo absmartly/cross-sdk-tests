@@ -289,6 +289,29 @@ class GateRunTest(unittest.TestCase):
         result = self.run_with([], lambda out: out[0]["json"].update(units="user_id"))
         self.assertTrue(any("units is not an array" in e for e in result["transport_errors"]))
 
+    def test_malformed_exposure_goal_and_header_entries_fail_with_a_diagnostic(self):
+        for label, mutate, diagnostic in (
+            ("exposure entry", lambda out: out[0]["json"]["exposures"].append("x"), "malformed exposures entry"),
+            ("goals not array", lambda out: out[0]["json"].update(goals="x"), "goals is not an array"),
+            ("header pair", lambda out: out[0].update(headers=[["X-Agent"]] + out[0]["headers"][1:]), "agent None"),
+        ):
+            with self.subTest(label):
+                result = self.run_with([], mutate)
+                self.assertFalse(result["overall_pass"])
+                errors = result["sdks"]["javascript"]["errors"]
+                self.assertTrue(any(diagnostic in e for e in errors), errors)
+
+    def test_malformed_request_log_is_a_reported_failure(self):
+        cases = gate.plan("r", "javascript")
+        for label, body in (("null requests", {"requests": None}), ("bare list", ["x"]), ("bad row", {"requests": ["x"]})):
+            with self.subTest(label):
+                with mock.patch.object(gate, "drive", return_value=[]), \
+                     mock.patch.object(gate, "fetch_publishes", return_value=_publishes_for("javascript", cases)), \
+                     mock.patch.object(gate.requests, "delete"), \
+                     mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda body=body: body)):
+                    result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+                self.assertFalse(result["overall_pass"])
+
 
 class FetchPublishesTest(unittest.TestCase):
     PLANNED = {("user_id", "u")}

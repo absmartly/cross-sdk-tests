@@ -123,9 +123,28 @@ def _covers(units: set, case_units: set) -> bool:
     return bool(units) and units <= case_units
 
 
-def _header(record: Dict[str, Any], name: str) -> Optional[str]:
-    values = [v for k, v in record.get("headers", []) if k.lower() == name.lower()]
+def _header(record: Any, name: str) -> Optional[str]:
+    """The single value of header `name`; None if absent, repeated or the record is malformed."""
+    headers = record.get("headers") if isinstance(record, dict) else None
+    if not isinstance(headers, list):
+        return None
+    values = [pair[1] for pair in headers if isinstance(pair, list) and len(pair) == 2
+              and isinstance(pair[0], str) and pair[0].lower() == name.lower()]
     return values[0] if len(values) == 1 else None
+
+
+def _entries(record: Dict[str, Any], field: str, errors: List[str]) -> List[Dict[str, Any]]:
+    """The object entries of a publish's `field` array; a diagnostic for anything else."""
+    raw = record["json"].get(field)
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        errors.append(f"publish #{record.get('seq')} {field} is not an array: {raw!r}")
+        return []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            errors.append(f"publish #{record.get('seq')} has a malformed {field} entry: {entry!r}")
+    return [entry for entry in raw if isinstance(entry, dict)]
 
 
 def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]],
@@ -162,7 +181,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record['seq']} environment header {_header(record, 'X-Environment')!r}")
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
-        for exposure in body.get("exposures") or []:
+        for exposure in _entries(record, "exposures", errors):
             unit_type = exposure.get("unit")
             uid = next((u for t, u in mine if t == unit_type), None)
             exp_id, exp_name = ((SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME) if unit_type == "session_id"
@@ -175,7 +194,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
                 errors.append(f"exposure for {unit_type} assigned/eligible not true")
             exposures[(unit_type, uid, exposure.get("name"))] += 1
         user = next((u for t, u in mine if t == "user_id"), None)
-        for goal in body.get("goals") or []:
+        for goal in _entries(record, "goals", errors):
             properties = goal.get("properties")
             try:
                 key = (user, goal.get("name"), _canonical(properties if properties is not None else {}))
@@ -304,8 +323,10 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
         if unit_errors:
             results.setdefault("transport_errors", []).extend(unit_errors)
     try:
-        request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests", [])
-    except requests.RequestException as exc:
+        request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests")
+        if not isinstance(request_rows, list):
+            raise ValueError(f"requests is {request_rows!r}")
+    except (requests.RequestException, ValueError, AttributeError) as exc:
         results.setdefault("transport_errors", []).append(f"collector request log unavailable: {exc}")
         request_rows = []
     for request in request_rows:
