@@ -24,9 +24,7 @@
 #   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (stacked on #15 holdouts); contains #17 (1.4.1)
 #   elixir-sdk     feat/switchbacks  elixir-sdk#6 (stacked on #5 holdouts)
 #   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
-#   go-sdk         feat/switchbacks-v1 @ f157264  go-sdk#17 (on #15 holdouts) before 7bf9229, which moved
-#                                    ContextData.Holdouts to ContextPayload; go-wrapper still reads
-#                                    ContextData.Holdouts. Re-pin once the wrapper uses the payload API.
+#   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
 #   javascript-sdk main @ 95fe105    javascript-sdk#69 MERGED; the SDK_REVISIONS commit is its merge commit. It
 #                                    carries the java-sdk shared-variable-key rule, so the JS-family lanes
 #                                    require `sharedVariableKeys` (340-368).
@@ -47,7 +45,6 @@
 # what this commit tests.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
-  ["go-sdk"]="f15726497eea336be0aa757cd46a5c2a4be1e405"
   ["javascript-sdk"]="95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
   ["swift-sdk"]="d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"
@@ -65,7 +62,7 @@ declare -A SDK_BRANCHES=(
   ["dotnet-sdk"]="feat/switchbacks"
   ["elixir-sdk"]="feat/switchbacks"
   ["flutter-sdk"]="feat/switchbacks"
-  ["go-sdk"]="feat/switchbacks-v1"
+  ["go-sdk"]="feat/switchbacks"
   # java-sdk 2.0 (the open java-sdk next/major -> main PR): the `java` lane runs the 2.x wrapper on
   # next/major until it merges, then on main.
   ["java-sdk"]="next/major"

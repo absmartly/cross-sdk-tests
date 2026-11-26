@@ -118,6 +118,11 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 	return d.dataFuture
 }
 
+// GetContextPayload makes the SDK take the future's full payload, holdouts and switchback fields included.
+func (d *deferredContextDataProvider) GetContextPayload() *future.Future {
+	return d.dataFuture
+}
+
 // CustomPublisher is the per-context ContextPublisher handed to the real SDK.
 // When armed via /publishFail it fails the next SDK-invoked Publish exactly
 // once; what happens to pending events after that failure is decided entirely
@@ -153,7 +158,7 @@ type ContextData struct {
 var (
 	contexts     = make(map[string]*ContextData)
 	contextsMu   sync.RWMutex
-	payloadStore = make(map[string]jsonmodels.ContextData)
+	payloadStore = make(map[string]jsonmodels.ContextPayload)
 	payloadMu    sync.RWMutex
 )
 
@@ -170,7 +175,7 @@ type ClientConfigRequest struct {
 }
 
 type CreateContextRequest struct {
-	Data       jsonmodels.ContextData     `json:"data"`
+	Data       jsonmodels.ContextPayload  `json:"data"`
 	Endpoint   string                     `json:"endpoint"`
 	Units      map[string]interface{}     `json:"units"`
 	Options    map[string]interface{}     `json:"options"`
@@ -184,7 +189,7 @@ type CreateContextRequest struct {
 }
 
 type StorePayloadRequest struct {
-	Data jsonmodels.ContextData `json:"data"`
+	Data jsonmodels.ContextPayload `json:"data"`
 }
 
 type StorePayloadResponse struct {
@@ -354,7 +359,7 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	payloadMu.RUnlock()
 
 	if !exists {
-		data = jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}
+		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
 	}
 
 	if throttle > 0 {
@@ -417,7 +422,7 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	payloadMu.RUnlock()
 
 	if !exists {
-		data = jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}
+		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -486,7 +491,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var absmartly *sdk.ABSmartly
-	var data *jsonmodels.ContextData
+	var data *jsonmodels.ContextPayload
 	throttled := false
 	switch {
 	case req.Mode == "e2e":
@@ -532,7 +537,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				defer resp.Body.Close()
-				var data jsonmodels.ContextData
+				var data jsonmodels.ContextPayload
 				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 					done(nil, err)
 					return
@@ -615,7 +620,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	var context *sdk.Context
 	if data != nil {
-		context = absmartly.CreateContextWith(contextConfig, *data)
+		context = absmartly.CreateContextWithPayload(contextConfig, *data)
 	} else {
 		context = absmartly.CreateContext(contextConfig)
 	}

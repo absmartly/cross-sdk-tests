@@ -210,6 +210,7 @@ def make_handler(store):
             return b"".join(chunks)
 
         def _read_body(self):
+            raw = b""
             try:
                 if self.headers.get_all("Transfer-Encoding"):
                     # RFC 9112: Transfer-Encoding with Content-Length is a smuggling vector;
@@ -223,7 +224,7 @@ def make_handler(store):
                 decoded = gunzip_capped(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
             except (ValueError, EOFError, OSError, zlib.error) as exc:
-                return b"", b"", str(exc)
+                return raw, b"", str(exc)
 
         def do_GET(self):
             path = urlsplit(self.path).path
@@ -239,6 +240,12 @@ def make_handler(store):
                 return self._send(200, context_data())
             return self._send(404, {"error": "not found"})
 
+        def _reject(self, record, error):
+            record["json"] = None
+            record["parseError"] = error
+            store.add_publish(record)
+            return self._send(400, {"error": error})
+
         def do_PUT(self):
             path = urlsplit(self.path).path
             if _strip_prefix(path) != "/context":
@@ -252,17 +259,21 @@ def make_handler(store):
             if body_error:
                 # Broken framing leaves the stream position unknown; never reuse it.
                 self.close_connection = True
-                return self._send(400, {"error": body_error})
+                return self._reject(record, body_error)
             try:
                 record["rawBody"] = decoded.decode("utf-8", errors="strict")
+            except UnicodeDecodeError as exc:
+                record["rawBody"] = decoded.decode("utf-8", errors="replace")
+                return self._reject(record, str(exc))
+            try:
                 record["json"] = json.loads(decoded, parse_constant=_reject_constant)
                 depth_error = json_depth_error(record["json"])
                 if depth_error:
                     raise ValueError(depth_error)
-            except (ValueError, UnicodeDecodeError, RecursionError) as exc:
-                # Reject with a deterministic 400 rather than letting a malformed body
-                # kill the request handler.
-                return self._send(400, {"error": str(exc)})
+            except (ValueError, RecursionError) as exc:
+                # Retain the rejected bytes so the gate fails closed on them, and answer a
+                # deterministic 400 rather than letting a malformed body kill the handler.
+                return self._reject(record, str(exc))
             store.add_publish(record)
             return self._send(200, {})
 

@@ -35,6 +35,16 @@ class CollectorServerTest(unittest.TestCase):
         conn.close()
         return response.status, json.loads(data)
 
+    def assertOnlyRejectedStored(self, count=None):
+        """Rejected bodies are retained for the gate to fail on, but none is accepted as JSON."""
+        status, stored = self.request("GET", "/publishes")
+        self.assertEqual(status, 200)
+        for record in stored["publishes"]:
+            self.assertIsNone(record["json"])
+            self.assertIn("parseError", record)
+        if count is not None:
+            self.assertEqual(len(stored["publishes"]), count)
+
     def test_context_is_deterministic_on_both_prefixes(self):
         for path in ("/context", "/v1/context", "/v1/context?application=e2e-tests"):
             status, body = self.request("GET", path, headers={"X-Agent": "absmartly-go-sdk/1.2.0"})
@@ -73,6 +83,17 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(first["contentEncoding"], "gzip")
         self.assertEqual(first["seq"], 0)
 
+    def test_malformed_bytes_are_retained_and_rejected(self):
+        for headers, body in (({}, b"\xff"), ({"Content-Encoding": "gzip"}, b"not-gzip")):
+            with self.subTest(headers=headers):
+                status, _ = self.request("PUT", "/context", body, headers)
+                self.assertEqual(status, 400)
+        _, stored = self.request("GET", "/publishes")
+        self.assertEqual(len(stored["publishes"]), 2)
+        self.assertTrue(all(record["json"] is None and "parseError" in record for record in stored["publishes"]))
+        self.assertEqual([__import__("base64").b64decode(r["rawBodyBytes"]) for r in stored["publishes"]],
+                         [b"\xff", b"not-gzip"])
+
     def test_clear_and_unknown_routes(self):
         self.request("PUT", "/context", b"{}", {})
         self.assertEqual(self.request("DELETE", "/publishes")[0], 200)
@@ -80,12 +101,12 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/v2/context")[0], 404)
         self.assertEqual(self.request("PUT", "/events", b"{}", {})[0], 404)
 
-    def test_invalid_utf8_publish_returns_400_without_storing(self):
+    def test_invalid_utf8_publish_returns_400_and_is_not_accepted(self):
         for payload in (b"\xff", json.dumps({"hashed": True}).encode("utf-16")):
             status, body = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
             self.assertEqual(status, 400)
             self.assertIn("error", body)
-            self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+            self.assertOnlyRejectedStored()
 
     def test_content_length_must_be_plain_digits(self):
         for value in ("1_0", "+2", " 2", "2 ", "0x2", "2.0", "-0", "\u0662"):
@@ -104,9 +125,9 @@ class CollectorServerTest(unittest.TestCase):
         self.assertIsNone(collector.parse_content_length(["100", "2"]))
         status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "1_0"})
         self.assertEqual(status, 400)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
-    def test_truncated_body_returns_400_without_storing(self):
+    def test_truncated_body_returns_400_and_is_not_accepted(self):
         import socket
         with socket.create_connection(("127.0.0.1", self.port), timeout=5) as sock:
             sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
@@ -115,13 +136,13 @@ class CollectorServerTest(unittest.TestCase):
             while chunk := sock.recv(4096):
                 reply += chunk
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_deeply_nested_json_returns_400(self):
         payload = b"[" * 100000 + b"]" * 100000
         status, _ = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
         self.assertEqual(status, 400)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def raw_put(self, head, body=b"", half_close=True):
         """Send a hand-built request; returns the raw reply bytes."""
@@ -135,10 +156,10 @@ class CollectorServerTest(unittest.TestCase):
                 reply += chunk
         return reply
 
-    def test_missing_content_length_returns_400_without_storing(self):
+    def test_missing_content_length_returns_400_and_is_not_accepted(self):
         reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x", b"{}")
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_conflicting_duplicate_content_length_returns_400(self):
         for first, second in ((b"2", b"100"), (b"100", b"2")):
@@ -146,7 +167,7 @@ class CollectorServerTest(unittest.TestCase):
                 reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: " + first
                                      + b"\r\nContent-Length: " + second, b"{}")
                 self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_stalled_body_times_out_instead_of_hanging(self):
         # Declared 100 bytes, sent 2, socket left open: the handler must give up.
@@ -171,7 +192,7 @@ class CollectorServerTest(unittest.TestCase):
             status, _ = self.request("PUT", "/context", bomb, {"Content-Encoding": "gzip"}, timeout=30)
         self.assertEqual(status, 400)
         self.assertTrue(inflater.called)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
         with self.assertRaisesRegex(ValueError, "size limit"):
             collector.gunzip_capped(bomb)
         self.assertEqual(collector.gunzip_capped(gzip.compress(b"{}")), b"{}")
@@ -203,7 +224,7 @@ class CollectorServerTest(unittest.TestCase):
             collector.gunzip_capped(whole[:-8])
         status, _ = self.request("PUT", "/context", whole[:-8], {"Content-Encoding": "gzip"})
         self.assertEqual(status, 400)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_json_nested_too_deep_is_rejected_and_store_stays_readable(self):
         # 985 levels parses on 3.11 but then breaks json.dumps of /publishes.
@@ -215,7 +236,7 @@ class CollectorServerTest(unittest.TestCase):
         self.request("PUT", "/context", b'{"hashed":true,"units":[]}')
         status, stored = self.request("GET", "/publishes")
         self.assertEqual(status, 200)
-        self.assertEqual(len(stored["publishes"]), 1)
+        self.assertEqual([r["json"] for r in stored["publishes"]], [None, None, {"hashed": True, "units": []}])
         self.assertIsNone(collector.json_depth_error({"a": [[1]]}))
         self.assertIsNone(collector.json_depth_error(["x"] * 5, limit=1))
         self.assertIsNotNone(collector.json_depth_error([[1]], limit=1))
@@ -228,13 +249,13 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.request("DELETE", "/publishes")
         # Bytes after the last member that are not a member, or a second member that
-        # makes the JSON invalid, are rejected and nothing is stored.
+        # makes the JSON invalid, are rejected and not accepted.
         for body in (gzip.compress(b'{"hashed":true}') + b"JUNK",
                      gzip.compress(b'{"hashed":true}') + gzip.compress(b'{"evil":1}')):
             with self.subTest(body=body[-12:]):
                 status, _ = self.request("PUT", "/context", body, {"Content-Encoding": "gzip"})
                 self.assertEqual(status, 400)
-                self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+                self.assertOnlyRejectedStored()
 
     def test_bad_framing_closes_the_connection_so_nothing_is_smuggled(self):
         smuggled = b'{"hashed":true,"units":[]}'
@@ -244,20 +265,20 @@ class CollectorServerTest(unittest.TestCase):
                              b"Content-Length: 100", b"{}" + pipelined)
         self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored(count=1)
 
     def test_transfer_encoding_is_rejected(self):
         reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n"
                              b"Content-Length: 2", b"{}")
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_non_standard_json_constants_are_rejected(self):
         for body in (b'{"amount":NaN}', b'{"amount":Infinity}', b'{"amount":-Infinity}'):
             with self.subTest(body=body):
                 status, _ = self.request("PUT", "/context", body)
                 self.assertEqual(status, 400)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
     def test_trickling_body_hits_the_whole_request_deadline(self):
         import socket, time as clock
@@ -314,7 +335,7 @@ class CollectorServerTest(unittest.TestCase):
         corrupted[10] ^= 0xff
         status, _ = self.request("PUT", "/context", bytes(corrupted), {"Content-Encoding": "gzip"})
         self.assertEqual(status, 400)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        self.assertOnlyRejectedStored()
 
 def _record(seq, body, agent="absmartly-javascript-sdk/1.14.0", app="e2e-tests", env="production"):
     return {"seq": seq, "json": body, "headers": [["X-Agent", agent], ["X-Application", app], ["X-Environment", env]]}
@@ -412,7 +433,15 @@ class GateVerifyTest(unittest.TestCase):
                 self.assertFalse(result["pass"])
                 self.assertTrue(any("purchase.amount is not numeric" in error for error in result["errors"]))
 
-    def test_unit_hash_is_utf8_md5_base64url(self):
+    def test_rejects_json_type_confusions(self):
+        cases = self.cases
+        for label, mutate in (
+            ("boolean variant", lambda out: out[0]["json"]["exposures"][0].update(variant=True)),
+            ("numeric wrapper object", lambda out: out[0]["json"]["goals"][0]["properties"].update(amount={"$n": "10"})),
+        ):
+            with self.subTest(label):
+                self.assertFalse(self.check(mutate)["pass"])
+
         # Independent literal: md5("e2e-0c11789c-go-94") as observed on test-1.
         self.assertEqual(gate.unit_hash("e2e-0c11789c-go-94"), "OSS6pz0j4iJ-ymv9M3DHvg")
 
@@ -498,25 +527,37 @@ class FetchPublishesTest(unittest.TestCase):
     MINE = {"json": {"units": [{"type": "user_id", "uid": "u"}]}}
     STRAY = {"json": {"units": [{"type": "user_id", "uid": "stray"}]}}
 
-    def fetch(self, reads, expected, clock):
+    def fetch(self, reads, expected_cases, clock):
         reads = iter(reads)
         get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": next(reads)}))
         with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
              mock.patch.object(gate.time, "monotonic", side_effect=clock):
-            return len(gate.fetch_publishes("http://c", expected, self.PLANNED, timeout=30)), get.call_count
+            return len(gate.fetch_publishes("http://c", expected_cases, timeout=30)), get.call_count
 
     def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
         # Two stable zero reads used to end the wait; the late publishes must still be read.
         m = self.MINE
-        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], 2, iter([0] + [1] * 10)), (3, 5))
+        self.assertEqual(self.fetch([[], [], [], [m, m], [m, m, m]], [{("user_id", "u")}], iter([0] + [1] * 10)), (3, 5))
 
     def test_stray_publishes_do_not_count_toward_expected(self):
         m, s = self.MINE, self.STRAY
-        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m]], 2, iter([0] + [1] * 10)), (3, 3))
+        m2 = {"json": {"units": [{"type": "user_id", "uid": "missing"}]}}
+        self.assertEqual(self.fetch([[m, s], [m, s, m], [m, s, m, m2], [m, s, m, m2]],
+                                    [{("user_id", "u")}, {("user_id", "missing")}], iter([0] + [1] * 10)), (4, 4))
 
     def test_timeout_returns_what_arrived(self):
         m = self.MINE
-        self.assertEqual(self.fetch([[], [m], [m]], 2, iter([0, 10, 20, 31])), (1, 3))
+        self.assertEqual(self.fetch([[], [m], [m]], [{("user_id", "u")}, {("user_id", "missing")}], iter([0, 10, 20, 31])), (1, 3))
+
+    def test_one_publish_combining_two_cases_does_not_complete_both(self):
+        both = {"json": {"units": [{"type": "user_id", "uid": "u"}, {"type": "user_id", "uid": "missing"}]}}
+        self.assertEqual(self.fetch([[both], [both], [both]], [{("user_id", "u")}, {("user_id", "missing")}],
+                                    iter([0, 10, 20, 31])), (1, 3))
+
+    def test_a_multi_unit_case_completes_from_its_own_publish(self):
+        multi = {"json": {"units": [{"type": "user_id", "uid": "mu"}, {"type": "session_id", "uid": "mu-s"}]}}
+        self.assertEqual(self.fetch([[multi], [multi]], [{("user_id", "mu"), ("session_id", "mu-s")}],
+                                    iter([0] + [1] * 10)), (1, 2))
 
 
 if __name__ == "__main__":
