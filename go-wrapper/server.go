@@ -344,6 +344,17 @@ func storePayloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+// storedPayload is the payload stored under id, or an empty one (experiments: []) if none was stored.
+func storedPayload(id string) jsonmodels.ContextPayload {
+	payloadMu.RLock()
+	data, exists := payloadStore[id]
+	payloadMu.RUnlock()
+	if !exists {
+		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
+	}
+	return data
+}
+
 func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
@@ -354,13 +365,7 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(throttleStr, "%d", &throttle)
 	}
 
-	payloadMu.RLock()
-	data, exists := payloadStore[payloadID]
-	payloadMu.RUnlock()
-
-	if !exists {
-		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
-	}
+	data := storedPayload(payloadID)
 
 	if throttle > 0 {
 		time.Sleep(time.Duration(throttle) * time.Millisecond)
@@ -417,13 +422,7 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
 
-	payloadMu.RLock()
-	data, exists := payloadStore[payloadID]
-	payloadMu.RUnlock()
-
-	if !exists {
-		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
-	}
+	data := storedPayload(payloadID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)

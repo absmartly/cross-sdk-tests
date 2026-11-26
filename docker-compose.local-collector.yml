@@ -1,179 +1,34 @@
 # Points every SDK wrapper's e2e mode at the local collector instead of test-1.
 # Used by run-local-collector-tests.sh (the blocking event-emission gate).
+x-local-collector: &local-collector
+  depends_on:
+    - local-collector
+  environment:
+    - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
+    - ABSMARTLY_E2E_API_KEY=local-collector
+    - ABSMARTLY_E2E_APPLICATION=e2e-tests
+    - ABSMARTLY_E2E_ENVIRONMENT=production
+
 services:
-  javascript-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  python-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  ruby-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  java-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  java-v1-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  php-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  go-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  liquid-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  dart-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  flutter-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  swift-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  swift-v1-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  dotnet-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  react-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  vue2-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  vue3-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  rust-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  elixir-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  scala-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  kotlin-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  angular-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
-  cpp-sdk:
-    depends_on:
-      - local-collector
-    environment:
-      - ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1
-      - ABSMARTLY_E2E_API_KEY=local-collector
-      - ABSMARTLY_E2E_APPLICATION=e2e-tests
-      - ABSMARTLY_E2E_ENVIRONMENT=production
+  javascript-sdk: *local-collector
+  python-sdk: *local-collector
+  ruby-sdk: *local-collector
+  java-sdk: *local-collector
+  java-v1-sdk: *local-collector
+  php-sdk: *local-collector
+  go-sdk: *local-collector
+  liquid-sdk: *local-collector
+  dart-sdk: *local-collector
+  flutter-sdk: *local-collector
+  swift-sdk: *local-collector
+  swift-v1-sdk: *local-collector
+  dotnet-sdk: *local-collector
+  react-sdk: *local-collector
+  vue2-sdk: *local-collector
+  vue3-sdk: *local-collector
+  rust-sdk: *local-collector
+  elixir-sdk: *local-collector
+  scala-sdk: *local-collector
+  kotlin-sdk: *local-collector
+  angular-sdk: *local-collector
+  cpp-sdk: *local-collector

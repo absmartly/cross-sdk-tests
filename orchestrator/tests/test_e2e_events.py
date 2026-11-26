@@ -455,7 +455,7 @@ def test_python_null_value_is_reviewed_exception(runner):
     assert runner._case_skip("go", next(c for c in case_specs(runner.run_id, "go") if c["name"] == "null_value")) is None
 
 
-# --- Review round 3: one killing test per surviving false-pass mutant. ---
+# --- One test per false-pass mutant: each fails if the matching check is removed. ---
 
 def _all_backend(runner):
     return lambda mid, sdk, name, *rest, **kw: backend(runner, sdk, name, mid)

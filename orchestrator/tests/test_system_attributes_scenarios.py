@@ -58,12 +58,8 @@ LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SHARED_V
                                                        scenario_groups.CONTEXT_FETCH, scenario_groups.HOLDOUT_CONFORMANCE)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
-# sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
-# this group was appended. Update ONLY when another group legitimately changes the non-group
-# scenarios (e.g. a group lands before this one and this one is renumbered). Last changed when the
-# post-finalize setter scenarios 148, 149 and 188 moved from throwsOnMisuse to the narrower
-# rejectsSettersAfterFinalize gate (php-sdk#12 keeps v1.0.3's accepted setters after close), then
-# when scenario 35 listed the released dart-sdk wording for absmartly_sdk 2.2.0.
+# sha256 of json.dumps([non-group scenarios], sort_keys=True): this group may only append scenarios.
+# Update ONLY when another change legitimately alters the non-group scenarios.
 KEPT_DIGEST = "ae7bc5597b04dea1c833700f3be4117aeb07860a82d6606f0ff7fd1e7e61eb59"
 KEPT_COUNT = 240
 GROUP_SIZE = 6
