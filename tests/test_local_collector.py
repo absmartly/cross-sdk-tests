@@ -289,7 +289,7 @@ class GateRunTest(unittest.TestCase):
             out.append(mixed)
         result, _ = self.run_python(add_mixed)
         self.assertFalse(result["overall_pass"])
-        self.assertTrue(any("mixes an excepted case with an applicable case" in e
+        self.assertTrue(any("carries units from more than one planned case" in e
                             for e in result["sdks"]["python"]["errors"]), result["sdks"]["python"]["errors"])
 
     def test_the_python_null_property_exception_still_checks_that_publishs_transport(self):
@@ -307,6 +307,25 @@ class GateRunTest(unittest.TestCase):
                 errors = result["sdks"]["python"]["errors"]
                 for fragment in ("agent None", "application header None", "environment header None", "hashed=False"):
                     self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
+
+    def test_an_exposure_from_one_case_cannot_ride_on_another_cases_publish(self):
+        names = [c["name"] for c in gate.plan("r", "javascript")]
+
+        def move_session(out):
+            source = out[names.index("multiple_units")]["json"]
+            target = out[names.index("purchase_amounts")]
+            mixed = copy.deepcopy(target)
+            mixed["seq"] = len(out)
+            mixed["json"]["units"] += [u for u in source["units"] if u["type"] == "session_id"]
+            mixed["json"]["exposures"] = [e for e in source["exposures"] if e["unit"] == "session_id"]
+            mixed["json"]["goals"] = []
+            source["units"] = [u for u in source["units"] if u["type"] != "session_id"]
+            source["exposures"] = [e for e in source["exposures"] if e["unit"] != "session_id"]
+            out.append(mixed)
+        result = self.run_with([], move_session)
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(any("carries units from more than one planned case" in e
+                            for e in result["sdks"]["javascript"]["errors"]), result["sdks"]["javascript"]["errors"])
 
     def run_with(self, extra, mutate=None):
         cases = gate.plan("r", "javascript")
@@ -349,7 +368,7 @@ class GateRunTest(unittest.TestCase):
             with self.subTest(label):
                 result = self.run_with([], lambda out, bad=bad: out[0]["json"]["units"].append(bad))
                 self.assertFalse(result["overall_pass"])
-                self.assertTrue(any("malformed unit entry" in e for e in result["transport_errors"]))
+                self.assertTrue(any("malformed units entry" in e for e in result["transport_errors"]))
         result = self.run_with([], lambda out: out[0]["json"].update(units="user_id"))
         self.assertTrue(any("units is not an array" in e for e in result["transport_errors"]))
 

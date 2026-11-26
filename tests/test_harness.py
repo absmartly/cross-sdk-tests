@@ -1162,7 +1162,8 @@ class ConsistencyTests(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "sdk-checkout.sh")) as src:
             self.assertIn('source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"', src.read())
         self.assertEqual(workflow.count('checkout_sdk "$repo"'), 2)
-        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git'), 2)
+        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$1]:-$1}.git'), 1)
+        self.assertEqual(setup.count('url=$(sdk_url "$repo")'), 2)
         matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
         pins = self.sdk_pins("SDK_BRANCHES")
         for lane in matrix["include"]:

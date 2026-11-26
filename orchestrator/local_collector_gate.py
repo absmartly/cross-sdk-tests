@@ -40,7 +40,7 @@ import requests
 for _dir in (os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "local-collector"), "/local-collector"):
     sys.path.insert(0, _dir)
 from local_collector import EXPERIMENT_ID, EXPERIMENT_NAME, SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME  # noqa: E402
-from e2e_cases import AGENT_LANGUAGE, exact_json  # noqa: E402
+from e2e_cases import AGENT_LANGUAGE, exact_json as _canonical  # noqa: E402
 
 # The planned cases: (case, goals). Properties cover nested objects, booleans,
 # integer/decimal/negative/zero/large numbers, Unicode, null and no properties.
@@ -72,11 +72,6 @@ def plan(run_id: str, sdk: str) -> List[Dict[str, Any]]:
     return cases
 
 
-def _canonical(value: Any) -> str:
-    """JSON value as a comparable string; numbers compared by value without type collisions."""
-    return exact_json(value)
-
-
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
     """The publish's (type, uid) units and a diagnostic for each malformed entry; parsed once per record."""
     if "_units" in record:
@@ -84,18 +79,9 @@ def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
     body = record.get("json")
     if not isinstance(body, dict):
         return set(), []
-    raw = body.get("units")
-    if raw is None:
-        return set(), []
-    if not isinstance(raw, list):
-        return set(), [f"publish #{record.get('seq')} units is not an array: {raw!r}"]
-    units, errors = set(), []
-    for entry in raw:
-        if isinstance(entry, dict) and isinstance(entry.get("type"), str) and isinstance(entry.get("uid"), str):
-            units.add((entry["type"], entry["uid"]))
-        else:
-            errors.append(f"publish #{record.get('seq')} has a malformed unit entry: {entry!r}")
-    return units, errors
+    errors: List[str] = []
+    entries = _entries(record, "units", ("type", "uid"), errors)
+    return {(entry["type"], entry["uid"]) for entry in entries}, errors
 
 
 def _covers(units: set, case_units: set) -> bool:
@@ -175,6 +161,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
     expected_units = {(unit_type, unit_hash(uid)) for case in cases for unit_type, uid in case["units"].items()}
     excepted_units = {(unit_type, unit_hash(uid)) for case in excepted or []
                       for unit_type, uid in case["units"].items()}
+    case_units = [{(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
+                  for case in [*cases, *(excepted or [])]]
 
     exposures = Counter()
     goals = Counter()
@@ -188,8 +176,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
-        if units & excepted_units and units & expected_units:
-            errors.append(f"publish #{record['seq']} mixes an excepted case with an applicable case")
+        if not any(units <= case for case in case_units):
+            errors.append(f"publish #{record['seq']} carries units from more than one planned case")
         if units - expected_units - excepted_units:
             errors.append(f"publish #{record['seq']} carries unplanned units "
                           f"{sorted(units - expected_units - excepted_units)}")

@@ -306,8 +306,17 @@ Future<void> startServer() async {
   // clusterUnit is the assigner input (the raw R33 cluster key) and is not
   // hashed; 64-bit values arrive as decimal strings. See WRAPPER_API_SPEC.md,
   // capability `switchback`.
+  String decimal(Map<String, dynamic> body, String name) {
+    final value = body[name];
+    if (value is! String) {
+      throw ArgumentError('$name must be a decimal string');
+    }
+    return value;
+  }
+
   Future<shelf.Response> switchbackCall(
-      shelf.Request request, Object Function(Map<String, dynamic> body) call) async {
+      shelf.Request request, String indexName,
+      Object Function(String clusterUnit, String index, String seed, int armCount) call) async {
     try {
       final body = jsonDecode(await request.readAsString());
       if (body is! Map<String, dynamic>) {
@@ -320,8 +329,9 @@ Future<void> startServer() async {
       if (armCount is! int || armCount < 2) {
         throw ArgumentError('armCount must be an integer of at least 2, got $armCount');
       }
+      final result = call(body['clusterUnit'] as String, decimal(body, indexName), decimal(body, 'seed'), armCount);
       return shelf.Response.ok(
-        jsonEncode({'result': call(body), 'events': []}),
+        jsonEncode({'result': result, 'events': []}),
         headers: {'Content-Type': 'application/json'},
       );
     } on ArgumentError catch (e) {
@@ -335,32 +345,12 @@ Future<void> startServer() async {
     }
   }
 
-  String decimal(Map<String, dynamic> body, String name) {
-    final value = body[name];
-    if (value is! String) {
-      throw ArgumentError('$name must be a decimal string');
-    }
-    return value;
-  }
-
   router.post('/switchback/assign', (shelf.Request request) {
-    return switchbackCall(
-        request,
-        (body) => switchback_self_test.switchbackAssign(
-            body['clusterUnit'] as String,
-            decimal(body, 'periodIndex'),
-            decimal(body, 'seed'),
-            body['armCount'] as int));
+    return switchbackCall(request, 'periodIndex', switchback_self_test.switchbackAssign);
   });
 
   router.post('/switchback/permutation', (shelf.Request request) {
-    return switchbackCall(
-        request,
-        (body) => switchback_self_test.switchbackPermutation(
-            body['clusterUnit'] as String,
-            decimal(body, 'cycleIndex'),
-            decimal(body, 'seed'),
-            body['armCount'] as int));
+    return switchbackCall(request, 'cycleIndex', switchback_self_test.switchbackPermutation);
   });
 
   router.post('/diagnostic', (shelf.Request request) async {
