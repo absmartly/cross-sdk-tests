@@ -396,9 +396,11 @@ class SdkRevisionPinTest(unittest.TestCase):
 
     def test_ci_and_local_setup_call_the_checkout_helper(self):
         workflow = self.read(".github", "workflows", "cross-sdk.yml")
-        self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', workflow)
-        self.assertIn('fetch_and_checkout_revision "$repo" "https://github.com/absmartly/$source_repo.git" "$revision"',
-                      workflow)
+        helper = self.read("sdk-checkout.sh")
+        # Both CI jobs check out every SDK through checkout_sdk, which applies the exact-commit pin.
+        self.assertEqual(workflow.count('checkout_sdk "$repo"'), 2)
+        self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', helper)
+        self.assertIn('fetch_and_checkout_revision "$dest" "$url" "$revision"', helper)
         setup = self.read("setup-sdks.sh")
         self.assertIn('revision="${SDK_REVISIONS[$repo]:-}"', setup)
         self.assertIn('checkout_revision "$repo" "$revision"', setup)

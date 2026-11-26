@@ -11,6 +11,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -82,18 +83,23 @@ class EventCollectorTest {
             assertTrue(logger.inReady.await(5, TimeUnit.SECONDS))
             context.waitUntilReady()
             val answered = CompletableFuture<List<Map<String, Any?>>>()
-            val waiting = CountDownLatch(1)
+            val waiter = AtomicReference<Thread>()
             pool.submit {
-                waiting.countDown()
-                collector.awaitCreationEvent(5000)
+                waiter.set(Thread.currentThread())
+                collector.awaitCreationEvent(30_000)
                 answered.complete(collector.getEvents())
             }
-            assertTrue(waiting.await(5, TimeUnit.SECONDS))
-            // The ready event cannot be collected before release, so the waiter cannot have answered yet.
+            // Release the callback only once the waiter is parked inside awaitCreationEvent.
+            val parkedBy = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (waiter.get()?.state != Thread.State.TIMED_WAITING && System.nanoTime() < parkedBy) Thread.onSpinWait()
+            assertEquals(Thread.State.TIMED_WAITING, waiter.get()?.state)
             assertTrue(!answered.isDone, "must not answer while the ready event is still pending")
+            val released = System.nanoTime()
             logger.release.countDown()
             val events = answered.get(5, TimeUnit.SECONDS)
             assertEquals(listOf("ready"), events.map { it["type"] })
+            // Woken by the event, not by its own 30s timeout.
+            assertTrue(System.nanoTime() - released < TimeUnit.SECONDS.toNanos(5))
         } finally {
             pool.shutdownNow()
         }

@@ -545,5 +545,46 @@ class ReportWriteTest(unittest.TestCase):
             server.server_close()
 
 
+class EmptySelectionTest(unittest.TestCase):
+    """A release-gate run that selects no SDK must fail, never write a passing report."""
+
+    def test_the_cli_rejects_a_separator_only_selection(self):
+        import subprocess
+        import tempfile
+        for selection in (",", " , ", ",,"):
+            with self.subTest(selection=selection), tempfile.TemporaryDirectory() as tmp:
+                report = os.path.join(tmp, "report.json")
+                done = subprocess.run([sys.executable, os.path.join(ROOT, "orchestrator", "local_collector_gate.py"),
+                                       "--sdk", selection, "--collector", "http://127.0.0.1:9", "--report", report],
+                                      capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("selects no SDK", done.stderr)
+                self.assertFalse(os.path.exists(report))
+
+    def test_the_launcher_rejects_a_separator_only_selection_before_starting_anything(self):
+        import shutil
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as bin_dir:
+            # A docker that records any call: the launcher must refuse before it starts a container.
+            calls = os.path.join(bin_dir, "calls")
+            stub = os.path.join(bin_dir, "docker")
+            with open(stub, "w") as out:
+                out.write(f"#!/bin/sh\necho \"$@\" >> {calls}\n")
+            os.chmod(stub, 0o755)
+            for selection in (",", " , "):
+                with self.subTest(selection=selection):
+                    done = subprocess.run([shutil.which("bash"), os.path.join(ROOT, "run-local-collector-tests.sh"),
+                                           "--sdk", selection, "--skip-build"], capture_output=True, text=True,
+                                          timeout=60, env=dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}"))
+                    self.assertEqual(done.returncode, 1, done.stderr)
+                    self.assertIn("selects no SDK", done.stderr)
+                    self.assertFalse(os.path.exists(calls), "docker must not be called")
+
+    def test_run_refuses_an_empty_sdk_map(self):
+        with self.assertRaises(ValueError):
+            gate.run({}, "http://c", "e2e-tests", "production", "r")
+
+
 if __name__ == "__main__":
     unittest.main()

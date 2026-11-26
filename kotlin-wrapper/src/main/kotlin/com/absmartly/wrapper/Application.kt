@@ -217,7 +217,7 @@ fun Application.configureRouting(
                     e2eCollector.awaitCreationEvent(2000)
 
                     val e2eContextId = "ctx-${System.currentTimeMillis()}-${UUID.randomUUID()}"
-                    contexts[e2eContextId] = ContextWrapper(e2eContext, e2eCollector, null)
+                    contexts[e2eContextId] = ContextWrapper(e2eContext, e2eCollector, null, sdk = e2eSdk)
                     call.respond(mapOf(
                         "result" to mapOf(
                             "contextId" to e2eContextId,
