@@ -316,7 +316,7 @@ func switchbackContextBattery(prefix string) error {
 	if err != nil {
 		return err
 	}
-	data, err := sdk.DefaultContextDataDeserializer{}.DeserializePayload(payload)
+	data, err := sdk.DeserializeContextPayload(payload)
 	if err != nil {
 		return fmt.Errorf("%s FAILED: payload: %v", prefix, err)
 	}

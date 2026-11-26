@@ -93,7 +93,7 @@ func svkData(experiments []svkExperiment) (jsonmodels.ContextPayload, error) {
 	if err != nil {
 		return jsonmodels.ContextPayload{}, err
 	}
-	return sdk.DefaultContextDataDeserializer{}.DeserializePayload(raw)
+	return sdk.DeserializeContextPayload(raw)
 }
 
 func svkCheck(prefix string, c svkCase) error {
