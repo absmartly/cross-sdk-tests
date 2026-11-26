@@ -53,6 +53,24 @@ class EventCollector : ContextEventLogger {
         }
     }
 
+    // kotlin-sdk sets the context ready before it logs the matching event (Context.create: setData, then
+    // logEvent(Ready)), so a caller that sees isReady may be a moment ahead of this logger. Wait for the
+    // event itself; nothing is synthesized if it never arrives.
+    fun awaitEvent(since: Int, timeoutMs: Long, vararg types: String) {
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        while (System.nanoTime() < deadline) {
+            synchronized(lock) {
+                if ((since until events.size).any { events[it]["type"] in types }) return
+            }
+            try {
+                Thread.sleep(2)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
+    }
+
     fun getNewEvents(since: Int): List<Map<String, Any?>> {
         synchronized(lock) {
             if (since >= events.size) {
