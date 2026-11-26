@@ -62,7 +62,7 @@ declare -A SDK_BRANCHES=(
   ["dotnet-sdk"]="feat/switchbacks"
   ["elixir-sdk"]="feat/switchbacks"
   ["flutter-sdk"]="feat/switchbacks"
-  ["go-sdk"]="feat/switchbacks"
+  ["go-sdk"]="feat/switchbacks-v1"
   # java-sdk 2.0 (the open java-sdk next/major -> main PR): the `java` lane runs the 2.x wrapper on
   # next/major until it merges, then on main.
   ["java-sdk"]="next/major"
