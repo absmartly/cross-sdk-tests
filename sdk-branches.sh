@@ -32,14 +32,12 @@
 #   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
 #   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
 #   rust-sdk       feat/switchbacks  rust-sdk#12 (holdouts rust-sdk#11 merged)
-#   swift-sdk      feat/swift-2.0    swift-sdk#13 (2.0); the `swift` lane runs the 2.x wrapper. 2.0 has no
-#                                    holdouts yet, so `swift` lists them as reviewed exceptions.
+#   swift-sdk      main @ d58e2f17 (swift-sdk#13 merged; 2.0 now on main). The `swift` lane runs the 2.x wrapper.
 #   swift-sdk-v1   main @ f64883c    swift-sdk#12 (holdouts, on the 1.5.0 line) MERGED: the SDK_REVISIONS
 #                                    commit is its merge commit on main. The `swift-v1` lane
 #                                    (swift-v1-wrapper, cloned from absmartly/swift-sdk) requires holdouts.
-#                                    swift-sdk main becomes 2.0 when #13 merges, so this lane never tracks
-#                                    main's tip: keep the exact commit until release/1.x is cut, then
-#                                    re-pin to it.
+#                                    swift-sdk main is now 2.0; keep the exact 1.x commit until release/1.x is cut,
+#                                    then re-pin the v1 lane to it.
 # Not every switchbacks branch contains its holdouts PR's latest head: cpp, elixir and dotnet
 # feat/switchbacks are behind their feat/holdouts, so those lanes test switchback over an older
 # holdouts port. Merge holdouts into switchbacks in those SDK repos and re-run the lanes before merge.
@@ -49,6 +47,7 @@ declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["javascript-sdk"]="2aa9a2df4a3b636375edae8df077bd10fd5a6b32"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
+  ["swift-sdk"]="d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"
 )
 
 # Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
@@ -79,7 +78,7 @@ declare -A SDK_BRANCHES=(
   ["ruby-sdk"]="feat/switchbacks"
   ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
-  ["swift-sdk"]="feat/swift-2.0"
+  ["swift-sdk"]="main"
   ["swift-sdk-v1"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
