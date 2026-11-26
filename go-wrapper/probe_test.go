@@ -15,7 +15,7 @@ func TestThreeArmProbeOmitsHoldoutType(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.Holdouts[0].HoldoutType != "all_full_on" || data.Holdouts[1].HoldoutType != "" {
+	if len(data.Holdouts) != 2 || data.Holdouts[0].HoldoutType != "all_full_on" || data.Holdouts[1].HoldoutType != "" {
 		t.Fatalf("holdout types: %+v", data.Holdouts)
 	}
 	if err := holdoutArmsBattery(); err != nil {
