@@ -369,7 +369,7 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     results: Dict[str, Any] = {"run_id": run_id, "sdks": {}, "overall_pass": True}
     try:
         requests.delete(f"{collector_url}/publishes", timeout=10).raise_for_status()
-    except requests.RequestException as exc:
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
         # A stale log would mix an earlier run's publishes into this verdict; fail before driving any SDK.
         return {**results, "overall_pass": False, "transport_errors": [f"collector reset failed: {exc!r}"]}
     plans = {sdk: plan(run_id, sdk) for sdk in sdks}

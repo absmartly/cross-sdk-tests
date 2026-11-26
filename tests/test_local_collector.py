@@ -657,12 +657,14 @@ class CollectorResetTest(unittest.TestCase):
         self.assertTrue(any("collector reset failed" in e for e in written["transport_errors"]))
 
     def test_run_drives_no_sdk_when_the_reset_fails(self):
-        with mock.patch.object(gate.requests, "delete", side_effect=gate.requests.ConnectionError("down")), \
-             mock.patch.object(gate, "drive") as drive:
-            result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
-        drive.assert_not_called()
-        self.assertFalse(result["overall_pass"])
-
+        for error in (gate.requests.ConnectionError("down"), ValueError("bad json"), TypeError("bad response")):
+            with self.subTest(error=type(error).__name__), \
+                 mock.patch.object(gate.requests, "delete", side_effect=error), \
+                 mock.patch.object(gate, "drive") as drive:
+                result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+                drive.assert_not_called()
+                self.assertFalse(result["overall_pass"])
+                self.assertTrue(any("collector reset failed" in e for e in result["transport_errors"]))
 
 if __name__ == "__main__":
     unittest.main()
