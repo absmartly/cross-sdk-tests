@@ -21,6 +21,19 @@ SERVICES=""; for s in ${SDKS//,/ }; do SERVICES="$SERVICES $s-sdk"; done
 trap '"${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true' EXIT
 "${COMPOSE[@]}" up -d --force-recreate local-collector $SERVICES
 mkdir -p test-results
+for service in $SERVICES; do
+  ready=false
+  for _ in {1..60}; do
+    if "${COMPOSE[@]}" run --rm --no-deps --entrypoint python3 orchestrator -c \
+      'import socket, sys; socket.create_connection((sys.argv[1], 3000), timeout=2).close()' "$service" \
+      >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  [ "$ready" = true ] || { echo "${service} did not become ready" >&2; exit 1; }
+done
 "${COMPOSE[@]}" run --rm --no-deps \
   -v "$PWD/local-collector:/local-collector:ro" -v "$PWD/test-results:/app/test-results" \
   -e LOCAL_COLLECTOR_URL=http://local-collector:8090 \
