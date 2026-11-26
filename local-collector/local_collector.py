@@ -163,8 +163,8 @@ def make_handler(store):
                 record["rawBody"] = decoded.decode("utf-8", errors="strict")
                 record["json"] = json.loads(decoded)
             except (ValueError, UnicodeDecodeError) as exc:
-                # Keep the base64 bytes for diagnosis, but return a deterministic
-                # 400 rather than letting a malformed publisher kill the handler.
+                # Reject with a deterministic 400 rather than letting a malformed body
+                # kill the request handler.
                 return self._send(400, {"error": str(exc)})
             store.add_publish(record)
             return self._send(200, {})

@@ -27,8 +27,8 @@ class CollectorServerTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
 
-    def request(self, method, path, body=None, headers=None):
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+    def request(self, method, path, body=None, headers=None, timeout=5):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         conn.request(method, path, body=body, headers=headers or {})
         response = conn.getresponse()
         data = response.read()
@@ -62,7 +62,7 @@ class CollectorServerTest(unittest.TestCase):
         self.assertIn(["X-API-Key", "k"], record["headers"])
         self.assertEqual(record["seq"], 0)
 
-    def test_gzip_body_is_decoded_and_bad_json_kept(self):
+    def test_gzip_body_is_decoded_and_bad_json_rejected(self):
         raw = json.dumps({"hashed": True}).encode()
         self.request("PUT", "/context", gzip.compress(raw), {"Content-Encoding": "gzip"})
         bad_status, _ = self.request("PUT", "/context", b"{not json", {})
@@ -82,10 +82,11 @@ class CollectorServerTest(unittest.TestCase):
 
 
     def test_invalid_utf8_publish_returns_400_without_storing(self):
-        status, body = self.request("PUT", "/context", b"\xff", {"Content-Length": "1"})
-        self.assertEqual(status, 400)
-        self.assertIn("error", body)
-        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        for payload in (b"\xff", json.dumps({"hashed": True}).encode("utf-16")):
+            status, body = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
+            self.assertEqual(status, 400)
+            self.assertIn("error", body)
+            self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
     def test_malformed_content_length_and_gzip_return_400(self):
         status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
