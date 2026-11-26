@@ -271,10 +271,15 @@ class CollectorServerTest(unittest.TestCase):
         smuggled = b'{"hashed":true,"units":[]}'
         pipelined = (b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: "
                      + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled)
-        for method, path in ((b"PUT", b"/events"), (b"GET", b"/health"), (b"DELETE", b"/nope")):
-            with self.subTest(method=method, path=path):
-                reply = self.raw_put(method + b" " + path + b" HTTP/1.1\r\nHost: x\r\nContent-Length: "
-                                     + str(len(pipelined)).encode(), pipelined)
+        length = str(len(pipelined)).encode()
+        for method, path, framing in ((b"PUT", b"/events", b"Content-Length: " + length),
+                                      (b"GET", b"/health", b"Content-Length: " + length),
+                                      (b"DELETE", b"/nope", b"Content-Length: " + length),
+                                      # every Content-Length line counts, not just the first
+                                      (b"GET", b"/health", b"Content-Length: 0\r\nContent-Length: " + length),
+                                      (b"GET", b"/health", b"Transfer-Encoding: chunked")):
+            with self.subTest(method=method, path=path, framing=framing):
+                reply = self.raw_put(method + b" " + path + b" HTTP/1.1\r\nHost: x\r\n" + framing, pipelined)
                 self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
                 self.assertIn(b"Connection: close", reply)
         self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
@@ -289,6 +294,13 @@ class CollectorServerTest(unittest.TestCase):
             self.assertIsNone(response.getheader("Connection"))
         conn.close()
         self.assertEqual(len(self.request("GET", "/publishes")[1]["publishes"]), 2)
+        # The flag resets per request: a GET with a body after a publish whose body was read closes.
+        reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: "
+                             + str(len(smuggled)).encode() + b"\r\n\r\n" + smuggled
+                             + b"GET /health HTTP/1.1\r\nHost: x\r\nContent-Length: " + length, pipelined)
+        self.assertEqual(reply.count(b"HTTP/1.1 200"), 2, reply)
+        self.assertEqual(reply.count(b"Connection: close"), 1, reply)
+        self.assertEqual(len(self.request("GET", "/publishes")[1]["publishes"]), 3)
 
     def test_numbers_overflowing_to_infinity_are_rejected(self):
         for body in (b'{"amount":1e400}', b'{"amount":-1e400}', b'{"a":[1.5e999]}'):
