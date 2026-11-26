@@ -577,6 +577,23 @@ class GateRunTest(unittest.TestCase):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
+    def test_a_rejected_publish_still_fails_under_an_exception_policy(self):
+        # python excepts null_value; a body the collector rejected must not ride on that exception.
+        cases = gate.plan("r", "python")
+        publishes = _publishes_for("python", [c for c in cases if c["name"] != "null_value"])
+        for record in publishes:
+            record["headers"][0] = ["X-Agent", "absmartly-python-sdk/0.4.0"]
+        publishes.append({"seq": 99, "json": None, "parseError": "number out of range: 1e400",
+                          "rawBody": '{"amount": 1e400}', "headers": []})
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+            result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
+        self.assertFalse(result["overall_pass"])
+        self.assertIn("publish #99 is not a JSON object: number out of range: 1e400",
+                      result["sdks"]["python"]["errors"])
+
     def run_python(self, mutate=None):
         cases = gate.plan("r", "python")
         null_case = next(c for c in cases if c["name"] == "null_value")
