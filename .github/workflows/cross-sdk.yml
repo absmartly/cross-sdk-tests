@@ -295,7 +295,9 @@ jobs:
           branch="${SDK_BRANCHES[$repo]:-main}"
           revision="${SDK_REVISIONS[$repo]:-}"
           source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
-          checkout_dir="$repo"
+          # The compose build context is `..` relative to cross-sdk-tests,
+          # so SDKs must be siblings of cross-sdk-tests, not nested inside it.
+          checkout_dir="../$repo"
           if [ -n "$revision" ]; then
             git init -q "$checkout_dir"
             fetch_and_checkout_revision "$checkout_dir" "https://x-access-token:${{ github.token }}@github.com/absmartly/$source_repo.git" "$revision"
