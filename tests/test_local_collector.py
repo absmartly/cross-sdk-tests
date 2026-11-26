@@ -266,6 +266,11 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
         self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
         self.assertOnlyRejectedStored(count=1)
+        # Missing Content-Length: only the framing-error close stops the pipelined request.
+        reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x", pipelined)
+        self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"))
+        self.assertOnlyRejectedStored(count=2)
 
     def test_body_on_a_route_that_ignores_it_closes_the_connection(self):
         smuggled = b'{"hashed":true,"units":[]}'
