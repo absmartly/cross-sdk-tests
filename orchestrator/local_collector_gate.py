@@ -91,7 +91,10 @@ def _canonical(value: Any) -> str:
             d = Decimal(str(v))
             if not d.is_finite():
                 raise ValueError("non-finite number")
-            return ["number", format(d.normalize(), "f") if d else "0"]
+            try:
+                return ["number", format(d.normalize(), "f") if d else "0"]
+            except ArithmeticError as exc:  # e.g. 1e999999999, exact now that numbers stay Decimal
+                raise ValueError(f"number out of range: {v}") from exc
         if isinstance(v, str):
             return ["string", v]
         raise ValueError(f"unexpected JSON value {v!r}")

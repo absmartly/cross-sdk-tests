@@ -402,17 +402,22 @@ class CollectorEndToEndTest(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
 
-    def put(self, body_text, headers):
+    def put(self, body_text, headers, compress=False):
+        body = body_text.encode("utf-8")
+        headers = dict(headers, **{"Content-Type": "application/json"})
+        if compress:
+            body = gzip.compress(body)
+            headers["Content-Encoding"] = "gzip"
         conn = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
-        conn.request("PUT", "/v1/context", body=body_text.encode("utf-8"),
-                     headers=dict(headers, **{"Content-Type": "application/json"}))
+        conn.request("PUT", "/v1/context", body=body, headers=headers)
         conn.getresponse().read()
         conn.close()
 
-    def run_gate(self, edit=lambda text: text):
+    def run_gate(self, edit=lambda text: text, compress=False):
+        gate.requests.delete(f"{self.url}/publishes", timeout=5).raise_for_status()
         cases = gate.plan("r", "javascript")
         for record in _publishes_for("javascript", cases):
-            self.put(edit(json.dumps(record["json"], ensure_ascii=False)), dict(record["headers"]))
+            self.put(edit(json.dumps(record["json"], ensure_ascii=False)), dict(record["headers"]), compress)
         real_get = gate.requests.get
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate.requests, "delete"), \
@@ -420,15 +425,29 @@ class CollectorEndToEndTest(unittest.TestCase):
             return gate.run({"javascript": "http://w"}, self.url, "e2e-tests", "production", "r")
 
     def test_the_unchanged_plan_passes_through_the_real_collector(self):
-        result = self.run_gate()
-        self.assertTrue(result["overall_pass"], result)
-        self.assertEqual(result["sdks"]["javascript"]["revenue"], "1000021.6")
+        for compress in (False, True):
+            with self.subTest(gzip=compress):
+                result = self.run_gate(compress=compress)
+                self.assertTrue(result["overall_pass"], result)
+                self.assertEqual(result["sdks"]["javascript"]["revenue"], "1000021.6")
 
     def test_a_numerically_distinct_wire_amount_fails(self):
         # 0.1 and 0.100000000000000001 are the same float; only the raw body distinguishes them.
-        result = self.run_gate(lambda text: text.replace('"amount": 0.1}', '"amount": 0.100000000000000001}'))
-        self.assertFalse(result["overall_pass"])
-        self.assertTrue(any("0.100000000000000001" in e for e in result["sdks"]["javascript"]["errors"]))
+        for compress in (False, True):
+            with self.subTest(gzip=compress):
+                result = self.run_gate(lambda text: text.replace('"amount": 0.1}', '"amount": 0.100000000000000001}'),
+                                       compress)
+                self.assertFalse(result["overall_pass"])
+                self.assertTrue(any("0.100000000000000001" in e for e in result["sdks"]["javascript"]["errors"]))
+
+    def test_an_out_of_range_wire_number_is_a_reported_failure(self):
+        for token in ("1e999999999", "1e1000000", "-1e99999999"):
+            with self.subTest(token=token):
+                result = self.run_gate(lambda text, token=token: text.replace('"amount": 10}', f'"amount": {token}}}'))
+                self.assertFalse(result["overall_pass"])
+                errors = result["sdks"]["javascript"]["errors"]
+                self.assertTrue(any("number out of range" in e for e in errors), errors)
+                json.dumps(result)
 
     def test_an_equivalent_number_spelling_still_matches(self):
         result = self.run_gate(lambda text: text.replace('"amount": 10}', '"amount": 10.0}'))
