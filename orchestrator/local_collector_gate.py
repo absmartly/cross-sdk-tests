@@ -160,7 +160,13 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
                 continue
             goals[key] += 1
             if goal.get("name") == "purchase" and isinstance(properties, dict) and properties.get("amount") is not None:
-                received_amounts.append(Decimal(str(properties["amount"])))
+                try:
+                    amount = Decimal(str(properties["amount"]))
+                    if not amount.is_finite():
+                        raise ValueError("amount must be finite")
+                    received_amounts.append(amount)
+                except (ArithmeticError, TypeError, ValueError) as exc:
+                    errors.append(f"purchase.amount is not numeric: {properties['amount']!r} ({exc})")
 
     want_exposures = Counter()
     want_goals = Counter()

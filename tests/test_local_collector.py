@@ -170,6 +170,14 @@ class GateVerifyTest(unittest.TestCase):
         self.assertFalse(result["pass"])
         self.assertEqual(result["revenue"], "1000020.6")
 
+    def test_malformed_revenue_fails_closed_without_crashing(self):
+        for value in ({}, "not-a-number", "sNaN", []):
+            with self.subTest(value=value):
+                result = self.check(lambda out, value=value:
+                                    out[0]["json"]["goals"][5]["properties"].update(amount=value))
+                self.assertFalse(result["pass"])
+                self.assertTrue(any("purchase.amount is not numeric" in error for error in result["errors"]))
+
     def test_unit_hash_is_utf8_md5_base64url(self):
         # Independent literal: md5("e2e-0c11789c-go-94") as observed on test-1.
         self.assertEqual(gate.unit_hash("e2e-0c11789c-go-94"), "OSS6pz0j4iJ-ymv9M3DHvg")

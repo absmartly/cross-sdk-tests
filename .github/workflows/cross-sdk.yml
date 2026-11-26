@@ -272,7 +272,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: [javascript, python]
+        sdk: [javascript, python, java, java-v1]
     steps:
       - name: Checkout cross-sdk-tests
         uses: actions/checkout@v4
@@ -290,6 +290,8 @@ jobs:
           case "${{ matrix.sdk }}" in
             javascript) repo="javascript-sdk" ;;
             python) repo="python3-sdk" ;;
+            java) repo="java-sdk" ;;
+            java-v1) repo="java-sdk-v1" ;;
             *) echo "unsupported local collector SDK: ${{ matrix.sdk }}" >&2; exit 1 ;;
           esac
           branch="${SDK_BRANCHES[$repo]:-main}"
@@ -307,6 +309,8 @@ jobs:
 
       - name: Build local collector, wrapper and orchestrator
         working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk-local-gate
         run: docker compose -f docker-compose.yml -f docker-compose.local-collector.yml build local-collector ${{ matrix.sdk }}-sdk orchestrator
 
       - name: Run blocking local collector gate
