@@ -28,10 +28,12 @@ import json
 import os
 import sys
 import threading
+import zlib
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
+MAX_BODY_BYTES = 16 * 1024 * 1024
 EXPERIMENT_ID = 9001
 EXPERIMENT_NAME = "e2e_local_collector"
 SESSION_EXPERIMENT_ID = 9002
@@ -97,6 +99,14 @@ class Store:
             self.requests.clear()
 
 
+
+
+def body_length_error(length):
+    if length < 0 or length > MAX_BODY_BYTES:
+        return "invalid Content-Length"
+    return None
+
+
 def _strip_prefix(path):
     return path[len("/v1"):] if path == "/v1" or path.startswith("/v1/") else path
 
@@ -123,14 +133,15 @@ def make_handler(store):
         def _read_body(self):
             try:
                 length = int(self.headers.get("Content-Length") or 0)
-                if length < 0 or length > 16 * 1024 * 1024:
-                    raise ValueError("invalid Content-Length")
+                length_error = body_length_error(length)
+                if length_error:
+                    raise ValueError(length_error)
                 raw = self.rfile.read(length) if length else b""
                 if len(raw) != length:
                     raise ValueError("truncated request body")
                 decoded = gzip.decompress(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
-            except (ValueError, EOFError, OSError) as exc:
+            except (ValueError, EOFError, OSError, zlib.error) as exc:
                 return b"", b"", str(exc)
 
         def do_GET(self):

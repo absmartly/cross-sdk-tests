@@ -88,6 +88,11 @@ class CollectorServerTest(unittest.TestCase):
             self.assertIn("error", body)
             self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
+    def test_content_length_limit_is_exactly_16_mib(self):
+        self.assertEqual(collector.MAX_BODY_BYTES, 16 * 1024 * 1024)
+        self.assertIsNone(collector.body_length_error(16 * 1024 * 1024))
+        self.assertEqual(collector.body_length_error(16 * 1024 * 1024 + 1), "invalid Content-Length")
+
     def test_malformed_content_length_and_gzip_return_400(self):
         status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
         self.assertEqual(status, 400)
@@ -97,6 +102,11 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(status, 400)
         status, _ = self.request("PUT", "/context", b"not-gzip", {"Content-Encoding": "gzip"})
         self.assertEqual(status, 400)
+        corrupted = bytearray(gzip.compress(b"hello world" * 1000))
+        corrupted[10] ^= 0xff
+        status, _ = self.request("PUT", "/context", bytes(corrupted), {"Content-Encoding": "gzip"})
+        self.assertEqual(status, 400)
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
 def _record(seq, body, agent="absmartly-javascript-sdk/1.14.0", app="e2e-tests", env="production"):
     return {"seq": seq, "json": body, "headers": [["X-Agent", agent], ["X-Application", app], ["X-Environment", env]]}
