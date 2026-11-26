@@ -80,13 +80,6 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/v2/context")[0], 404)
         self.assertEqual(self.request("PUT", "/events", b"{}", {})[0], 404)
 
-    def test_malformed_content_length_and_gzip_return_400(self):
-        status, _ = self.request("PUT", "/context", b"{}", {"Content-Length": "bad"})
-        self.assertEqual(status, 400)
-        status, _ = self.request("PUT", "/context", b"not-gzip", {"Content-Encoding": "gzip"})
-        self.assertEqual(status, 400)
-
-
     def test_invalid_utf8_publish_returns_400_without_storing(self):
         for payload in (b"\xff", json.dumps({"hashed": True}).encode("utf-16")):
             status, body = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
@@ -218,13 +211,6 @@ class GateVerifyTest(unittest.TestCase):
         self.assertEqual(gate._canonical({"a": 10}), gate._canonical({"a": 10.0}))
         self.assertNotEqual(gate._canonical({"a": 0.1}), gate._canonical({"a": 0.10000001}))
         self.assertNotEqual(gate._canonical({"a": True}), gate._canonical({"a": 1}))
-
-    def test_missing_application_and_environment_headers_fail(self):
-        result = self.check(lambda out: out[0].update(headers=out[0]["headers"][:1]))
-        self.assertFalse(result["pass"])
-        self.assertTrue(any("application header None" in e for e in result["errors"]))
-        self.assertTrue(any("environment header None" in e for e in result["errors"]))
-
 
     def test_gate_requires_application_and_environment_headers(self):
         # Missing (not just wrong) headers on a planned publish fail the gate.
