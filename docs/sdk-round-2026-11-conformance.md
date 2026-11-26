@@ -67,7 +67,7 @@ real on every SDK.
 
 ### Reviewed per-SDK exceptions recorded this round
 
-Two further `requires` capabilities encode **owner-approved** behavioural
+Four further `requires` capabilities encode **owner-approved** behavioural
 differences from the JS reference as reviewed per-SDK exceptions, using the same
 `orchestrator/expected-capabilities.json` mechanism. They are advertised `true`
 by every wrapper that honours the JS behaviour and listed as a reviewed
@@ -82,12 +82,40 @@ are unchanged.
 | `trackRejectsNonObjectProperties` | `track()` rejects non-object goal properties (e.g. a list of pairs or an empty list) by throwing `Goal '<name>' properties must be of type object.`, matching the JS reference | 39 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `track()` accepts a list of pairs / empty list as properties instead of throwing, so scenario 39 differs from JS by design |
 | `refreshNoOpOnFailedContext` | `refresh()` on a context whose initial load failed is a no-op: it does not fetch, emits no refresh or error event, the context stays failed, and data offered for the refresh is not applied (matching the JS reference) | 229 | **python** — python3-sdk#11 restored the released v0.2.4 behaviour under the standing backwards-compatibility rule: `refresh()` recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op, so scenario 229 differs from JS by design |
 
-Two more reviewed exceptions replace wrapper code that used to hide an SDK
+### Shared variable keys: owner decision, java-sdk is the contract
+
+On 2026-11-23 the owner decided the shared-variable-key contract in two steps on #52
+([winner rule](https://github.com/absmartly/cross-sdk-tests/pull/52#issuecomment-7107979255),
+then the exposure rule): java-sdk is correct.
+
+- An experiment is a candidate if any of its variants defines the key. The winner is chosen by
+  assignment, override and rule precedence, independently of whether the user's selected variant
+  defines the key. If the winner's variant lacks the key, the caller's default is returned and no
+  later experiment is tried (scenario 351): choosing the experiment by the arm the user received
+  would bias exposure.
+- Only the winning experiment is exposed (plus the applicable holdouts), exactly as java-sdk does.
+  This replaces the 2026-11-06 rule that exposed every visited candidate.
+
+So the SDKs gated below are not reviewed differences but SDK bugs: each must change to the java-sdk
+rule, and its exception is removed (making `sharedVariableKeys` required) in the change that pins
+its fixed SDK. The javascript-sdk fix is on javascript-sdk#69 (`feat/switchbacks`), pinned in
+`SDK_REVISIONS` at 2aa9a2d: the javascript lane passes 342/342 there with the capability required,
+and react, vue2, vue3 and angular (which build the same pinned javascript-sdk) pass all 315 scenarios
+they run, including every 340-368 scenario except 359-360, which their `switchback` exception skips.
+Their wrappers report the capability from `sharedVariableKeysSelfTest.js`, so the gate stays
+evidence-based if the pin moves.
+
+| capability | meaning | gated scenarios | gated SDKs (divergence) |
+| --- | --- | --- | --- |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, java-v1, kotlin, dart, flutter, dotnet (dotnet-sdk#17, merged) and, at the javascript-sdk#69 pin 2aa9a2d, javascript, react, vue2, vue3 and angular. |
+
+Three more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):
 
 | capability | meaning | gated scenarios | exempted SDK (reason) |
 | --- | --- | --- | --- |
-| `throwsOnMisuse` | misuse (blank or already-set unit uid, a mutation after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 148, 149, 188, 189, 201 | **swift** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `throwsOnMisuse` | misuse (blank or already-set unit uid, `track`/`treatment` after finalize, a read before ready) surfaces to the caller as an error, as in the JS reference | 34, 35, 147, 189, 201 | **swift**, **swift-v1** — the swift-sdk public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged. The wrapper returns that event as-is and never turns it into a 400. |
+| `rejectsSettersAfterFinalize` | `setAttribute`/`setUnit` after finalize throw (or return the SDK's idiomatic error), as in the JS reference; split from `throwsOnMisuse` | 148, 149, 188 | **php** — php-sdk 1.x keeps the v1.0.3 contract that the setters are accepted after `close()` (php-sdk#12; the throwing behaviour moves to 2.0). **swift**, **swift-v1** — follows their `throwsOnMisuse` exception. |
 | `singleFinalizeEvent` | sealing the context logs exactly one lifecycle event, `finalize`, as in the JS reference | 19, 131, 147, 148, 149, 186, 188-192, 228 | **python** — python3-sdk logs `close` and then `finalize` for one transition (kept for v0.2.4 listeners). The wrapper returns both events unchanged. |
 
 Scenario 35 (duplicate unit) lists the released v1 wordings of ruby-sdk
@@ -98,8 +126,8 @@ scenario rather than rewritten by the ruby, liquid and php wrappers.
 ## Branch pins (sdk-branches.sh)
 
 `sdk-branches.sh` is what CI builds, so it must only name refs that stay put.
-Every SDK PR of this round has merged, so every SDK of the round is pinned to
-`main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
+Every SDK PR of the 2026-11 parity round has merged, so those SDKs were pinned
+to `main` (cpp#3, dotnet#12, elixir#3, flutter#10, go#14, java#22, javascript#68,
 kotlin#4, php#10, python3#14, ruby#41, rust#9, scala#4, swift#10); java-sdk `main`
 also carries switchback (java-sdk#15). `PINNED_COMMIT` in
 `generate_sdk_round_2026_11_scenarios.py` is javascript-sdk `main` at the #68
@@ -109,30 +137,44 @@ expectations were recorded from. angular and liquid are pinned to `main` too
 branches (react-sdk#31, vue2-sdk#17, vue3-sdk#13), which are not part of this
 round.
 
-Exception: go-sdk is pinned to `feat/holdouts` while its holdouts PR is open,
-because its lane now requires `holdouts`, `holdout_arms` and `holdoutIdsDedup`.
-Keep go-sdk's `feat/holdouts` branch (delete-branch-on-merge **off** for that
-PR) until a follow-up PR here re-pins go-sdk to `main` and its lane is green;
-re-run this suite after any push to that branch.
+**Holdouts, switchbacks and shared-variable-key round (consolidated PR).**
+Lanes that now require `holdouts`/`holdout_arms` and `switchback` build their
+SDK's open feature branch, not `main`: `sdk-branches.sh` lists each pin, the SDK
+PR it belongs to and its merge order in one comment block, and `SDK_REVISIONS`
+pins cpp-sdk, javascript-sdk and swift-sdk-v1 to exact commits. Every such pin is a pre-merge
+item: merge the SDK PR(s), re-pin that SDK to `main` (or, for swift-sdk-v1, to
+`release/1.x`) here in the same change, and re-run its lane. Keep each pinned SDK
+branch (delete-branch-on-merge **off**) until then; re-run the lane after any push
+to it. The holdout and switchback self-tests each wrapper uses are named in
+`WRAPPER_API_SPEC.md` and the README.
+
+Pre-merge item, flutter-sdk 2.2 (#48): the dart and flutter lanes build
+flutter-sdk `feat/switchbacks` (3.0.0), which has neither `getUnitValue(s)` nor
+`absmartly.dart`, so #48's port of the wrappers to absmartly_sdk 2.2.0 and its
+`release/2.2.0-prep` pin are not in this round. Only its 3.x-compatible parts are:
+scenario 35 accepts the released dart wording, and the wrappers initialise
+`eventType`. No lane tests absmartly_sdk 2.2 until the owner decides whether a
+2.x lane (like java-v1/swift-v1) is wanted; keep #48 open until then.
 
 ### Scenario numbering versus open PRs
 
 This PR owns 230-253 (`generate_sdk_round_2026_11_scenarios.py`) and 300-332
 (`generate_parity_round_scenarios.py`); the group markers live in one place,
-`scenario_groups.py`. Open #16 (shared variable keys, 230-245) and #20 (context
-fetch compression, 230-232) number from 230 too. This PR lands first; #16 and #20
-then merge `main` and renumber their groups after 253 (254-269 and 270-272 are
-free), below the parity range. Both generators own fixed ranges (230 and 300
-are constants, not derived from other scenarios): each keeps scenarios numbered
-outside its range where they are, and fails rather than renumbers when another
-scenario sits inside it. So #16/#20 only need to renumber their own groups to
-254+; a missed renumber shows up as a generator error, not a silent shift
-(`ScenarioGeneratorsCoexistTest` pins both behaviours). If #16/#20 own their
-groups with a generator, give it a fixed first number the same way. The three
-generated ranges are fixed: 230-253 (this round), 300-399 (parity, now 300-332)
-and 400+ (the Switchback group of `generate_switchback_scenarios.py`,
-`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`); a new group takes free ids
-outside all three.
+`scenario_groups.py`. The Context Fetch group owns 270-274: #20 (context fetch
+compression, gzip) landed 270-272 and its Brotli follow-up adds 273-274
+contiguously after it. The generators own fixed ranges (constants in
+`scenario_groups.py`, not derived from other scenarios): each keeps scenarios
+numbered outside its range where they are, and fails rather than renumbers when
+another scenario sits inside it; a missed renumber shows up as a generator error,
+not a silent shift (`ScenarioGeneratorsCoexistTest` pins both behaviours). The
+generated ranges are: 230-253 (this round), 270-274 (Context Fetch Compression,
+`generate_context_compression_scenarios.py`), 300-339 (parity, now 300-332),
+340-399 (the Shared Variable Key group of `generate_shared_variable_key_scenarios.py`,
+now 340-368, `SHARED_VARIABLE_KEY_FIRST_NUMBER`), 400-499 (the Switchback group of
+`generate_switchback_scenarios.py`, `SWITCHBACK_FIRST_NUMBER`, now 400-426) and
+501+ (the Holdout Conformance group of `generate_holdout_conformance_scenarios.py`,
+`HOLDOUT_CONFORMANCE_FIRST_NUMBER`, now 501-507; 500 is left unused); a new group
+takes free ids outside all of them.
 
 ## Coverage matrix
 
@@ -210,7 +252,7 @@ wrapper API. They are listed so the matrix is complete.
 
 | Behaviour change | Source | Status |
 | --- | --- | --- |
-| Shared variable-key resolution (lowest-id wins, fall-through, both exposed, peek queues nothing) | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (`feat/shared-variable-key-conformance`, scenarios 230-245 on that branch). Not duplicated here; this branch is based on `main` and the two groups renumber cleanly when both land. |
+| Shared variable-key resolution | php#8, go#10, ruby#39, python#11, dotnet#8 | Covered by the separate **Shared Variable Key** group (scenarios 340-368, `generate_shared_variable_key_scenarios.py`), recorded from java-sdk: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key. SDKs that expose every visited candidate or fall through list a reviewed `sharedVariableKeys` exception. |
 | `getVariableKeys` / `variableKeys` shape (one name per key vs lists vs `*_all`) | php/go/ruby/python | Encoded as the existing `variableKeysMap` per-SDK capability, not a single hard assertion. |
 | Failed `close()`/`finalize()` surfaces the error, keeps the context open and events queued, retries on a second call | php#8, go#10, ruby#39, python#11, kotlin#1, dotnet#8 | Covered by existing scenario 228 (`publishFail`) and the `publishFail` capability. |
 | `refresh()` on a failed context is a no-op | go#10 | Covered by existing scenario 229 (`readyError`, gated on `refreshNoOpOnFailedContext`). python#11 reverted to the v0.2.4 recover-on-refresh behaviour, so python is a reviewed exception here (see the reviewed per-SDK exceptions table). |

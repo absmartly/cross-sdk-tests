@@ -83,6 +83,22 @@ def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, m
         run(GENERATORS[name], check=True)
 
 
+@pytest.mark.parametrize("stale", ["result", "dropped-step", "dropped-scenario"])
+def test_holdout_conformance_check_fails_on_stale_file(stale, recorded_oracle, tmp_path, monkeypatch):
+    canonical = json.loads(Path(sdk_round.CANONICAL).read_text(encoding="utf-8"))
+    group = [s for s in canonical if holdout_conformance.MARKER in s["name"]]
+    if stale == "result":
+        group[0]["steps"][-1]["expect"]["result"] += 1  # the closing pending count
+    elif stale == "dropped-step":
+        del group[0]["steps"][-1]
+    else:
+        canonical.remove(group[-1])
+    path = tmp_path / "scenarios.json"
+    path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [holdout_conformance.__file__, "--file", str(path), "--check"])
+    assert holdout_conformance.main() == 1
+
+
 def scenario(number, marker="Retained", title="case"):
     return {"name": f"{number} - {marker} - {title}"}
 

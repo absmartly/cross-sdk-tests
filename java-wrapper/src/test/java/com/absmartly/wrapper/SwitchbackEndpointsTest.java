@@ -122,8 +122,8 @@ class SwitchbackEndpointsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 0, -3})
-    void rejectsTooFewArmsWith400WithoutCallingTheAssigner(int armCount) {
+    @ValueSource(ints = {1, 0, -3, 1001, Integer.MAX_VALUE})
+    void rejectsArmCountsOutsideTheContractWith400WithoutCallingTheAssigner(int armCount) {
         WrongFunctions functions = new WrongFunctions();
         WrapperController controller = new WrapperController(functions);
 
@@ -160,6 +160,7 @@ class SwitchbackEndpointsTest {
         ResponseEntity<?> response = new WrapperController(new FixedFunctions()).switchbackAssign(request);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertTrue(body(response).get("error") instanceof String);
+        assertEquals(java.util.Collections.emptyList(), body(response).get("events"));
     }
 
     @ParameterizedTest
@@ -169,6 +170,8 @@ class SwitchbackEndpointsTest {
         request.put(field, value);
         ResponseEntity<?> response = new WrapperController(new FixedFunctions()).switchbackPermutation(request);
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertTrue(body(response).get("error") instanceof String);
+        assertEquals(java.util.Collections.emptyList(), body(response).get("events"));
     }
 
     @Test
@@ -187,7 +190,9 @@ class SwitchbackEndpointsTest {
     @Test
     void absentAssignerAnswers501() {
         WrapperController controller = new WrapperController(ABSENT);
-        assertEquals(HttpStatus.NOT_IMPLEMENTED, controller.switchbackAssign(assignRequest()).getStatusCode());
+        ResponseEntity<?> unavailable = controller.switchbackAssign(assignRequest());
+        assertEquals(HttpStatus.NOT_IMPLEMENTED, unavailable.getStatusCode());
+        assertEquals(java.util.Collections.emptyList(), body(unavailable).get("events"));
         assertEquals(HttpStatus.NOT_IMPLEMENTED,
             controller.switchbackPermutation(permutationRequest()).getStatusCode());
     }

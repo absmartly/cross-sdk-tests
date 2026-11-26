@@ -23,6 +23,7 @@ import generate_switchback_scenarios as generator  # noqa: E402
 import scenario_groups  # noqa: E402
 from test_runner import SWITCHBACK_ACTIONS  # noqa: E402
 from test_runner import TestOrchestrator as Orchestrator  # noqa: E402
+from test_runner import _publish_observation  # noqa: E402
 
 
 @pytest.fixture
@@ -46,10 +47,18 @@ def canonical():
     return copy.deepcopy(_canonical_parsed())
 
 
-# The group owns 400+, after main's scenarios (the feature-parity round ends at 332).
+# The group owns 400+, after main's scenarios (the feature-parity round ends at 332) and the Shared
+# Variable Key group (340+, generate_shared_variable_key_scenarios.py, pinned by its own test).
 KEPT_COUNT = 279
+OTHER_GROUPS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.CONTEXT_FETCH)
+
+
+def main_scenarios(scenarios):
+    """The scenarios outside the Switchback group and the other generated groups (Context Fetch
+    Compression 270-274, Shared Variable Key 340+)."""
+    return [s for s in scenarios if not any(m in s["name"] for m in (generator.GROUP_MARKER,) + OTHER_GROUPS)]
 FIRST_ID = scenario_groups.SWITCHBACK_FIRST_NUMBER
-GROUP_SIZE = 26
+GROUP_SIZE = 27
 
 
 @pytest.fixture(scope="module")
@@ -176,6 +185,77 @@ def reference_failure(failures):
     return failures[0]["actual"]
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("drop_field", [False, True])
+def test_same_shape_reference_uses_prior_unordered_expected_positions(runner, monkeypatch, reverse, drop_field):
+    baseline_events = [response("exposure", {"id": 1})["events"][0],
+                       response("exposure", {"id": 2, "variant": 1})["events"][0]]
+    wire_events = list(reversed(baseline_events)) if reverse else baseline_events[:]
+    baseline = {"result": None, "events": wire_events}
+    raw_baseline = copy.deepcopy(baseline)
+    actual_events = copy.deepcopy(baseline_events)
+    if drop_field:
+        del actual_events[1]["data"]["variant"]
+    actual = {"result": None, "events": actual_events}
+    expected_events = [{"type": "exposure", "data": {"id": i}} for i in (1, 2)]
+    scenario = {"name": "unordered baseline", "steps": [
+        {"action": "switchbackAssign", "expect": {"result": None, "unorderedEvents": True,
+                                                     "events": expected_events}},
+        {"action": "switchbackAssign", "expect": {"result": None, "events": [
+            {**event, "sameShapeAs": 0} for event in expected_events]}},
+    ]}
+    bodies = iter([baseline, actual])
+
+    def post(*args, **kwargs):
+        res = requests.Response()
+        res.status_code = 200
+        body = next(bodies)
+        monkeypatch.setattr(res, "json", lambda: body)
+        return res
+
+    monkeypatch.setattr(requests.Session, "post", post)
+    result = runner.run_and_validate_sdk("java", "http://sdk.invalid", scenario)
+    assert result["passed"] is not drop_field, result
+    assert baseline == raw_baseline  # References must not mutate the raw response.
+    if drop_field:
+        assert len(result["failures"]) == 1
+        assert "sameShapeAs step 0" in result["failures"][0]["field"]
+
+
+@pytest.mark.parametrize("action,index", [("switchbackAssign", "periodIndex"),
+                                          ("switchbackPermutation", "cycleIndex")])
+@pytest.mark.parametrize("status,body,valid", [
+    (400, {"error": "SDK-specific explanation", "events": []}, True),
+    (400, {"error": "another wording", "result": None, "events": []}, True),
+    (400, {"result": 1, "events": []}, False),
+    (400, {"events": []}, False),
+    (400, {"error": None, "events": []}, False),
+    (400, {"error": "", "events": []}, False),
+    (400, {"error": " \t\n", "events": []}, False),
+    (400, {"error": 42, "events": []}, False),
+    (400, {"error": {}, "events": []}, False),
+    (400, {"error": "bad", "result": 0, "events": []}, False),
+    (400, {"error": "bad", "result": False, "events": []}, False),
+    (400, {"error": "bad", "result": [], "events": []}, False),
+    (400, {"error": "bad"}, False),
+    (400, {"error": "bad", "events": [{"type": "exposure"}]}, False),
+    (400, "not JSON", False),
+    (400, [], False),
+    (200, {"error": "bad", "events": []}, False),
+    (500, {"error": "bad", "events": []}, False),
+])
+def test_invalid_switchback_steps_check_raw_error_envelope(runner, monkeypatch, action, index, status, body, valid):
+    res = requests.Response()
+    res.status_code = status
+    res.url = "http://sdk.invalid/switchback"
+    res._content = body.encode("utf-8") if isinstance(body, str) else json.dumps(body).encode("utf-8")
+    monkeypatch.setattr(requests.Session, "post", lambda *args, **kwargs: res)
+    steps = generator.invalid_request_steps(action, index)
+    assert len(steps) == 4 and all(s["expect"]["errorEnvelope"] is True for s in steps)
+    result = runner.run_and_validate_sdk("java", "http://sdk.invalid", {"name": "bad input", "steps": steps})
+    assert result["passed"] is valid, result
+
+
 def test_reference_event_without_data_fails(runner):
     prior = [response("publish", None, include_data=False)]
     assert "has no data" in reference_failure(validate(runner, prior, 123, 0))
@@ -224,27 +304,28 @@ def test_capability_false_skips_switchback_scenarios_without_any_request(runner,
     # Every requests entry point, module-level helpers included, goes through Session.request.
     monkeypatch.setattr(requests.sessions.Session, "request", record)
 
-    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])]
+    gated = [s for s in canonical() if generator.CAPABILITY in s.get("requires", [])
+             and generator.GROUP_MARKER in s["name"]]
     assert len(gated) == len(built_group) - 1 == GROUP_SIZE - 1
 
-    # javascript lists switchback as a reviewed `unsupported` exception, so its gated scenarios skip.
-    reason = runner.policy["sdks"]["javascript"]["unsupported"]["switchback"]
-    runner.capabilities = {"javascript": {"switchback": False}}
+    reason = runner.policy["sdks"]["kotlin"]["unsupported"]["switchback"]
+    runner.capabilities = {"kotlin": {"switchback": False}}
     for scenario in gated:
-        result = runner.run_and_validate_sdk("javascript", "http://sdk.invalid", scenario)
-        assert result == {"passed": True, "skipped": True, "reason": f"reviewed exception: switchback ({reason})"}
+        result = runner.run_and_validate_sdk("kotlin", "http://sdk.invalid", scenario)
+        assert result["skipped"] is True and result["passed"] is True
+        assert result["reason"].startswith(f"reviewed exception: switchback ({reason})")
     assert calls == []
 
 
-def test_switchback_policy_requires_java_and_excepts_every_other_sdk(runner):
-    sdks = runner.policy["sdks"]
-    assert "switchback" in runner.policy["capabilities"]
-    assert "switchback" in sdks["java"]["required"]
-    for sdk, entry in sdks.items():
-        if sdk != "java":
-            assert "switchback" not in entry["required"], sdk
-            assert entry["unsupported"]["switchback"].endswith("java-sdk only (R33)"), sdk
+def test_switchback_policy_requires_the_capable_sdks_and_excepts_every_other_sdk(runner):
+    # The policy loader already rejects overlapping, missing and blank-reason classifications.
+    required = {sdk for sdk, entry in runner.policy["sdks"].items() if "switchback" in entry["required"]}
+    assert required == {"cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"}
     assert "bucket" not in runner.policy["capabilities"]["switchback"]
+
+
+def test_go_without_switchback_is_a_policy_violation(runner):
+    assert any("'switchback'" in v for v in runner.policy_violations_for("go", {"switchback": False}))
 
 
 def test_java_without_switchback_still_runs_the_gated_scenarios(runner):
@@ -265,7 +346,7 @@ def test_inertness_scenario_is_ungated_and_runs_without_the_capability(runner):
 
 
 def without_later_groups(scenarios):
-    """The Holdout Conformance group (500+) follows the Switchback group; it is neither kept nor
+    """The Holdout Conformance group (501+) follows the Switchback group; it is neither kept nor
     part of this group."""
     return [s for s in scenarios if scenario_groups.HOLDOUT_CONFORMANCE not in s["name"]]
 
@@ -278,8 +359,11 @@ def test_canonical_numbering_is_unique_and_the_switchback_group_is_contiguous_ta
     assert everything[:len(scenarios)] == scenarios
     numbers = numbers[:len(scenarios)]
 
+    # The file's tail. It follows main's KEPT_COUNT scenarios (pinned by test_main_scenarios_are_untouched)
+    # and the Context Fetch Compression group (270-274), which sits between the round and parity groups.
     group = [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
-    assert group == list(range(KEPT_COUNT, len(scenarios)))
+    assert group == list(range(len(scenarios) - GROUP_SIZE, len(scenarios)))
+    assert len(main_scenarios(scenarios)) == KEPT_COUNT
     assert len(group) == GROUP_SIZE
     assert numbers[group[0]:] == list(range(FIRST_ID, FIRST_ID + GROUP_SIZE))
 
@@ -553,12 +637,15 @@ def test_check_fails_when_an_exposure_unit_is_wrong(canonical_copy):
 
 # The 279 scenarios of main this group follows (the 2026-11 SDK round 230-253 and the feature-parity
 # round 300-332 included), serialized with sort_keys=True. Update only when another group
-# legitimately changes them.
-MAIN_SHA256 = "c84c7bab84cb531c78197dc19b286d95032e5bb22ca275973d3a6433dc63e553"
+# legitimately changes them. The Context Fetch Compression group (270-274) is not one of main's
+# scenarios, so it is excluded from the kept set alongside this group.
+# Last changed when 148, 149 and 188 moved to the rejectsSettersAfterFinalize gate (php-sdk#12), then
+# when scenario 35 listed the released dart-sdk wording for absmartly_sdk 2.2.0.
+MAIN_SHA256 = "1e5ceba2abfc9900d6059b7b492188d36e13923b899c35dd8e8779210b043b00"
 
 
 def test_main_scenarios_are_untouched():
-    kept = [s for s in without_later_groups(canonical()) if generator.GROUP_MARKER not in s["name"]]
+    kept = main_scenarios(without_later_groups(canonical()))
     assert len(kept) == KEPT_COUNT
     assert hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest() == MAIN_SHA256
 
@@ -629,3 +716,13 @@ def test_multi_unit_publishes_pin_every_hashed_unit_as_a_set():
                 assert data["hashed"] is True, scenario["name"]
                 assert data["units"] == [{"type": t, "uid": generator.hash_unit(u)} for t, u in units.items()]
                 assert event.get("unorderedUnits", False) is (len(units) > 1), scenario["name"]
+
+
+def test_publish_observation_treats_an_omitted_attribute_value_as_null():
+    # java-sdk serializes attributes NON_NULL (an attribute set to null has no "value"); the C++
+    # and JS SDKs send "value": null. The collector reads both as null (scenario 411's v_null).
+    omitted = {"hashed": True, "attributes": [{"name": "v_null", "setAt": 1}]}
+    explicit = {"hashed": True, "attributes": [{"name": "v_null", "value": None, "setAt": 2}]}
+    assert _publish_observation(omitted) == _publish_observation(explicit)
+    other = {"hashed": True, "attributes": [{"name": "v_null", "value": 0, "setAt": 2}]}
+    assert _publish_observation(omitted) != _publish_observation(other)

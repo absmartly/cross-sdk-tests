@@ -11,13 +11,15 @@ import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 
 import 'lib/widget_test_queue.dart';
+import 'lib/holdout_self_test.dart' as holdout_self_test;
+import 'lib/switchback_self_test.dart' as switchback_self_test;
 
 class EventCollector implements ContextEventLogger {
   final List<Map<String, dynamic>> events = [];
 
   @override
   void handleEvent(Context context, EventType type, dynamic data) {
-    String eventType;
+    String eventType = 'finalize';
     switch (type) {
       case EventType.error:
         eventType = 'error';
@@ -251,9 +253,15 @@ Future<void> startServer() async {
     );
   });
 
-  router.get('/capabilities', (shelf.Request request) {
+  router.get('/capabilities', (shelf.Request request) async {
+    final holdouts = await holdout_self_test.runHoldouts();
+    final holdoutArms = await holdout_self_test.runHoldoutArms();
+    final switchback = await switchback_self_test.runSwitchback();
     return shelf.Response.ok(
       jsonEncode({
+        'holdouts': holdouts,
+        'holdout_arms': holdoutArms,
+        'switchback': switchback,
         'diagnostics': true,
         'diagnosticsUtf8': true,
         'attrsSeq': false,
@@ -270,8 +278,10 @@ Future<void> startServer() async {
         'trackRejectsNonObjectProperties': true,
         'refreshNoOpOnFailedContext': true,
         'throwsOnMisuse': true,
+        'rejectsSettersAfterFinalize': true,
         'singleFinalizeEvent': true,
         'semverNumericOperands': true,
+        'sharedVariableKeys': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
@@ -289,6 +299,66 @@ Future<void> startServer() async {
       }),
       headers: {'Content-Type': 'application/json'},
     );
+  });
+
+  // clusterUnit is the assigner input (the raw R33 cluster key) and is not
+  // hashed; 64-bit values arrive as decimal strings. See WRAPPER_API_SPEC.md,
+  // capability `switchback`.
+  Future<shelf.Response> switchbackCall(
+      shelf.Request request, Object Function(Map<String, dynamic> body) call) async {
+    try {
+      final body = jsonDecode(await request.readAsString());
+      if (body is! Map<String, dynamic>) {
+        throw ArgumentError('request body must be an object');
+      }
+      if (body['clusterUnit'] is! String) {
+        throw ArgumentError('clusterUnit must be a string');
+      }
+      final armCount = body['armCount'];
+      if (armCount is! int || armCount < 2) {
+        throw ArgumentError('armCount must be an integer of at least 2, got $armCount');
+      }
+      return shelf.Response.ok(
+        jsonEncode({'result': call(body), 'events': []}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } on ArgumentError catch (e) {
+      return shelf.Response(400,
+          body: jsonEncode({'error': e.message.toString(), 'events': []}),
+          headers: {'Content-Type': 'application/json'});
+    } on FormatException catch (e) {
+      return shelf.Response(400,
+          body: jsonEncode({'error': e.message, 'events': []}),
+          headers: {'Content-Type': 'application/json'});
+    }
+  }
+
+  String decimal(Map<String, dynamic> body, String name) {
+    final value = body[name];
+    if (value is! String) {
+      throw ArgumentError('$name must be a decimal string');
+    }
+    return value;
+  }
+
+  router.post('/switchback/assign', (shelf.Request request) {
+    return switchbackCall(
+        request,
+        (body) => switchback_self_test.switchbackAssign(
+            body['clusterUnit'] as String,
+            decimal(body, 'periodIndex'),
+            decimal(body, 'seed'),
+            body['armCount'] as int));
+  });
+
+  router.post('/switchback/permutation', (shelf.Request request) {
+    return switchbackCall(
+        request,
+        (body) => switchback_self_test.switchbackPermutation(
+            body['clusterUnit'] as String,
+            decimal(body, 'cycleIndex'),
+            decimal(body, 'seed'),
+            body['armCount'] as int));
   });
 
   router.post('/diagnostic', (shelf.Request request) async {

@@ -89,14 +89,72 @@ app.MapGet("/capabilities", () => Results.Ok(new
     trackRejectsNonObjectProperties = true,
     refreshNoOpOnFailedContext = true,
     throwsOnMisuse = true,
+    rejectsSettersAfterFinalize = true,
     singleFinalizeEvent = true,
     semverNumericOperands = false,
+    // Behavioral self-tests (HoldoutSelfTest.cs): true only when the linked SDK reproduces
+    // scenarios 203-208/221 and 214-216; a build without holdouts reports false.
+    holdouts = HoldoutSelfTest.RunHoldouts(),
+    holdout_arms = HoldoutSelfTest.RunHoldoutArms(),
+    switchback = SwitchbackSelfTest.Run(),
+    sharedVariableKeys = true,
     assignmentRules = true,
     semverOperators = true,
     xAgentHeader = true,
     clientRejectsBlankApplication = true,
     clientAcceptsBlankApplication = false
 }));
+
+// The switchback pure functions (capability `switchback`). 64-bit values arrive as decimal strings
+// and are parsed exactly; clusterUnit is passed to the SDK unchanged (never hashed). A 400 for an
+// invalid request, a 501 when the linked SDK has no switchback assigner. See WRAPPER_API_SPEC.md.
+app.MapPost("/switchback/assign", async Task<IResult> (HttpContext httpContext) =>
+    await SwitchbackCall(httpContext, request => SwitchbackAssignerAccess.Assign(StringParam(request, "clusterUnit"),
+        LongParam(request, "periodIndex"), LongParam(request, "seed"), ArmCountParam(request))));
+
+app.MapPost("/switchback/permutation", async Task<IResult> (HttpContext httpContext) =>
+    await SwitchbackCall(httpContext, request => SwitchbackAssignerAccess.Permutation(StringParam(request, "clusterUnit"),
+        LongParam(request, "cycleIndex"), LongParam(request, "seed"), ArmCountParam(request))));
+
+async Task<IResult> SwitchbackCall(HttpContext httpContext, Func<JsonElement, object> call)
+{
+    if (!SwitchbackAssignerAccess.IsAvailable)
+        return Results.Json(new { error = "linked SDK has no switchback assigner", events = Array.Empty<object>() }, statusCode: 501);
+    try
+    {
+        using var reader = new StreamReader(httpContext.Request.Body);
+        using var document = JsonDocument.Parse(await reader.ReadToEndAsync());
+        var request = document.RootElement;
+        if (request.ValueKind != JsonValueKind.Object) throw new ArgumentException("request must be an object");
+        return Results.Ok(new { result = call(request), events = Array.Empty<object>() });
+    }
+    catch (Exception e) when (e is ArgumentException or JsonException or FormatException or OverflowException or InvalidOperationException)
+    {
+        return Results.BadRequest(new { error = e.Message, events = Array.Empty<object>() });
+    }
+}
+
+static string StringParam(JsonElement request, string name) =>
+    request.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+        ? v.GetString()!
+        : throw new ArgumentException($"{name} must be a string");
+
+static long LongParam(JsonElement request, string name)
+{
+    var text = StringParam(request, name);
+    // Canonical ASCII decimals with an optional sign (Java's Long.parseLong also takes other
+    // Unicode digits; the endpoint contract is ASCII).
+    var digits = text.Length > 0 && (text[0] == '-' || text[0] == '+') ? text.AsSpan(1) : text.AsSpan();
+    if (digits.Length == 0) throw new ArgumentException($"{name} must be a decimal string");
+    foreach (var c in digits)
+        if (!char.IsAsciiDigit(c)) throw new ArgumentException($"{name} must be a decimal string");
+    return long.Parse(text, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture);
+}
+
+static int ArmCountParam(JsonElement request) =>
+    request.TryGetProperty("armCount", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) && n >= 2
+        ? n
+        : throw new ArgumentException("armCount must be an integer >= 2");
 
 app.MapPost("/diagnostic", async (HttpContext httpContext) =>
 {
@@ -584,7 +642,9 @@ app.MapPost("/context/{contextId}/attribute", (string contextId, [FromBody] Attr
         {
             actualValue = jsonElement.ValueKind switch
             {
-                JsonValueKind.Number => jsonElement.TryGetInt64(out var l) ? l : jsonElement.GetDouble(),
+                // The token itself, so the SDK reads 3 as an integer, 3.0 as a float and integers past
+                // Int64 exactly.
+                JsonValueKind.Number => jsonElement,
                 JsonValueKind.String => jsonElement.GetString(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
@@ -1284,10 +1344,33 @@ public class EventCollector : IContextEventLogger
             _events.Add(new EventData
             {
                 Type = EventTypeToString(eventType),
-                Data = data,
+                Data = eventType == EventType.Publish && data is PublishEvent publishEvent
+                    ? PublishedForm(publishEvent)
+                    : data,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
             });
         }
+    }
+
+    // A publish event as reported: the event itself, except that an attribute with a null value has
+    // no "value" member, as the SDK publishes it and the Java wrapper reports it. Everything else,
+    // goal property keys included, is reported exactly as logged.
+    private static object PublishedForm(PublishEvent publishEvent)
+    {
+        if (publishEvent.Attributes == null || publishEvent.Attributes.All(a => a.Value != null)) return publishEvent;
+        return new
+        {
+            publishEvent.Hashed,
+            publishEvent.Units,
+            publishEvent.PublishedAt,
+            publishEvent.Exposures,
+            publishEvent.Goals,
+            Attributes = publishEvent.Attributes
+                .Select(a => a.Value == null
+                    ? (object)new { a.Name, a.SetAt }
+                    : new { a.Name, a.Value, a.SetAt })
+                .ToArray()
+        };
     }
 
     public int GetEventsCount()

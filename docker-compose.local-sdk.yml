@@ -3,6 +3,10 @@ services:
     build:
       args:
         SDK_SOURCE_DIR: ${JAVA_SDK_DIR:-java-sdk}
+  java-v1-sdk:
+    build:
+      args:
+        SDK_SOURCE_DIR: ${JAVA_SDK_V1_DIR:-java-sdk-v1}
   go-sdk:
     build:
       args:

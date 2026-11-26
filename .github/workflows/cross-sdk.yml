@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 313-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 347-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -39,11 +39,13 @@ jobs:
             {"sdk":"ruby","repos":"ruby-sdk"},
             {"sdk":"php","repos":"php-sdk"},
             {"sdk":"java","repos":"java-sdk"},
+            {"sdk":"java-v1","repos":"java-sdk-v1"},
             {"sdk":"kotlin","repos":"kotlin-sdk"},
             {"sdk":"scala","repos":"scala-sdk"},
             {"sdk":"go","repos":"go-sdk"},
             {"sdk":"rust","repos":"rust-sdk"},
             {"sdk":"swift","repos":"swift-sdk"},
+            {"sdk":"swift-v1","repos":"swift-sdk-v1"},
             {"sdk":"dotnet","repos":"dotnet-sdk"},
             {"sdk":"cpp","repos":"cpp-sdk"},
             {"sdk":"elixir","repos":"elixir-sdk"},
@@ -64,11 +66,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install orchestrator requirements
-        run: pip install -r orchestrator/requirements.txt
+      - name: Install harness test requirements
+        # requirements-test.txt = requirements.txt + brotli (the br tests import
+        # it at module level, so without it they fail, never skip).
+        run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
         run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
@@ -83,6 +87,9 @@ jobs:
 
       - name: Switchback scenarios match their generator
         run: python generate_switchback_scenarios.py --check
+
+      - name: Context-fetch compression scenarios match their generator
+        run: python generate_context_compression_scenarios.py --check
 
       # The Holdout Conformance group is recorded from the javascript-sdk reference, built from
       # the commit the SDK-round generator pins (PINNED_COMMIT), next to this repo as SDK_PATH.
@@ -126,13 +133,23 @@ jobs:
           # cross-sdk-tests/sdk-branches.sh (also used by local runs via
           # setup-sdks.sh) so CI builds the same branches that pass locally
           # instead of SDK main, which has API drift vs the wrappers.
-          # Repos not listed fall back to main.
+          # Repos not listed fall back to main. SDK_REPO_SOURCES maps a checkout
+          # directory to a different repo (java-sdk-v1 and swift-sdk-v1 clone absmartly/java-sdk
+          # and absmartly/swift-sdk).
           source cross-sdk-tests/sdk-branches.sh
+          source cross-sdk-tests/sdk-checkout.sh
           for repo in ${{ matrix.repos }}; do
             branch="${SDK_BRANCHES[$repo]:-main}"
-            echo "::group::Cloning absmartly/$repo ($branch)"
-            git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
+            revision="${SDK_REVISIONS[$repo]:-}"
+            source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"
+            echo "::group::Cloning absmartly/$source_repo into $repo ($branch${revision:+ @ $revision})"
+            if [ -n "$revision" ]; then
+              git init -q "$repo"
+              fetch_and_checkout_revision "$repo" "https://github.com/absmartly/$source_repo.git" "$revision"
+            else
+              git clone --depth 1 --branch "$branch" \
+                "https://github.com/absmartly/$source_repo.git" "$repo"
+            fi
             echo "::endgroup::"
           done
 
@@ -140,7 +157,7 @@ jobs:
         working-directory: cross-sdk-tests
         env:
           COMPOSE_PROJECT_NAME: csdk
-        run: docker compose build ${{ matrix.sdk }}-sdk orchestrator
+        run: docker compose build ${{ matrix.sdk }}-sdk context-server orchestrator
 
       - name: Run cross-SDK suite
         working-directory: cross-sdk-tests
@@ -150,11 +167,38 @@ jobs:
           set -euo pipefail
           mkdir -p test-results
           rm -f test-results/report.json
-          docker compose up -d --force-recreate ${{ matrix.sdk }}-sdk
+          # context-server: the negotiating GET /context server the SDK fetches
+          # from in the Context Fetch Compression scenarios (270-274: gzip 270-272,
+          # br 273-274).
+          docker compose up -d --force-recreate context-server ${{ matrix.sdk }}-sdk
           docker compose run --rm --no-deps \
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
           test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
+
+      # Live HTTP regressions for the dotnet wrapper's input and report boundaries, against the
+      # wrapper the suite just ran (orchestrator/tests/test_dotnet_wrapper_http.py).
+      - name: Dotnet wrapper HTTP regressions
+        if: matrix.sdk == 'dotnet'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          docker compose run --rm --no-deps \
+            -v "$PWD/orchestrator/tests:/app/tests:ro" \
+            -e "DOTNET_WRAPPER_URL=http://dotnet-sdk:3000" \
+            orchestrator sh -c "pip install --quiet pytest && python -m pytest -q tests/test_dotnet_wrapper_http.py"
+
+      - name: C++ wrapper payload HTTP regressions
+        if: matrix.sdk == 'cpp'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          port="$(docker compose port cpp-sdk 3000 | sed 's/.*://')"
+          CPP_WRAPPER_URL="http://127.0.0.1:${port}" python3 cpp-wrapper/test_payload_http.py -v
 
       - name: Upload results
         if: always()

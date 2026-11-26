@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Generate the Holdout Conformance group of test_scenarios_complete.json (H1-H8, 500+).
+"""Generate the Holdout Conformance group of test_scenarios_complete.json (H2-H8, 501-507).
 
 Scenarios 203-227 and 305 pin the core holdout contract. This group adds the cases every SDK holdout
-port must also agree on before the fan-out starts:
+port must also agree on before the fan-out starts. The plan's H1 (duplicate holdoutIds) is not a
+contract case: the backend never sends a holdout id twice. So the group starts at H2, and 500 stays
+unused so 501-507 keep their numbers.
 
-  H1  a duplicate holdoutIds entry is one holdout (JS dedups at install): one holdout exposure, and a
-      refresh that drops the duplicate is not a coverage change, so nothing re-exposes. Gated on
-      `holdoutIdsDedup` as well, because java-sdk keeps the duplicate in its holdout-set identity.
   H2  a holdout with an empty or missing split is ignored, as if absent.
   H3  a same-iteration seed or split edit neither re-randomizes nor re-exposes a unit.
   H4  peek on a covered experiment queues no holdout exposure.
@@ -24,8 +23,9 @@ hand. Holdout seeds were chosen with the reference's VariantAssigner for the fix
 case lands on the arm it is about (orchestrator/tests/test_holdout_conformance_scenarios.py replays
 them with an independent model and checks it).
 
-The group owns 500.. : 254-299 is left for the open #16/#20 renumbering, 300-399 is the parity range
-and 400+ the Switchback group of cross-sdk-tests#13, which may still grow.
+The group owns 500.. and starts at 501 (500 was H1): 254-299 is left for the open #16/#20
+renumbering, 300-399 is the parity range and 400-499 the Switchback group of cross-sdk-tests#13,
+which may still grow within it.
 
 Usage:
     python3 generate_holdout_conformance_scenarios.py          # rewrite the group in place
@@ -51,18 +51,19 @@ FIRST_NUMBER = scenario_groups.HOLDOUT_CONFORMANCE_FIRST_NUMBER
 MARKER = scenario_groups.HOLDOUT_CONFORMANCE
 
 HOLDOUTS_CAPABILITY = "holdouts"
-DEDUP_CAPABILITY = "holdoutIdsDedup"
 
 UNIT = {"session_id": "svk-unit-1"}
 # With split [0.5, 0.5]: svk-unit-1 lands on arm 0 (held out) with HELD and on arm 1 with NOT_HELD;
 # svk-user-1 lands on arm 1 with HELD, so one holdout splits the two unit types (H6).
 HELD = (1, 2)
 NOT_HELD = (1, 1)
-# Not held out for svk-user-1 (arm 1 of [0.5, 0.5]).
-USER_NOT_HELD = ((1, 2), (1, 4))
 # svk-unit-1 lands on arm 1 of split [0.2, 0.8] with NOT_HELD's seeds: the edit H3 makes to a held
 # unit's holdout would move it out of the holdout if the SDK re-randomized.
 EDITED_SPLIT = [0.2, 0.8]
+# svk-unit-1 lands on arm 0 of split [0.45, 0.55] with these seeds: the edit H3 makes to a not-held
+# unit's holdout changes its seedHi and split too, and would hold the unit out if re-randomized.
+EDITED_HELD = (7, 2)
+EDITED_HELD_SPLIT = [0.45, 0.55]
 
 
 def holdout(holdout_id, name, seed, *, split=None, unit_type="session_id", **extra):
@@ -93,34 +94,6 @@ def spec(title, description, experiments, holdouts, steps, *, units=None, requir
 def specs():
     out = []
 
-    dup = covered(experiment(501, "exp_hc_dup_ids"), 7001, 7001)
-    dup_held = covered(experiment(502, "exp_hc_dup_ids_held"), 7002, 7002, 7002)
-    # Its own unit type, so its holdouts' exposures are not already spent by the two above.
-    dup_apart = covered(dict(experiment(503, "exp_hc_dup_ids_apart"), unitType="user_id"),
-                        7003, 7004, 7003, 7004)
-    dup_holdouts = [holdout(7001, "hc_dup_not_held", NOT_HELD), holdout(7002, "hc_dup_held", HELD),
-                    holdout(7003, "hc_dup_apart_a", USER_NOT_HELD[0]),
-                    holdout(7004, "hc_dup_apart_b", USER_NOT_HELD[1])]
-    out.append(spec(
-        "Duplicate holdoutIds Entries Are One Holdout",
-        "holdoutIds lists the same holdout twice, three times, and apart ([7003, 7004, 7003, 7004]). "
-        "The SDK dedups at install, as javascript-sdk does: treatment fires exactly one exposure per "
-        "holdout, alongside each not-held-out experiment's own exposure and with the held-out one "
-        "suppressed. A refresh that drops the duplicates is not a coverage change, so the covered "
-        "experiments keep their exposure state and nothing re-exposes. Not yet the java-sdk "
-        "behaviour: it keeps duplicates in the holdout-set identity, so the refresh re-exposes "
-        "(gated on holdoutIdsDedup until the owner confirms this contract and java-sdk follows).",
-        [dup, dup_held, dup_apart], dup_holdouts,
-        [treatment("exp_hc_dup_ids"), treatment("exp_hc_dup_ids_held"),
-         treatment("exp_hc_dup_ids_apart"),
-         refresh({"experiments": [covered(dup, 7001), covered(dup_held, 7002),
-                                  covered(dup_apart, 7003, 7004)],
-                  "holdouts": dup_holdouts}),
-         treatment("exp_hc_dup_ids"), treatment("exp_hc_dup_ids_held"),
-         treatment("exp_hc_dup_ids_apart"), PENDING],
-        units={"session_id": "svk-unit-1", "user_id": "svk-user-1"},
-        requires=[HOLDOUTS_CAPABILITY, DEDUP_CAPABILITY]))
-
     empty = holdout(7101, "hc_empty_split", HELD, split=[])
     missing = holdout(7102, "hc_missing_split", HELD)
     del missing["split"]
@@ -138,21 +111,24 @@ def specs():
     held, not_held = holdout(7201, "hc_reseed_held", HELD), holdout(7202, "hc_reseed_not_held", NOT_HELD)
     reseed = [covered(experiment(521, "exp_hc_reseed_held"), 7201),
               covered(experiment(522, "exp_hc_reseed_not_held"), 7202),
-              covered(experiment(523, "exp_hc_reseed_sibling"), 7201)]
+              covered(experiment(523, "exp_hc_reseed_sibling"), 7201),
+              covered(experiment(524, "exp_hc_reseed_not_held_sibling"), 7202)]
     out.append(spec(
         "A Same-Iteration Seed Or Split Edit Does Not Re-Randomize Or Re-Expose",
-        "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but swaps "
-        "their seeds and changes 7201's split to [0.2, 0.8], under which a fresh draw would flip "
-        "both verdicts. The arms stay pinned: the held-out experiment stays suppressed, the other "
-        "keeps its variant, a sibling first evaluated after the refresh is still held out by 7201's "
-        "original arm, and nothing new is queued.",
+        "The unit is held out by 7201 and not by 7202. A refresh keeps both iterations but edits "
+        "both holdouts' seeds and splits (7201's seedLo and split, 7202's seedHi, seedLo and split), "
+        "so a fresh draw would flip both verdicts. The arms stay pinned: the held-out experiment "
+        "stays suppressed, the other keeps its variant, and nothing new is queued for them. Two "
+        "siblings first evaluated after the refresh follow the original arms too: 7201's is still "
+        "held out, and 7202's assigns and queues only its own exposure.",
         reseed, [held, not_held],
         [treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
          refresh({"experiments": reseed,
                   "holdouts": [dict(held, seedHi=NOT_HELD[0], seedLo=NOT_HELD[1], split=EDITED_SPLIT),
-                               dict(not_held, seedHi=HELD[0], seedLo=HELD[1])]}),
+                               dict(not_held, seedHi=EDITED_HELD[0], seedLo=EDITED_HELD[1],
+                                    split=EDITED_HELD_SPLIT)]}),
          treatment("exp_hc_reseed_held"), treatment("exp_hc_reseed_not_held"),
-         treatment("exp_hc_reseed_sibling"), PENDING]))
+         treatment("exp_hc_reseed_sibling"), treatment("exp_hc_reseed_not_held_sibling"), PENDING]))
 
     out.append(spec(
         "Peek On A Covered Experiment Queues No Holdout Exposure",

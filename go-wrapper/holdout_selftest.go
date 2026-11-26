@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"github.com/absmartly/go-sdk/sdk"
-	"github.com/absmartly/go-sdk/sdk/future"
 	"github.com/absmartly/go-sdk/sdk/jsonmodels"
 )
 
@@ -86,7 +85,7 @@ func variantsJSON(n int) []map[string]interface{} {
 
 // probeData builds the context payload as JSON, in the collector's shape, and
 // decodes it into the SDK's model.
-func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmodels.ContextData, error) {
+func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmodels.ContextPayload, error) {
 	var payload = map[string]interface{}{}
 	var exps []map[string]interface{}
 	for _, e := range experiments {
@@ -104,23 +103,28 @@ func probeData(experiments []probeExperiment, holdouts []probeHoldout) (jsonmode
 		if len(h.split) == 3 {
 			holdoutType = "all_full_on"
 		}
-		hos = append(hos, map[string]interface{}{
+		var holdout = map[string]interface{}{
 			"id": h.id, "name": h.name, "iteration": 1, "unitType": h.unitType, "seedHi": h.seedHi,
-			"seedLo": h.seedLo, "split": h.split, "holdoutType": holdoutType,
-		})
+			"seedLo": h.seedLo, "split": h.split,
+		}
+		// Scenario 222: arm 1 must follow the split even without a type.
+		if h.id != 622 {
+			holdout["holdoutType"] = holdoutType
+		}
+		hos = append(hos, holdout)
 	}
 	payload["experiments"] = exps
 	payload["holdouts"] = hos
 	var raw, err = json.Marshal(payload)
 	if err != nil {
-		return jsonmodels.ContextData{}, err
+		return jsonmodels.ContextPayload{}, err
 	}
-	var data jsonmodels.ContextData
+	var data jsonmodels.ContextPayload
 	err = json.Unmarshal(raw, &data)
 	return data, err
 }
 
-func probeContext(data jsonmodels.ContextData, units map[string]string) (*sdk.Context, *exposureLog) {
+func probeContext(data jsonmodels.ContextPayload, units map[string]string) (*sdk.Context, *exposureLog) {
 	var logger = &exposureLog{}
 	var client = sdk.CreateDefaultClient(sdk.ClientConfig{
 		Endpoint_: "http://localhost", ApiKey_: "probe", Application_: "website", Environment_: "test",
@@ -130,7 +134,7 @@ func probeContext(data jsonmodels.ContextData, units map[string]string) (*sdk.Co
 	config.Units_ = units
 	config.PublishDelay_ = -1
 	config.RefreshInterval_ = 0
-	var context = absmartly.CreateContextWith(config, data)
+	var context = absmartly.CreateContextWithPayload(config, data)
 	context.WaitUntilReady()
 	return context, logger
 }
@@ -327,93 +331,12 @@ func holdoutArmsBattery() error {
 	return nil
 }
 
-// dedupProvider serves the payload a refresh installs.
-type dedupProvider struct {
-	mu   sync.Mutex
-	next jsonmodels.ContextData
-}
-
-func (p *dedupProvider) GetContextData() *future.Future {
-	p.mu.Lock()
-	var data = p.next
-	p.mu.Unlock()
-	var ft, done = future.New()
-	done(data, nil)
-	return ft
-}
-
-// Mirrors Holdout Conformance scenario 500 and the JS wrapper's
-// runHoldoutIdsDedupBattery: a holdoutIds list naming one holdout twice is
-// one holdout, and a refresh that only drops the duplicate is not a coverage
-// change, so nothing is exposed again.
-func holdoutIdsDedupBattery() error {
-	const prefix = "[holdoutIdsDedup probe]"
-	var payload = func(adjacent []int, apart []int) (jsonmodels.ContextData, error) {
-		var data, err = probeData([]probeExperiment{
-			{801, "dedup_covered", "session_id", []float64{0, 1}, 0, 2, adjacent},
-			{802, "dedup_apart", "user_id", []float64{0, 1}, 0, 2, apart},
-		}, []probeHoldout{
-			{901, "dedup_holdout", "session_id", 1, 1, []float64{0.5, 0.5}},
-			{902, "dedup_apart_a", "user_id", 1, 2, []float64{0.5, 0.5}},
-			{903, "dedup_apart_b", "user_id", 1, 4, []float64{0.5, 0.5}},
-		})
-		return data, err
-	}
-	var initial, err = payload([]int{901, 901}, []int{902, 903, 902, 903})
-	if err != nil {
-		return err
-	}
-	var refreshed, rerr = payload([]int{901}, []int{902, 903})
-	if rerr != nil {
-		return rerr
-	}
-	var provider = &dedupProvider{next: refreshed}
-	var logger = &exposureLog{}
-	var client = sdk.CreateDefaultClient(sdk.ClientConfig{
-		Endpoint_: "http://localhost", ApiKey_: "probe", Application_: "website", Environment_: "test",
-	})
-	var absmartly = sdk.Create(sdk.ABSmartlyConfig{Client_: client, ContextDataProvider_: provider, ContextEventLogger_: logger})
-	var config = sdk.CreateDefaultContextConfig()
-	config.Units_ = map[string]string{"session_id": "svk-unit-1", "user_id": "svk-user-1"}
-	config.PublishDelay_ = -1
-	config.RefreshInterval_ = 0
-	var context = absmartly.CreateContextWith(config, initial)
-	context.WaitUntilReady()
-	if !context.IsReady() || context.IsFailed() {
-		return fmt.Errorf("%s context not ready", prefix)
-	}
-	if err := checkTreatment(prefix, "adjacent duplicate", context, logger, "dedup_covered", 1,
-		probeExposure{801, "dedup_covered", 1}, probeExposure{901, "dedup_holdout", 1}); err != nil {
-		return err
-	}
-	if err := checkTreatment(prefix, "non-adjacent duplicate", context, logger, "dedup_apart", 1,
-		probeExposure{802, "dedup_apart", 1}, probeExposure{902, "dedup_apart_a", 1},
-		probeExposure{903, "dedup_apart_b", 1}); err != nil {
-		return err
-	}
-	context.Refresh()
-	if err := checkTreatment(prefix, "refresh dropping the adjacent duplicate", context, logger, "dedup_covered", 1); err != nil {
-		return err
-	}
-	return checkTreatment(prefix, "refresh dropping the non-adjacent duplicate", context, logger, "dedup_apart", 1)
-}
-
 var (
 	holdoutsOnce      sync.Once
 	holdoutsResult    bool
 	holdoutArmsOnce   sync.Once
 	holdoutArmsResult bool
-	dedupOnce         sync.Once
-	dedupResult       bool
 )
-
-// holdoutIdsDedupSupported is gated on the base holdouts battery.
-func holdoutIdsDedupSupported() bool {
-	dedupOnce.Do(func() {
-		dedupResult = holdoutsSupported() && runProbe("[holdoutIdsDedup probe]", holdoutIdsDedupBattery)
-	})
-	return dedupResult
-}
 
 func holdoutsSupported() bool {
 	holdoutsOnce.Do(func() { holdoutsResult = runProbe("[holdouts probe]", holdoutsBattery) })

@@ -48,20 +48,23 @@ sys.path.insert(0, REPO_ROOT)
 import scenario_groups  # noqa: E402
 
 GROUP_MARKER = scenario_groups.ROUND_SYSATTR
-# Groups appended after this one (generate_parity_round_scenarios.py, 300+, the Switchback group
-# from generate_switchback_scenarios.py, 400+, then generate_holdout_conformance_scenarios.py, 500+).
+# Groups after this one: the Context Fetch Compression group (generate_context_compression_scenarios.py,
+# 270-274), then generate_parity_round_scenarios.py (300+), the Shared Variable Key group from
+# generate_shared_variable_key_scenarios.py (340+), the Switchback group from
+# generate_switchback_scenarios.py (400+), then generate_holdout_conformance_scenarios.py (501+).
 # They are neither "kept" scenarios for the digest nor part of this group; this group must directly
 # precede them.
-LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SWITCHBACK,
-                                                       scenario_groups.HOLDOUT_CONFORMANCE)
+LATER_GROUP_MARKERS = scenario_groups.PARITY_MARKERS + (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
+                                                       scenario_groups.CONTEXT_FETCH, scenario_groups.HOLDOUT_CONFORMANCE)
 NO_ENVIRONMENT_CAPABILITY = "clientNoEnvironment"
 
 # sha256 of json.dumps([non-group scenarios], sort_keys=True). The suite had 240 scenarios before
 # this group was appended. Update ONLY when another group legitimately changes the non-group
 # scenarios (e.g. a group lands before this one and this one is renumbered). Last changed when the
-# finalize and misuse scenarios were gated on singleFinalizeEvent/throwsOnMisuse and scenario 35 listed
-# the ruby-sdk/php-sdk wordings (PR #21 review).
-KEPT_DIGEST = "9963fb6a8d9f9d05e9bb0efd5cc3a690e8507f61bcc81652ae723e62df2f7412"
+# post-finalize setter scenarios 148, 149 and 188 moved from throwsOnMisuse to the narrower
+# rejectsSettersAfterFinalize gate (php-sdk#12 keeps v1.0.3's accepted setters after close), then
+# when scenario 35 listed the released dart-sdk wording for absmartly_sdk 2.2.0.
+KEPT_DIGEST = "ae7bc5597b04dea1c833700f3be4117aeb07860a82d6606f0ff7fd1e7e61eb59"
 KEPT_COUNT = 240
 GROUP_SIZE = 6
 
@@ -325,10 +328,11 @@ class SystemAttributesGroupTest(unittest.TestCase):
         self.assertEqual(len(numbers), len(set(numbers)), "scenario numbers are unique")
         tail = self.scenarios[-len(self.group):]
         self.assertEqual(tail, self.group, "the group must be the contiguous tail of the file")
-        # Only the later parity groups may follow it, all numbered above it.
+        # Only the later groups (Context Fetch 270+, parity 300+, Switchback 400+) may follow it,
+        # all numbered above it.
         self.assertEqual(self.everything[:len(self.scenarios)], self.scenarios,
-                         "only the later parity, Switchback and Holdout Conformance groups may follow "
-                         "this group")
+                         "only the later Context Fetch, parity, Switchback and Holdout Conformance groups "
+                         "may follow this group")
         if self.later:
             last = int(self.group[-1]["name"].split(" - ", 1)[0])
             first_later = int(self.later[0]["name"].split(" - ", 1)[0])

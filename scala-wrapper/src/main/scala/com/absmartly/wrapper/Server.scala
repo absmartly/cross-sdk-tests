@@ -152,6 +152,7 @@ object Server extends IOApp {
         "trackRejectsNonObjectProperties" -> Json.fromBoolean(true),
         "refreshNoOpOnFailedContext" -> Json.fromBoolean(true),
         "throwsOnMisuse" -> Json.fromBoolean(true),
+        "rejectsSettersAfterFinalize" -> Json.fromBoolean(true),
         "singleFinalizeEvent" -> Json.fromBoolean(true),
         "semverNumericOperands" -> Json.fromBoolean(true),
         "assignmentRules" -> Json.fromBoolean(true),

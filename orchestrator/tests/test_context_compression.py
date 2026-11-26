@@ -1,0 +1,577 @@
+"""Context Fetch Compression: generator guards and the orchestrator's measured capability."""
+
+import copy
+import json
+import os
+import sys
+from unittest import mock
+
+import pytest
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "orchestrator"))
+
+import generate_context_compression_scenarios as generator  # noqa: E402
+import scenario_groups  # noqa: E402
+import test_runner  # noqa: E402
+from test_runner import TestOrchestrator  # noqa: E402
+
+CAP = "contextFetchCompression"
+
+
+def canonical():
+    with open(generator.CANONICAL, encoding="utf-8") as src:
+        return json.load(src)
+
+
+# -- generator ---------------------------------------------------------------
+
+
+def group_indices(scenarios):
+    return [i for i, s in enumerate(scenarios) if generator.GROUP_MARKER in s["name"]]
+
+
+def test_group_owns_270_to_274_between_the_round_and_parity_groups():
+    """The group is rebuilt at scenario_groups.CONTEXT_FETCH_FIRST_NUMBER (270), the free slot after
+    the 2026-11 round groups (230-253) and before the parity groups (300+); every other scenario
+    keeps its number and position. The br scenarios continue it contiguously from 273."""
+    scenarios = canonical()
+    indices = group_indices(scenarios)
+    group = [scenarios[i] for i in indices]
+    assert scenario_groups.CONTEXT_FETCH_FIRST_NUMBER == 270
+    assert group == generator.build_group(270)
+    assert [scenario_groups.number(s) for s in group] == [270, 271, 272, 273, 274]
+    assert scenario_groups.CONTEXT_FETCH_LAST_NUMBER == 274
+    assert indices == list(range(indices[0], indices[0] + 5))
+    before, after = scenarios[indices[0] - 1], scenarios[indices[-1] + 1]
+    assert scenario_groups.number(before) == 253 and scenario_groups.ROUND_SYSATTR in before["name"]
+    assert scenario_groups.number(after) == 300 and scenario_groups.PARITY_RULES in after["name"]
+    rest = [s for s in scenarios if s not in group]
+    assert scenario_groups.place_group(rest, (generator.GROUP_MARKER,), generator.build_group,
+                                       first_number=270)[0] == scenarios
+
+
+def test_place_group_rejects_a_scenario_inside_the_270_range():
+    """A stray scenario numbered 271 is a generator error, never silently renumbered."""
+    stray = {"name": "271 - Stray - Collides", "steps": []}
+    rest = [s for s in canonical() if generator.GROUP_MARKER not in s["name"]]
+    at = next(i for i, s in enumerate(rest) if scenario_groups.number(s) > 271)
+    with pytest.raises(ValueError, match="collide"):
+        scenario_groups.place_group(rest[:at] + [stray] + rest[at:], (generator.GROUP_MARKER,),
+                                    generator.build_group,
+                                    first_number=scenario_groups.CONTEXT_FETCH_FIRST_NUMBER)
+
+
+def test_only_the_wire_check_is_gated():
+    ungated, twin, gated, br_ungated, br_gated = generator.build_group(270)
+    assert "requires" not in ungated and "requires" not in twin and "requires" not in br_ungated
+    assert gated["requires"] == [CAP]
+    assert br_gated["requires"] == ["contextFetchBrotli"]
+    assert ungated["contextServer"] == {"encodings": ["gzip", "identity"]}
+    assert gated["contextServer"]["requireAdvertised"] == ["gzip"]
+    assert twin["directData"] is True and "contextServer" not in twin
+    assert br_ungated["contextServer"] == {"encodings": ["br", "gzip", "identity"]}
+    assert br_gated["contextServer"] == {"encodings": ["br", "gzip", "identity"], "requireAdvertised": ["br"]}
+
+
+def test_gzip_scenarios_never_allow_br_and_br_scenarios_use_the_shared_preferences():
+    """270-272 keep the gzip preference (br is never served to them); 273-274 use BR_PREFERENCE."""
+    negotiation = test_runner.negotiation
+    assert generator.GZIP_ENCODINGS == negotiation.DEFAULT_PREFERENCE
+    assert generator.BR_ENCODINGS == negotiation.BR_PREFERENCE
+    group = generator.build_group(270)
+    for scenario in group[:3]:
+        assert "br" not in scenario.get("contextServer", {}).get("encodings", []), scenario["name"]
+    for scenario in group[3:]:
+        assert scenario["contextServer"]["encodings"] == negotiation.BR_PREFERENCE, scenario["name"]
+
+
+def test_br_scenarios_mirror_their_gzip_counterparts():
+    """273 is 270 with a br payload (271 is its twin too); 274 is 272 with br required."""
+    ungated, twin, gated, br_ungated, br_gated = generator.build_group(270)
+    for gzip_one, br_one in ((ungated, br_ungated), (gated, br_gated)):
+        assert br_one["steps"] == gzip_one["steps"]
+        assert br_one["contextData"] == gzip_one["contextData"]
+    actions = [s["action"] for s in br_ungated["steps"]]
+    assert [s["expect"] for s in br_ungated["steps"][:actions.index("refresh")]] == [s["expect"] for s in twin["steps"]]
+
+
+def test_twin_shares_every_pre_refresh_expectation():
+    ungated, twin = generator.build_group(270)[:2]
+    assert ungated["contextData"] == twin["contextData"]
+    actions = [s["action"] for s in ungated["steps"]]
+    before_refresh = ungated["steps"][:actions.index("refresh")]
+    assert [s["expect"] for s in before_refresh] == [s["expect"] for s in twin["steps"]]
+    assert [s["action"] for s in twin["steps"]] == ["createContextWith", "treatment", "variableValue", "publish"]
+
+
+def test_refresh_data_differs_and_the_next_step_proves_it_was_used():
+    group = generator.build_group(270)
+    for scenario in (group[0], group[2], group[3], group[4]):
+        steps = scenario["steps"]
+        i = [s["action"] for s in steps].index("refresh")
+        new_data = steps[i]["params"]["newData"]
+        assert new_data != scenario["contextData"]
+        before = next(s for s in steps[:i] if s["action"] == "treatment")
+        after = steps[i + 1]
+        assert after["action"] == "treatment"
+        # Keeping the old data would repeat the cached result with no event.
+        assert after["expect"]["result"] != before["expect"]["result"]
+        assert after["expect"]["events"], "a changed assignment must queue a fresh exposure"
+
+
+def test_refresh_expectation_matches_the_pinned_traffic_split_scenario():
+    """The refreshed data is scenario 29's; so is the treatment after its refresh."""
+    by_number = {scenario_groups.number(s): s for s in canonical()}
+    pinned = by_number[29]["steps"]
+    ungated = generator.build_group(270)[0]["steps"]
+    refresh = [s["action"] for s in ungated].index("refresh")
+    [ours] = ungated[refresh]["params"]["newData"]["experiments"]
+    [theirs] = pinned[2]["params"]["newData"]["experiments"]
+    # Same assignment inputs; only the variant configs (not read after refresh) differ.
+    assert {k: v for k, v in ours.items() if k != "variants"} == {k: v for k, v in theirs.items() if k != "variants"}
+    assert ungated[refresh + 1]["expect"] == pinned[3]["expect"]
+
+
+def test_payload_is_only_the_tested_experiment():
+    assert [e["name"] for e in generator.context_data()["experiments"]] == ["exp_test_ab"]
+
+
+@pytest.mark.parametrize("mutation", [None, "expectation", "missing", "renumbered", "spec",
+                                      "br-in-gzip-group", "br-gate-dropped"])
+def test_check_detects_drift(tmp_path, monkeypatch, mutation):
+    scenarios = copy.deepcopy(canonical())
+    indices = group_indices(scenarios)
+    first, last = indices[0], indices[-1]
+    if mutation == "expectation":
+        scenarios[first]["steps"][1]["expect"]["result"] = 0
+    elif mutation == "missing":
+        scenarios.pop(last)
+    elif mutation == "renumbered":
+        # The previous 500-502 numbering, appended after the Switchback group.
+        group = scenarios[first:last + 1]
+        del scenarios[first:last + 1]
+        for offset, scenario in enumerate(group):
+            scenario["name"] = f"{500 + offset}{generator.GROUP_MARKER}{scenario['name'].split(generator.GROUP_MARKER, 1)[1]}"
+        scenarios.extend(group)
+    elif mutation == "spec":
+        scenarios[last]["contextServer"]["requireAdvertised"] = []
+    elif mutation == "br-in-gzip-group":
+        # A br payload served to a 270-272 scenario.
+        scenarios[first]["contextServer"]["encodings"] = ["br", "gzip", "identity"]
+    elif mutation == "br-gate-dropped":
+        scenarios[last]["contextServer"]["encodings"] = ["gzip", "identity"]
+    path = tmp_path / "scenarios.json"
+    path.write_text(generator.render(scenarios), encoding="utf-8")
+    monkeypatch.setattr(generator, "CANONICAL", str(path))
+    monkeypatch.setattr(sys, "argv", ["generate_context_compression_scenarios.py", "--check"])
+    assert generator.main() == (0 if mutation is None else 1)
+
+
+def test_place_group_rejects_a_split_group():
+    names = ["1 - A - x", f"270{generator.GROUP_MARKER}a", "271 - B - y", f"272{generator.GROUP_MARKER}b"]
+    with pytest.raises(ValueError, match="contiguous"):
+        scenario_groups.place_group([{"name": n} for n in names], (generator.GROUP_MARKER,),
+                                    generator.build_group, first_number=270)
+
+
+# sha256 of test_scenarios_complete.json at ae86279 (#20), main's 305 scenarios plus 270-272, without
+# the Switchback group (400+). The file with the br scenarios (273 up to, not including, 300) and the
+# generator-owned groups below removed must render to exactly those bytes: the only change the br
+# follow-up may make is that insertion after 272. Last changed when 148, 149 and 188 moved to the
+# rejectsSettersAfterFinalize gate (php-sdk#12), then when scenario 35 listed the dart 2.2.0 wording.
+BEFORE_BR_SHA256 = "6c9a6f5215ea16b421599f19d1720453356f36f69625db43cbe418341379468b"
+BEFORE_BR_COUNT = 282
+# Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
+# verified by its own --check, and the Shared Variable Key and Holdout Conformance groups, which
+# landed after the br follow-up.
+LATER_GROUP_MARKERS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
+                       scenario_groups.HOLDOUT_CONFORMANCE)
+
+
+def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():
+    import hashlib
+    scenarios = [s for s in canonical() if not any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    numbers = [scenario_groups.number(s) for s in scenarios]
+    inserted = [i for i, n in enumerate(numbers) if 273 <= n < 300]
+    # Contiguous from 273, right after 272 and before 300, all in the Context Fetch group.
+    assert [numbers[i] for i in inserted] == list(range(273, 273 + len(inserted)))
+    assert inserted == list(range(inserted[0], inserted[0] + len(inserted)))
+    assert numbers[inserted[0] - 1] == 272 and numbers[inserted[-1] + 1] == 300
+    assert all(generator.GROUP_MARKER in scenarios[i]["name"] for i in inserted)
+    assert inserted[-1] + 1 - inserted[0] >= 2
+    kept = [s for i, s in enumerate(scenarios) if i not in set(inserted)]
+    assert len(kept) == BEFORE_BR_COUNT
+    rendered = generator.render(kept).encode("utf-8")
+    assert hashlib.sha256(rendered).hexdigest() == BEFORE_BR_SHA256
+    with open(generator.CANONICAL, "rb") as src:
+        text = src.read()
+    # Byte-level too: the file is the old bytes with one block inserted (and any later groups
+    # appended after the old tail).
+    assert_retained_bytes(text, rendered, canonical())
+
+
+def assert_retained_bytes(text, rendered, scenarios):
+    """Compare the actual file's retained bytes, not a re-rendering that erases whitespace drift."""
+    head_end = rendered.index(b'\n  {\n    "name": "300 - ')
+    tail_start = text.index(b'\n  {\n    "name": "300 - ')
+    later = [s for s in scenarios if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    tail_end = len(text)
+    if later:
+        first_later = b'\n  {\n    "name": ' + json.dumps(later[0]["name"]).encode("utf-8")
+        tail_end = text.index(first_later)
+    raw_tail = text[tail_start:tail_end]
+    if later:
+        # The old last scenario gained a comma when the later groups were appended.
+        assert raw_tail.endswith(b",")
+        raw_tail = raw_tail[:-1] + b"\n]\n"
+    assert text.startswith(rendered[:head_end])
+    assert raw_tail == rendered[head_end:]
+
+
+@pytest.mark.parametrize("mutation", ["head-indent", "tail-indent", "tail-value"])
+def test_retained_byte_guard_rejects_raw_file_drift(mutation):
+    with open(generator.CANONICAL, "rb") as src:
+        text = src.read()
+    scenarios = canonical()
+    kept = [s for s in scenarios if not any(m in s["name"] for m in LATER_GROUP_MARKERS)
+            and not 273 <= scenario_groups.number(s) < 300]
+    rendered = generator.render(kept).encode("utf-8")
+    if mutation == "head-indent":
+        changed = text.replace(b'    "name": "01 - ', b'     "name": "01 - ', 1)
+    else:
+        start = text.index(b'\n  {\n    "name": "300 - ')
+        old, new = ((b'    "description":', b'     "description":') if mutation == "tail-indent"
+                    else (b'    "description": "', b'    "description": "changed '))
+        changed = text[:start] + text[start:].replace(old, new, 1)
+    assert changed != text
+    if mutation != "tail-value":
+        assert json.loads(changed) == scenarios
+    with pytest.raises(AssertionError):
+        assert_retained_bytes(changed, rendered, scenarios)
+
+
+# -- policy ------------------------------------------------------------------
+
+
+def test_required_where_observed_or_read_from_code():
+    """Required where a lane observed gzip or the code shows it (CI proves it); the rest are exceptions."""
+    policy = test_runner.load_capability_policy()
+    assert policy["measuredCapabilities"] == [CAP, "contextFetchBrotli"]
+    required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
+    assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
+                        "scala", "swift", "swift-v1", "vue2", "vue3"]
+    excepted = {sdk: e["unsupported"][CAP] for sdk, e in policy["sdks"].items() if CAP in e["unsupported"]}
+    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "java-v1", "kotlin", "php", "rust"]
+    assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
+
+
+def test_brotli_required_where_observed_or_read_from_code():
+    """contextFetchBrotli: only swift and swift-v1 are required; the other 20 are reviewed exceptions with provenance."""
+    policy = test_runner.load_capability_policy()
+    br = "contextFetchBrotli"
+    required = sorted(sdk for sdk, e in policy["sdks"].items() if br in e["required"])
+    assert required == ["swift", "swift-v1"]
+    excepted = {sdk: e["unsupported"][br] for sdk, e in policy["sdks"].items() if br in e["unsupported"]}
+    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift", "swift-v1"})
+    assert len(excepted) == 20
+    assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
+
+
+def test_measured_capability_needs_a_probe():
+    policy = test_runner.load_capability_policy()
+    policy["measuredCapabilities"] = ["holdouts"]
+    assert any("no orchestrator probe" in e for e in test_runner.validate_capability_policy(policy))
+
+
+@pytest.mark.parametrize("measured, error", [
+    ("contextFetchCompression", "must be a list"),
+    ([1], "must be a list"),
+    (["notDeclared"], "is not declared"),
+])
+def test_malformed_measured_capabilities_are_rejected(measured, error):
+    policy = test_runner.load_capability_policy()
+    policy["measuredCapabilities"] = measured
+    assert any(error in e for e in test_runner.validate_capability_policy(policy))
+
+
+# -- orchestrator: measured capability --------------------------------------
+
+
+def small_policy(required, other=False):
+    caps = {CAP: "measured"}
+    if other:
+        caps["holdouts"] = "advertised"
+    entry = {"required": [CAP] if required else [], "unsupported": {} if required else {CAP: "fix pending"}}
+    if other:
+        entry["required"].append("holdouts")
+    return {"capabilities": caps, "measuredCapabilities": [CAP], "sdks": {"alpha": entry}}
+
+
+def probe_outcome(headers, decoded=True, refresh_decoded=True, refresh=200, served=None):
+    """A probe outcome; each fetch is served what the negotiation picks unless `served` overrides it."""
+    def serve(h):
+        return served if served is not None else test_runner.negotiation.choose_encoding(
+            h, test_runner.negotiation.DEFAULT_PREFERENCE)
+    return {
+        "ready": True, "failed": False, "decoded": decoded, "refreshDecoded": refresh_decoded,
+        "refreshStatus": refresh,
+        "requests": [{"status": 200, "acceptEncoding": h, "userAgent": "ua", "served": serve(h)} for h in headers],
+    }
+
+
+def measure(required, negotiated, wrapper_says=None, other=False, wrapper_caps=None, forced=None):
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(required, other))
+    orch._context_server_ready = ""  # the context server answered /health
+    body = dict(wrapper_caps or {})
+    if wrapper_says is not None:
+        body[CAP] = wrapper_says
+    response = mock.Mock(status_code=200)
+    response.json.return_value = body
+    if forced is None:
+        forced = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    side_effect = negotiated if isinstance(negotiated, Exception) else [negotiated, forced]
+    with mock.patch.object(test_runner.requests, "get", return_value=response), \
+            mock.patch.object(orch, "_probe_context_fetch", side_effect=side_effect), \
+            mock.patch("builtins.print"):
+        orch.fetch_capabilities("alpha", "http://alpha")
+    return orch
+
+
+def test_excepted_sdk_that_sends_nothing_is_skipped_without_violation():
+    orch = measure(False, probe_outcome([None, None]))
+    assert orch.capabilities["alpha"][CAP] is False
+    assert "alpha" not in orch.capability_policy_violations
+    assert "reviewed exception" in orch.capability_gate("alpha", {"requires": [CAP]})
+
+
+def test_excepted_sdk_that_starts_sending_gzip_fails_until_policy_moves():
+    orch = measure(False, probe_outcome(["gzip, deflate", "gzip, deflate"]))
+    assert orch.capabilities["alpha"][CAP] is True
+    assert "move it to 'required'" in orch.capability_policy_violations["alpha"][0]
+    assert orch.capability_gate("alpha", {"requires": [CAP]}) is None
+
+
+def test_required_sdk_that_stops_sending_gzip_is_a_violation():
+    orch = measure(True, probe_outcome(["gzip", None]))
+    assert orch.capabilities["alpha"][CAP] is False
+    [violation] = orch.capability_policy_violations["alpha"]
+    assert "is not advertised" not in violation
+    assert "measured false" in violation and "['gzip', None]" in violation
+    assert "no gzip advertised" in violation
+
+
+@pytest.mark.parametrize("outcome, failed", [
+    (probe_outcome([None, None]), "no gzip advertised"),
+    (probe_outcome(["gzip"]), "refresh not fetched"),
+    (probe_outcome(["gzip", "gzip"], decoded=False), "not decoded"),
+    (probe_outcome(["gzip", "gzip"], refresh_decoded=False), "refresh data not used"),
+])
+def test_measured_false_violation_names_the_header_and_the_failed_check(outcome, failed):
+    [violation] = measure(True, outcome).capability_policy_violations["alpha"]
+    headers = [r["acceptEncoding"] for r in outcome["requests"]]
+    assert f"measured false (observed Accept-Encoding {headers!r}; failed: " in violation
+    assert failed in violation.split("failed: ", 1)[1]
+
+
+@pytest.mark.parametrize("decoded", [True, False])
+def test_served_encoding_mismatch_is_a_measurement_failure(decoded):
+    """The context server serving what the negotiation would not choose is the harness's fault."""
+    outcome = probe_outcome(["gzip", "gzip"], decoded=decoded, refresh_decoded=decoded, served="identity")
+    orch = measure(True, outcome)
+    assert "served an encoding the negotiation would not choose" in orch.measurement_failed["alpha"][CAP]
+    assert CAP not in orch.capabilities["alpha"]
+    assert "alpha" not in orch.capability_policy_violations
+
+
+def test_wrapper_cannot_self_report_the_measured_capability():
+    orch = measure(True, probe_outcome([None, None]), wrapper_says=True)
+    assert orch.capabilities["alpha"][CAP] is False
+    assert orch.capability_policy_violations["alpha"]
+
+
+@pytest.mark.parametrize("wrapper_says", ["unknown", True, False, None, 1, {"x": 1}])
+@pytest.mark.parametrize("headers, measured", [(["gzip", "gzip"], True), ([None, None], False)])
+def test_wrapper_value_for_a_measured_capability_is_dropped_before_validation(wrapper_says, headers, measured):
+    """Any wrapper value (even a non-boolean) is discarded, never a capabilities-fetch failure."""
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True, other=True))
+    orch._context_server_ready = ""
+    response = mock.Mock(status_code=200)
+    response.json.return_value = {"holdouts": True, CAP: wrapper_says}
+    forced = {"ready": True, "failed": True, "requests": [{"acceptEncoding": None}]}
+    with mock.patch.object(test_runner.requests, "get", return_value=response), \
+            mock.patch.object(orch, "_probe_context_fetch", side_effect=[probe_outcome(headers), forced]), \
+            mock.patch("builtins.print"):
+        orch.fetch_capabilities("alpha", "http://alpha")
+    assert "alpha" not in orch.capabilities_fetch_failed
+    assert orch.capabilities["alpha"]["holdouts"] is True
+    assert orch.capabilities["alpha"][CAP] is measured
+
+
+def test_other_capabilities_are_still_validated():
+    orch = TestOrchestrator({"alpha": "http://alpha"}, capability_policy=small_policy(True, other=True))
+    response = mock.Mock(status_code=200)
+    response.json.return_value = {"holdouts": "yes", CAP: "unknown"}
+    with mock.patch.object(test_runner.requests, "get", return_value=response), \
+            mock.patch.object(orch, "_probe_context_fetch") as probe, mock.patch("builtins.print"):
+        orch.fetch_capabilities("alpha", "http://alpha")
+    assert "'holdouts' must be a JSON boolean" in orch.capabilities_fetch_failed["alpha"]
+    probe.assert_not_called()
+
+
+@pytest.mark.parametrize("outcome", [
+    probe_outcome(["gzip"]),                 # refresh did not fetch
+    probe_outcome(["gzip", "gzip"], refresh=500),
+    probe_outcome(["gzip", "gzip"], decoded=False),
+    probe_outcome(["gzip", "gzip"], refresh_decoded=False),  # refetched but kept the old data
+    probe_outcome(["*", "*"]),               # a wildcard is not an explicit gzip
+    probe_outcome(["gzip;q=0", "gzip;q=0"]),  # refused, not advertised
+])
+def test_gzip_must_be_advertised_on_create_and_refresh_and_decode(outcome):
+    assert measure(True, outcome).capabilities["alpha"][CAP] is False
+
+
+@pytest.mark.parametrize("negotiated, reason, wrapper_says", [
+    ({"error": "boom", "requests": []}, "made no GET /context", None),
+    (test_runner.requests.ConnectionError("down"), "could not use the context server", None),
+    (KeyError("anything"), "anything", None),
+    # A wrapper self-claim must not survive a failed measurement.
+    ({"error": "boom", "requests": []}, "made no GET /context", True),
+])
+def test_failed_measurement_fails_the_run_but_gates_only_its_scenarios(negotiated, reason, wrapper_says):
+    orch = measure(True, negotiated, wrapper_says=wrapper_says, other=True, wrapper_caps={"holdouts": True})
+    assert reason in orch.measurement_failed["alpha"][CAP]
+    # Not a capabilities-fetch failure: the wrapper's validated capabilities still apply.
+    assert "alpha" not in orch.capabilities_fetch_failed
+    assert orch.capabilities["alpha"]["holdouts"] is True and CAP not in orch.capabilities["alpha"]
+    assert "measurement of contextFetchCompression failed" in orch.capability_gate("alpha", {"requires": [CAP]})
+    assert orch.capability_gate("alpha", {"requires": ["holdouts"]}) is None
+    # Reported once, as a measurement failure, not again as a policy violation.
+    assert "alpha" not in orch.capability_policy_violations
+    with mock.patch("builtins.print"):
+        exit_code = orch.generate_report(os.devnull, [])
+    assert exit_code != 0
+
+
+@pytest.mark.parametrize("required, headers", [(True, ["gzip", "gzip"]), (False, [None, None])])
+@pytest.mark.parametrize("error", [
+    test_runner.requests.ConnectionError("report-only down"),
+    KeyError("report-only key"),
+    {"requests": None},  # a malformed outcome: building the report raises TypeError
+])
+def test_report_only_probe_cannot_change_the_gate(required, headers, error):
+    orch = measure(required, probe_outcome(headers), forced=error)
+    assert orch.capabilities["alpha"][CAP] is required
+    assert "alpha" not in orch.measurement_failed and "alpha" not in orch.capability_policy_violations
+    report = orch.context_fetch_probe["alpha"]["forcedGzip"]
+    assert report["reportOnly"] is True and "report-only probe failed" in report["error"]
+    orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
+    with mock.patch("builtins.print"):
+        assert orch.generate_report(os.devnull, []) == 0
+
+
+@pytest.mark.parametrize("headers, requested", [(["gzip", "gzip"], True), ([None, None], False)])
+def test_forced_gzip_probe_is_labelled_forced_and_says_whether_it_was_requested(headers, requested):
+    forced = {"ready": True, "failed": not requested, "requests": [{"acceptEncoding": headers[0]}]}
+    orch = measure(requested, probe_outcome(headers), forced=forced)
+    report = orch.context_fetch_probe["alpha"]
+    assert "unrequestedGzip" not in report and report["forcedGzip"]["requested"] is requested
+    orch.results = [{"name": "s", "sdks": {"alpha": {"passed": True, "failures": []}}}]
+    with mock.patch("builtins.print") as printed:
+        orch.generate_report(os.devnull, [])
+    out = "\n".join(str(c.args[0]) for c in printed.call_args_list if c.args)
+    assert f"forced gzip (report only, requested={requested})" in out
+    assert "unrequested" not in out
+
+
+# -- orchestrator: context-server control calls ------------------------------
+
+
+def test_control_call_retries_once_after_a_connection_error():
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    ok = mock.Mock(status_code=200)
+    with mock.patch.object(test_runner.requests, "request",
+                           side_effect=[test_runner.requests.ConnectionError("reset"), ok]) as request, \
+            mock.patch.object(test_runner.time, "sleep"):
+        assert orch._context_server_call("GET", "/health") is ok
+    assert request.call_count == 2
+
+
+def test_control_call_gives_up_after_the_retry():
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    with mock.patch.object(test_runner.requests, "request",
+                           side_effect=test_runner.requests.ConnectionError("down")) as request, \
+            mock.patch.object(test_runner.time, "sleep"), \
+            pytest.raises(test_runner.requests.ConnectionError):
+        orch._context_server_call("GET", "/health")
+    assert request.call_count == 2
+
+
+# -- orchestrator: per-step wire checks -------------------------------------
+
+
+def fetch(header, served, status=200):
+    return {"acceptEncoding": header, "served": served, "status": status}
+
+
+def check(spec, records, seen=0):
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    return [f["field"] for f in orch.check_context_fetches(0, "createContext", spec, records, seen)]
+
+
+def test_served_encoding_must_follow_the_request():
+    spec = {"encodings": ["gzip", "identity"]}
+    assert check(spec, [fetch("gzip, deflate", "gzip")]) == []
+    assert check(spec, [fetch(None, "identity")]) == []
+    assert check(spec, [fetch("gzip;q=0", "identity")]) == []
+
+
+@pytest.mark.parametrize("header, served", [("gzip", "identity"), (None, "gzip")])
+def test_served_encoding_mismatch_in_a_scenario_is_a_harness_error(header, served):
+    """The context server picked the encoding: a mismatch is the server's fault, not the SDK's."""
+    with pytest.raises(test_runner.HarnessError, match="negotiation chooses") as raised:
+        check({"encodings": ["gzip", "identity"]}, [fetch(header, served)])
+    assert raised.value.failures == []
+
+
+@pytest.mark.parametrize("order", ["sdk_failure_first", "server_fault_first"])
+def test_sdk_failure_in_the_same_step_survives_a_served_mismatch(order):
+    """A requireAdvertised failure and a served mismatch in one step: both are reported."""
+    spec = {"encodings": ["gzip", "identity"], "requireAdvertised": ["gzip"]}
+    records = [fetch(None, "identity"), fetch("gzip", "identity")]
+    if order == "server_fault_first":
+        records.reverse()
+    orch = TestOrchestrator({}, capability_policy=small_policy(False))
+    with pytest.raises(test_runner.HarnessError, match="negotiation chooses") as raised:
+        orch.check_context_fetches(0, "createContext", spec, records, 0)
+    assert [f["field"] for f in raised.value.failures] == ["contextFetch.acceptEncoding[gzip]"]
+
+
+def test_step_without_a_fetch_fails():
+    assert check({}, [fetch("gzip", "gzip")], seen=1) == ["contextFetch"]
+
+
+def test_require_advertised_gzip():
+    spec = {"encodings": ["gzip", "identity"], "requireAdvertised": ["gzip"]}
+    assert check(spec, [fetch("gzip", "gzip")]) == []
+    assert check(spec, [fetch(None, "identity")]) == ["contextFetch.acceptEncoding[gzip]"]
+    assert check(spec, [fetch("gzip;q=0", "identity")]) == ["contextFetch.acceptEncoding[gzip]"]
+    assert check(spec, [fetch("*", "gzip")]) == ["contextFetch.acceptEncoding[gzip]"]
+
+
+def test_forced_encoding_is_expected_regardless_of_request():
+    assert check({"force": "gzip"}, [fetch(None, "gzip")]) == []
+
+
+@pytest.mark.parametrize("spec", [[], {"encodings": ["deflate"]}, {"encodings": ["zstd"]}, {"encodings": []},
+                                  {"force": "lz4"}, {"force": "zstd"},
+                                  {"requireAdvertised": ["identity"]}, {"extra": 1}])
+def test_bad_context_server_specs_are_rejected(spec):
+    assert test_runner.validate_context_server_spec(spec)
+
+
+def test_orchestrator_and_server_share_one_negotiation_module():
+    sys.path.insert(0, os.path.join(ROOT, "context-server"))
+    import server as context_server
+    assert context_server.choose_encoding is test_runner.negotiation.choose_encoding

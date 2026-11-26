@@ -12,10 +12,13 @@ require 'context_config'
 require 'context_data_provider'
 require 'default_context_data_provider'
 require 'default_context_data_deserializer'
-require 'context_publisher'
-require 'default_context_publisher'
+require 'context_event_handler'
+require 'default_context_event_handler'
 require 'context_event_logger'
 require 'hashing'
+require_relative 'holdout_self_test'
+require 'default_context_event_serializer'
+require_relative 'switchback_self_test'
 
 set :port, 3000
 set :bind, '0.0.0.0'
@@ -113,10 +116,10 @@ class DeferredDataProvider < ContextDataProvider
 end
 
 # Test contexts publish nowhere: a publish succeeds without sending anything.
-# With publishToEndpoint the wrapper passes the SDK's own DefaultContextPublisher
+# With publishToEndpoint the wrapper passes the SDK's own DefaultContextEventHandler
 # as sdk_publisher, so the publish is the SDK's real PUT {endpoint}/context.
 # Either way /publishFail arms a one-shot failure of the next publish.
-class CustomPublisher < ContextPublisher
+class CustomPublisher < ContextEventHandler
   attr_accessor :should_fail
 
   def initialize(event_collector, sdk_publisher = nil)
@@ -240,12 +243,18 @@ get '/capabilities' do
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     throwsOnMisuse: true,
+    rejectsSettersAfterFinalize: true,
     singleFinalizeEvent: true,
     semverNumericOperands: true,
     clientNoEnvironment: true,
     clientRejectsBlankApplication: true,
     clientAcceptsBlankApplication: false,
     assignmentRules: true,
+    holdouts: HoldoutSelfTest.holdouts?,
+    holdout_arms: HoldoutSelfTest.holdout_arms?,
+    switchback: SwitchbackSelfTest.switchback?,
+    # The switchback battery checks that a 3.0 attribute keys no cluster (switchback_self_test.rb).
+    integralFloatAttributes: SwitchbackSelfTest.switchback?,
     semverOperators: true,
     xAgentHeader: true }.to_json
 end
@@ -339,7 +348,7 @@ post '/context' do
     sdk_config.client = client
     # publishToEndpoint: publish through the SDK's own publisher to {endpoint}/context.
     if req_data[:publishToEndpoint] && req_data[:endpoint]
-      publisher = CustomPublisher.new(collector, DefaultContextPublisher.new(client))
+      publisher = CustomPublisher.new(collector, DefaultContextEventHandler.new(client))
       sdk_config.context_event_handler = publisher
     end
     if throttle > 0
@@ -403,6 +412,51 @@ delete '/context/:context_id' do
   $contexts.delete(params['context_id'])
   content_type :json
   { result: 'deleted' }.to_json
+end
+
+# The switchback pure functions (capability `switchback`); 64-bit values arrive as decimal strings.
+# They answer whenever the SDK has an assigner, independent of the self-test verdict.
+LONG_RANGE = (-(2**63))..((2**63) - 1)
+# The arms of one permutation are materialized, so this wrapper bounds armCount well below Java's
+# int range (WRAPPER_API_SPEC.md, Switchback assign).
+MAX_ARM_COUNT = 10_000
+
+def switchback_call
+  content_type :json
+  halt 501, { error: 'linked SDK has no switchback assigner', events: [] }.to_json if SwitchbackSelfTest.assigner.nil?
+  r = begin
+    body_json
+  rescue JSON::ParserError
+    raise ArgumentError, 'body must be a JSON object'
+  end
+  raise ArgumentError, 'body must be a JSON object' unless r.is_a?(Hash)
+
+  long = lambda do |name|
+    value = r[name.to_sym]
+    raise ArgumentError, "#{name} must be a decimal string" unless value.is_a?(String) && value.match?(/\A-?\d+\z/)
+
+    parsed = Integer(value, 10)
+    raise ArgumentError, "#{name} is out of the signed 64-bit range" unless LONG_RANGE.cover?(parsed)
+
+    parsed
+  end
+  arms = r[:armCount]
+  unless arms.is_a?(Integer) && arms >= 2 && arms <= MAX_ARM_COUNT
+    raise ArgumentError, "armCount must be an integer in [2, #{MAX_ARM_COUNT}]"
+  end
+  raise ArgumentError, 'clusterUnit must be a string' unless r[:clusterUnit].is_a?(String)
+
+  { result: yield(r[:clusterUnit], long, arms), events: [] }.to_json
+rescue ArgumentError => e
+  halt 400, { error: e.message, events: [] }.to_json
+end
+
+post '/switchback/assign' do
+  switchback_call { |unit, long, arms| SwitchbackSelfTest.assign(unit, long.call('periodIndex'), long.call('seed'), arms) }
+end
+
+post '/switchback/permutation' do
+  switchback_call { |unit, long, arms| SwitchbackSelfTest.permutation(unit, long.call('cycleIndex'), long.call('seed'), arms) }
 end
 
 post '/diagnostic' do

@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -44,6 +45,18 @@ def make_orchestrator(sdks=None, policy=None, **kwargs):
 
 def quiet():
     return contextlib.redirect_stdout(io.StringIO())
+
+
+class PublishObservationTests(unittest.TestCase):
+    def test_null_and_omitted_attribute_values_compare_equal(self):
+        with_null = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": None, "setAt": 1}]}
+        omitted = {"hashed": True, "units": [], "attributes": [{"name": "v", "setAt": 2}]}
+        self.assertEqual(test_runner._publish_observation(with_null), test_runner._publish_observation(omitted))
+        for value in (0, "", "<missing>", "null", False):
+            other = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": value, "setAt": 2}]}
+            self.assertNotEqual(
+                test_runner._publish_observation(with_null), test_runner._publish_observation(other), value
+            )
 
 
 class ValuesMatchTests(unittest.TestCase):
@@ -234,11 +247,91 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.exposures([2, 1, 3], [1, 2, 3]), [])
         self.assertEqual(self.exposures([2, 1], [1, 2], unordered=False),
                          ["events[0].data.id", "events[1].data.id"])
+        explicit_false = {"result": None, "unorderedEvents": False,
+                          "events": [{"type": "exposure", "data": {"id": i}} for i in (1, 2)]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in (2, 1)]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, explicit_false)),
+                         ["events[0].data.id", "events[1].data.id"])
 
     def test_unordered_events_still_check_values_and_count(self):
         self.assertEqual(self.exposures([1, 4], [1, 2]), ["events[1].data.id"])
         self.assertEqual(self.exposures([1, 1], [1, 2]), ["events[1].data.id"])
         self.assertEqual(self.exposures([1], [1, 2]), ["events.length"])
+        # One actual event matches at most one expected event.
+        self.assertEqual(self.exposures([1, 2], [1, 1]), ["events[1].data.id"])
+
+    def test_unordered_events_backtrack_to_a_full_match(self):
+        # Expected data is a subset: {id: 1} also matches the event {id: 1, variant: 2} needs, so the
+        # first pairing has to be undone for both to match.
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 1, "variant": 2}},
+                                             {"type": "exposure", "data": {"id": 1, "variant": 3}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}},
+                               {"type": "exposure", "data": {"id": 1, "variant": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_matching_checks_each_pair_once_when_a_specific_event_is_missing(self):
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(11)] + [
+            {"type": "exposure", "data": {"id": 99}}]
+        calls = []
+
+        def matches(candidate, event, index):
+            calls.append((id(candidate), index))
+            # A call-count bound, not a wall-clock timeout: the old factorial search fails fast.
+            self.assertLessEqual(len(calls), len(actual) * len(expected))
+            return values_match(candidate, event)
+
+        ordered = test_runner.events_in_expected_order(actual, expected, matches)
+        self.assertIs(ordered, actual, "a failed matching keeps wire order for diagnostics")
+        self.assertEqual(len(calls), 144)
+        self.assertEqual(len(set(calls)), 144)
+        failures = self.orch.validate_step(0, "variableValue", {"result": None, "events": actual},
+                                           {"result": None, "unorderedEvents": True, "events": expected})
+        self.assertEqual(self.fields(failures), ["events[11].data.id"])
+
+    def test_unordered_matching_detects_a_shared_candidate_shortage(self):
+        # Every expectation has a compatible event, but the last two need the same event.
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(10)] + [
+            {"type": "exposure", "data": {"id": 0}} for _ in range(2)]
+        calls = 0
+
+        def matches(candidate, event, index):
+            nonlocal calls
+            calls += 1
+            self.assertLessEqual(calls, 144)
+            return values_match(candidate, event)
+
+        self.assertIs(test_runner.events_in_expected_order(actual, expected, matches), actual)
+        self.assertEqual(calls, 144)
+
+    def test_unordered_events_pair_by_type(self):
+        actual = {"result": None, "events": [{"type": "goal", "data": {"id": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "goal", "data": {"id": 1}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_by_the_positional_rules(self):
+        # Java omits a goal's null properties; the pairing must allow it like the positional check.
+        actual = {"result": None, "events": [{"type": "goal", "data": {"name": "b"}},
+                                             {"type": "goal", "data": {"name": "a"}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "goal", "data": {"name": "a", "properties": None}},
+                               {"type": "goal", "data": {"name": "b", "properties": None}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_sameshapeas_by_expected_position(self):
+        # sameShapeAs takes the baseline event at the expected event's position, so the pairing must too.
+        baseline = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}},
+                                               {"type": "exposure", "data": {"id": 2, "variant": 1}}]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 2, "variant": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "sameShapeAs": 0, "data": {"id": 1}},
+                               {"type": "exposure", "sameShapeAs": 0, "data": {"id": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(1, "variableValue", actual, expected, [baseline])), [])
 
     def test_unordered_events_observation_ignores_order(self):
         expected = {"unorderedEvents": True}
@@ -248,6 +341,16 @@ class ValidateStepTests(unittest.TestCase):
                          test_runner.observation_for_step("variableValue", b, expected))
         self.assertNotEqual(test_runner.observation_for_step("variableValue", a, {}),
                             test_runner.observation_for_step("variableValue", b, {}))
+
+    def test_publish_observation_treats_an_absent_attribute_value_as_null(self):
+        def publish(attribute):
+            event = {"type": "publish", "data": {"hashed": True, "units": [], "attributes": [attribute]}}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [event]}, {})
+
+        self.assertEqual(publish({"name": "v_null", "value": None, "setAt": 1}),
+                         publish({"name": "v_null", "setAt": 2}))
+        self.assertNotEqual(publish({"name": "v_null", "value": None}), publish({"name": "v_null", "value": ""}))
+        self.assertNotEqual(publish({"name": "v_null"}), publish({"value": None}))
 
     def test_event_data_key_absent_vs_null(self):
         actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
@@ -461,6 +564,15 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         self.assertEqual(test_runner.validate_capability_policy(policy), [])
 
+    def test_misuse_descriptions_keep_post_finalize_setters_separate(self):
+        descriptions = test_runner.load_capability_policy()["capabilities"]
+        misuse = descriptions["throwsOnMisuse"]
+        self.assertIn("setUnit with a blank or already-set uid", misuse)
+        self.assertIn("a mutation (track/treatment) after finalize", misuse)
+        self.assertIn("a read before the context is ready", misuse)
+        self.assertNotIn("attribute/setUnit", misuse)
+        self.assertIn("setAttribute/setUnit called after finalize", descriptions["rejectsSettersAfterFinalize"])
+
     def test_checked_in_policy_covers_every_compose_sdk(self):
         policy = test_runner.load_capability_policy()
         with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
@@ -480,7 +592,11 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "go", "java", "javascript", "react", "vue2", "vue3"])
+        for sdk in holders:
+            with self.subTest(sdk=sdk):
+                self.assertLessEqual({"holdouts", "holdout_arms"}, set(policy["sdks"][sdk]["required"]))
+        # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift-v1", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
@@ -524,6 +640,18 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         required = {"assignmentRules", "semverOperators", "switchback"}
         self.assertEqual(required & set(policy["sdks"]["java"]["required"]), required)
+
+    def test_switchback_required_only_where_evidenced(self):
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
+        self.assertEqual(holders, ["cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
+
+    def test_shared_variable_keys_required_only_where_evidenced(self):
+        # The JS family requires it only at the javascript-sdk pin whose lanes were measured passing 340-368.
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
+        self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "java-v1", "javascript", "kotlin",
+                                   "react", "vue2", "vue3"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
@@ -689,6 +817,124 @@ class WrapperSkipTests(unittest.TestCase):
             self.assertIn("orchestrator/test_runner.py", src.read())
 
 
+
+class VerifySdkScriptTests(unittest.TestCase):
+    """verify_sdk.sh's orchestrator block, run as the script runs it (docker steps left out)."""
+
+    SCENARIOS = [
+        {"name": "ungated", "steps": [{"action": "isReady", "expect": {"result": True}}]},
+        {"name": "gated", "requires": ["contextFetchCompression"],
+         "steps": [{"action": "isReady", "expect": {"result": True}}]},
+        {"name": "gated br", "requires": ["contextFetchBrotli"],
+         "steps": [{"action": "isReady", "expect": {"result": True}}]},
+    ]
+
+    def run_script(self, measurement_failed=None, scenario_result=None):
+        """Exec the heredoc of verify_sdk.sh; return (exit code, stdout)."""
+        with open(os.path.join(REPO_ROOT, "verify_sdk.sh")) as src:
+            script = src.read()
+        block = script.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        policy = {
+            "capabilities": {"contextFetchCompression": "measured", "contextFetchBrotli": "measured"},
+            "measuredCapabilities": ["contextFetchCompression", "contextFetchBrotli"],
+            "sdks": {"alpha": {"required": ["contextFetchCompression", "contextFetchBrotli"], "unsupported": {}}},
+        }
+        orch_cls = TestOrchestrator
+
+        def wait_for_services(orch):
+            if measurement_failed:
+                orch.measurement_failed["alpha"] = dict(measurement_failed)
+            orch.capabilities["alpha"] = {}
+            return dict(orch.sdks), []
+
+        def run_and_validate_sdk(orch, sdk_name, base_url, scenario):
+            gate = orch.capability_gate(sdk_name, scenario)
+            if gate:
+                return {"passed": True, "skipped": True, "reason": gate}
+            return dict(scenario_result or {"passed": True, "failures": []})
+
+        out = io.StringIO()
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(REPO_ROOT)
+            try:
+                with mock.patch.object(test_runner, "load_capability_policy", return_value=policy), \
+                        mock.patch.object(test_runner, "load_scenarios",
+                                          return_value=(self.SCENARIOS, [], [])), \
+                        mock.patch.object(orch_cls, "wait_for_services", wait_for_services), \
+                        mock.patch.object(orch_cls, "run_and_validate_sdk", run_and_validate_sdk), \
+                        mock.patch.object(orch_cls, "generate_report",
+                                          self.report_into(tmp, orch_cls.generate_report)), \
+                        mock.patch.dict(os.environ, {"SDK_URLS": "alpha=http://alpha;"}), \
+                        mock.patch("builtins.open", self.redirect_open(tmp)), \
+                        contextlib.redirect_stdout(out):
+                    with self.assertRaises(SystemExit) as raised:
+                        exec(compile(block, "verify_sdk.sh", "exec"), {"__name__": "__main__"})
+            finally:
+                os.chdir(cwd)
+        return raised.exception.code, out.getvalue()
+
+    @staticmethod
+    def report_into(tmp, real):
+        def generate_report(orch, output_file, failed_sdks=None):
+            return real(orch, os.path.join(tmp, output_file), failed_sdks)
+        return generate_report
+
+    @staticmethod
+    def redirect_open(tmp):
+        real_open = open
+
+        def patched(path, *args, **kwargs):
+            if path == "test-results/report.json":
+                path = os.path.join(tmp, path)
+            return real_open(path, *args, **kwargs)
+        return patched
+
+    def status_line(self, out):
+        return next(line for line in out.splitlines() if line.startswith("alpha: "))
+
+    def test_measurement_failure_is_not_printed_as_pass(self):
+        code, out = self.run_script(measurement_failed={"contextFetchCompression": "context server down"})
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 3/3 MEASURE FAIL")
+        self.assertIn("  - MEASURE FAIL contextFetchCompression :: context server down", out)
+
+    def test_brotli_measurement_failure_is_shown_like_compression(self):
+        code, out = self.run_script(measurement_failed={"contextFetchBrotli": "served 'gzip' for 'br'"})
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 3/3 MEASURE FAIL")
+        self.assertIn("  - MEASURE FAIL contextFetchBrotli :: served 'gzip' for 'br'", out)
+
+    def test_both_measurement_failures_are_listed(self):
+        code, out = self.run_script(measurement_failed={"contextFetchBrotli": "b", "contextFetchCompression": "c"})
+        self.assertEqual(code, 1)
+        self.assertIn("  - MEASURE FAIL contextFetchBrotli :: b", out)
+        self.assertIn("  - MEASURE FAIL contextFetchCompression :: c", out)
+
+    def test_clean_run_still_prints_pass(self):
+        code, out = self.run_script()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.status_line(out), "alpha: 3/3 PASS")
+
+    def test_measurement_failure_with_a_scenario_failure(self):
+        failure = {"passed": False, "failures": [{"step": 0, "field": "result"}]}
+        code, out = self.run_script({"contextFetchCompression": "x"}, failure)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 1/3 FAIL + MEASURE FAIL")
+
+    def test_harness_only_result_is_still_harness_error(self):
+        harness = {"passed": False, "harness_error": "step 0 (createContext): reset", "failures": []}
+        code, out = self.run_script(scenario_result=harness)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status_line(out), "alpha: 0/3 HARNESS ERROR")
+        self.assertIn("  - HARNESS ERROR ungated :: step 0 (createContext): reset", out)
+
+    def test_down_service_is_down(self):
+        lines = results_aggregator.verify_status_lines(
+            {"sdk_stats": {"alpha": {"service_failed": True, "measurement_failed": {"c": "x"}}}, "results": []},
+            "alpha", 2)
+        self.assertEqual(lines, ["\nalpha: DOWN"])
+
 class ScenarioLoaderTests(unittest.TestCase):
     def test_repo_scenarios_valid(self):
         policy = test_runner.load_capability_policy()
@@ -790,9 +1036,37 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value equals an omitted one (Jackson NON_NULL drops it); other values still differ.
+        null_attr = dict(base_pub, attributes=[{"name": "x", "value": None}])
+        self.assertEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        # A null attribute value and an omitted one are the same (scenario 411: PHP/JS keep null, Java omits it); a
+        # null and a present value are not.
+        self.assertEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None, "setAt": 1}]), "publish"),
+                         obs("publish", dict(base_pub, attributes=[{"name": "v", "setAt": 2}]), "publish"))
+        self.assertNotEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None}]), "publish"),
+                            obs("publish", dict(base_pub, attributes=[{"name": "v", "value": 0}]), "publish"))
+        # A null attribute value published explicitly or omitted is the same record; other values differ.
+        null_explicit = dict(base_pub, attributes=[{"name": "x", "value": None, "setAt": 1}])
+        null_omitted = dict(base_pub, attributes=[{"name": "x", "setAt": 2}])
+        self.assertEqual(obs("publish", null_explicit, "publish"), obs("publish", null_omitted, "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "y"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", base_pub, "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
+
+    def test_publish_attribute_null_value_matches_an_omitted_value(self):
+        # Java's Attribute is @JsonInclude(NON_NULL), so it omits a null value
+        # that JS and Dart send; the two are the same observation. A real
+        # value still differs from null.
+        def obs(attribute):
+            data = {"hashed": True, "units": [], "attributes": [attribute]}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [{"type": "publish", "data": data}]}, {})
+
+        self.assertEqual(obs({"name": "x", "value": None}), obs({"name": "x"}))
+        self.assertNotEqual(obs({"name": "x", "value": None}), obs({"name": "x", "value": 0}))
 
     def test_error_response_events_observed(self):
         orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
@@ -867,6 +1141,53 @@ class ConsistencyTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
 
+    def test_hyphenated_lanes_map_to_an_agent_language(self):
+        """A lane named <lang>-<suffix> (e.g. swift-v1) sends X-Agent absmartly-<lang>-sdk/..., so the
+        X-Agent scenarios need SDK_AGENT_LANGUAGE to map it, or they fail with `{lang}` = the lane."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            matrix = json.loads(re.search(r"matrix='(.*?)'", src.read(), re.DOTALL).group(1))
+        for lane in matrix["include"]:
+            if "-" in lane["sdk"]:
+                with self.subTest(lane=lane["sdk"]):
+                    self.assertEqual(test_runner.SDK_AGENT_LANGUAGE[lane["sdk"]],
+                                     lane["sdk"].split("-", 1)[0])
+
+    def test_lane_checkouts_resolve_through_sdk_repo_sources(self):
+        """Checkout dirs that are not repo names (java-sdk-v1, swift-sdk-v1) are cloned through
+        SDK_REPO_SOURCES in both CI and setup-sdks.sh; and every lane repo has a pin."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            workflow = src.read()
+        with open(os.path.join(REPO_ROOT, "setup-sdks.sh")) as src:
+            setup = src.read()
+        self.assertIn('source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"', workflow)
+        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$repo]:-$repo}.git'), 2)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
+        pins = self.sdk_pins("SDK_BRANCHES")
+        for lane in matrix["include"]:
+            for repo in lane["repos"].split():
+                with self.subTest(repo=repo):
+                    self.assertIn(repo, pins)
+        self.assertEqual(self.sdk_pins("SDK_REPO_SOURCES"),
+                         {"java-sdk-v1": "java-sdk", "swift-sdk-v1": "swift-sdk"})
+
+    @staticmethod
+    def sdk_pins(name):
+        """An associative array as sdk-branches.sh defines it (sourced by bash)."""
+        script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+        out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+        return dict(line.split("=", 1) for line in out.splitlines() if line)
+
+    def test_swift_v1_lane_is_pinned_to_an_immutable_1x_ref(self):
+        """swift-sdk main becomes 2.0 when swift-sdk#13 merges, so the 1.x lane must never track main:
+        it is pinned to a full commit SHA (SDK_REVISIONS), a v1.* tag, or a release/1.* branch."""
+        revision = self.sdk_pins("SDK_REVISIONS").get("swift-sdk-v1")
+        branch = self.sdk_pins("SDK_BRANCHES").get("swift-sdk-v1")
+        self.assertIsNotNone(branch, "swift-sdk-v1 has no pin, so CI would fall back to main")
+        if revision is not None:
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+        else:
+            self.assertRegex(branch, r"^(?:v1\.[0-9.]+|release/1\.[0-9x.]*)$")
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()
@@ -877,8 +1198,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 20)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 20)
+        self.assertEqual(len(matrix["include"]), 22)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 22)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -988,8 +1309,28 @@ class AggregatorTests(unittest.TestCase):
     def test_capability_policy_violation_flag(self):
         self.assert_forced("capability_policy_violations", ["v"], "CAPS POLICY")
 
+    def test_measurement_failed_flag(self):
+        stats = {"measurement_failed": {"contextFetchCompression": "context server down"}, "passed": 10, "failed": 0}
+        self.assertEqual(results_aggregator.run_level_status(stats), "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchCompression": "x"}, "MEASURE FAIL")
+        self.assert_forced("measurement_failed", {"contextFetchBrotli": "x"}, "MEASURE FAIL")
+
     def test_consistency_unchecked_flag(self):
         self.assert_forced("consistency_unchecked", True, "UNCHECKED")
+
+    def test_harness_error_does_not_hide_sdk_failures(self):
+        row = self.load(dict(self.base, passed=8, failed=1, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertTrue(results_aggregator.print_results_table({}, {"x": row}, ["x"], False, True))
+        self.assertIn("8/9 FAIL + HARNESS ERROR", re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue()))
+
+    def test_harness_error_flag_is_distinct_from_sdk_failure(self):
+        row = self.load(dict(self.base, passed=9, tested=9, harness_errors=1))
+        self.assertEqual(row["forced_status"], "HARNESS ERROR")
+        self.assertEqual(row["failed"], 0)
+        self.assert_forced("harness_errors", 1, "HARNESS ERROR")
 
     def test_existing_flags(self):
         self.assert_forced("service_failed", True, "DOWN")
@@ -1014,6 +1355,193 @@ class StaticRepoChecks(unittest.TestCase):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
 
+    # Scenarios 400 and 403 check the wrapper-wide error envelope, so every error response the handler
+    # builds must carry `events`.
+    SWITCHBACK_HANDLERS = {
+        "javascript-wrapper/server.js": ("function switchbackCall(", "\n}\n", "error:"),
+        "python-wrapper/server.py": ("def _switchback_call(", "\n\n\n", "'error'"),
+        "go-wrapper/switchback.go": ("func writeSwitchbackError(", "\n}\n", '"error"'),
+        "php-wrapper/server.php": ("$path === '/switchback/assign'", "\n    }\n", "'error'"),
+        "dotnet-wrapper/Program.cs": ("async Task<IResult> SwitchbackCall(", "\n}\n", "error ="),
+        "rust-wrapper/src/main.rs": ("fn switchback_response(", "\n}\n", '"error"'),
+        "ruby-wrapper/server.rb": ("halt 501, { error: 'linked SDK has no switchback assigner'", "\n", "error:"),
+        "dart-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        "flutter-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp send_error(", "\n  end\n", "error:"),
+        "cpp-wrapper/server.cpp": ("static json make_error_response(", "\n}\n", '"error"'),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
+    }
+    HELPER_EVENTS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": r"%\{error: message, events: events\}",
+        "cpp-wrapper/server.cpp": r'json\{\{"error", error\}, \{"events", ',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+    }
+    SWITCHBACK_ERROR_HELPERS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp switchback_call(", "send_error(conn"),
+        "cpp-wrapper/server.cpp": ("const auto switchback_endpoint = ", "make_error_response("),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+    }
+
+    def test_switchback_handlers_build_errors_through_their_helper(self):
+        for path, (start, helper) in self.SWITCHBACK_ERROR_HELPERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                body = text[text.index(start):][:2500]
+                self.assertIn(helper, body)
+
+    def test_switchback_error_responses_carry_events(self):
+        for path, (start, end, marker) in self.SWITCHBACK_HANDLERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                self.assertIn(start, text)
+                body = text[text.index(start):]
+                body = body[:body.index(end) + len(end)]
+                errors = [line for line in body.splitlines() if marker in line]
+                self.assertTrue(errors, "no error response found")
+                if path in self.SWITCHBACK_ERROR_HELPERS:
+                    self.assertRegex(body, self.HELPER_EVENTS[path])
+                    continue
+                for line in errors:
+                    self.assertIn("events", line)
+
+    INTEGRAL_FLOAT_SOURCES = {
+        "ruby-wrapper/server.rb": "integralFloatAttributes: SwitchbackSelfTest.switchback?",
+        "python-wrapper/server.py": "'integralFloatAttributes': switchback_self_test.run()",
+        "php-wrapper/server.php": "'integralFloatAttributes' => SwitchbackSelfTest::run()",
+        "go-wrapper/server.go": '"integralFloatAttributes": switchbackSupported()',
+        "rust-wrapper/src/main.rs": '"integralFloatAttributes": tokio::task::block_in_place(state.switchback_probe)',
+        "cpp-wrapper/server.cpp": '{"integralFloatAttributes", switchback_self_test::switchback()}',
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": "integralFloatAttributes: ElixirWrapper.SwitchbackSelfTest.switchback?()",
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java":
+            'response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());',
+    }
+    INTEGRAL_FLOAT_PROBES = {
+        "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
+        "python-wrapper/switchback_self_test.py": "'sb_whole_float', 0",
+        "php-wrapper/SwitchbackSelfTest.php": "'sb_integral_float', 0",
+        "go-wrapper/switchback.go": '"sb_float_value"',
+        "rust-wrapper/src/switchback_self_test.rs": '"sb_float_number", 0',
+        "cpp-wrapper/switchback_self_test.h": '"sb_float_value", 0',
+        "elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex": '"sb_float_value", 0',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/SwitchbackSelfTest.java": '"integral float", "sb_float", 0',
+    }
+
+    def test_integral_float_attributes_comes_from_the_switchback_self_test(self):
+        policy = test_runner.load_capability_policy()
+        requiring = {sdk for sdk, e in policy["sdks"].items() if "integralFloatAttributes" in e["required"]}
+        paths = {path.split("-wrapper/")[0] for path in self.INTEGRAL_FLOAT_SOURCES}
+        self.assertEqual(requiring - {"java-v1"}, paths)
+        for table in (self.INTEGRAL_FLOAT_SOURCES, self.INTEGRAL_FLOAT_PROBES):
+            for path, needle in table.items():
+                with self.subTest(path=path):
+                    with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                        self.assertIn(needle, src.read())
+
+    def test_java_wrapper_publishes_over_http_only_with_publish_to_endpoint(self):
+        """An endpoint that serves the context (the context server, 270-274) need not accept a publish, so
+        java-sdk 2.0's wrapper sends the SDK's own PUT only when a scenario sets publishToEndpoint."""
+        path = os.path.join(REPO_ROOT, "java-wrapper", "src", "main", "java", "com", "absmartly", "wrapper",
+                            "WrapperController.java")
+        with open(path, encoding="utf-8") as src:
+            text = src.read()
+        construction = re.search(r"new WrapperTransport\(fetchOverHttp, ([^,]+),", text)
+        self.assertIsNotNone(construction)
+        self.assertEqual(construction.group(1).strip(), "publishToEndpoint")
+
+    def test_python_dockerfile_copies_every_local_module_the_server_imports(self):
+        wrapper = os.path.join(REPO_ROOT, "python-wrapper")
+        local = {name[:-3] for name in os.listdir(wrapper) if name.endswith(".py") and not name.startswith("test_")}
+        with open(os.path.join(wrapper, "server.py"), encoding="utf-8") as src:
+            imported = set(re.findall(r"^(?:import|from) (\w+)", src.read(), re.M)) & local
+        with open(os.path.join(wrapper, "Dockerfile"), encoding="utf-8") as src:
+            dockerfile = src.read()
+        self.assertTrue(imported)
+        for module in sorted(imported):
+            with self.subTest(module=module):
+                self.assertIn(f"cross-sdk-tests/python-wrapper/{module}.py", dockerfile)
+
+    # What each lane must build this round (sdk-branches.sh). A pin that moves back to `main` before its
+    # SDK PR merges would silently drop the lane's holdouts/switchback coverage; update this table in
+    # the change that re-pins.
+    EXPECTED_PINS = {
+        "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
+        "dotnet-sdk": ("feat/switchbacks", None),
+        "elixir-sdk": ("feat/switchbacks", None),
+        "flutter-sdk": ("feat/switchbacks", None),
+        "go-sdk": ("feat/switchbacks", None),
+        "java-sdk": ("next/major", None),
+        "java-sdk-v1": ("v1.9.0", None),
+        "javascript-sdk": ("feat/switchbacks", "2aa9a2df4a3b636375edae8df077bd10fd5a6b32"),
+        "php-sdk": ("feat/switchbacks", None),
+        "python3-sdk": ("feat/switchbacks", None),
+        "ruby-sdk": ("feat/switchbacks", None),
+        "rust-sdk": ("feat/switchbacks", None),
+        "swift-sdk": ("feat/swift-2.0", None),
+        "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
+    }
+
+    def test_round_pins_match_the_expected_table(self):
+        def pins(name):
+            script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+            out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True,
+                                 check=True).stdout
+            return dict(line.split("=", 1) for line in out.splitlines() if line)
+        branches, revisions = pins("SDK_BRANCHES"), pins("SDK_REVISIONS")
+        for repo, (branch, revision) in self.EXPECTED_PINS.items():
+            with self.subTest(repo=repo):
+                self.assertEqual(branches.get(repo), branch)
+                self.assertEqual(revisions.get(repo), revision)
+        self.assertEqual(set(revisions), {r for r, (_, rev) in self.EXPECTED_PINS.items() if rev})
+
+    def test_flutter_holdout_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's holdout
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                lines = src.read().splitlines()
+            for line in skip:
+                lines.remove(line)
+            return lines
+
+        dart = body("dart-wrapper/holdout_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
+        flutter = body(
+            "flutter-wrapper/lib/holdout_self_test.dart",
+            [
+                "// Copy of dart-wrapper/holdout_self_test.dart; only the import differs.",
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+            ],
+        )
+        self.assertEqual(flutter, dart)
+
+    def test_flutter_switchback_self_test_matches_dart_copy(self):
+        # The flutter wrapper keeps a copy of the dart wrapper's switchback
+        # self-test; only the header comment and the SDK import may differ.
+        def body(path, skip):
+            with open(os.path.join(REPO_ROOT, path)) as src:
+                lines = src.read().splitlines()
+            for line in skip:
+                lines.remove(line)
+            return lines
+
+        dart = body("dart-wrapper/switchback_self_test.dart", ["import 'package:absmartly_dart/absmartly_dart.dart';"])
+        flutter = body(
+            "flutter-wrapper/lib/switchback_self_test.dart",
+            [
+                "// Copy of dart-wrapper/switchback_self_test.dart; only the import differs.",
+                "import 'package:absmartly_sdk/absmartly_sdk.dart';",
+            ],
+        )
+        self.assertEqual(flutter, dart)
+
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
             counts = {int(n) for n in re.findall(r"\*\*(\d+) scenarios\*\*", src.read())}
@@ -1031,9 +1559,10 @@ class StaticRepoChecks(unittest.TestCase):
         "ruby": "ruby-wrapper/server.rb", "liquid": "liquid-wrapper/server.rb",
         "php": "php-wrapper/server.php", "go": "go-wrapper/server.go", "rust": "rust-wrapper/src/main.rs",
         "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
+        "java-v1": "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
         "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
         "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
-        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "swift-v1": "swift-v1-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
         "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
         "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
     }
@@ -1041,15 +1570,32 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes."""
+        the wrappers fails here rather than in all 22 lanes. `measuredCapabilities` are exempt: the
+        orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
+        measured = set(policy.get("measuredCapabilities") or [])
         self.assertEqual(set(self.WRAPPER_CAPABILITY_FILES), set(policy["sdks"]))
         for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
             with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
                 source = src.read()
             for cap in policy["sdks"][sdk]["required"]:
+                if cap in measured:
+                    continue
                 with self.subTest(sdk=sdk, capability=cap):
                     self.assertRegex(source, rf"\b{re.escape(cap)}\b", f"{path} never names {cap}")
+
+    def test_no_wrapper_reports_a_measured_capability(self):
+        """A measured capability is never self-reported: the orchestrator would drop the value, so a
+        wrapper naming one is dead code that suggests the opposite."""
+        policy = test_runner.load_capability_policy()
+        measured = policy.get("measuredCapabilities") or []
+        self.assertTrue(measured)
+        for sdk, path in self.WRAPPER_CAPABILITY_FILES.items():
+            with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                source = src.read()
+            for cap in measured:
+                with self.subTest(sdk=sdk, capability=cap):
+                    self.assertNotRegex(source, rf"\b{re.escape(cap)}\b", f"{path} reports measured {cap}")
 
     def test_finalize_scenarios_require_single_finalize_event(self):
         """Every scenario that seals a context asserts exactly one `finalize` event, so it is gated on
@@ -1073,12 +1619,25 @@ class StaticRepoChecks(unittest.TestCase):
                 requires = set(s.get("requires", []))
                 if requires & gated_elsewhere:
                     continue
+                finalized = False
+                setter_after_finalize = False
                 for st in s["steps"]:
+                    if st["action"].startswith("createContext"):
+                        finalized = False  # later steps go to the new context
+                    finalized = finalized or st["action"] == "finalize"
                     expect = st["expect"]
                     messages = [expect[k] for k in error_keys if k in expect]
                     flat = " ".join(m if isinstance(m, str) else " ".join(m) for m in messages).lower()
                     if misuse.search(flat):
-                        self.assertIn("throwsOnMisuse", requires, s["name"])
+                        if finalized and st["action"] in ("attribute", "setUnit"):
+                            # A setter after finalize has its own, narrower gate.
+                            setter_after_finalize = True
+                            self.assertIn("rejectsSettersAfterFinalize", requires, s["name"])
+                        else:
+                            self.assertIn("throwsOnMisuse", requires, s["name"])
+                if "rejectsSettersAfterFinalize" in requires:
+                    # The narrow gate skips a whole scenario, so it must only gate one that tests such a setter.
+                    self.assertTrue(setter_after_finalize, s["name"])
 
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:
@@ -1345,7 +1904,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity
         existing = self.load()
-        intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
+        intruder = dict(existing[0], name="335 - Somebody Else - Appended Into The Parity Range")
         with self.assertRaises(SystemExit):
             parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
 
@@ -1356,6 +1915,16 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parity.assemble(existing, lambda: [s for s in existing if any(m in s["name"] for m in self.PARITY)]
                             + [grown])
+
+    def test_holdout_conformance_generator_rejects_a_scenario_in_its_range(self):
+        import generate_holdout_conformance_scenarios as holdout_conformance
+        markers = (scenario_groups.HOLDOUT_CONFORMANCE,)
+        existing = self.load()
+        updated, _ = holdout_conformance.assemble(existing, self.rebuilt(existing, markers))
+        self.assertEqual(updated, existing)
+        intruder = dict(existing[0], name="505 - Somebody Else - Numbered Inside The Holdout Conformance Range")
+        with self.assertRaises(SystemExit):
+            holdout_conformance.assemble(existing + [intruder], self.rebuilt(existing, markers))
 
     def test_parity_generator_keeps_the_switchback_group_after_it(self):
         import generate_parity_round_scenarios as parity

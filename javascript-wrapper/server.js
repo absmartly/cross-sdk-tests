@@ -4,6 +4,8 @@ const Client = require('@absmartly/javascript-sdk/lib/client').default;
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+const switchbackSelfTest = require('./switchbackSelfTest');
+const sharedVariableKeysSelfTest = require('./sharedVariableKeysSelfTest');
 
 // Default client config for a test context. A scenario can override the
 // application/environment names through the optional `client` field on
@@ -173,12 +175,13 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, holdoutIdsDedup, assignmentRules, semverOperators] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators, switchback, sharedVariableKeys] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
-    holdoutSelfTest.runHoldoutIdsDedup(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
+    switchbackSelfTest.runSwitchback(),
+    sharedVariableKeysSelfTest.runSharedVariableKeys(),
   ]);
 
   res.json({diagnosticsUtf8: true,
@@ -196,6 +199,7 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     throwsOnMisuse: true,
+    rejectsSettersAfterFinalize: true,
     singleFinalizeEvent: true,
     semverNumericOperands: true,
     clientNoEnvironment: true,
@@ -205,9 +209,12 @@ app.get('/capabilities', async (req, res) => {
     xAgentHeader: false,
     holdouts,
     holdout_arms: holdoutArms,
-    holdoutIdsDedup,
     assignmentRules,
-    semverOperators
+    semverOperators,
+    switchback,
+    sharedVariableKeys,
+    // JavaScript parses 3.0 as 3, so a cluster attribute of 3.0 keys "3" (owner decision 2026-11-17).
+    integralFloatAttributes: false
   });
 });
 
@@ -858,6 +865,43 @@ app.post('/diagnostic', (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// The switchback pure functions (WRAPPER_API_SPEC.md, capability `switchback`). The 64-bit fields are
+// decimal strings, passed to the SDK unparsed so they are never read through a double. They answer
+// whenever the SDK has the functions, independent of the self-test verdict.
+function switchbackCall(res, exportName, call) {
+  const functions = switchbackSelfTest.loadFunctions();
+  if (functions == null || typeof functions[exportName] !== 'function') {
+    return res.status(501).json({ error: `linked SDK has no switchback ${exportName}`, events: [] });
+  }
+  try {
+    return res.json({ result: call(functions[exportName]), events: [] });
+  } catch (error) {
+    return res.status(400).json({ error: error.message, events: [] });
+  }
+}
+
+const MAX_SWITCHBACK_ARMS = 1000;
+
+function switchbackParams(body, indexName) {
+  const request = body || {};
+  for (const name of ['clusterUnit', indexName, 'seed']) {
+    if (typeof request[name] !== 'string') throw new Error(`${name} must be a string`);
+  }
+  // WRAPPER_API_SPEC.md: the same bound in every wrapper, so no request builds a huge permutation. A
+  // JSON 3.0 parses as 3 here, as the spec allows.
+  if (!Number.isInteger(request.armCount) || request.armCount < 2 || request.armCount > MAX_SWITCHBACK_ARMS) {
+    throw new Error(`armCount must be an integer between 2 and ${MAX_SWITCHBACK_ARMS}`);
+  }
+  return [request.clusterUnit, request[indexName], request.seed, request.armCount];
+}
+
+app.post('/switchback/assign', (req, res) =>
+  switchbackCall(res, 'assignSwitchback', (assign) => assign(...switchbackParams(req.body, 'periodIndex'))));
+
+app.post('/switchback/permutation', (req, res) =>
+  switchbackCall(res, 'switchbackPermutation', (permutation) =>
+    permutation(...switchbackParams(req.body, 'cycleIndex'))));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {

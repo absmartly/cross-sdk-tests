@@ -25,9 +25,18 @@ RUN mix local.hex --force && \
     mix compile
 CMD ["mix", "test"]
 
+# The wrapper's own ExUnit tests (test/*.exs), in a copy of the wrapper so the test build stays out of
+# the runtime image, which depends on this stage through its marker.
+FROM build AS wrapper-tests
+RUN cp -r /app/elixir-wrapper /app/elixir-wrapper-tests
+WORKDIR /app/elixir-wrapper-tests
+RUN mix deps.get && MIX_ENV=test mix test && touch /wrapper-tests.passed
+
 FROM elixir:1.17-alpine
 
 RUN apk add --no-cache libgcc libstdc++
+
+COPY --from=wrapper-tests /wrapper-tests.passed /wrapper-tests.passed
 
 WORKDIR /app
 

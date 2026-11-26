@@ -771,10 +771,10 @@ def assemble(existing, build_groups):
     before = [s for s in rest if scenario_groups.number(s) < FIRST_NUMBER]
     after = [s for s in rest if scenario_groups.number(s) >= FIRST_NUMBER]
     groups = build_groups()
-    # The parity groups own FIRST_NUMBER up to the Switchback group's first id; any other scenario
+    # The parity groups own FIRST_NUMBER up to the Shared Variable Key group's first id; any other scenario
     # numbered in that range (e.g. a later generator appending without knowing it) is a collision,
     # not something to renumber silently.
-    end = scenario_groups.SWITCHBACK_FIRST_NUMBER
+    end = scenario_groups.SHARED_VARIABLE_KEY_FIRST_NUMBER
     clashes = sorted(scenario_groups.number(s) for s in after if scenario_groups.number(s) < end)
     if clashes or (groups and scenario_groups.number(groups[-1]) >= end):
         raise SystemExit(f"scenarios {clashes} collide with the parity range {FIRST_NUMBER}-{end - 1}")

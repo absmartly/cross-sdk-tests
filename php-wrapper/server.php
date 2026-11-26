@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 require __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/HoldoutSelfTest.php';
+require __DIR__ . '/SwitchbackSelfTest.php';
 
 use ABSmartly\SDK\SDK;
 use ABSmartly\SDK\Config;
@@ -204,6 +206,52 @@ function parseJsonBodyPreserveObjects(ServerRequestInterface $request)
     return json_decode($body);
 }
 
+function switchbackString($body, string $name): string
+{
+    $value = is_object($body) && property_exists($body, $name) ? $body->$name : null;
+    if (!is_string($value)) {
+        throw new InvalidArgumentException("{$name} must be a string");
+    }
+    return $value;
+}
+
+// A signed 64-bit decimal string, parsed exactly (never through a double).
+function switchbackLong($body, string $name): int
+{
+    $value = switchbackString($body, $name);
+    // An optional sign, as Java's Long.parseLong accepts ("+1" is 1).
+    if (preg_match('/^([-+]?)0*([0-9]+)$/D', $value, $m) !== 1) {
+        throw new InvalidArgumentException("{$name} must be a signed 64-bit decimal string");
+    }
+    // Leading zeros and "-0" parse as Java's Long.parseLong does; anything past 64 bits is rejected.
+    $canonical = ($m[1] === '-' && $m[2] !== '0' ? '-' : '') . $m[2];
+    if ((string) (int) $canonical !== $canonical) {
+        throw new InvalidArgumentException("{$name} is out of the signed 64-bit range");
+    }
+    return (int) $canonical;
+}
+
+// php-sdk 1.1 keeps the 1.0.3 setAttribute(string, string) and track(string, ?object) signatures and adds
+// setAttributeValue()/trackWithProperties() for typed values and array properties; older builds took mixed
+// values through the original methods. Call whichever real SDK method takes the value as given.
+function setContextAttribute(Context $context, string $name, $value): void
+{
+    if (!is_string($value) && method_exists($context, 'setAttributeValue')) {
+        $context->setAttributeValue($name, $value);
+        return;
+    }
+    $context->setAttribute($name, $value);
+}
+
+function trackContextGoal(Context $context, string $goalName, $properties): void
+{
+    if (method_exists($context, 'trackWithProperties')) {
+        $context->trackWithProperties($goalName, $properties);
+        return;
+    }
+    $context->track($goalName, $properties);
+}
+
 function translateEndpoint(string $endpoint): string
 {
     return preg_replace('/localhost:\d+/', '127.0.0.1:3000', $endpoint);
@@ -244,8 +292,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             //    of throwing; only close() surfaces the error (scenario 193).
             'publishThrowsOnFailure' => false,
             'trackRejectsNonObjectProperties' => true,
-            'refreshNoOpOnFailedContext' => true,
+            // php-sdk 1.x keeps v1.0.3's accepted post-close attribute/unit setters (rejectsSettersAfterFinalize)
+            // and failed-context refresh recovery (php-sdk#12): reviewed exceptions in
+            // orchestrator/expected-capabilities.json. Its other misuse errors still throw (throwsOnMisuse).
+            'refreshNoOpOnFailedContext' => false,
             'throwsOnMisuse' => true,
+            'rejectsSettersAfterFinalize' => false,
             'singleFinalizeEvent' => true,
             'semverNumericOperands' => true,
             'clientNoEnvironment' => true,
@@ -253,8 +305,43 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             'clientAcceptsBlankApplication' => true,
             'assignmentRules' => true,
             'semverOperators' => true,
-            'xAgentHeader' => true
+            'xAgentHeader' => true,
+            // Reported from a behavioral self-test against the built php-sdk
+            // (HoldoutSelfTest.php), never hard-coded.
+            'holdouts' => HoldoutSelfTest::runHoldouts(),
+            'holdout_arms' => HoldoutSelfTest::runHoldoutArms(),
+            'switchback' => SwitchbackSelfTest::run(),
+            // The switchback battery checks that a whole float keys no cluster (SwitchbackSelfTest.php).
+            'integralFloatAttributes' => SwitchbackSelfTest::run()
         ]);
+    }
+
+    // Pure switchback functions (capability `switchback`). 64-bit values arrive
+    // as decimal strings and clusterUnit is passed to the SDK unchanged. They
+    // answer whenever the assigner links, whatever the self-test verdict, so a
+    // regressed assigner reports its actual outputs.
+    if ($method === 'POST' && ($path === '/switchback/assign' || $path === '/switchback/permutation')) {
+        if (!SwitchbackSelfTest::isAvailable()) {
+            return jsonResponse(501, ['error' => 'linked SDK has no switchback assigner', 'events' => []]);
+        }
+        $body = parseJsonBodyPreserveObjects($request);
+        try {
+            $clusterUnit = switchbackString($body, 'clusterUnit');
+            $seed = switchbackLong($body, 'seed');
+            $armCount = is_object($body) && property_exists($body, 'armCount') ? $body->armCount : null;
+            if (!is_int($armCount)) {
+                throw new InvalidArgumentException('armCount must be an integer');
+            }
+            if ($armCount < 2) {
+                throw new InvalidArgumentException("armCount must be at least 2, got {$armCount}");
+            }
+            $result = $path === '/switchback/assign'
+                ? SwitchbackSelfTest::assign($clusterUnit, switchbackLong($body, 'periodIndex'), $seed, $armCount)
+                : SwitchbackSelfTest::permutation($clusterUnit, switchbackLong($body, 'cycleIndex'), $seed, $armCount);
+            return jsonResponse(200, ['result' => $result, 'events' => []]);
+        } catch (InvalidArgumentException $e) {
+            return jsonResponse(400, ['error' => $e->getMessage(), 'events' => []]);
+        }
     }
 
     if ($method === 'POST' && $path === '/diagnostic') {
@@ -376,7 +463,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             return $sdk->createContextAsync($contextConfig)->then(
                 function($context) use ($contextId, $eventCollector, $sdk, $body, &$contexts) {
                     foreach ((array)($body->attributes ?? []) as $name => $value) {
-                        $context->setAttribute($name, $value);
+                        setContextAttribute($context, $name, $value);
                     }
 
                     $contexts[$contextId] = [
@@ -491,11 +578,12 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $contextConfig->setEventLogger($eventCollector);
 
         if (isset($body->data)) {
-            // Hand the experiments straight to the SDK — exactly as the SDK's
-            // own collector fetch does (new ContextData($decoded->experiments)).
-            // The wrapper never inspects or reshapes the payload.
+            // Hand the experiments and holdouts straight to the SDK, exactly as
+            // the SDK's own collector fetch does. The wrapper never inspects or
+            // reshapes the payload.
             $experiments = $body->data->experiments ?? [];
-            $contextData = new ContextData($experiments);
+            $holdouts = $body->data->holdouts ?? [];
+            $contextData = new ContextData($experiments, is_array($holdouts) ? $holdouts : []);
             $context = $sdk->createContextWithData($contextConfig, $contextData);
 
             $contexts[$contextId] = [
@@ -648,7 +736,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $body = parseJsonBody($request);
 
         try {
-            $context->setAttribute($body['name'], $body['value']);
+            setContextAttribute($context, $body['name'], $body['value']);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);
@@ -790,7 +878,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
         $rawProps = (is_object($bodyObj) && property_exists($bodyObj, 'properties')) ? $bodyObj->properties : null;
 
         try {
-            $context->track($body['goalName'], $rawProps);
+            trackContextGoal($context, $body['goalName'], $rawProps);
             $newEvents = $eventCollector->getNewEvents($eventsBefore);
 
             return jsonResponse(200, ['result' => null, 'events' => $newEvents]);

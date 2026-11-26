@@ -28,6 +28,11 @@ GET /health
 }
 ```
 
+A wrapper may add `sdkCommit`, the git commit of the SDK checkout it was built
+from (null when the tree was modified). The java-wrapper reports it, and
+`generate_shared_variable_key_scenarios.py` refuses to record from a wrapper
+whose `sdkCommit` is not its pinned `JAVA_SDK_COMMIT`.
+
 ### 2. Create Context
 
 There are two modes for creating a context:
@@ -281,6 +286,38 @@ contract is `absmartly-<lang>-sdk/<semver>`, with `<semver>` per the semver.org
 The javascript-family wrappers implement the endpoints but list `xAgentHeader`
 as a reviewed exception: javascript-sdk#68 (the reference) still sends the
 unversioned `absmartly-javascript-sdk`.
+
+### 2b-ii. Context Server Endpoints (context-fetch compression)
+
+**Endpoints on the context server.** Scenarios that carry a `contextServer`
+object (270-274) store their payload on the negotiating context server
+(`context-server/`, compose service `context-server:8080`) instead, and the
+`endpoint` in `POST /context` is `http://context-server:8080/negotiate/{payloadId}`.
+Wrappers need nothing new for this, but they must:
+
+- hand any `endpoint` whose host is not `localhost`/`127.0.0.1` to the SDK
+  unchanged (the existing `localhost:<port>` rewrites are fine);
+- let the SDK's own HTTP client fetch it with its defaults: no wrapper-added
+  `Accept-Encoding`, no wrapper-side decompression;
+- never fetch `{endpoint}/context` themselves and hand the result to the SDK:
+  the request the context server records must be the SDK's own. The probe
+  records the request's `User-Agent` (printed in the run summary and stored in
+  `report.json` under `context_fetch_probe`) and reviewers read it per lane,
+  but that is only a heuristic: a wrapper that shares the SDK's HTTP stack
+  (node's fetch, Python's `requests`) sends the same User-Agent and is
+  indistinguishable by it. The only guarantee is code review of the wrapper;
+- on `/refresh` with an empty body, refresh through the SDK's own fetch. The
+  orchestrator changes the data on the context server before such a refresh
+  and asserts the new value afterwards.
+
+The orchestrator also probes every wrapper once at startup through the same
+path to measure the `contextFetchCompression` capability (a gzip-or-identity
+payload) and the `contextFetchBrotli` capability (a payload allowing
+br > gzip > identity, measured over the context server's plain http); see
+[docs/context-fetch-compression.md](docs/context-fetch-compression.md).
+Wrappers do not report either: any value in `/capabilities` is dropped. The
+same wrapper rules apply to br: no wrapper-added `Accept-Encoding: br`, no
+wrapper-side br decoding.
 
 ### 2c. Diagnostics Endpoint (utility/class verification)
 
@@ -1247,18 +1284,6 @@ at what variant) - a check that only compares treatments could pass against
 an SDK that assigns the right variant while getting exposure suppression or
 ordering wrong.
 
-### Capability: `holdoutIdsDedup`
-
-No new endpoint. It gates scenario 500: a `holdoutIds` list naming one holdout
-more than once, adjacent or not (`[901, 901]`, `[902, 903, 902, 903]`), is one
-holdout, as javascript-sdk dedups it at install. The holdout fires one
-exposure, and a refresh whose only change is dropping the duplicate is not a
-coverage change, so the covered experiment keeps its exposure state and
-nothing re-exposes. Advertise it from a behavioural self-test that checks both
-the adjacent and the non-adjacent repeat across such a refresh, and only when
-the `holdouts` battery passes. Pending owner confirmation as the contract, so
-it is its own capability rather than part of `holdouts`.
-
 ### Capability: `switchback`
 
 Gates the Switchback scenario group: R33 (cluster-defined) switchback serving on
@@ -1295,7 +1320,7 @@ cluster key, or whose assigner drifts from the golden vectors, must report
 `false`. An SDK whose experiment model still has `switchbackClusterCount` (the
 Phase 1E bucket design) must report `false`.
 
-The capability means a behavioral self-test passed. For java it covers:
+The capability means a behavioral self-test passed. For java and ruby (`ruby-wrapper/switchback_self_test.rb`, the same payload and expected values, plus a float value, a second unit serving, a rule win and a traffic miss) it covers the list below; the rust wrapper's (`rust-wrapper/src/switchback_self_test.rs`) mirrors java's, and also checks that a `3.0` attribute keys no cluster, that a covering holdout neither suppresses a switchback nor fires through it, and that an `assign` rule, full-on and a strict audience mismatch keep their unit-experiment exposure flags. The checks:
 
 - the SDK's experiment model has `switchbackClusters` and
   `switchbackClusterValues` and does not have `switchbackClusterCount`;
@@ -1318,9 +1343,18 @@ The capability means a behavioral self-test passed. For java it covers:
   depth; and a unit experiment carrying every R33 field publishes the same
   bytes as the plain unit baseline.
 
+The dart and flutter wrappers run the same probe payload and checks
+(`dart-wrapper/switchback_self_test.dart`, copied to
+`flutter-wrapper/lib/`), against the SDK's own assigner and a context created
+with `createContextWith` from the JSON payload parsed by `ContextData.fromMap`.
+
 Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
+
+The php self-test (`php-wrapper/SwitchbackSelfTest.php`) runs the same checks
+on the same probe payload, decoded with the SDK's own `Client::decode`, plus
+one more: an integral-float attribute (`123456789.0`) gives no cluster value.
 
 The capability also needs the SDK's assignment-rule evaluation for
 switchbacks: scenarios 416 and 424 serve an `assign` rule (416 also before
@@ -1328,11 +1362,19 @@ the anchor, 424 next to a covering holdout) and expect the exposure to carry `ru
 strict audience mismatch is recorded with `assigned: false` and
 `audienceMismatch: true`, as for unit experiments.
 
-Known limit for other languages: scenario 411 sends the attribute value `3.0`
-and expects no cluster value (a float never keys a cluster). An SDK whose JSON
-layer cannot tell `3.0` from `3` (JavaScript, for one) sees the integer `3`,
-which the Collector keys as `"3"`; such an SDK cannot pass that case as
-written. Revisit the case before a second SDK gains the capability.
+Integral floats: scenario 426 sends the attribute value `3.0` and expects no
+cluster value (a float never keys a cluster). It also requires
+`integralFloatAttributes`, because an SDK whose JSON layer cannot tell `3.0`
+from `3` (JavaScript, for one) sees the integer `3`, which it keys as `"3"`.
+Such an SDK advertises `integralFloatAttributes: false` and lists it as a
+reviewed exception (owner decision 2026-11-17); it still runs 411, which
+covers every other non-value. Ruby tells them apart, PHP's `json_decode`
+keeps `3.0` a float, rust-sdk's serde_json reads `3.0` as a float, and the
+dart and flutter lanes run on the Dart VM, which keeps `3.0` a double
+(flutter-sdk documents that its web builds key `3.0` as `"3"`). A wrapper whose
+language keeps the two apart must pass attribute values through without losing
+it: the go wrapper decodes `value` with `UseNumber` and hands an integer literal
+to the SDK as an `int` and any other number as a `float64`.
 
 Wrappers have no clock control and none is added. The Context scenarios are
 deterministic because their grids keep "now" inside one known period for
@@ -1378,13 +1420,21 @@ Both endpoints are pure functions with no context. Request rules:
   **decimal strings** and must be parsed exactly (never through a double);
   JSON numbers lose precision above 2^53 in most languages. `seed` is the
   experiment seed `(seedHi << 32) | (seedLo & 0xffffffff)`.
-- `armCount` is a JSON integer, at least 2.
+- `armCount` is a JSON integer, at least 2 (the vectors use 2, 3 and 10). A
+  wrapper may read an integral JSON number such as `3.0` as `3` (JavaScript
+  cannot tell them apart); scenarios always send integers.
 - `clusterUnit` is a string passed to the SDK **unchanged**; the endpoint must
   not hash or normalize it. Integer cluster units in the golden vectors are
   sent as their decimal string.
+- A wrapper may cap `armCount` to bound the permutation it builds; the ruby
+  wrapper accepts at most 10,000, the elixir wrapper 16,384 and the javascript
+  and java wrappers 1,000 (the golden vectors use 2, 3 and 10). Values above a wrapper's cap are
+  an invalid request.
 - An invalid request (missing field, non-decimal string, out-of-range value,
-  `armCount < 2`) returns 400 with `{"error": "..."}`. A wrapper whose SDK
-  lacks the function returns 501.
+  `armCount < 2` or above the wrapper's cap) returns 400 with
+  `{"error": "...", "events": []}`, the wrapper-wide error envelope. A wrapper
+  whose SDK lacks the function returns 501 with the same shape. Scenarios 400
+  and 403 send invalid requests and check both the 400 and the `events` member.
 
 The vector scenarios are generated from `fixtures/switchback/golden-vectors.json`
 (a byte-identical copy of the platform's `lib/utils` resource, blob
@@ -1446,13 +1496,43 @@ closed on any exception.
 ### Capability: `throwsOnMisuse`
 
 No new endpoint. `true` when the SDK surfaces misuse to the caller as an error,
-as the JS reference does: `setUnit` with a blank or already-set uid, a mutation
-(`track`, `attribute`, `setUnit`, `treatment`) after finalize, and a read before
-the context is ready. The wrapper maps that error to a 400 carrying the SDK's own
-message. An SDK that only logs misuse (an `error` event) and returns normally
-reports `false` and lists a reviewed exception; its wrapper returns the SDK's
-result and the logged event unchanged and must not synthesize a 400 from it.
-Scenarios 34, 35, 147-149, 188, 189 and 201 require it.
+as the JS reference does: `setUnit` with a blank or already-set uid, `track` or
+`treatment` after finalize, and a read before the context is ready. The wrapper
+maps that error to a 400 carrying the SDK's own message. An SDK that only logs
+misuse (an `error` event) and returns normally reports `false` and lists a
+reviewed exception; its wrapper returns the SDK's result and the logged event
+unchanged and must not synthesize a 400 from it. Scenarios 34, 35, 147, 189 and
+201 require it.
+
+### Capability: `rejectsSettersAfterFinalize`
+
+No new endpoint. `true` when `setAttribute` and `setUnit` called after finalize
+throw (or return the SDK's idiomatic error), as the JS reference does. It is
+split from `throwsOnMisuse` so an SDK whose released contract accepts these
+setters after finalize (php-sdk 1.x) skips only scenarios 148, 149 and 188,
+which require it. The same wrapper rules apply: report the SDK's own behaviour,
+never synthesize a 400.
+
+### Capability: `sharedVariableKeys`
+
+No new endpoint. `true` when `variableValue`/`peekVariableValue` resolve a key
+shared by several experiments as java-sdk's `Context.getVariableAssignment`:
+candidates in ascending experiment id; the first assigned, overridden or
+rule-won candidate wins (even if its selected variant lacks the key, which then
+gives the default); otherwise the first holdout-suppressed candidate's control
+value; otherwise the default with no exposure. `variableValue` exposes at most
+one experiment, the selected one; it also fires the applicable holdouts'
+exposures for the candidates it visits (a held-out candidate never exposes
+itself). `peekVariableValue` exposes nothing. A constant `true` is allowed for
+the SDKs that require it; scenarios 340-368 verify it. The javascript, react,
+vue2, vue3 and angular wrappers require it too (javascript-sdk pinned at
+2aa9a2d) but derive it from a behavioral self-test
+(`javascript-wrapper/sharedVariableKeysSelfTest.js`, as scenarios 341, 350 and
+351): a strict-mismatched lower-id candidate is skipped and never exposed, the
+lower id wins even when the payload lists it second, and a winner whose variant
+lacks the key returns the default with no fall-through; each with exactly one
+exposure, for the winner, and none from `peekVariableValue`. The go wrapper
+derives it from the same battery (`go-wrapper/shared_variable_keys_selftest.go`).
 
 ### Capability: `singleFinalizeEvent`
 

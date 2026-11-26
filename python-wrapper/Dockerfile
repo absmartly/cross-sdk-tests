@@ -16,7 +16,16 @@ WORKDIR /app
 COPY cross-sdk-tests/python-wrapper/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY cross-sdk-tests/python-wrapper/server.py ./
+COPY cross-sdk-tests/python-wrapper/server.py cross-sdk-tests/python-wrapper/holdout_self_test.py cross-sdk-tests/python-wrapper/switchback_self_test.py ./
+
+FROM server AS wrapper-tests
+COPY cross-sdk-tests/python-wrapper/test_switchback_self_test.py ./
+RUN python -m unittest -v test_switchback_self_test && touch /wrapper-tests.passed
+
+# The runtime image depends on wrapper-tests (through its marker), so BuildKit and buildah cannot
+# skip the stage and a failing wrapper test fails the image build. Test files stay out of the runtime.
+FROM server
+COPY --from=wrapper-tests /wrapper-tests.passed /wrapper-tests.passed
 
 EXPOSE 3000
 

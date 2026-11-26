@@ -12,7 +12,7 @@ WORKDIR /app
 
 COPY cross-sdk-tests/flutter-wrapper /app
 
-RUN flutter pub get && flutter test test/widget_driver_test.dart
+RUN flutter pub get && flutter test test/widget_driver_test.dart test/switchback_self_test_test.dart
 
 EXPOSE 3000
 

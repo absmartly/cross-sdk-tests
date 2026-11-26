@@ -14,25 +14,73 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
+#
+# Holdouts / switchbacks / shared-variable-key round (one consolidated cross-sdk-tests PR):
+# every lane that now requires `holdouts`/`holdout_arms` and `switchback` builds its SDK's
+# open switchback PR branch (stacked on, or containing, that SDK's holdouts PR). Re-pin each
+# to `main` in the change that merges its SDK PR(s), before the branch is deleted, or the
+# lane's clone fails:
+#   cpp-sdk        feat/switchbacks  cpp-sdk#6 (stacked on #5 holdouts), at the SDK_REVISIONS commit
+#   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (stacked on #15 holdouts); contains #17 (1.4.1)
+#   elixir-sdk     feat/switchbacks  elixir-sdk#6 (stacked on #5 holdouts)
+#   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
+#   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
+#   javascript-sdk feat/switchbacks  javascript-sdk#69 (holdouts already on main), at the SDK_REVISIONS commit:
+#                                    2aa9a2d carries the java-sdk shared-variable-key rule, so the JS-family
+#                                    lanes require `sharedVariableKeys` (340-368) at exactly that tree.
+#   php-sdk        feat/switchbacks  php-sdk#13 (on #11 holdouts)
+#   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
+#   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
+#   rust-sdk       feat/switchbacks  rust-sdk#12 (holdouts rust-sdk#11 merged)
+#   swift-sdk      feat/swift-2.0    swift-sdk#13 (2.0); the `swift` lane runs the 2.x wrapper. 2.0 has no
+#                                    holdouts yet, so `swift` lists them as reviewed exceptions.
+#   swift-sdk-v1   main @ f64883c    swift-sdk#12 (holdouts, on the 1.5.0 line) MERGED: the SDK_REVISIONS
+#                                    commit is its merge commit on main. The `swift-v1` lane
+#                                    (swift-v1-wrapper, cloned from absmartly/swift-sdk) requires holdouts.
+#                                    swift-sdk main becomes 2.0 when #13 merges, so this lane never tracks
+#                                    main's tip: keep the exact commit until release/1.x is cut, then
+#                                    re-pin to it.
+# Not every switchbacks branch contains its holdouts PR's latest head: cpp, elixir and dotnet
+# feat/switchbacks are behind their feat/holdouts, so those lanes test switchback over an older
+# holdouts port. Merge holdouts into switchbacks in those SDK repos and re-run the lanes before merge.
+# SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
+# what this commit tests.
+declare -A SDK_REVISIONS=(
+  ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
+  ["javascript-sdk"]="2aa9a2df4a3b636375edae8df077bd10fd5a6b32"
+  ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
+)
+
+# Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
+# absmartly/<repo> it is cloned from. Directories not listed are cloned from the repo of the same name.
+declare -A SDK_REPO_SOURCES=(
+  ["java-sdk-v1"]="java-sdk"
+  ["swift-sdk-v1"]="swift-sdk"
+)
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
-  ["cpp-sdk"]="main"
-  ["dotnet-sdk"]="main"
-  ["elixir-sdk"]="main"
-  ["flutter-sdk"]="main"
-  # go-sdk holdouts PR (go-sdk feat/holdouts) is open; re-pin to main once it merges.
-  ["go-sdk"]="feat/holdouts"
-  ["java-sdk"]="main"
-  ["javascript-sdk"]="main"
+  ["cpp-sdk"]="feat/switchbacks"
+  ["dotnet-sdk"]="feat/switchbacks"
+  ["elixir-sdk"]="feat/switchbacks"
+  ["flutter-sdk"]="feat/switchbacks"
+  ["go-sdk"]="feat/switchbacks"
+  # java-sdk 2.0 (the open java-sdk next/major -> main PR): the `java` lane runs the 2.x wrapper on
+  # next/major until it merges, then on main.
+  ["java-sdk"]="next/major"
+  # The 1.x line, for the `java-v1` lane (java-v1-wrapper): release/1.x once the owner cuts it, until then the
+  # last 1.x tag. v1.9.0 predates switchback (on main since java-sdk#15), so java-v1 lists it as unsupported.
+  ["java-sdk-v1"]="v1.9.0"
+  ["javascript-sdk"]="feat/switchbacks"
   ["kotlin-sdk"]="main"
   ["liquid-sdk"]="main"
-  ["php-sdk"]="main"
-  ["python3-sdk"]="main"
+  ["php-sdk"]="feat/switchbacks"
+  ["python3-sdk"]="feat/switchbacks"
   ["react-sdk"]="feat/react-sdk-fixes-and-tests"
-  ["ruby-sdk"]="main"
-  ["rust-sdk"]="main"
+  ["ruby-sdk"]="feat/switchbacks"
+  ["rust-sdk"]="feat/switchbacks"
   ["scala-sdk"]="main"
-  ["swift-sdk"]="main"
+  ["swift-sdk"]="feat/swift-2.0"
+  ["swift-sdk-v1"]="main"
   ["vue2-sdk"]="fix/all-tests-passing"
   ["vue3-sdk"]="fix/jest-config-vue3"
 )

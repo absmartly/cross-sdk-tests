@@ -6,11 +6,14 @@
     "false/missing value fails the run and the gated scenarios still execute) or a reviewed",
     "`unsupported` exception with a one-line reason (the gated scenarios are skipped). A capability",
     "that is neither, or an SDK with no entry here, fails closed. Extra keys a wrapper returns from",
-    "/capabilities that are not listed in `capabilities` are ignored. Required entries are pinned by",
-    "evidence (passing CI lanes), not auto-enrolled from whatever a wrapper currently reports.",
-    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`."
+    "/capabilities that are not listed in `capabilities` are ignored. A `required` entry needs evidence,",
+    "never auto-enrolled from what a wrapper currently reports: a passing CI lane, or, only for a measured",
+    "capability no lane here could observe, a code reading, in which case CI is what proves it.",
+    "When an SDK gains support for an excepted capability, move it from `unsupported` to `required`.",
+    "`measuredCapabilities` are not read from the wrapper: the orchestrator measures them (here, the Accept-Encoding the SDK sends to the context server) and checks the result against this policy exactly like an advertised capability, so a reviewed exception that starts measuring true fails the run until it is moved to `required`."
   ],
   "capabilities": {
+    "integralFloatAttributes": "the SDK's JSON layer tells the attribute value 3.0 from 3, so a switchback cluster attribute of 3.0 gives no value (scenario 426); JavaScript parses both as one number and keys 3.0 as \"3\" (owner decision 2026-11-17)",
     "switchback": "R33 cluster-defined switchback serving (ordered switchbackClusters, switchbackClusterValues) through a context, plus POST /switchback/assign and /switchback/permutation, advertised from a behavioral self-test",
     "diagnostics": "POST /diagnostic hashUnit, computed by the SDK's own hashing",
     "diagnosticsUtf8": "POST /diagnostic utf8Bytes, computed by the SDK's own UTF-8 encoder",
@@ -32,11 +35,18 @@
     "xAgentHeader": "the SDK's own requests carry X-Agent: absmartly-<lang>-sdk/<version> (the feature-parity round); the wrapper records the requests its mock collector serves (GET /context_payload/{id}/requests) and, with publishToEndpoint on POST /context, publishes through the SDK's own publisher to PUT {endpoint}/context",
     "clientRejectsBlankApplication": "the SDK's client rejects an explicitly blank application at construction, and the wrapper forwards client.application unchanged on POST /context, so a blank name returns the SDK's own validation error as a 400 instead of being repaired into the wrapper's default (WRAPPER_API_SPEC.md, POST /context client)",
     "clientAcceptsBlankApplication": "the SDK's client accepts an explicitly blank application and leaves application out of the audience/rule evaluation map; the wrapper forwards client.application unchanged on POST /context rather than repairing it into its default (WRAPPER_API_SPEC.md, POST /context client)",
-    "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/attribute/setUnit/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
+    "throwsOnMisuse": "misuse surfaces to the caller as an error, as in the JS reference: setUnit with a blank or already-set uid, a mutation (track/treatment) after finalize, and a read before the context is ready throw (or return the SDK's idiomatic error) instead of only logging it; the wrapper maps that error to a 400 carrying the SDK's own message",
+    "rejectsSettersAfterFinalize": "setAttribute/setUnit called after finalize throw (or return the SDK's idiomatic error), as in the JS reference; split from throwsOnMisuse so an SDK whose released contract accepts these setters after finalize skips only scenarios 148, 149 and 188",
     "singleFinalizeEvent": "sealing the context (finalize) logs exactly one lifecycle event, `finalize`, as in the JS reference; the wrapper returns every event the SDK logs, unrenamed and not de-duplicated",
     "semverNumericOperands": "a numeric semver_* operand is converted to a string like the JS reference (toFixed(15), trailing zeros trimmed), so 1e-7 compares as 0.0000001 (scenario 332)",
-    "holdoutIdsDedup": "a holdoutIds list naming one holdout more than once is one holdout, as javascript-sdk dedups it at install: one holdout exposure per (holdout, unit type), and a refresh that only drops the duplicate is not a coverage change, so nothing re-exposes (Holdout Conformance scenario 500; advertised from a behavioral self-test). Pending owner confirmation as the contract"
+    "sharedVariableKeys": "shared variable keys resolve like java-sdk Context.getVariableAssignment (scenarios 340-368): candidates in ascending experiment id, the first assigned/overridden/ruleOverride candidate wins even if its variant lacks the key, else the first holdout-suppressed candidate (control value), else the default with no exposure; variableValue exposes at most the selected experiment (plus the applicable holdouts of the candidates it visits), peekVariableValue nothing",
+    "contextFetchCompression": "the SDK's own GET {endpoint}/context advertises gzip (Accept-Encoding) on create and refresh and decodes the gzip body; measured by the orchestrator on the context server, never self-reported",
+    "contextFetchBrotli": "the SDK's own GET {endpoint}/context advertises br (Accept-Encoding) on create and refresh and decodes the br body the context server then serves (a payload allowing br > gzip > identity), including the refreshed data; measured by the orchestrator on the context server, never self-reported"
   },
+  "measuredCapabilities": [
+    "contextFetchCompression",
+    "contextFetchBrotli"
+  ],
   "sdks": {
     "javascript": {
       "required": [
@@ -59,14 +69,18 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
-        "holdoutIdsDedup"
+        "switchback",
+        "sharedVariableKeys",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in javascript-sdk; java-sdk only (R33)",
         "xAgentHeader": "javascript-sdk#68 (the reference) sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
+        "contextFetchBrotli": "observed: over http (the harness's context server) Node's global fetch sends `gzip, deflate`; over https undici 7.30.2 (Node 24.22.3) sends `br, gzip, deflate` and decodes br; the SDK sets no Accept-Encoding and uses global fetch (src/fetch.ts:22-23), so false here is a harness-transport artefact"
       }
     },
     "python": {
@@ -87,17 +101,21 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
-        "semverNumericOperands"
+        "rejectsSettersAfterFinalize",
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "contextFetchCompression",
+        "integralFloatAttributes"
       ],
       "unsupported": {
-        "holdouts": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in python3-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned python3-sdk branch lacks",
         "trackRejectsNonObjectProperties": "python3-sdk#11 restored the released v0.2.4 behaviour: track() accepts a list of pairs / empty list as properties instead of throwing; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 39)",
         "refreshNoOpOnFailedContext": "python3-sdk#11 restored the released v0.2.4 behaviour: refresh() recovers a context whose initial load failed (re-fetches and applies data) instead of being a no-op; reviewed Python exception to preserve backwards compatibility with v0.2.4 (scenario 229)",
         "clientRejectsBlankApplication": "python3-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
         "singleFinalizeEvent": "python3-sdk close()/finalize() logs `close` and then `finalize` for one transition (sdk/context.py close_async, kept for v0.2.4 listeners), so the finalize scenarios (19, 131, 147-149, 186, 188-192, 228) skip",
-        "holdoutIdsDedup": "pinned python3-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "python3-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in python3-sdk",
+        "contextFetchBrotli": "observed: requests/urllib3 adds br only when the `brotli`/`brotlicffi` package is installed; the SDK does not depend on it, so it sends `gzip, deflate`"
       }
     },
     "ruby": {
@@ -120,15 +138,19 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "contextFetchCompression",
+        "integralFloatAttributes"
       ],
       "unsupported": {
-        "holdouts": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in ruby-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned ruby-sdk branch lacks",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned ruby-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "ruby-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in ruby-sdk",
+        "contextFetchBrotli": "observed: Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder; the SDK's Faraday stack adds none"
       }
     },
     "liquid": {
@@ -151,15 +173,19 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "holdouts": "wraps ruby-sdk, whose pinned branch has no holdout resolution",
-        "switchback": "switchback serving not implemented in liquid (ruby-sdk); java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the wrapped ruby-sdk lacks",
+        "holdouts": "the liquid wrapper has no holdout self-test yet, so it does not advertise holdouts (the ruby lane covers ruby-sdk's holdout resolution)",
+        "switchback": "switchback serving not implemented in liquid (ruby-sdk)",
+        "holdout_arms": "depends on holdouts, which the liquid wrapper does not advertise",
         "clientAcceptsBlankApplication": "ruby-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "wraps ruby-sdk, whose pinned branch has no holdout resolution"
+        "sharedVariableKeys": "wraps ruby-sdk, which exposes every visited candidate and falls through past a winner whose variant lacks the key; follow-up in ruby-sdk",
+        "integralFloatAttributes": "depends on switchback, which the liquid lane does not serve yet",
+        "contextFetchBrotli": "observed: wraps ruby-sdk; Net::HTTP sends `gzip;q=1.0,deflate;q=0.6,identity;q=0.3` and has no br decoder"
       }
     },
     "php": {
@@ -172,7 +198,6 @@
         "readyError",
         "diagnosticsUtf8",
         "trackRejectsNonObjectProperties",
-        "refreshNoOpOnFailedContext",
         "clientNoEnvironment",
         "assignmentRules",
         "semverOperators",
@@ -180,17 +205,22 @@
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "integralFloatAttributes"
       ],
       "unsupported": {
         "variableKeysMap": "php-sdk getVariableKeys() maps each key to a single experiment, so it cannot list every experiment per key",
-        "holdouts": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in php-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned php-sdk branch lacks",
         "numericUnitIds": "php-sdk stores unit uids as strings (owner decision: Marcio required units be stored as strings for v1.0.3 compatibility), so getUnit/getUnits return the stringified uid (\"12345\") rather than the original number; reviewed PHP exception",
         "publishThrowsOnFailure": "php-sdk publish()/flush() log the collector failure and return instead of throwing (owner decision: Marcio approved publish()/flush() logging and returning for v1.0.3 compatibility; only close() throws), so a direct publish() failure does not surface to the caller; reviewed PHP exception",
         "clientRejectsBlankApplication": "php-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "holdoutIdsDedup": "pinned php-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "php-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in php-sdk",
+        "refreshNoOpOnFailedContext": "php-sdk 1.x keeps the v1.0.3 behaviour that refresh() re-fetches and applies data on a context whose initial load failed (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the JS no-op moves to 2.0 on next/major), so scenario 229 differs from JS by design; reviewed PHP exception, as for python",
+        "rejectsSettersAfterFinalize": "php-sdk 1.x keeps the v1.0.3 contract that setAttribute()/setAttributes()/setUnit()/setUnits() are accepted after close() (php-sdk#12, non-breaking 1.1.0 of v1.0.3; the throwing behaviour moves to 2.0 on next/major), so scenarios 148, 149 and 188 would fail; reviewed PHP exception",
+        "contextFetchCompression": "observed: php-sdk ReactHttpClient (the wrapper's injected client) sends no Accept-Encoding and does not decode gzip; the default curl HTTPClient sets no CURLOPT_ENCODING either; fix pending",
+        "contextFetchBrotli": "observed: the wrapper's ReactHttpClient sends no Accept-Encoding and decodes nothing; the curl default sets no CURLOPT_ENCODING"
       }
     },
     "go": {
@@ -212,16 +242,20 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
         "holdouts",
         "holdout_arms",
-        "holdoutIdsDedup"
+        "switchback",
+        "integralFloatAttributes",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "readyError": "go-sdk has no ReadyError API (SetDataFailed discards the error)",
-        "switchback": "switchback serving not implemented in go-sdk; java-sdk only (R33)",
-        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead"
+        "clientRejectsBlankApplication": "go-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
+        "contextFetchCompression": "observed: go-sdk sets Transport.DisableCompression, so no Accept-Encoding is sent (resty still decodes gzip); fix pending",
+        "contextFetchBrotli": "observed: go-sdk sets DisableCompression and sends no Accept-Encoding; br is not in the Go stdlib (needs andybalholm/brotli plus a manual header and decode)"
       }
     },
     "rust": {
@@ -243,16 +277,20 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "switchback",
+        "integralFloatAttributes"
       ],
       "unsupported": {
-        "holdouts": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in rust-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned rust-sdk branch lacks",
+        "holdouts": "the rust wrapper does not advertise holdouts yet (rust-sdk holdouts are in rust-sdk#11 and on the pinned branch; the wrapper self-test lands with the holdouts companion PR)",
+        "holdout_arms": "depends on holdouts, which the rust wrapper does not advertise yet",
         "clientNoEnvironment": "rust-sdk returns a ConfigError when environment is missing and exposes no no-environment client, so the wrapper cannot build the case black-box; rust-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "rust-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned rust-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "rust-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 343, 347-351, 356, 361-362); follow-up in rust-sdk",
+        "contextFetchCompression": "observed: rust-sdk builds reqwest 0.12 without the gzip feature, so no Accept-Encoding is sent and gzip is not decoded; fix pending",
+        "contextFetchBrotli": "observed: rust-sdk builds reqwest 0.12 with only the `json` feature: no Accept-Encoding, no br decoder (needs the reqwest `brotli` feature)"
       }
     },
     "java": {
@@ -278,12 +316,51 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys",
+        "integralFloatAttributes"
       ],
       "unsupported": {
         "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "java-sdk keeps duplicate holdoutIds in the applicable-holdout set, so a refresh that drops the duplicate re-exposes the covered experiment; java-sdk#25 dedups like javascript-sdk; move this to required when it merges and the lane is repinned"
+        "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode gzip; fix pending",
+        "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)"
+      }
+    },
+    "java-v1": {
+      "required": [
+        "diagnostics",
+        "publishFail",
+        "variableKeysMap",
+        "globalCustomFieldKeys",
+        "getUnits",
+        "getAttributes",
+        "readyError",
+        "holdouts",
+        "holdout_arms",
+        "diagnosticsUtf8",
+        "assignmentRules",
+        "semverOperators",
+        "numericUnitIds",
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext",
+        "clientNoEnvironment",
+        "xAgentHeader",
+        "clientRejectsBlankApplication",
+        "throwsOnMisuse",
+        "singleFinalizeEvent",
+        "semverNumericOperands",
+        "rejectsSettersAfterFinalize",
+        "sharedVariableKeys"
+      ],
+      "unsupported": {
+        "clientAcceptsBlankApplication": "java-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "switchback": "v1.9.0, the last 1.x tag, predates switchback; re-require once release/1.x is cut from main",
+        "contextFetchBrotli": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and decodes nothing; br needs httpclient5 5.6 plus an optional Brotli codec (brotli4j or org.brotli:dec)",
+        "contextFetchCompression": "observed: java-sdk DefaultHTTPClient (httpclient5 async) sends no Accept-Encoding and does not decode gzip; fix pending",
+        "integralFloatAttributes": "depends on switchback, which v1.9.0 (the last 1.x tag) predates; re-require with switchback once release/1.x is cut from main"
       }
     },
     "kotlin": {
@@ -305,16 +382,20 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys"
       ],
       "unsupported": {
         "holdouts": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in kotlin-sdk; java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in kotlin-sdk",
         "holdout_arms": "depends on holdouts, which the pinned kotlin-sdk branch lacks",
         "clientNoEnvironment": "kotlin-sdk's Client has a private constructor and a non-null environment, and Context.create is internal, so the wrapper cannot build a no-environment client black-box; kotlin-sdk's own ContextSystemAttributesTest covers the no-environment case via an internal Context.create(environment=null)",
         "clientAcceptsBlankApplication": "kotlin-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned kotlin-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "integralFloatAttributes": "depends on switchback, which the kotlin lane does not serve yet",
+        "contextFetchCompression": "observed: kotlin-sdk DefaultHTTPClient (HttpURLConnection) sends no Accept-Encoding and does not decode gzip; fix pending",
+        "contextFetchBrotli": "observed: kotlin-sdk HttpURLConnection sends no Accept-Encoding and decodes nothing; br is not in the JDK (needs org.brotli:dec or brotli4j)"
       }
     },
     "scala": {
@@ -336,16 +417,20 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "contextFetchCompression"
       ],
       "unsupported": {
         "holdouts": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in scala-sdk; java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in scala-sdk",
         "holdout_arms": "depends on holdouts, which the pinned scala-sdk branch lacks",
         "clientNoEnvironment": "scala-sdk's SDKConfig requires a non-empty environment and Context's systemAttributes is private[sdk], so the wrapper cannot build a no-environment client black-box; scala-sdk's own SystemAttributesTest covers it by overriding systemAttributes",
         "clientAcceptsBlankApplication": "scala-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned scala-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "scala-sdk resolves a shared key to the last candidate and exposes every candidate it visits; follow-up in scala-sdk",
+        "integralFloatAttributes": "depends on switchback, which the scala lane does not serve yet",
+        "contextFetchBrotli": "from code (lane not built here, repo.scala-sbt.org unreachable): sttp basicRequest sends `gzip, deflate` and HttpURLConnectionBackend throws on any other coding"
       }
     },
     "swift": {
@@ -367,16 +452,55 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "contextFetchCompression",
+        "contextFetchBrotli"
       ],
       "unsupported": {
-        "holdouts": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in swift-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned swift-sdk branch lacks",
+        "switchback": "switchback serving not implemented in swift-sdk",
+        "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
+        "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "throwsOnMisuse": "swift-sdk's reads and track/setAttribute are non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7, kept in 2.0 so view code needs no `try`): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "sharedVariableKeys": "swift-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in swift-sdk",
+        "rejectsSettersAfterFinalize": "depends on throwsOnMisuse, which is a reviewed exception for this SDK: swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "integralFloatAttributes": "depends on switchback, which swift-sdk 2.0 does not serve yet",
+        "holdouts": "swift-sdk 2.0 (feat/swift-2.0, swift-sdk#13) has no holdout resolution yet; the swift-v1 lane (swift-sdk#12 on the 1.x line) requires it. Re-require once 2.0 carries #12",
+        "holdout_arms": "depends on holdouts, which swift-sdk 2.0 (swift-sdk#13) lacks; required on swift-v1"
+      }
+    },
+    "swift-v1": {
+      "required": [
+        "diagnostics",
+        "publishFail",
+        "variableKeysMap",
+        "globalCustomFieldKeys",
+        "getUnits",
+        "getAttributes",
+        "readyError",
+        "diagnosticsUtf8",
+        "numericUnitIds",
+        "publishThrowsOnFailure",
+        "trackRejectsNonObjectProperties",
+        "refreshNoOpOnFailedContext",
+        "assignmentRules",
+        "semverOperators",
+        "xAgentHeader",
+        "clientRejectsBlankApplication",
+        "singleFinalizeEvent",
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "contextFetchCompression",
+        "contextFetchBrotli"
+      ],
+      "unsupported": {
+        "switchback": "switchback serving not implemented in swift-sdk",
         "clientNoEnvironment": "swift-sdk's DefaultClient/SDK reject an empty environment and expose no no-environment client, so the wrapper cannot build the case black-box; swift-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "swift-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "throwsOnMisuse": "swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
-        "holdoutIdsDedup": "pinned swift-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "integralFloatAttributes": "depends on switchback, which the swift-sdk 1.x line does not serve",
+        "rejectsSettersAfterFinalize": "depends on throwsOnMisuse, which is a reviewed exception for this SDK: swift-sdk's public API is non-throwing by maintainer decision (v1.4.0 contract, swift-sdk#7): misuse is reported through an `.error` event and state is left unchanged, so scenarios 34, 35, 147-149, 188, 189 and 201 skip",
+        "sharedVariableKeys": "swift-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in swift-sdk"
       }
     },
     "dart": {
@@ -398,16 +522,20 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "holdouts": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in flutter-sdk (dart); java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk (dart) branch lacks",
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned flutter-sdk (dart) branch has no holdout resolution; wrapper does not advertise it"
+        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
+        "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io"
       }
     },
     "flutter": {
@@ -429,16 +557,20 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "sharedVariableKeys",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "holdouts": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in flutter-sdk (flutter); java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned flutter-sdk branch lacks",
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned flutter-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
+        "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only"
       }
     },
     "dotnet": {
@@ -459,17 +591,21 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
-        "singleFinalizeEvent"
+        "rejectsSettersAfterFinalize",
+        "singleFinalizeEvent",
+        "sharedVariableKeys",
+        "holdouts",
+        "holdout_arms",
+        "switchback"
       ],
       "unsupported": {
-        "holdouts": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in dotnet-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned dotnet-sdk branch lacks",
         "numericUnitIds": "dotnet-sdk stores unit uids as strings (SetUnit(string, string); Units is Dictionary<string,string>), so a numeric uid does not round-trip as a number; getUnit/getUnits return the stringified uid (\"12345\") rather than the original number. The wrapper does not re-type the SDK's string back to a number; reviewed dotnet exception, like php",
         "clientNoEnvironment": "dotnet-sdk's ABSmartlyService throws on a missing environment and exposes no no-environment client, so the wrapper cannot build the case black-box; dotnet-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "dotnet-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
         "semverNumericOperands": "dotnet-sdk's ExprEvaluator.StringConvert formats numbers with G16, so 1e-7 becomes '1E-07', which parses as version core '1E' with pre-release '07' and compares greater than '0.0000001' (semver_eq misses, semver_gt wrongly matches); a dotnet-sdk divergence found by this PR, to be fixed in dotnet-sdk's SemverComparator (scenario 332 skips until then)",
-        "holdoutIdsDedup": "pinned dotnet-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "integralFloatAttributes": "the wrapper's switchback self-test has no integral-float (3.0) check yet, so the wrapper does not advertise it and 426 is skipped; add the check, then require it",
+        "contextFetchCompression": "from code (the lane cannot build in the sandbox, nuget.org unreachable): the wrapper injects its own HttpClient and the SDK's handler sets no AutomaticDecompression, so no Accept-Encoding is sent; fix pending",
+        "contextFetchBrotli": "from code (lane not built here, nuget.org unreachable): no AutomaticDecompression on the SDK's handler or the wrapper's HttpClient, so no Accept-Encoding; needs DecompressionMethods.Brotli (built into .NET Core 3.0+)"
       }
     },
     "cpp": {
@@ -490,17 +626,21 @@
         "xAgentHeader",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "integralFloatAttributes"
       ],
       "unsupported": {
         "diagnosticsUtf8": "cpp-sdk has no utf8Bytes helper (include/absmartly/hashing.h exposes only hash_unit and base64url_no_padding)",
-        "holdouts": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in cpp-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned cpp-sdk branch lacks",
         "clientNoEnvironment": "cpp-sdk's Client throws 'Missing environment configuration' and exposes no no-environment client, so the wrapper cannot build the case black-box; cpp-sdk's own tests cover it internally",
         "clientAcceptsBlankApplication": "cpp-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "holdoutIdsDedup": "pinned cpp-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "cpp-sdk exposes every candidate it visits, so an unassigned candidate queues an exposure, and falls through to a later candidate when the winner's variant lacks the key (340-341, 347-349, 351, 356, 361-362); follow-up in cpp-sdk",
+        "contextFetchCompression": "observed: cpp-sdk DefaultHTTPClient (libcurl) sets no CURLOPT_ACCEPT_ENCODING, so none is sent and gzip is not decoded; fix pending",
+        "contextFetchBrotli": "observed: cpp-sdk libcurl handle sets no CURLOPT_ACCEPT_ENCODING, so none is sent and nothing decoded; `\"\"` would enable every coding the system libcurl has"
       }
     },
     "elixir": {
@@ -522,16 +662,20 @@
         "xAgentHeader",
         "clientAcceptsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
-        "semverNumericOperands"
+        "semverNumericOperands",
+        "holdouts",
+        "holdout_arms",
+        "switchback",
+        "integralFloatAttributes"
       ],
       "unsupported": {
-        "holdouts": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it",
-        "switchback": "switchback serving not implemented in elixir-sdk; java-sdk only (R33)",
-        "holdout_arms": "depends on holdouts, which the pinned elixir-sdk branch lacks",
         "clientNoEnvironment": "elixir-sdk requires :environment in its SDK config and exposes no no-environment client, so the wrapper cannot build the case black-box; elixir-sdk's own tests cover it internally",
         "clientRejectsBlankApplication": "elixir-sdk's client accepts a blank application (it is left out of the evaluation map), so creation does not fail; scenario 323 covers this lane instead",
-        "holdoutIdsDedup": "pinned elixir-sdk branch has no holdout resolution; wrapper does not advertise it"
+        "sharedVariableKeys": "elixir-sdk visits candidates in payload order, exposes every candidate it visits and falls through past a winner whose variant lacks the key (340-341, 347-351, 356, 361-362); follow-up in elixir-sdk",
+        "contextFetchCompression": "from code (the lane cannot build in the sandbox, hex.pm unreachable): elixir-sdk calls HTTPoison/hackney without auto_decompress, so no Accept-Encoding is sent; fix pending",
+        "contextFetchBrotli": "from code (lane not built here, hex.pm unreachable): HTTPoison/hackney sends no Accept-Encoding; br is not in OTP (needs a NIF such as the `brotli` hex package)"
       }
     },
     "react": {
@@ -555,14 +699,18 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
-        "holdoutIdsDedup"
+        "sharedVariableKeys",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in react (javascript-sdk); java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in react (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
+        "contextFetchBrotli": "from code (lane not built here, yarn registry unreachable): wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
     "vue2": {
@@ -586,14 +734,18 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
-        "holdoutIdsDedup"
+        "sharedVariableKeys",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in vue2 (javascript-sdk); java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in vue2 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
+        "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
     "vue3": {
@@ -617,14 +769,18 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
-        "holdoutIdsDedup"
+        "sharedVariableKeys",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in vue3 (javascript-sdk); java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in vue3 (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
+        "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     },
     "angular": {
@@ -648,14 +804,18 @@
         "clientNoEnvironment",
         "clientRejectsBlankApplication",
         "throwsOnMisuse",
+        "rejectsSettersAfterFinalize",
         "singleFinalizeEvent",
         "semverNumericOperands",
-        "holdoutIdsDedup"
+        "sharedVariableKeys",
+        "contextFetchCompression"
       ],
       "unsupported": {
-        "switchback": "switchback serving not implemented in angular (javascript-sdk); java-sdk only (R33)",
+        "switchback": "switchback serving not implemented in angular (javascript-sdk)",
         "xAgentHeader": "wraps javascript-sdk#68 (the reference), which sends X-Agent: absmartly-javascript-sdk, with no version; the versioned agent is only on the other SDKs' parity branches",
-        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead"
+        "clientAcceptsBlankApplication": "javascript-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
+        "integralFloatAttributes": "JavaScript cannot tell 3.0 from 3: a cluster attribute of 3.0 is keyed \"3\" like the integer (owner decision 2026-11-17, documented in javascript-sdk)",
+        "contextFetchBrotli": "observed: wraps javascript-sdk, as javascript: global fetch (src/fetch.ts:22-23) sends `gzip, deflate` over the harness's http and `br, gzip, deflate` over https, so false here is a harness-transport artefact"
       }
     }
   }
