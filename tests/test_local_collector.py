@@ -543,7 +543,7 @@ class GateRunTest(unittest.TestCase):
         url = f"http://127.0.0.1:{server.server_address[1]}"
         try:
             with mock.patch.object(gate, "drive", return_value=["case: wrapper 500"]), \
-                 mock.patch.object(gate, "fetch_publishes", return_value=[]):
+                 mock.patch.object(gate, "fetch_publishes", return_value=([], None)):
                 result = gate.run({"javascript": "http://w"}, url, "e2e-tests", "production", "r1")
         finally:
             server.shutdown()
@@ -557,7 +557,7 @@ class GateRunTest(unittest.TestCase):
         for record in publishes:
             record["headers"][0] = ["X-Agent", "absmartly-python-sdk/0.4.0"]
         with mock.patch.object(gate, "drive", return_value=[]), \
-             mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
              mock.patch.object(gate.requests, "delete"), \
              mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
@@ -567,7 +567,7 @@ class GateRunTest(unittest.TestCase):
         cases = gate.plan("r", "javascript")
         publishes = _publishes_for("javascript", cases, mutate) + extra
         with mock.patch.object(gate, "drive", return_value=[]), \
-             mock.patch.object(gate, "fetch_publishes", return_value=publishes), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
              mock.patch.object(gate.requests, "delete"), \
              mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
             return gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
@@ -629,7 +629,7 @@ class GateRunTest(unittest.TestCase):
         for label, body in (("null requests", {"requests": None}), ("bare list", ["x"]), ("bad row", {"requests": ["x"]})):
             with self.subTest(label):
                 with mock.patch.object(gate, "drive", return_value=[]), \
-                     mock.patch.object(gate, "fetch_publishes", return_value=_publishes_for("javascript", cases)), \
+                     mock.patch.object(gate, "fetch_publishes", return_value=(_publishes_for("javascript", cases), None)), \
                      mock.patch.object(gate.requests, "delete"), \
                      mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda body=body: body)):
                     result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
@@ -646,7 +646,9 @@ class FetchPublishesTest(unittest.TestCase):
         get = mock.Mock(side_effect=lambda *a, **k: mock.Mock(json=lambda: {"publishes": next(reads)}))
         with mock.patch.object(gate.requests, "get", get), mock.patch.object(gate.time, "sleep"), \
              mock.patch.object(gate.time, "monotonic", side_effect=clock):
-            return len(gate.fetch_publishes("http://c", expected_cases, timeout=30)), get.call_count
+            publishes, error = gate.fetch_publishes("http://c", expected_cases, timeout=30)
+            self.assertIsNone(error)
+            return len(publishes), get.call_count
 
     def test_waits_past_stable_reads_until_the_expected_count_arrives(self):
         m = self.MINE
@@ -700,6 +702,142 @@ class WrapperResponseTest(unittest.TestCase):
             errors = gate.drive("javascript", "http://w", gate.plan("r", "javascript")[:1])
         self.assertEqual(len(errors), 1)
         self.assertIn("invalid /context response", errors[0])
+
+
+class CollectorEndToEndTest(unittest.TestCase):
+    """The plan through the real collector server: what it stores is what the gate judges."""
+
+    def setUp(self):
+        self.server = collector.make_server("127.0.0.1", 0)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def put(self, body_text, headers, compress=False):
+        body = body_text.encode("utf-8")
+        headers = dict(headers, **{"Content-Type": "application/json"})
+        if compress:
+            body = gzip.compress(body)
+            headers["Content-Encoding"] = "gzip"
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+        conn.request("PUT", "/v1/context", body=body, headers=headers)
+        conn.getresponse().read()
+        conn.close()
+
+    def run_gate(self, edit=lambda text: text, compress=False):
+        gate.requests.delete(f"{self.url}/publishes", timeout=5).raise_for_status()
+        cases = gate.plan("r", "javascript")
+        for record in _publishes_for("javascript", cases):
+            self.put(edit(json.dumps(record["json"], ensure_ascii=False)), dict(record["headers"]), compress)
+        real_get = gate.requests.get
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.time, "sleep"):
+            return gate.run({"javascript": "http://w"}, self.url, "e2e-tests", "production", "r")
+
+    def test_the_unchanged_plan_passes_through_the_real_collector(self):
+        for compress in (False, True):
+            with self.subTest(gzip=compress):
+                result = self.run_gate(compress=compress)
+                self.assertTrue(result["overall_pass"], result)
+                self.assertEqual(result["sdks"]["javascript"]["revenue"], "1000021.6")
+
+    def test_a_numerically_distinct_wire_amount_fails(self):
+        # 0.1 and 0.100000000000000001 are the same float; only the raw body distinguishes them.
+        for compress in (False, True):
+            with self.subTest(gzip=compress):
+                result = self.run_gate(lambda text: text.replace('"amount": 0.1}', '"amount": 0.100000000000000001}'),
+                                       compress)
+                self.assertFalse(result["overall_pass"])
+                self.assertTrue(any("0.100000000000000001" in e for e in result["sdks"]["javascript"]["errors"]))
+
+    def test_an_out_of_range_wire_number_is_a_reported_failure(self):
+        for token in ("1e999999999", "1e1000000", "-1e99999999"):
+            with self.subTest(token=token):
+                result = self.run_gate(lambda text, token=token: text.replace('"amount": 10}', f'"amount": {token}}}'))
+                self.assertFalse(result["overall_pass"])
+                errors = result["sdks"]["javascript"]["errors"]
+                self.assertTrue(any("number out of range" in e for e in errors), errors)
+                json.dumps(result)
+
+    def test_an_equivalent_number_spelling_still_matches(self):
+        result = self.run_gate(lambda text: text.replace('"amount": 10}', '"amount": 10.0}'))
+        self.assertTrue(result["overall_pass"], result["sdks"]["javascript"]["errors"])
+
+
+class PublishLogFailureTest(unittest.TestCase):
+    def run_with_reads(self, reads):
+        reads = iter(reads)
+        cases = gate.plan("r", "javascript")
+        good = _publishes_for("javascript", cases)
+
+        def get(url, **_):
+            if url.endswith("/requests"):
+                return mock.Mock(json=lambda: {"requests": []})
+            outcome = next(reads)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return mock.Mock(raise_for_status=mock.Mock(), json=lambda outcome=outcome: outcome)
+
+        with mock.patch.object(gate, "drive", return_value=[]), mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", side_effect=get), mock.patch.object(gate.time, "sleep"):
+            return gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r"), good
+
+    def test_an_unavailable_publish_log_is_a_reported_failure_on_either_read(self):
+        good = {"publishes": _publishes_for("javascript", gate.plan("r", "javascript"))}
+        for label, reads in (("first read times out", [gate.requests.ReadTimeout("slow")]),
+                             ("settle read times out", [good, gate.requests.ReadTimeout("slow")]),
+                             ("no publishes key", [{"oops": []}]),
+                             ("http 503", [gate.requests.HTTPError("503")])):
+            with self.subTest(label):
+                result, _ = self.run_with_reads(reads)
+                self.assertFalse(result["overall_pass"])
+                self.assertTrue(any("collector publish log unavailable" in e for e in result["transport_errors"]))
+                json.dumps(result)
+
+
+class ReportWriteTest(unittest.TestCase):
+    def test_a_lone_surrogate_in_a_property_still_writes_a_parseable_failing_report(self):
+        import subprocess
+        import tempfile
+        server = collector.make_server("127.0.0.1", 0)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        port = server.server_address[1]
+        try:
+            cases = gate.plan("abcd", "javascript")
+            records = _publishes_for("javascript", cases)
+            for record in records:
+                text = json.dumps(record["json"], ensure_ascii=True).replace('"EUR"', '"\\ud800"')
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                conn.request("PUT", "/v1/context", body=text.encode("ascii"), headers=dict(record["headers"]))
+                conn.getresponse().read()
+                conn.close()
+            with tempfile.TemporaryDirectory() as tmp:
+                report = os.path.join(tmp, "report.json")
+                code = (
+                    "import sys, runpy; from unittest import mock; sys.path[:0] = sys.argv[1:3];"
+                    "import local_collector_gate as g;"
+                    "mock.patch.object(g, 'drive', return_value=[]).start();"
+                    "mock.patch.object(g.requests, 'delete').start();"
+                    "mock.patch.object(g.os, 'urandom', return_value=bytes.fromhex('abcd')).start();"
+                    "mock.patch.object(g.time, 'sleep').start();"
+                    "sys.argv = ['gate', '--sdk', 'javascript', '--collector', sys.argv[3], '--report', sys.argv[4]];"
+                    "g.main()")
+                done = subprocess.run([sys.executable, "-c", code, os.path.join(ROOT, "orchestrator"),
+                                       os.path.join(ROOT, "local-collector"), f"http://127.0.0.1:{port}", report],
+                                      capture_output=True, text=True, timeout=120)
+                self.assertEqual(done.returncode, 1, done.stderr)
+                with open(report, encoding="utf-8") as src:
+                    written = json.load(src)
+            self.assertFalse(written["overall_pass"])
+            self.assertTrue(any("\ud800" in e for e in written["sdks"]["javascript"]["errors"]))
+            self.assertIn("\\ud800", done.stdout)
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

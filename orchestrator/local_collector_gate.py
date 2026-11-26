@@ -91,12 +91,14 @@ def _canonical(value: Any) -> str:
             d = Decimal(str(v))
             if not d.is_finite():
                 raise ValueError("non-finite number")
-            return ["number", format(d.normalize(), "f") if d else "0"]
+            try:
+                return ["number", format(d.normalize(), "f") if d else "0"]
+            except ArithmeticError as exc:  # e.g. 1e999999999, exact now that numbers stay Decimal
+                raise ValueError(f"number out of range: {v}") from exc
         if isinstance(v, str):
             return ["string", v]
         raise ValueError(f"unexpected JSON value {v!r}")
-    parsed = json.loads(json.dumps(value), parse_float=Decimal, parse_int=Decimal)
-    return json.dumps(walk(parsed), ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(walk(value), ensure_ascii=False, separators=(",", ":"))
 
 
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
@@ -151,11 +153,25 @@ def _entries(record: Dict[str, Any], field: str, keys: Tuple[str, ...], errors: 
     return valid
 
 
+def _lossless(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The record with `json` re-parsed from its raw body, decimal numbers kept exact.
+
+    The collector's own parse and its JSON response both turn numbers into floats, so 0.1 and
+    0.100000000000000001 would arrive equal; the verbatim body tells them apart."""
+    raw = record.get("rawBody")
+    if record.get("json") is None or not isinstance(raw, str):
+        return record
+    try:
+        return {**record, "json": json.loads(raw, parse_float=Decimal)}
+    except ValueError as exc:
+        return {**record, "json": None, "parseError": f"raw body does not parse: {exc}"}
+
+
 def _normalized(publishes: Any) -> List[Dict[str, Any]]:
-    """The collector's publish list with every record a dict carrying a `seq`, so a corrupt record
-    is reported as a non-JSON publish instead of raising."""
+    """The collector's publish list with every record a dict carrying a `seq` and lossless `json`,
+    so a corrupt record is reported as a non-JSON publish instead of raising."""
     records = publishes if isinstance(publishes, list) else []
-    return [record if isinstance(record, dict) and "seq" in record
+    return [_lossless(record) if isinstance(record, dict) and "seq" in record
             else {"seq": index, "json": None, "parseError": f"malformed collector record: {record!r}"}
             for index, record in enumerate(records)]
 
@@ -201,7 +217,7 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             uid = next((u for t, u in mine if t == unit_type), None)
             exp_id, exp_name = ((SESSION_EXPERIMENT_ID, SESSION_EXPERIMENT_NAME) if unit_type == "session_id"
                                 else (EXPERIMENT_ID, EXPERIMENT_NAME))
-            if exposure.get("id") != exp_id or exposure.get("name") != exp_name:
+            if type(exposure.get("id")) is not int or exposure.get("id") != exp_id or exposure.get("name") != exp_name:
                 errors.append(f"exposure for {unit_type} names {exposure.get('id')}/{exposure.get('name')}")
             if type(exposure.get("variant")) is not int or exposure.get("variant") != 1:
                 errors.append(f"exposure for {unit_type} has variant {exposure.get('variant')!r}, expected 1")
@@ -298,20 +314,36 @@ def drive(sdk: str, base_url: str, cases: List[Dict[str, Any]], timeout: float =
     return errors
 
 
+def _read_publishes(collector_url: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """The collector's publish log, or an error if it cannot be read."""
+    try:
+        response = requests.get(f"{collector_url}/publishes", timeout=10)
+        response.raise_for_status()
+        publishes = response.json()["publishes"]
+        if not isinstance(publishes, list):
+            raise TypeError(f"publishes is {publishes!r}")
+    except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+        return [], f"collector publish log unavailable: {exc!r}"
+    return _normalized(publishes), None
+
+
 def fetch_publishes(collector_url: str, expected_cases: List[set], settle: float = 2.0,
-                    timeout: float = 30, poll: float = 0.5) -> List[Dict[str, Any]]:
+                    timeout: float = 30, poll: float = 0.5) -> Tuple[List[Dict[str, Any]], Optional[str]]:
     """Read publishes until every planned case has its own publish, then settle and re-read.
     A case counts only for a publish whose units all belong to that case, so a stray, a duplicate
-    or one publish combining two cases does not satisfy a missing case; on timeout, whatever arrived."""
+    or one publish combining two cases does not satisfy a missing case; on timeout, whatever arrived.
+    Returns the publishes and an error if a read of the log failed."""
     deadline = time.monotonic() + timeout
     while True:
-        publishes = _normalized(requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"])
+        publishes, error = _read_publishes(collector_url)
+        if error:
+            return publishes, error
         arrived = [_publish_units(r)[0] for r in publishes]
         if all(any(_covers(units, case_units) for units in arrived) for case_units in expected_cases):
             time.sleep(settle)
-            return _normalized(requests.get(f"{collector_url}/publishes", timeout=10).json()["publishes"])
+            return _read_publishes(collector_url)
         if time.monotonic() >= deadline:
-            return publishes
+            return publishes, None
         time.sleep(poll)
 
 
@@ -330,10 +362,17 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     driver_errors = {sdk: drive(sdk, url, plans[sdk]) for sdk, url in sdks.items()}
     case_units = {sdk: {case["name"]: {(unit_type, unit_hash(uid)) for unit_type, uid in case["units"].items()}
                         for case in cases} for sdk, cases in plans.items()}
+    # Every driven case's units are attributable; only applicable cases must have their own publish.
     planned_units = set().union(*(units for cases in case_units.values() for units in cases.values()))
+    applicable = {sdk: [case for case in plans[sdk] if not (
+        case["name"] == "null_value"
+        and "nullPropertyValues" in policy.get(sdk, {}).get("e2e", {}).get("unsupported", {}))] for sdk in sdks}
     # Every case ends in one /publish call with at least one exposure queued.
-    publishes = _normalized(fetch_publishes(collector_url, [units for cases in case_units.values()
-                                                            for units in cases.values()]))
+    publishes, log_error = fetch_publishes(collector_url, [case_units[sdk][case["name"]] for sdk in sdks
+                                                           for case in applicable[sdk]])
+    if log_error:
+        results.setdefault("transport_errors", []).append(log_error)
+    publishes = _normalized(publishes)
     arrived = []
     for record in publishes:
         units, unit_errors = _publish_units(record)
@@ -357,11 +396,8 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
             results.setdefault("transport_errors", []).append(f"context request environment header {_header(request, 'X-Environment')!r}")
 
     for sdk in sdks:
-        entry = policy.get(sdk, {})
-        unsupported = entry.get("e2e", {}).get("unsupported", {})
-        sdk_cases = [c for c in plans[sdk]
-                     if not (c["name"] == "null_value" and "nullPropertyValues" in unsupported)]
-        versioned = "xAgentHeader" not in entry.get("unsupported", {})
+        sdk_cases = applicable[sdk]
+        versioned = "xAgentHeader" not in policy.get(sdk, {}).get("unsupported", {})
         outcome = verify(sdk, sdk_cases, publishes, application, environment, versioned)
         missing = [case["name"] for case in sdk_cases
                    if not any(_covers(units, case_units[sdk][case["name"]]) for units in arrived)]
@@ -386,15 +422,22 @@ def main() -> None:
     sdks = {name: override.get(name, f"http://{name}-sdk:3000") for name in names}
     results = run(sdks, args.collector, os.getenv("ABSMARTLY_E2E_APPLICATION", "e2e-tests"),
                   os.getenv("ABSMARTLY_E2E_ENVIRONMENT", "production"), os.urandom(4).hex())
+    # A diagnostic can quote an SDK's invalid string (e.g. a lone surrogate "\ud800"), which a
+    # UTF-8 terminal cannot encode; escape it rather than lose the summary and the report after it.
+    sys.stdout.reconfigure(errors="backslashreplace")
     for sdk, outcome in results["sdks"].items():
         status = "PASS" if outcome["pass"] else "FAIL"
         print(f"{sdk}: {status} exposures={outcome['exposures']} goals={outcome['goals']} "
               f"revenue={outcome['revenue']}/{outcome['planned_revenue']}")
         for error in outcome["errors"]:
             print(f"  - {error}")
+    for error in results.get("transport_errors", []):
+        print(f"collector: FAIL {error}")
     if args.report:
-        with open(args.report, "w") as out:
-            json.dump(results, out, indent=2, ensure_ascii=False)
+        # ensure_ascii escapes lone surrogates (e.g. "\ud800" in an SDK's goal property), which
+        # UTF-8 cannot encode, so the report stays complete and parseable.
+        with open(args.report, "w", encoding="utf-8") as out:
+            json.dump(results, out, indent=2, ensure_ascii=True)
     sys.exit(0 if results["overall_pass"] else 1)
 
 

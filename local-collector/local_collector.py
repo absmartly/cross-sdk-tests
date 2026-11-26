@@ -159,7 +159,7 @@ def _finite_float(text):
     # 1e400 is valid JSON but overflows to Infinity, which GET /publishes could not re-emit as JSON.
     value = float(text)
     if not math.isfinite(value):
-        raise ValueError(f"number {text} is out of range")
+        raise ValueError(f"number out of range: {text}")
     return value
 
 

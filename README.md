@@ -395,6 +395,11 @@ This verifies what the SDK emits and transports, not the analysis backend. A
 release requires this gate to pass. The report is written to
 `test-results/local-collector.json`.
 
+PR CI runs this gate automatically for javascript, python, java and java-v1 (the
+`local-collector-gate` job). Every other wrapper is configured for it in
+`docker-compose.local-collector.yml`; run it locally with `--sdk <name>` before
+releasing that SDK, as no separate automated release check covers those lanes yet.
+
 ## E2E smoke: test-1 (optional, non-blocking)
 
 The test-1 run below is optional smoke coverage of the real ABsmartly pipeline.
