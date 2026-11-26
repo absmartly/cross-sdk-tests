@@ -94,7 +94,8 @@ class CollectorServerTest(unittest.TestCase):
                 self.assertEqual(collector.body_length_error(collector.parse_content_length([value])),
                                  "invalid Content-Length")
         self.assertEqual(collector.parse_content_length(["10"]), 10)
-        self.assertEqual(collector.parse_content_length([]), 0)
+        self.assertIsNone(collector.parse_content_length([]))
+        self.assertEqual(collector.body_length_error(collector.parse_content_length([])), "invalid Content-Length")
         self.assertIsNone(collector.parse_content_length([""]))
         self.assertIsNone(collector.parse_content_length(["", "2"]))
         # Duplicate lines: identical values are one length, conflicting values are ambiguous.
@@ -133,6 +134,11 @@ class CollectorServerTest(unittest.TestCase):
             while chunk := sock.recv(4096):
                 reply += chunk
         return reply
+
+    def test_missing_content_length_returns_400_without_storing(self):
+        reply = self.raw_put(b"PUT /context HTTP/1.1\r\nHost: x", b"{}")
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
 
     def test_conflicting_duplicate_content_length_returns_400(self):
         for first, second in ((b"2", b"100"), (b"100", b"2")):

@@ -113,7 +113,7 @@ def parse_content_length(values):
     and " 7"; an empty line or conflicting duplicate lines are ambiguous framing.
     """
     if not values:
-        return 0
+        return None
     if len(set(values)) > 1:
         return None
     value = values[0]
