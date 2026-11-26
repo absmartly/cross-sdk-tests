@@ -37,8 +37,10 @@ MAX_BODY_BYTES = 16 * 1024 * 1024
 # that deep breaks json.dumps when /publishes is read back, so reject it on PUT.
 MAX_JSON_DEPTH = 64
 # A client that sends fewer body bytes than Content-Length and keeps the socket open
-# would otherwise hold a handler thread forever.
+# would otherwise hold a handler thread forever. The socket timeout bounds each read;
+# REQUEST_DEADLINE_S bounds the whole body, so a trickling client cannot reset it.
 REQUEST_TIMEOUT_S = 10
+REQUEST_DEADLINE_S = 30
 EXPERIMENT_ID = 9001
 EXPERIMENT_NAME = "e2e_local_collector"
 SESSION_EXPERIMENT_ID = 9002
@@ -108,9 +110,8 @@ def parse_content_length(values):
     """Content-Length as an int per RFC 9110 (1*DIGIT), or None when invalid.
 
     `values` is every Content-Length header line. int() alone accepts "1_0", "+5"
-    and " 7"; conflicting duplicate lines are ambiguous framing, so both are invalid.
+    and " 7"; an empty line or conflicting duplicate lines are ambiguous framing.
     """
-    values = [v for v in values if v != ""]
     if not values:
         return 0
     if len(set(values)) > 1:
@@ -129,14 +130,28 @@ def body_length_error(length):
 
 
 def gunzip_capped(raw):
-    """Inflate a gzip body, refusing to grow past MAX_BODY_BYTES (gzip bombs)."""
-    inflater = zlib.decompressobj(31)
-    decoded = inflater.decompress(raw, MAX_BODY_BYTES + 1)
-    if len(decoded) > MAX_BODY_BYTES or inflater.unconsumed_tail:
-        raise ValueError("decoded body exceeds the size limit")
-    if not inflater.eof:
-        raise ValueError("truncated gzip body")
-    return decoded
+    """Inflate every gzip member of a body, refusing to grow past MAX_BODY_BYTES.
+
+    gzip.decompress reads concatenated members, so this does too; a member that
+    does not end cleanly, or bytes after the last member that are not another
+    member, is malformed.
+    """
+    out = bytearray()
+    data = raw
+    while data:
+        inflater = zlib.decompressobj(31)
+        chunk = inflater.decompress(data, MAX_BODY_BYTES + 1 - len(out))
+        out += chunk
+        if len(out) > MAX_BODY_BYTES:
+            raise ValueError("decoded body exceeds the size limit")
+        if not inflater.eof:
+            raise ValueError("truncated gzip body")
+        data = inflater.unused_data
+    return bytes(out)
+
+
+def _reject_constant(name):
+    raise ValueError(f"non-standard JSON constant {name}")
 
 
 def json_depth_error(value, limit=MAX_JSON_DEPTH):
@@ -167,24 +182,44 @@ def make_handler(store):
 
         def _send(self, status, body):
             raw = json.dumps(body).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(raw)))
-            self.end_headers()
-            self.wfile.write(raw)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+            except (BrokenPipeError, ConnectionResetError):
+                # The client went away; there is nobody left to answer.
+                self.close_connection = True
 
         def _headers(self):
             return [[name, value] for name, value in self.headers.items()]
 
+        def _read_exact(self, length):
+            deadline = time.monotonic() + REQUEST_DEADLINE_S
+            chunks = []
+            remaining = length
+            while remaining:
+                if time.monotonic() > deadline:
+                    raise ValueError("request body not received within the deadline")
+                chunk = self.rfile.read1(min(remaining, 65536))
+                if not chunk:
+                    raise ValueError("truncated request body")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            return b"".join(chunks)
+
         def _read_body(self):
             try:
+                if self.headers.get_all("Transfer-Encoding"):
+                    # RFC 9112: Transfer-Encoding with Content-Length is a smuggling vector;
+                    # SDK publishers always send a plain Content-Length.
+                    raise ValueError("Transfer-Encoding is not supported")
                 length = parse_content_length(self.headers.get_all("Content-Length") or [])
                 length_error = body_length_error(length)
                 if length_error:
                     raise ValueError(length_error)
-                raw = self.rfile.read(length) if length else b""
-                if len(raw) != length:
-                    raise ValueError("truncated request body")
+                raw = self._read_exact(length)
                 decoded = gunzip_capped(raw) if (self.headers.get("Content-Encoding") or "").lower() == "gzip" else raw
                 return raw, decoded, None
             except (ValueError, EOFError, OSError, zlib.error) as exc:
@@ -220,7 +255,7 @@ def make_handler(store):
                 return self._send(400, {"error": body_error})
             try:
                 record["rawBody"] = decoded.decode("utf-8", errors="strict")
-                record["json"] = json.loads(decoded)
+                record["json"] = json.loads(decoded, parse_constant=_reject_constant)
                 depth_error = json_depth_error(record["json"])
                 if depth_error:
                     raise ValueError(depth_error)
