@@ -1,4 +1,9 @@
 services:
+  local-collector:
+    build:
+      context: .
+      dockerfile: local-collector/Dockerfile
+
   # ── Unit test services (target: tester stage) ──
   javascript-unit:
     init: true

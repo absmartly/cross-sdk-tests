@@ -111,8 +111,7 @@ jobs:
           for repo in ${{ matrix.repos }}; do
             branch="${SDK_BRANCHES[$repo]:-main}"
             echo "::group::Cloning absmartly/$repo ($branch)"
-            git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
+            cross-sdk-tests/checkout-sdk.sh "$repo" "$branch" "$repo"
             echo "::endgroup::"
           done
 

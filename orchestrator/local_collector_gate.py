@@ -148,6 +148,15 @@ def _normalized(publishes: Any) -> List[Dict[str, Any]]:
             for index, record in enumerate(records)]
 
 
+def _timestamp(value, arrival):
+    return type(value) is int and type(arrival) is int and 946684800000 <= value <= arrival + 5000 and arrival - value <= 300000
+
+
+def _application_version(record):
+    value = _header(record, "X-Application-Version")
+    return isinstance(value, str) and value.isascii() and value.isdigit() and 1 <= len(value) <= 18
+
+
 def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]],
            application: str, environment: str, xagent_versioned: bool = True,
            excepted: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -192,6 +201,10 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record['seq']} application header {_header(record, 'X-Application')!r}")
         if _header(record, "X-Environment") != environment:
             errors.append(f"publish #{record['seq']} environment header {_header(record, 'X-Environment')!r}")
+        if not _application_version(record):
+            errors.append(f"publish #{record['seq']} invalid application version")
+        if not _timestamp(body.get("publishedAt"), record.get("receivedAt")):
+            errors.append(f"publish #{record['seq']} invalid publishedAt")
         if body.get("hashed") is not True:
             errors.append(f"publish #{record['seq']} hashed={body.get('hashed')!r}")
         if not mine:
@@ -207,9 +220,16 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
                 errors.append(f"exposure for {unit_type} has variant {exposure.get('variant')!r}, expected 1")
             if exposure.get("assigned") is not True or exposure.get("eligible") is not True:
                 errors.append(f"exposure for {unit_type} assigned/eligible not true")
+            if not _timestamp(exposure.get("exposedAt"), record.get("receivedAt")):
+                errors.append("invalid exposedAt")
+            for flag in ("overridden", "fullOn", "custom", "audienceMismatch", "ruleOverride"):
+                if exposure.get(flag) is not False:
+                    errors.append(f"exposure {flag} not false")
             exposures[(unit_type, uid, exposure.get("name"))] += 1
         user = next((u for t, u in mine if t == "user_id"), None)
         for goal in _entries(record, "goals", ("name",), errors):
+            if not _timestamp(goal.get("achievedAt"), record.get("receivedAt")):
+                errors.append("invalid achievedAt")
             properties = goal.get("properties")
             try:
                 key = (user, goal.get("name"), _canonical(properties if properties is not None else {}))
@@ -382,12 +402,29 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     except (requests.RequestException, ValueError, AttributeError) as exc:
         results.setdefault("transport_errors", []).append(f"collector request log unavailable: {exc}")
         request_rows = []
+    wanted_agents = Counter()
+    for sdk in sdks:
+        language = AGENT_LANGUAGE.get(sdk, sdk)
+        wanted_agents[language] += len(plans[sdk])
+    got_agents = Counter()
     for request in request_rows:
+        agent = _header(request, "X-Agent")
+        language = next((language for language in wanted_agents
+                         if isinstance(agent, str) and agent.startswith(f"absmartly-{language}-sdk/")
+                         and len(agent) > len(f"absmartly-{language}-sdk/")), None)
+        if language is None:
+            results.setdefault("transport_errors", []).append(f"context request invalid agent {agent!r}")
+        else:
+            got_agents[language] += 1
+        if not _application_version(request):
+            results.setdefault("transport_errors", []).append("context request invalid application version")
         if _header(request, "X-Application") != application:
-            results_error = f"context request application header {_header(request, 'X-Application')!r}"
-            results.setdefault("transport_errors", []).append(results_error)
+            results.setdefault("transport_errors", []).append("context request application header mismatch")
         if _header(request, "X-Environment") != environment:
-            results.setdefault("transport_errors", []).append(f"context request environment header {_header(request, 'X-Environment')!r}")
+            results.setdefault("transport_errors", []).append("context request environment header mismatch")
+    for language, count in wanted_agents.items():
+        if got_agents[language] < count:
+            results.setdefault("transport_errors", []).append(f"missing context requests for {language}: {got_agents[language]}/{count}")
 
     for sdk in sdks:
         sdk_cases = applicable[sdk]

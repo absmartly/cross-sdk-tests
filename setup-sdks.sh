@@ -43,25 +43,7 @@ done
 source "$SCRIPT_DIR/sdk-branches.sh"
 
 clone_or_update() {
-  local repo="$1"
-  local branch="$2"
-  local url="https://github.com/absmartly/${repo}.git"
-
-  if [ -d "$repo" ]; then
-    cd "$repo"
-    git fetch origin "$branch" --depth 1 --update-shallow 2>/dev/null || git fetch origin "$branch" 2>/dev/null || { echo "  WARN $repo: branch '$branch' not found on remote"; cd ..; return 1; }
-    git checkout "$branch" 2>/dev/null || git checkout FETCH_HEAD 2>/dev/null
-    git reset --hard "origin/$branch" 2>/dev/null || git reset --hard FETCH_HEAD 2>/dev/null || true
-    cd ..
-    echo "  UPDATE $repo ($branch)"
-  else
-    if git clone -b "$branch" --depth 1 "$url" "$repo" 2>/dev/null; then
-      echo "  CLONE $repo ($branch)"
-    else
-      echo "  FAIL $repo: could not clone branch '$branch'"
-      return 1
-    fi
-  fi
+  "$(dirname "$0")/checkout-sdk.sh" "$1" "$2" "$1"
 }
 
 if [ -n "$BRANCH_OVERRIDE" ]; then

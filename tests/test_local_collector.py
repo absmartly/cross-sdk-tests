@@ -105,7 +105,9 @@ class CollectorServerTest(unittest.TestCase):
 
 
 def _record(seq, body, agent="absmartly-javascript-sdk/1.14.0", app="e2e-tests", env="production"):
-    return {"seq": seq, "json": body, "headers": [["X-Agent", agent], ["X-Application", app], ["X-Environment", env]]}
+    body.setdefault("publishedAt", 1700000000000)
+    return {"seq": seq, "receivedAt": 1700000000100, "json": body,
+            "headers": [["X-Agent", agent], ["X-Application", app], ["X-Environment", env], ["X-Application-Version", "0"]]}
 
 
 def _publishes_for(sdk, cases, mutate=None):
@@ -117,10 +119,12 @@ def _publishes_for(sdk, cases, mutate=None):
         for t in case["units"]:
             exp_id, name = ((collector.SESSION_EXPERIMENT_ID, collector.SESSION_EXPERIMENT_NAME) if t == "session_id"
                             else (collector.EXPERIMENT_ID, collector.EXPERIMENT_NAME))
-            exposures.append({"id": exp_id, "name": name, "unit": t, "variant": 1, "assigned": True, "eligible": True})
+            exposures.append({"id": exp_id, "name": name, "unit": t, "variant": 1, "assigned": True, "eligible": True, "exposedAt": 1700000000000,
+                              "overridden": False, "fullOn": False, "custom": False,
+                              "audienceMismatch": False, "ruleOverride": False})
         goals = []
         for p in case["goals"]:
-            goal = {"name": "purchase", "achievedAt": 1}
+            goal = {"name": "purchase", "achievedAt": 1700000000000}
             if p is not None:
                 goal["properties"] = copy.deepcopy(p)
             goals.append(goal)
@@ -265,7 +269,7 @@ class GateRunTest(unittest.TestCase):
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
              mock.patch.object(gate.requests, "delete"), \
-             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": [_record(i, {}, agent="absmartly-python-sdk/0.4.0") for i in range(9)]})):
             result = gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r")
         self.assertTrue(result["overall_pass"], result["sdks"]["python"]["errors"])
 
@@ -282,7 +286,7 @@ class GateRunTest(unittest.TestCase):
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
              mock.patch.object(gate.requests, "delete"), \
-             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": [_record(i, {}, agent="absmartly-python-sdk/0.4.0") for i in range(9)]})):
             return gate.run({"python": "http://w"}, "http://c", "e2e-tests", "production", "r"), cases
 
     def test_an_excepted_unit_cannot_ride_on_an_applicable_case_publish(self):
@@ -341,7 +345,7 @@ class GateRunTest(unittest.TestCase):
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate, "fetch_publishes", return_value=(publishes, None)), \
              mock.patch.object(gate.requests, "delete"), \
-             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": []})):
+             mock.patch.object(gate.requests, "get", return_value=mock.Mock(json=lambda: {"requests": [_record(i, {}) for i in range(9)]})):
             return gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
 
     def test_every_publish_must_belong_to_the_plan(self):
@@ -503,6 +507,13 @@ class CollectorEndToEndTest(unittest.TestCase):
         gate.requests.delete(f"{self.url}/publishes", timeout=5).raise_for_status()
         cases = gate.plan("r", "javascript")
         for record in _publishes_for("javascript", cases):
+            gate.requests.get(f"{self.url}/v1/context", headers=dict(record["headers"]), timeout=5).raise_for_status()
+            now = int(__import__('time').time() * 1000)
+            record["json"]["publishedAt"] = now
+            for entry in record["json"]["exposures"]:
+                entry["exposedAt"] = now
+            for entry in record["json"]["goals"]:
+                entry["achievedAt"] = now
             self.put(edit(json.dumps(record["json"], ensure_ascii=False)), dict(record["headers"]), compress)
         with mock.patch.object(gate, "drive", return_value=[]), \
              mock.patch.object(gate.requests, "delete"), \
@@ -554,7 +565,7 @@ class PublishLogFailureTest(unittest.TestCase):
 
         def get(url, **_):
             if url.endswith("/requests"):
-                return mock.Mock(json=lambda: {"requests": []})
+                return mock.Mock(json=lambda: {"requests": [_record(i, {}) for i in range(9)]})
             outcome = next(reads)
             if isinstance(outcome, Exception):
                 raise outcome
@@ -750,3 +761,72 @@ class CollectorResetTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ReleaseGateRegressionTest(unittest.TestCase):
+    def run_rows(self, rows, publishes=None):
+        cases = gate.plan('regression', 'dart')
+        if publishes is None:
+            publishes = _publishes_for('dart', cases)
+            for record in publishes:
+                record['headers'][0] = ['X-Agent', 'absmartly-dart-sdk/2.2.0']
+        with mock.patch.object(gate, 'drive', return_value=[]), \
+             mock.patch.object(gate, 'fetch_publishes', return_value=(publishes, None)), \
+             mock.patch.object(gate.requests, 'delete'), \
+             mock.patch.object(gate.requests, 'get', return_value=mock.Mock(json=lambda: {'requests': rows})):
+            return gate.run({'dart': 'http://w'}, 'http://c', 'e2e-tests', 'production', 'regression')
+
+    def rows(self):
+        return [_record(i, {}, agent='absmartly-dart-sdk/2.2.0') for i in range(9)]
+
+    def test_realistic_headers_pass(self):
+        self.assertTrue(self.run_rows(self.rows())['overall_pass'])
+
+    def test_get_missing_duplicate_wrong_headers_and_empty_log_fail(self):
+        self.assertFalse(self.run_rows([])['overall_pass'])
+        for header, bad in [('X-Agent', 'wrong/9'), ('X-Application', 'wrong'),
+                            ('X-Environment', 'staging'), ('X-Application-Version', '2.2.0')]:
+            for mode in ['missing', 'duplicate', 'wrong']:
+                with self.subTest(header=header, mode=mode):
+                    rows = self.rows()
+                    for row in rows:
+                        if mode == 'missing':
+                            row['headers'] = [p for p in row['headers'] if p[0] != header]
+                        elif mode == 'duplicate':
+                            row['headers'].append([header, bad])
+                        else:
+                            row['headers'] = [[k, bad if k == header else v] for k, v in row['headers']]
+                    self.assertFalse(self.run_rows(rows)['overall_pass'])
+
+    def test_each_wire_timestamp_and_false_flag_is_checked(self):
+        for field in ['publishedAt', 'exposedAt', 'achievedAt', 'overridden', 'fullOn',
+                      'custom', 'audienceMismatch', 'ruleOverride', 'applicationVersion']:
+            with self.subTest(field=field):
+                records = _publishes_for('dart', gate.plan('regression', 'dart'))
+                for row in records:
+                    row['headers'][0] = ['X-Agent', 'absmartly-dart-sdk/2.2.0']
+                    if field == 'applicationVersion':
+                        row['headers'][-1] = ['X-Application-Version', '2.2.0']
+                    elif field == 'publishedAt': row['json'][field] = 1
+                    elif field == 'achievedAt':
+                        for entry in row['json']['goals']: entry[field] = 1
+                    else:
+                        for entry in row['json']['exposures']: entry[field] = 1 if field == 'exposedAt' else True
+                self.assertFalse(self.run_rows(self.rows(), records)['overall_pass'])
+
+    def test_docker_gate_wiring_is_complete(self):
+        compose = open(os.path.join(ROOT, 'docker-compose.yml')).read()
+        overlay = open(os.path.join(ROOT, 'docker-compose.local-collector.yml')).read()
+        dockerfile = open(os.path.join(ROOT, 'orchestrator/Dockerfile')).read()
+        self.assertIn('  local-collector:', compose)
+        self.assertIn('local_collector_gate.py', dockerfile)
+        self.assertIn('e2e_cases.py', dockerfile)
+        self.assertNotIn('java-v1-sdk:', overlay)
+        self.assertNotIn('swift-v1-sdk:', overlay)
+
+    def test_local_and_ci_share_immutable_checkout(self):
+        for path in ['setup-sdks.sh', '.github/workflows/cross-sdk.yml']:
+            self.assertIn('checkout-sdk.sh', open(os.path.join(ROOT, path)).read())
+        helper = open(os.path.join(ROOT, 'checkout-sdk.sh')).read()
+        self.assertIn('checkout --detach', helper)
+        self.assertIn('rev-parse HEAD', helper)
+        self.assertNotIn('clone --branch', helper)
