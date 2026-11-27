@@ -273,18 +273,31 @@ final class SwitchbackSelfTest
         return true;
     }
 
-    private static function checkContextServing(): bool
+    private static function checkWireModel(object $model, object $payload): bool
     {
-        if (!property_exists('ABSmartly\\SDK\\Experiment', 'switchbackClusters')
-            || !property_exists('ABSmartly\\SDK\\Experiment', 'switchbackClusterValues')
-            || property_exists('ABSmartly\\SDK\\Experiment', 'switchbackClusterCount')) {
+        // Additive fields may be dynamic to preserve the released model's serialization/subclass
+        // contract. Check what an actual payload produces, not the class's declared properties.
+        if (property_exists($model, 'switchbackClusterCount')
+            || (isset($payload->switchbackClusters)
+                && (!isset($model->switchbackClusters)
+                    || (array) $model->switchbackClusters !== (array) $payload->switchbackClusters))
+            || (isset($payload->switchbackClusterValues)
+                && (!isset($model->switchbackClusterValues)
+                    || $model->switchbackClusterValues !== $payload->switchbackClusterValues))) {
             return self::fail('FAILED: linked php-sdk has no R33 switchback wire model');
         }
+        return true;
+    }
 
+    private static function checkContextServing(): bool
+    {
         // Decoded like the SDK's collector fetch (Client::decode: json_decode to objects).
         $client = new Client(new ClientConfig('http://127.0.0.1:1/v1', 'probe', 'website', 'test'));
         $decoded = $client->decode(self::probePayload());
         foreach ($decoded->experiments as $experiment) {
+            if (!self::checkWireModel(new \ABSmartly\SDK\Experiment($experiment), $experiment)) {
+                return false;
+            }
             if ($experiment->name === 'sb_declared_order'
                 && array_keys(get_object_vars($experiment->switchbackClusters)) !== ['unit_user', 'unit_serving']) {
                 return self::fail('FAILED: switchbackClusters lost its declared order');
