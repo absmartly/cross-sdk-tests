@@ -441,6 +441,18 @@ class GateRunTest(unittest.TestCase):
                     result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
                 self.assertFalse(result["overall_pass"])
 
+    def test_an_http_error_from_the_request_log_fails_even_with_a_valid_looking_body(self):
+        cases = gate.plan("r", "javascript")
+        error = gate.requests.HTTPError("503 Server Error: Service Unavailable")
+        response = mock.Mock(json=lambda: {"requests": []}, raise_for_status=mock.Mock(side_effect=error))
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(_publishes_for("javascript", cases), None)), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=response):
+            result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(any(e.startswith("collector request log unavailable") for e in result["transport_errors"]),
+                        result.get("transport_errors"))
 
 class FetchPublishesTest(unittest.TestCase):
     PLANNED = {("user_id", "u")}

@@ -382,7 +382,9 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
         if unit_errors:
             results.setdefault("transport_errors", []).extend(unit_errors)
     try:
-        request_rows = requests.get(f"{collector_url}/requests", timeout=10).json().get("requests")
+        response = requests.get(f"{collector_url}/requests", timeout=10)
+        response.raise_for_status()
+        request_rows = response.json().get("requests")
         if not isinstance(request_rows, list):
             raise ValueError(f"requests is {request_rows!r}")
     except (requests.RequestException, ValueError, AttributeError) as exc:
