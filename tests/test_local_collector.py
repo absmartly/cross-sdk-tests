@@ -532,6 +532,33 @@ class GateVerifyTest(unittest.TestCase):
         self.assertEqual(result["planned_revenue"], "1000021.6")
         self.assertEqual(result["exposures"], len(self.cases) + 1)
 
+    def test_malformed_and_duplicate_units_fail_direct_and_cached_verification(self):
+        for duplicate, malformed in ((True, False), (False, True), (True, True)):
+            for cached in (False, True):
+                with self.subTest(duplicate=duplicate, malformed=malformed, cached=cached):
+                    publishes = _publishes_for("javascript", self.cases)
+                    record = publishes[0]
+                    if duplicate:
+                        record["json"]["units"].append(copy.deepcopy(record["json"]["units"][0]))
+                    if malformed:
+                        record["json"]["units"].append({"bad": 1})
+                    if cached:
+                        record["_units"], record["_unit_errors"] = gate._publish_units(record)
+                    result = gate.verify("javascript", self.cases, publishes, "e2e-tests", "production")
+                    self.assertFalse(result["pass"])
+                    for enabled, diagnostic in ((duplicate, "duplicate unit"), (malformed, "malformed units entry")):
+                        if enabled:
+                            self.assertTrue(any(diagnostic in e for e in result["errors"]), result["errors"])
+
+    def test_excepted_case_duplicate_units_still_fail_transport(self):
+        cases = self.cases[:-1]
+        excepted = self.cases[-1:]
+        publishes = _publishes_for("javascript", self.cases)
+        publishes[-1]["json"]["units"].append(copy.deepcopy(publishes[-1]["json"]["units"][0]))
+        result = gate.verify("javascript", cases, publishes, "e2e-tests", "production", excepted=excepted)
+        self.assertFalse(result["pass"])
+        self.assertTrue(any("duplicate unit" in e for e in result["errors"]))
+
     def test_other_sdks_publishes_are_ignored(self):
         other = _publishes_for("go", gate.plan("abcd", "go"))
         result = gate.verify("javascript", self.cases, _publishes_for("javascript", self.cases) + other,

@@ -75,13 +75,17 @@ def plan(run_id: str, sdk: str) -> List[Dict[str, Any]]:
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
     """The publish's (type, uid) units and a diagnostic for each malformed entry; parsed once per record."""
     if "_units" in record:
-        return record["_units"], []
+        return record["_units"], record.get("_unit_errors", [])
     body = record.get("json")
     if not isinstance(body, dict):
         return set(), []
     errors: List[str] = []
     entries = _entries(record, "units", ("type", "uid"), errors)
-    return {(entry["type"], entry["uid"]) for entry in entries}, errors
+    counts = Counter((entry["type"], entry["uid"]) for entry in entries)
+    for unit, count in counts.items():
+        if count > 1:
+            errors.append(f"publish #{record.get('seq')} has duplicate unit {unit!r}: {count} occurrences")
+    return set(counts), errors
 
 
 def _covers(units: set, case_units: set) -> bool:
@@ -173,10 +177,11 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record.get('seq')} is not a JSON object"
                           + (f": {record['parseError']}" if record.get("parseError") else ""))
             continue
-        units, _ = _publish_units(record)
+        units, unit_errors = _publish_units(record)
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
+        errors.extend(unit_errors)
         if not any(_covers(units, case) for case in case_units):
             errors.append(f"publish #{record['seq']} carries units from more than one planned case")
         if units - expected_units - excepted_units:
@@ -371,6 +376,7 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     for record in publishes:
         units, unit_errors = _publish_units(record)
         record["_units"] = units
+        record["_unit_errors"] = list(unit_errors)
         arrived.append(units)
         if isinstance(record.get("json"), dict) and not units & planned_units:
             unit_errors.append(f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")
