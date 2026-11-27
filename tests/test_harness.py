@@ -645,7 +645,8 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_switchback_required_only_where_evidenced(self):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
-        self.assertEqual(holders, ["cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
+        # swift: swift-wrapper/Sources/App/SwitchbackSelfTest.swift gates it on swift-sdk 2.2.0+ serving.
+        self.assertEqual(holders, ["cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust", "swift"])
 
     def test_shared_variable_keys_required_only_where_evidenced(self):
         # The JS family requires it only at the javascript-sdk pin whose lanes were measured passing 340-368.
@@ -1427,6 +1428,7 @@ class StaticRepoChecks(unittest.TestCase):
         "dart-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
         "flutter-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
         "dotnet-wrapper/Program.cs": "integralFloatAttributes = SwitchbackSelfTest.RunIntegralFloat(),",
+        "swift-wrapper/Sources/App/routes.swift": '"integralFloatAttributes": SwitchbackSelfTest.runIntegralFloat(),',
     }
     INTEGRAL_FLOAT_PROBES = {
         "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
@@ -1440,6 +1442,7 @@ class StaticRepoChecks(unittest.TestCase):
         "dart-wrapper/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
         "flutter-wrapper/lib/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
         "dotnet-wrapper/SwitchbackSelfTest.cs": '"integral float", "sb_integral_float", 0',
+        "swift-wrapper/Sources/App/SwitchbackSelfTest.swift": "guard float == 0, floatFired.isEmpty, int == 5",
     }
     # The cached capability must gate the integral-float probe on the real switchback
     # battery, not on a stub that always passes.
@@ -1447,6 +1450,7 @@ class StaticRepoChecks(unittest.TestCase):
         "dotnet-wrapper/SwitchbackSelfTest.cs": "IntegralFloatResult = new(() => RunIntegralFloatAfter(Run));",
         "dart-wrapper/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
         "flutter-wrapper/lib/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
+        "swift-wrapper/Sources/App/SwitchbackSelfTest.swift": "guard run() else { return false }",
     }
 
     def test_integral_float_attributes_comes_from_the_switchback_self_test(self):
@@ -1499,7 +1503,7 @@ class StaticRepoChecks(unittest.TestCase):
         "python3-sdk": ("feat/switchbacks", None),
         "ruby-sdk": ("feat/switchbacks", None),
         "rust-sdk": ("feat/switchbacks", None),
-        "swift-sdk": ("main", "d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"),
+        "swift-sdk": ("feat/swift-2.2-switchbacks", "5a99fc777b9dcd87c6110ecb9a542f20487678a4"),
         "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
     }
 

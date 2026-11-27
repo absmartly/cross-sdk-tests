@@ -1352,6 +1352,13 @@ Every check compares the treatment and the complete exposure record (every
 field except `exposedAt`). Run the self-test lazily on first use, cache the
 result, and catch `Throwable` around it, exactly as for `holdouts`.
 
+The swift self-test (`swift-wrapper/Sources/App/SwitchbackSelfTest.swift`, swift-sdk 2.2.0+)
+runs go-wrapper's probe payload and checks on a context built from `ContextData(json:)`, which keeps
+the cluster maps' key order, and compares the published batch with the logged exposures. The wrapper
+stores `PUT /context_payload/{id}` and decodes inline `data` from the request bytes as written, and
+parses an `attribute` value with JSONSerialization so `3.0` stays a double (its `integralFloatAttributes`
+probe: `3.0` keys nothing, `3` keys `"3"`).
+
 The php self-test (`php-wrapper/SwitchbackSelfTest.php`) runs the same checks
 on the same probe payload, decoded with the SDK's own `Client::decode`, plus
 one more: an integral-float attribute (`123456789.0`) gives no cluster value.

@@ -306,6 +306,28 @@ func requestBody(_ req: Request) throws -> JSONValue {
     return try JSONDecoder().decode(JSONValue.self, from: Data(buffer.readableBytesView))
 }
 
+/// The request body's bytes, for members that must reach the SDK as written (see `RawJSON`).
+func rawBody(_ req: Request) -> Data {
+    guard let buffer = req.body.data else { return Data() }
+    return Data(buffer.readableBytesView)
+}
+
+/// A signed 64-bit value sent as a decimal string, parsed exactly.
+func switchbackInt64(_ value: JSONValue?, _ name: String) throws -> Int64 {
+    guard let text = value?.stringValue, let number = Int64(text) else {
+        throw Abort(.badRequest, reason: "\(name) must be a signed 64-bit decimal string")
+    }
+    return number
+}
+
+/// `armCount`: a JSON integer of at least 2 and at most 1,000 (the java and javascript wrappers' cap).
+func switchbackArmCount(_ value: JSONValue?) throws -> Int {
+    guard case .int(let number)? = value, number >= 2, number <= 1_000 else {
+        throw Abort(.badRequest, reason: "armCount must be an integer in [2, 1000]")
+    }
+    return Int(number)
+}
+
 func reply(_ object: [String: Any], status: HTTPResponseStatus = .ok) throws -> HTTPResponse {
     return HTTPResponse(status: status, body: .init(data: try JSONSerialization.data(withJSONObject: object, options: [])))
 }
@@ -406,7 +428,7 @@ func makeClient(
 
 func routes(_ app: VaporApplication) throws {
     app.get("health") { _ -> HTTPResponse in
-        return try reply(["status": "healthy", "sdk": "swift", "version": "2.1.0"])
+        return try reply(["status": "healthy", "sdk": "swift", "version": "2.2.0"])
     }
 
     app.get("capabilities") { _ -> HTTPResponse in
@@ -437,6 +459,8 @@ func routes(_ app: VaporApplication) throws {
             "holdout_arms": HoldoutSelfTest.runHoldoutArms(),
             // swift-sdk 2.x resolves shared keys as java-sdk does (scenarios 340-368 pass at the pin).
             "sharedVariableKeys": true,
+            "switchback": SwitchbackSelfTest.run(),
+            "integralFloatAttributes": SwitchbackSelfTest.runIntegralFloat(),
         ])
     }
 
@@ -459,10 +483,41 @@ func routes(_ app: VaporApplication) throws {
         return try reply(["result": result, "events": [] as [Any]])
     }
 
+    // The pure switchback draw, independent of the self-test verdict, so a regressed assigner
+    // reports its actual outputs.
+    let switchbackHandler: @Sendable (Request, String) throws -> HTTPResponse = { req, index in
+        let request: JSONValue
+        do {
+            request = try requestBody(req)
+        } catch {
+            return try errorReply("the request body must be a JSON object")
+        }
+        do {
+            guard let unit = request["clusterUnit"]?.stringValue else {
+                throw Abort(.badRequest, reason: "clusterUnit must be a string")
+            }
+            let position = try switchbackInt64(request[index], index)
+            let seed = try switchbackInt64(request["seed"], "seed")
+            let arms = try switchbackArmCount(request["armCount"])
+            if index == "periodIndex" {
+                let variant = Diagnostics.switchbackVariant(
+                    clusterUnit: unit, periodIndex: position, seed: seed, armCount: arms)
+                return try reply(["result": variant as Any, "events": [] as [Any]])
+            }
+            let permutation = Diagnostics.switchbackPermutation(
+                clusterUnit: unit, cycleIndex: position, seed: seed, armCount: arms)
+            return try reply(["result": permutation as Any, "events": [] as [Any]])
+        } catch let abort as Abort {
+            return try errorReply(abort.reason)
+        }
+    }
+    app.post("switchback", "assign") { req -> HTTPResponse in try switchbackHandler(req, "periodIndex") }
+    app.post("switchback", "permutation") { req -> HTTPResponse in try switchbackHandler(req, "cycleIndex") }
+
+    // Stored as written, so the SDK's fetch sees each switchbackClusters object in its key order.
     app.put("context_payload", ":payloadId") { req -> HTTPResponse in
         guard let payloadId = req.parameters.get("payloadId") else { throw Abort(.badRequest) }
-        let request = try requestBody(req)
-        payloadStore[payloadId] = try JSONEncoder().encode(request["data"] ?? .null)
+        payloadStore[payloadId] = RawJSON.member(rawBody(req), "data") ?? Data("null".utf8)
         return try reply(["success": true])
     }
 
@@ -564,7 +619,8 @@ func routes(_ app: VaporApplication) throws {
             }
             let contextData: ContextData
             do {
-                contextData = try JSONDecoder().decode(ContextData.self, from: try JSONEncoder().encode(data))
+                // Decoded from the bytes as written, so switchbackClusters keeps its key order.
+                contextData = try ContextData(json: RawJSON.member(rawBody(req), "data") ?? JSONEncoder().encode(data))
             } catch {
                 return try errorReply("Invalid context data: \(error.localizedDescription)")
             }
@@ -656,7 +712,9 @@ func routes(_ app: VaporApplication) throws {
         let storage = try lookup(req)
         let request = try requestBody(req)
         return try await call(storage) {
-            storage.context.setAttribute(request["name"]?.stringValue ?? "", to: request["value"] ?? .null)
+            // Parsed from the bytes, so a 3.0 stays a double (JSONDecoder reads it as the integer 3).
+            storage.context.setAttribute(
+                request["name"]?.stringValue ?? "", to: RawJSON.value(rawBody(req), "value") ?? request["value"] ?? .null)
             return nil
         }
     }
