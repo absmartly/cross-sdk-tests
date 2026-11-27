@@ -157,6 +157,14 @@ class GateVerifyTest(unittest.TestCase):
                         if enabled:
                             self.assertTrue(any(diagnostic in e for e in result["errors"]), result["errors"])
 
+    def test_another_sdks_duplicate_units_do_not_fail_this_sdk(self):
+        other = _publishes_for("go", gate.plan("abcd", "go"))
+        other[0]["json"]["units"].append(copy.deepcopy(other[0]["json"]["units"][0]))
+        other[0]["json"]["units"].append({"bad": 1})
+        result = gate.verify("javascript", self.cases, _publishes_for("javascript", self.cases) + other,
+                             "e2e-tests", "production", False)
+        self.assertTrue(result["pass"], result["errors"])
+
     def test_excepted_case_duplicate_units_still_fail_transport(self):
         cases = self.cases[:-1]
         excepted = self.cases[-1:]
@@ -372,6 +380,13 @@ class GateRunTest(unittest.TestCase):
                              ("malformed json", [{"seq": 99, "json": None, "parseError": "x", "headers": []}])):
             with self.subTest(label):
                 self.assertFalse(self.run_with(extra)["overall_pass"], label)
+
+    def test_a_duplicate_unit_fails_the_sdk_that_sent_it(self):
+        def dup(out):
+            out[0]["json"]["units"].append(copy.deepcopy(out[0]["json"]["units"][0]))
+        result = self.run_with([], dup)
+        self.assertFalse(result["sdks"]["javascript"]["pass"])
+        self.assertTrue(any("duplicate unit" in e for e in result["sdks"]["javascript"]["errors"]))
 
     def test_a_case_without_its_own_publish_fails_even_with_matching_totals(self):
         # Every exposure and goal still arrives, but multiple_units' session unit and exposure ride on

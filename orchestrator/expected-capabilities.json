@@ -1021,11 +1021,11 @@
       "unsupported": {
         "clientNoEnvironment": "dart-sdk's Client rejects a null/empty environment and Context's environment is set only internally, so the wrapper cannot build a no-environment client black-box; flutter-sdk (dart) covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): dart:io HttpClient sends `gzip` and decodes gzip only; no br in dart:io",
+        "contextFetchBrotli": "observed: dart:io HttpClient (Dart/3.14) sends `gzip` on create and refresh and decodes gzip only; no br in dart:io",
         "holdouts": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
         "holdout_arms": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
         "switchback": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
-        "integralFloatAttributes": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes."
+        "integralFloatAttributes": "depends on switchback, which absmartly_sdk 2.2.0 predates; the 3.x dart/flutter lanes require it"
       },
       "e2e": {
         "required": [
@@ -1064,11 +1064,11 @@
       "unsupported": {
         "clientNoEnvironment": "flutter-sdk (dart) Client rejects a null/empty environment, so the wrapper cannot build a no-environment client black-box; the dart package covers it in its own system_attributes_test via Context(environment: null)",
         "clientAcceptsBlankApplication": "dart-sdk's client rejects a blank application at construction, so there is no context to evaluate; scenario 322 covers this lane instead",
-        "contextFetchBrotli": "from code (lane not built here, pub.dev unreachable): uses dart:io HttpClient, which sends `gzip` and decodes gzip only",
+        "contextFetchBrotli": "observed: dart:io HttpClient (Dart/3.4) sends `gzip` on create and refresh and decodes gzip only; no br in dart:io",
         "holdouts": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
         "holdout_arms": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
         "switchback": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes.",
-        "integralFloatAttributes": "Flutter 2.2.0 compatibility line predates holdouts and switchbacks; covered by the separate 3.x lanes."
+        "integralFloatAttributes": "depends on switchback, which absmartly_sdk 2.2.0 predates; the 3.x dart/flutter lanes require it"
       },
       "e2e": {
         "required": [
