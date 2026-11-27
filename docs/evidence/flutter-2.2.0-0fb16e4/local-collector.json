@@ -1,0 +1,22 @@
+{
+  "run_id": "0d5c1725",
+  "sdks": {
+    "dart": {
+      "pass": true,
+      "errors": [],
+      "revenue": "1000021.6",
+      "planned_revenue": "1000021.6",
+      "exposures": 10,
+      "goals": 19
+    },
+    "flutter": {
+      "pass": true,
+      "errors": [],
+      "revenue": "1000021.6",
+      "planned_revenue": "1000021.6",
+      "exposures": 10,
+      "goals": 19
+    }
+  },
+  "overall_pass": true
+}

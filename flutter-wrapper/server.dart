@@ -227,9 +227,14 @@ void captureRequest(shelf.Request request, String payloadId) {
 }
 
 String translateEndpoint(String endpoint) {
-  return endpoint
-      .replaceAllMapped(RegExp(r'http://localhost:\d+'), (m) => 'http://localhost:3000')
-      .replaceAllMapped(RegExp(r'http://127\.0\.0\.1:\d+'), (m) => 'http://localhost:3000');
+  final uri = Uri.parse(endpoint);
+  if (uri.host == 'localhost' || uri.host == '127.0.0.1') {
+    return uri
+        .replace(host: 'localhost',
+            port: int.parse(Platform.environment['PORT'] ?? '3000'))
+        .toString();
+  }
+  return endpoint;
 }
 
 Future<void> startServer() async {

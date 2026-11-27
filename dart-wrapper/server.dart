@@ -13,7 +13,10 @@ import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
 String translateEndpoint(String endpoint) {
   final uri = Uri.parse(endpoint);
   if (uri.host == 'localhost' || uri.host == '127.0.0.1') {
-    return uri.replace(host: 'localhost', port: 3000).toString();
+    return uri
+        .replace(host: 'localhost',
+            port: int.parse(Platform.environment['PORT'] ?? '3000'))
+        .toString();
   }
   return endpoint;
 }
