@@ -80,10 +80,15 @@ class CollectorServerTest(unittest.TestCase):
         bad_status, _ = self.request("PUT", "/context", b"{not json", {})
         self.assertEqual(bad_status, 400)
         _, stored = self.request("GET", "/publishes")
-        first = stored["publishes"][0]
+        first, rejected = stored["publishes"]
         self.assertEqual(first["json"], {"hashed": True})
         self.assertEqual(first["contentEncoding"], "gzip")
         self.assertEqual(first["seq"], 0)
+        # The malformed body is retained for the gate to fail on, never accepted as JSON.
+        self.assertEqual(rejected["seq"], 1)
+        self.assertIsNone(rejected["json"])
+        self.assertIn("parseError", rejected)
+        self.assertEqual(rejected["rawBody"], "{not json")
 
     def test_malformed_bytes_are_retained_and_rejected(self):
         for headers, body in (({}, b"\xff"), ({"Content-Encoding": "gzip"}, b"not-gzip")):
