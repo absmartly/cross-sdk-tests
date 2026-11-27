@@ -651,7 +651,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
         self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "java-v1", "javascript", "kotlin",
-                                   "react", "vue2", "vue3"])
+                                   "php", "react", "vue2", "vue3"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
@@ -1472,6 +1472,21 @@ class StaticRepoChecks(unittest.TestCase):
         construction = re.search(r"new WrapperTransport\(fetchOverHttp, ([^,]+),", text)
         self.assertIsNotNone(construction)
         self.assertEqual(construction.group(1).strip(), "publishToEndpoint")
+
+    def test_php_shared_variable_keys_uses_a_probe_and_both_wrapper_tests_gate_the_build(self):
+        with open(os.path.join(REPO_ROOT, "php-wrapper", "server.php"), encoding="utf-8") as src:
+            server = src.read()
+        self.assertIn("require __DIR__ . '/SharedVariableKeysSelfTest.php';", server)
+        self.assertIn("'sharedVariableKeys' => SharedVariableKeysSelfTest::run()", server)
+        with open(os.path.join(REPO_ROOT, "php-wrapper", "Dockerfile"), encoding="utf-8") as src:
+            dockerfile = src.read()
+        copy = "COPY cross-sdk-tests/php-wrapper /app"
+        self.assertIn(copy, dockerfile)
+        for name in ("switchback_self_test_test.php", "shared_variable_keys_self_test_test.php"):
+            with self.subTest(test=name):
+                gate = f"RUN php {name} /app/vendor/autoload.php"
+                self.assertIn(gate, dockerfile.splitlines())
+                self.assertLess(dockerfile.index(copy), dockerfile.index(gate))
 
     def test_python_dockerfile_copies_every_local_module_the_server_imports(self):
         wrapper = os.path.join(REPO_ROOT, "python-wrapper")
