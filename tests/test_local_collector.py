@@ -903,7 +903,7 @@ class SdkPinTest(unittest.TestCase):
         match = re.search(r'\["flutter-sdk"\]="([^"]+)"', text)
         self.assertIsNotNone(match)
         self.assertRegex(match.group(1), r'^[0-9a-f]{40}$')
-        self.assertEqual(match.group(1), '1e6c7b7518c2496384c36a0844e904b10576e569')
+        self.assertEqual(match.group(1), '5390f0bb9b6825785c0fc3cf3e783acc6a909dcf')
 
 
 class UnitParseCacheTest(unittest.TestCase):
