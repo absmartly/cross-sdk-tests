@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 import unittest
+from collections import Counter
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -826,6 +827,36 @@ class GateRunTest(unittest.TestCase):
         result = self.run_with([], dup)
         self.assertFalse(result["sdks"]["javascript"]["pass"])
         self.assertTrue(any("duplicate unit" in e for e in result["sdks"]["javascript"]["errors"]))
+
+    def test_a_conflicting_uid_for_one_unit_type_fails_the_sdk_that_sent_it(self):
+        def conflict(out):
+            out[0]["json"]["units"].append({"type": "user_id", "uid": gate.unit_hash("another")})
+        result = self.run_with([], conflict)
+        self.assertFalse(result["sdks"]["javascript"]["pass"])
+        self.assertTrue(any("conflicting uids for unit type 'user_id'" in e
+                            for e in result["sdks"]["javascript"]["errors"]), result["sdks"]["javascript"]["errors"])
+
+    def test_blank_unit_fields_report_their_own_diagnostic(self):
+        for bad in ({"type": "", "uid": "x"}, {"type": "user_id", "uid": ""}):
+            with self.subTest(bad=bad):
+                _, errors = gate._publish_units(_record(0, {"hashed": True, "units": [bad]}))
+                self.assertTrue(any("blank type or uid" in e for e in errors), errors)
+        result = self.run_with([], lambda out: out[0]["json"]["units"].append({"type": "", "uid": "x"}))
+        self.assertFalse(result["overall_pass"])
+
+    def test_run_parses_each_publishs_units_once(self):
+        real = gate._entries
+        parsed = Counter()
+
+        def counting(record, field, keys, errors):
+            if field == "units":
+                parsed[record["seq"]] += 1
+            return real(record, field, keys, errors)
+
+        with mock.patch.object(gate, "_entries", side_effect=counting):
+            result = self.run_with([])
+        self.assertTrue(result["overall_pass"], result)
+        self.assertEqual(set(parsed.values()), {1}, parsed)
 
     def test_a_case_without_its_own_publish_fails_even_with_matching_totals(self):
         # Every exposure and goal still arrives, but multiple_units' session unit and exposure ride on

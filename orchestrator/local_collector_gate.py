@@ -83,8 +83,15 @@ def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
     entries = _entries(record, "units", ("type", "uid"), errors)
     counts = Counter((entry["type"], entry["uid"]) for entry in entries)
     for unit, count in counts.items():
+        if not unit[0] or not unit[1]:
+            errors.append(f"publish #{record.get('seq')} has a malformed units entry: blank type or uid {unit!r}")
         if count > 1:
             errors.append(f"publish #{record.get('seq')} has duplicate unit {unit!r}: {count} occurrences")
+    # A context has one uid per unit type, so two different uids for one type are as wrong as a repeat.
+    types = Counter(unit_type for unit_type, _ in counts)
+    for unit_type, count in types.items():
+        if count > 1:
+            errors.append(f"publish #{record.get('seq')} has conflicting uids for unit type {unit_type!r}")
     return set(counts), errors
 
 
