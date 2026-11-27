@@ -650,7 +650,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         # The JS family requires it only at the javascript-sdk pin whose lanes were measured passing 340-368.
         policy = test_runner.load_capability_policy()
         holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
-        self.assertEqual(holders, ["angular", "dart", "dotnet", "flutter", "java", "java-v1", "javascript", "kotlin",
+        self.assertEqual(holders, ["angular", "dart", "dart-v2", "dotnet", "flutter", "flutter-v2", "java", "java-v1", "javascript", "kotlin",
                                    "react", "vue2", "vue3"])
 
     def test_invalid_policies_rejected(self):
@@ -1150,7 +1150,7 @@ class ConsistencyTests(unittest.TestCase):
             if "-" in lane["sdk"]:
                 with self.subTest(lane=lane["sdk"]):
                     self.assertEqual(test_runner.SDK_AGENT_LANGUAGE[lane["sdk"]],
-                                     lane["sdk"].split("-", 1)[0])
+                                     ("dart" if lane["sdk"] == "flutter-v2" else lane["sdk"].split("-", 1)[0]))
 
     def test_lane_checkouts_resolve_through_sdk_repo_sources(self):
         """Checkout dirs that are not repo names (java-sdk-v1, swift-sdk-v1) are cloned through
@@ -1171,7 +1171,7 @@ class ConsistencyTests(unittest.TestCase):
                 with self.subTest(repo=repo):
                     self.assertIn(repo, pins)
         self.assertEqual(self.sdk_pins("SDK_REPO_SOURCES"),
-                         {"java-sdk-v1": "java-sdk", "swift-sdk-v1": "swift-sdk"})
+                         {"java-sdk-v1": "java-sdk", "swift-sdk-v1": "swift-sdk", "flutter-sdk-v2": "flutter-sdk"})
 
     @staticmethod
     def sdk_pins(name):
@@ -1201,8 +1201,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 22)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 22)
+        self.assertEqual(len(matrix["include"]), 24)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 24)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -1489,6 +1489,7 @@ class StaticRepoChecks(unittest.TestCase):
     # SDK PR merges would silently drop the lane's holdouts/switchback coverage; update this table in
     # the change that re-pins.
     EXPECTED_PINS = {
+        "flutter-sdk-v2": ("release/2.2.0-prep", "0fb16e462f816b3bd0818fa8fdeeb6a9040f05e8"),
         "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
         "dotnet-sdk": ("main", "31fb143461498521d7f583f0689db90443c41066"),
         "elixir-sdk": ("feat/switchbacks", None),
@@ -1504,6 +1505,46 @@ class StaticRepoChecks(unittest.TestCase):
         "swift-sdk": ("main", "d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"),
         "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
     }
+
+    def test_flutter_v2_collector_and_unit_registration(self):
+        import yaml
+        with open(os.path.join(REPO_ROOT, ".github/workflows/cross-sdk.yml")) as src:
+            workflow = yaml.safe_load(src)
+        collector_sdks = workflow["jobs"]["local-collector-gate"]["strategy"]["matrix"]["sdk"]
+        with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
+            services = yaml.safe_load(src)["services"]
+        with open(os.path.join(REPO_ROOT, "docker-compose.local-collector.yml")) as src:
+            overrides = yaml.safe_load(src)["services"]
+        for lane in ("dart-v2", "flutter-v2"):
+            with self.subTest(lane=lane):
+                self.assertIn(lane, collector_sdks)
+                self.assertIn(lane + "-sdk", services["orchestrator"]["depends_on"])
+                self.assertIn("ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1",
+                              overrides[lane + "-sdk"]["environment"])
+                self.assertEqual(results_aggregator.parse_unit_test_output(
+                    lane, "00:08 +17: All tests passed!"), (17, 0, 17))
+
+    def test_flutter_v2_compatibility_lanes_remain_separate(self):
+        policy = test_runner.load_capability_policy()
+        for lane in ("dart", "flutter"):
+            with self.subTest(lane=lane):
+                self.assertIn("switchback", policy["sdks"][lane]["required"])
+                compat = policy["sdks"][lane + "-v2"]
+                for capability in ("holdouts", "holdout_arms", "switchback"):
+                    self.assertIn(capability, compat["unsupported"])
+                self.assertIn("sharedVariableKeys", compat["required"])
+                with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
+                    self.assertIn(lane + "-v2-unit:", src.read())
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "pubspec.yaml")) as src:
+                    manifest = src.read()
+                self.assertIn("../../flutter-sdk-v2/packages/", manifest)
+                self.assertNotIn("../../flutter-sdk/packages/", manifest)
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "server.dart")) as src:
+                    wrapper = src.read()
+                for method in ("setUnitValues", "getUnitValue", "getUnitValues"):
+                    self.assertIn(method, wrapper)
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "Dockerfile")) as src:
+                    self.assertIn("COPY flutter-sdk-v2/", src.read())
 
     def test_round_pins_match_the_expected_table(self):
         def pins(name):
@@ -1529,6 +1570,8 @@ class StaticRepoChecks(unittest.TestCase):
         self.assertEqual(counts, {self.scenario_count()})
 
     WRAPPER_CAPABILITY_FILES = {
+        "dart-v2": "dart-v2-wrapper/server.dart",
+        "flutter-v2": "flutter-v2-wrapper/server.dart",
         "javascript": "javascript-wrapper/server.js", "react": "react-wrapper/server.js",
         "vue2": "vue2-wrapper/server.js", "vue3": "vue3-wrapper/server.js",
         "angular": "angular-wrapper/server.js", "python": "python-wrapper/server.py",
@@ -1546,7 +1589,7 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 22 lanes. `measuredCapabilities` are exempt: the
+        the wrappers fails here rather than in all lanes. `measuredCapabilities` are exempt: the
         orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
         measured = set(policy.get("measuredCapabilities") or [])

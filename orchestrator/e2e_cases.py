@@ -8,7 +8,7 @@ import json
 # flutter uses the dart client, the -v1 lanes are the 1.x SDKs, liquid wraps ruby-sdk, and the
 # framework wrappers wrap javascript-sdk.
 AGENT_LANGUAGE = {
-    "swift-v1": "swift", "flutter": "dart", "java-v1": "java", "liquid": "ruby",
+    "swift-v1": "swift", "flutter": "dart", "dart-v2": "dart", "flutter-v2": "dart", "java-v1": "java", "liquid": "ruby",
     "react": "javascript", "vue2": "javascript", "vue3": "javascript", "angular": "javascript",
 }
 
