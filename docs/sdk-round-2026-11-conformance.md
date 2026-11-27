@@ -150,7 +150,7 @@ to it. The holdout and switchback self-tests each wrapper uses are named in
 
 Flutter 2.2 compatibility (#48) is folded into this consolidated round by owner
 instruction. Separate `dart-v2` and `flutter-v2` lanes pin flutter-sdk#12 head
-`0fb16e4` via `flutter-sdk-v2`; the original `dart` and `flutter` lanes keep
+`1e6c7b7` via `flutter-sdk-v2`; the original `dart` and `flutter` lanes keep
 switchback/3.x coverage. The compatibility lanes run the full eligible conformance
 suite and blocking local collector gates, including the typed unit-value APIs.
 They predate holdouts and switchbacks, which remain required on the 3.x lanes.

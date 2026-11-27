@@ -48,7 +48,7 @@
 # Flutter 2.2.0 compatibility is separate from flutter-sdk 3.x. Re-pin the v2 checkout
 # to flutter-sdk#12's merge commit when it merges; do not replace the 3.x lane.
 declare -A SDK_REVISIONS=(
-  ["flutter-sdk-v2"]="0fb16e462f816b3bd0818fa8fdeeb6a9040f05e8"
+  ["flutter-sdk-v2"]="1e6c7b7518c2496384c36a0844e904b10576e569"
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["dotnet-sdk"]="31fb143461498521d7f583f0689db90443c41066"
   ["javascript-sdk"]="95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"
