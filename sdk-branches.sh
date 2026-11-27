@@ -21,7 +21,9 @@
 # to `main` in the change that merges its SDK PR(s), before the branch is deleted, or the
 # lane's clone fails:
 #   cpp-sdk        feat/switchbacks  cpp-sdk#6 (stacked on #5 holdouts), at the SDK_REVISIONS commit
-#   dotnet-sdk     feat/switchbacks  dotnet-sdk#16 (stacked on #15 holdouts); contains #17 (1.4.1)
+#   dotnet-sdk     main @ 31fb143    dotnet-sdk#16 MERGED (with holdouts #15 and 1.4.1 #17): the SDK_REVISIONS
+#                                    commit is its merge commit, whose tree is the tested switchbacks head dc05766.
+#                                    main has since moved on (1.6.0, #21); re-run the lane before re-pinning to it.
 #   elixir-sdk     feat/switchbacks  elixir-sdk#6 (stacked on #5 holdouts)
 #   flutter-sdk    feat/switchbacks  flutter-sdk#13 (on #11 holdouts)
 #   go-sdk         feat/switchbacks  go-sdk#17 (on #15 holdouts)
@@ -38,13 +40,14 @@
 #                                    (swift-v1-wrapper, cloned from absmartly/swift-sdk) requires holdouts.
 #                                    swift-sdk main is now 2.0; keep the exact 1.x commit until release/1.x is cut,
 #                                    then re-pin the v1 lane to it.
-# Not every switchbacks branch contains its holdouts PR's latest head: cpp, elixir and dotnet
+# Not every switchbacks branch contains its holdouts PR's latest head: cpp and elixir
 # feat/switchbacks are behind their feat/holdouts, so those lanes test switchback over an older
 # holdouts port. Merge holdouts into switchbacks in those SDK repos and re-run the lanes before merge.
 # SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
 # what this commit tests.
 declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
+  ["dotnet-sdk"]="31fb143461498521d7f583f0689db90443c41066"
   ["javascript-sdk"]="95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
   ["swift-sdk"]="d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"
@@ -59,7 +62,7 @@ declare -A SDK_REPO_SOURCES=(
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/switchbacks"
-  ["dotnet-sdk"]="feat/switchbacks"
+  ["dotnet-sdk"]="main"
   ["elixir-sdk"]="feat/switchbacks"
   ["flutter-sdk"]="feat/switchbacks"
   ["go-sdk"]="feat/switchbacks"
