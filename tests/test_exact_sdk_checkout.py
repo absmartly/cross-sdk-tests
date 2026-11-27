@@ -19,7 +19,8 @@ class ExactCheckoutTest(unittest.TestCase):
                 stub.write_text('''#!/bin/bash
 printf '%s\\n' "$*" >> "$LOG"
 case "$*" in
-*"rev-parse FETCH_HEAD"|*"rev-parse HEAD") echo "$RESOLVED" ;;
+*"rev-parse FETCH_HEAD") echo "$RESOLVED" ;;
+*"rev-parse HEAD") echo "${CHECKED_OUT:-$RESOLVED}" ;;
 esac
 ''')
                 stub.chmod(0o755)
@@ -35,6 +36,19 @@ esac
                 else:
                     self.assertEqual(done.returncode, 0, done.stderr)
                     self.assertIn('checkout --detach -f ' + SHA, log)
+
+    def test_head_must_equal_fetched_sha(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp)
+            stub = p / 'git'
+            stub.write_text('#!/bin/bash\ncase "$*" in\n*"rev-parse FETCH_HEAD") echo "$RESOLVED" ;;\n*"rev-parse HEAD") echo "$CHECKED_OUT" ;;\nesac\n')
+            stub.chmod(0o755)
+            for checked in (SHA, '0' * 40):
+                env = dict(os.environ, PATH=tmp + ':' + os.environ['PATH'],
+                           RESOLVED=SHA, CHECKED_OUT=checked)
+                done = subprocess.run([str(ROOT / 'checkout-sdk.sh'), 'flutter-sdk', SHA, str(p / 'sdk')],
+                                      env=env, capture_output=True, text=True)
+                self.assertEqual(done.returncode == 0, checked == SHA)
 
     def test_setup_from_root_and_parent(self):
         for parent in (False, True):
