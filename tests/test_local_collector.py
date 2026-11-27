@@ -166,21 +166,24 @@ class CollectorServerTest(unittest.TestCase):
         self.assertOnlyRejectedStored()
 
     def test_stalled_body_times_out_instead_of_hanging(self):
-        # Declared 100 bytes, sent 2, socket left open: the handler must give up.
+        # Declared 100 bytes, sent 2, socket left open: the per-read timeout ends the wait long
+        # before the whole-body deadline.
+        import socket, time as clock
+        self.assertGreater(collector.REQUEST_DEADLINE_S, 5)
         with mock.patch.object(collector, "REQUEST_TIMEOUT_S", 1):
             server = collector.make_server("127.0.0.1", 0)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
-            import socket
-            with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=15) as sock:
-                sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
-                reply = b""
-                while chunk := sock.recv(4096):
-                    reply += chunk
-        finally:
-            server.shutdown()
-            server.server_close()
-        self.assertTrue(reply == b"" or reply.startswith(b"HTTP/1.1 400"), reply[:80])
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            try:
+                with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=15) as sock:
+                    sock.sendall(b"PUT /context HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n{}")
+                    started = clock.monotonic()
+                    reply = sock.recv(4096)
+                    elapsed = clock.monotonic() - started
+            finally:
+                server.shutdown()
+                server.server_close()
+        self.assertTrue(reply.startswith(b"HTTP/1.1 400"), reply[:80])
+        self.assertLess(elapsed, 3)
 
     def test_gzip_bomb_is_rejected_without_full_inflation(self):
         # Twice the cap, so inflating it whole would yield more than MAX_BODY_BYTES + 1 bytes.
@@ -307,12 +310,21 @@ class CollectorServerTest(unittest.TestCase):
                                       (b"DELETE", b"/nope", b"Content-Length: " + length),
                                       # every Content-Length line counts, not just the first
                                       (b"GET", b"/health", b"Content-Length: 0\r\nContent-Length: " + length),
-                                      (b"GET", b"/health", b"Transfer-Encoding: chunked")):
+                                      (b"GET", b"/health", b"Transfer-Encoding: chunked"),
+                                      (b"GET", b"/health", b"Content-Length: 00\r\nContent-Length: " + length),
+                                      (b"GET", b"/health", b"Content-Length: 1_0")):
             with self.subTest(method=method, path=path, framing=framing):
                 reply = self.raw_put(method + b" " + path + b" HTTP/1.1\r\nHost: x\r\n" + framing, pipelined)
                 self.assertEqual(reply.count(b"HTTP/1.1 "), 1, reply)
                 self.assertIn(b"Connection: close", reply)
         self.assertEqual(self.request("GET", "/publishes")[1], {"publishes": []})
+        # Every valid zero length is no body, so the connection stays reusable.
+        for zero in (b"0", b"00", b"000", b"0\r\nContent-Length: 0"):
+            with self.subTest(zero=zero):
+                reply = self.raw_put(b"GET /health HTTP/1.1\r\nHost: x\r\nContent-Length: " + zero + b"\r\n\r\n"
+                                     b"GET /health HTTP/1.1\r\nHost: x")
+                self.assertEqual(reply.count(b"HTTP/1.1 200"), 2, reply)
+                self.assertNotIn(b"Connection: close", reply)
         # A bodiless request, and a publish whose body was read, keep the connection reusable.
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         for method, path, body in (("GET", "/health", None), ("PUT", "/context", smuggled),

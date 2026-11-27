@@ -197,8 +197,12 @@ def make_handler(store):
         def _unread_body(self):
             if getattr(self, "body_consumed", True) or self.headers is None:
                 return False
-            lengths = self.headers.get_all("Content-Length") or []
-            return bool(self.headers.get_all("Transfer-Encoding")) or any(v.strip() != "0" for v in lengths)
+            if self.headers.get_all("Transfer-Encoding"):
+                return True
+            lengths = self.headers.get_all("Content-Length")
+            # Same rule as the body reader: any valid zero ("0", "00") is no body; invalid or
+            # conflicting framing leaves the stream position unknown.
+            return bool(lengths) and parse_content_length(lengths) != 0
 
         def _send(self, status, body):
             raw = json.dumps(body).encode()
