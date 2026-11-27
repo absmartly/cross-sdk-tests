@@ -18,6 +18,18 @@ if (($argv[2] ?? '') === '--availability') {
     exit(SwitchbackSelfTest::isAvailable() ? 1 : 0);
 }
 
+if (($argv[2] ?? '') === '--legacy-wire-model') {
+    require $autoload;
+    class LegacyWireExperiment extends ABSmartly\SDK\Experiment {
+        public int $switchbackClusterCount = 10;
+    }
+    $source = file_get_contents(__DIR__ . '/SwitchbackSelfTest.php');
+    $source = str_replace('new \\ABSmartly\\SDK\\Experiment($experiment)', 'new LegacyWireExperiment($experiment)', $source, $replaced);
+    if ($replaced !== 1) { throw new RuntimeException('wire model construction must be replaced exactly once'); }
+    eval(substr($source, strlen("<?php\n")));
+    exit(SwitchbackSelfTest::run() ? 1 : 0);
+}
+
 require $autoload;
 require __DIR__ . '/SwitchbackSelfTest.php';
 
@@ -47,6 +59,12 @@ foreach (['assign', 'baseHash', 'fisherYatesPermutation'] as $missing) {
     fclose($pipes[2]);
     check(proc_close($process) === 0, "missing {$missing} must report unavailable: {$output}");
 }
+
+$process = proc_open([PHP_BINARY, __FILE__, $autoload, '--legacy-wire-model'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+check(proc_close($process) === 0, "run() must reject the obsolete wire model: {$output}");
 
 // Dynamic additive fields must be checked on a constructed model. A declaration-only check would
 // reject the released-compatible model, while ignoring the model entirely would miss these mutants.

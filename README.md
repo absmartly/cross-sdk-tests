@@ -246,7 +246,10 @@ across languages.
   javascript, react, vue2, vue3 and angular, which build javascript-sdk
   [#69](https://github.com/absmartly/javascript-sdk/pull/69) (merged) pinned at its merge commit 95fe105
   and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
-  Every other SDK lists a reviewed exception naming its divergence.
+  PHP also requires it, measured by `php-wrapper/SharedVariableKeysSelfTest.php` against the shipped PHP 1.2.0
+  winner-only behavior and the additive 1.3.0 switchbacks branch. Its image build runs mutation regressions for
+  both peek and consuming-read values, exposures, and pending counts. Every other SDK lists a reviewed exception
+  naming its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the

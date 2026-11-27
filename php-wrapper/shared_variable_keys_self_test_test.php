@@ -46,6 +46,7 @@ if ($mutation !== null) {
         private SharedVariableKeysProbeLogger $logger;
         private array $attributes = [];
         private array $exposed = [];
+        private bool $consumed = false;
 
         public function __construct(array $experiments, SharedVariableKeysProbeLogger $logger)
         {
@@ -61,7 +62,7 @@ if ($mutation !== null) {
         }
         public function getPendingCount(): int
         {
-            return count($this->exposed) + ($GLOBALS['mutation'] === 'extraPending' ? 1 : 0);
+            return count($this->exposed) + ($GLOBALS['mutation'] === 'extraPending' || ($GLOBALS['mutation'] === 'consumeExtraPending' && $this->consumed) ? 1 : 0);
         }
         private function expose(object $experiment): void
         {
@@ -114,7 +115,9 @@ if ($mutation !== null) {
         }
         public function getVariableValue(string $key, $defaultValue = null)
         {
-            return $this->resolve($key, $defaultValue, true);
+            $value = $this->resolve($key, $defaultValue, true);
+            $this->consumed = true;
+            return $GLOBALS['mutation'] === 'consumeWrongValue' ? 'wrong-' . $value : $value;
         }
     }
     $expected = $mutation === 'correct';
@@ -127,11 +130,11 @@ if ($mutation !== null) {
 
 check(SharedVariableKeysSelfTest::run(), 'linked SDK must pass the sharedVariableKeys behavioral probe');
 foreach (['correct', 'extraExposure', 'fallThrough', 'payloadOrder', 'peekExposes', 'exposeVisited',
-          'peekWrongValue', 'extraPending', 'throwable'] as $case) {
+          'peekWrongValue', 'extraPending', 'consumeWrongValue', 'consumeExtraPending', 'throwable'] as $case) {
     $process = proc_open([PHP_BINARY, __FILE__, $autoload, $case], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     $output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
     check(proc_close($process) === 0, "{$case}: {$output}");
 }
-echo "PHP sharedVariableKeys wrapper: 10 checks passed (live SDK, correct model, 8 mutations; cache checked)\n";
+echo "PHP sharedVariableKeys wrapper: 12 checks passed (live SDK, correct model, 10 mutations; cache checked)\n";
