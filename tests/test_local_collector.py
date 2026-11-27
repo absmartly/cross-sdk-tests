@@ -759,8 +759,7 @@ class CollectorResetTest(unittest.TestCase):
                 self.assertFalse(result["overall_pass"])
                 self.assertTrue(any("collector reset failed" in e for e in result["transport_errors"]))
 
-if __name__ == "__main__":
-    unittest.main()
+
 
 class ReleaseGateRegressionTest(unittest.TestCase):
     def run_rows(self, rows, publishes=None):
@@ -844,3 +843,7 @@ class AgentPolicyRegressionTest(unittest.TestCase):
              mock.patch.object(gate.requests, 'get', return_value=mock.Mock(json=lambda: {'requests': rows})):
             result = gate.run({'javascript': 'http://w'}, 'http://c', 'e2e-tests', 'production', 'policy')
         self.assertTrue(result['overall_pass'], result)
+
+
+if __name__ == "__main__":
+    unittest.main()
