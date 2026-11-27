@@ -830,3 +830,17 @@ class ReleaseGateRegressionTest(unittest.TestCase):
         self.assertIn('checkout --detach', helper)
         self.assertIn('rev-parse HEAD', helper)
         self.assertNotIn('clone --branch', helper)
+
+class AgentPolicyRegressionTest(unittest.TestCase):
+    def test_reviewed_unversioned_get_and_put_agents_pass(self):
+        cases = gate.plan('policy', 'javascript')
+        records = _publishes_for('javascript', cases)
+        rows = [_record(i, {}) for i in range(9)]
+        for record in records + rows:
+            record['headers'][0] = ['X-Agent', 'absmartly-javascript-sdk']
+        with mock.patch.object(gate, 'drive', return_value=[]), \
+             mock.patch.object(gate, 'fetch_publishes', return_value=(records, None)), \
+             mock.patch.object(gate.requests, 'delete'), \
+             mock.patch.object(gate.requests, 'get', return_value=mock.Mock(json=lambda: {'requests': rows})):
+            result = gate.run({'javascript': 'http://w'}, 'http://c', 'e2e-tests', 'production', 'policy')
+        self.assertTrue(result['overall_pass'], result)

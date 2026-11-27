@@ -403,15 +403,19 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
         results.setdefault("transport_errors", []).append(f"collector request log unavailable: {exc}")
         request_rows = []
     wanted_agents = Counter()
+    unversioned_languages = set()
     for sdk in sdks:
         language = AGENT_LANGUAGE.get(sdk, sdk)
         wanted_agents[language] += len(plans[sdk])
+        if "xAgentHeader" in policy.get(sdk, {}).get("unsupported", {}):
+            unversioned_languages.add(language)
     got_agents = Counter()
     for request in request_rows:
         agent = _header(request, "X-Agent")
         language = next((language for language in wanted_agents
                          if isinstance(agent, str) and agent.startswith(f"absmartly-{language}-sdk/")
-                         and len(agent) > len(f"absmartly-{language}-sdk/")), None)
+                         and len(agent) > len(f"absmartly-{language}-sdk/") or
+                         language in unversioned_languages and agent == f"absmartly-{language}-sdk"), None)
         if language is None:
             results.setdefault("transport_errors", []).append(f"context request invalid agent {agent!r}")
         else:

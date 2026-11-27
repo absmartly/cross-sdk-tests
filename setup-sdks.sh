@@ -43,7 +43,7 @@ done
 source "$SCRIPT_DIR/sdk-branches.sh"
 
 clone_or_update() {
-  "$(dirname "$0")/checkout-sdk.sh" "$1" "$2" "$1"
+  "$SCRIPT_DIR/checkout-sdk.sh" "$1" "$2" "$1"
 }
 
 if [ -n "$BRANCH_OVERRIDE" ]; then
