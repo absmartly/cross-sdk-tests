@@ -1490,7 +1490,7 @@ class StaticRepoChecks(unittest.TestCase):
     # the change that re-pins.
     EXPECTED_PINS = {
         "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
-        "dotnet-sdk": ("feat/switchbacks", None),
+        "dotnet-sdk": ("main", "31fb143461498521d7f583f0689db90443c41066"),
         "elixir-sdk": ("feat/switchbacks", None),
         "flutter-sdk": ("feat/switchbacks", None),
         "go-sdk": ("feat/switchbacks", None),

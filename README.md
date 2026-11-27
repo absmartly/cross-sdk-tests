@@ -242,7 +242,7 @@ across languages.
   the per-mutant kill counts locally).
   java, java-v1, kotlin, dart, flutter and dotnet require the capability (dotnet from
   dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
-  merged, which its pinned `feat/switchbacks` branch contains), and so do
+  merged; the lane is pinned to the dotnet-sdk#16 merge commit 31fb143 on `main`), and so do
   javascript, react, vue2, vue3 and angular, which build javascript-sdk
   [#69](https://github.com/absmartly/javascript-sdk/pull/69) (merged) pinned at its merge commit 95fe105
   and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
