@@ -174,6 +174,8 @@ UNIT_TEST_PARSERS = {
 
 UNIT_TEST_PARSERS["java-v1"] = UNIT_TEST_PARSERS["java"]
 UNIT_TEST_PARSERS["swift-v1"] = UNIT_TEST_PARSERS["swift"]
+UNIT_TEST_PARSERS["dart-v2"] = UNIT_TEST_PARSERS["dart"]
+UNIT_TEST_PARSERS["flutter-v2"] = UNIT_TEST_PARSERS["flutter"]
 
 
 def parse_catch2_junit(output):

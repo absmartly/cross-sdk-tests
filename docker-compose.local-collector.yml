@@ -18,6 +18,8 @@ services:
   php-sdk: *local-collector
   go-sdk: *local-collector
   liquid-sdk: *local-collector
+  dart-v2-sdk: *local-collector
+  flutter-v2-sdk: *local-collector
   dart-sdk: *local-collector
   flutter-sdk: *local-collector
   swift-sdk: *local-collector

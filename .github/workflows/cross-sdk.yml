@@ -50,6 +50,8 @@ jobs:
             {"sdk":"cpp","repos":"cpp-sdk"},
             {"sdk":"elixir","repos":"elixir-sdk"},
             {"sdk":"dart","repos":"flutter-sdk"},
+            {"sdk":"dart-v2","repos":"flutter-sdk-v2"},
+            {"sdk":"flutter-v2","repos":"flutter-sdk-v2"},
             {"sdk":"flutter","repos":"flutter-sdk"},
             {"sdk":"liquid","repos":"liquid-sdk ruby-sdk"},
             {"sdk":"react","repos":"react-sdk javascript-sdk"},
@@ -263,7 +265,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sdk: [javascript, python, java, java-v1]
+        sdk: [javascript, python, java, java-v1, dart-v2, flutter-v2]
     steps:
       - name: Checkout cross-sdk-tests
         uses: actions/checkout@v4

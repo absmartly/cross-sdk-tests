@@ -45,7 +45,10 @@
 # holdouts port. Merge holdouts into switchbacks in those SDK repos and re-run the lanes before merge.
 # SDK_REVISIONS pins a repo to an exact commit, so a later push to its branch cannot change
 # what this commit tests.
+# Flutter 2.2.0 compatibility is separate from flutter-sdk 3.x. Re-pin the v2 checkout
+# to flutter-sdk#12's merge commit when it merges; do not replace the 3.x lane.
 declare -A SDK_REVISIONS=(
+  ["flutter-sdk-v2"]="0fb16e462f816b3bd0818fa8fdeeb6a9040f05e8"
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["dotnet-sdk"]="31fb143461498521d7f583f0689db90443c41066"
   ["javascript-sdk"]="95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"
@@ -56,10 +59,12 @@ declare -A SDK_REVISIONS=(
 # Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
 # absmartly/<repo> it is cloned from. Directories not listed are cloned from the repo of the same name.
 declare -A SDK_REPO_SOURCES=(
+  ["flutter-sdk-v2"]="flutter-sdk"
   ["java-sdk-v1"]="java-sdk"
   ["swift-sdk-v1"]="swift-sdk"
 )
 declare -A SDK_BRANCHES=(
+  ["flutter-sdk-v2"]="release/2.2.0-prep"
   ["angular-sdk"]="main"
   ["cpp-sdk"]="feat/switchbacks"
   ["dotnet-sdk"]="main"

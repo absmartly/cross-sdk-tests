@@ -8,12 +8,12 @@ across languages.
 
 ## What's here
 
-- **22 SDK wrappers** — one HTTP service per SDK lane, each in a `<sdk>-wrapper/`
+- **24 SDK wrappers** — one HTTP service per SDK lane, each in a `<sdk>-wrapper/`
   directory:
 
   `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
   `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `java-v1`, `kotlin`, `scala`, `swift`,
-  `swift-v1`, `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
+  `swift-v1`, `dart`, `flutter`, `dart-v2`, `flutter-v2`, `dotnet`, `cpp`, `elixir`.
 
   `swift` wraps swift-sdk 2.x (`feat/swift-2.0` until it merges, then `main`); `swift-v1` wraps
   the 1.x maintenance line (pinned to a 1.x commit, swift-sdk#12's holdouts head, until
@@ -469,7 +469,7 @@ CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
 Each lane uploads its report, which records every scenario outcome and what
 the SDK returned at each step. A separate `cross-sdk-consistency` job then
-downloads the reports from all 22 lanes and compares the SDKs with each other
+downloads the reports from all 24 lanes and compares the SDKs with each other
 (`test_runner.py --compare-reports`), because a lane runs only one SDK and has
 nothing to compare against. That job runs even when some lanes fail. It fails
 if a report is missing or unreadable, if fewer than two SDKs or zero
@@ -547,3 +547,17 @@ Each SDK must return the exact result values and emit the expected event types
 and data. Cache-invalidation scenarios are a particular focus: the cache must be
 cleared (producing a new exposure) when an experiment changes, and retained (no
 new exposure) when nothing changes.
+
+### Flutter 2.2.0 compatibility lanes
+
+`dart-v2` and `flutter-v2` retain 2.2.0 coverage alongside the `dart` and
+`flutter` switchback/3.x lanes. Their wrappers incorporate cross-sdk-tests#48
+(`9ff7456`), including the typed unit-value extensions and Flutter package imports.
+They use the separate `flutter-sdk-v2` checkout pinned to `0fb16e4` on
+`release/2.2.0-prep` (flutter-sdk#12); replace it with the merge commit when that
+PR merges. The CI conformance matrix has 24 lanes. The compatibility SDK predates
+holdouts and switchbacks; only its two lanes classify these as unsupported.
+
+Run `./run-tests.sh --sdk dart-v2,flutter-v2` for conformance and
+`./run-local-collector-tests.sh --sdk dart-v2,flutter-v2` for real SDK transport
+and event emission. The two compatibility lanes are also blocking collector CI jobs.

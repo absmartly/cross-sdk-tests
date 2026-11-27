@@ -49,6 +49,20 @@ services:
       dockerfile: cross-sdk-tests/go-wrapper/Dockerfile
       target: tester
 
+  dart-v2-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-v2-wrapper/Dockerfile
+      target: tester
+
+  flutter-v2-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-v2-wrapper/Dockerfile
+      target: tester
+
   dart-unit:
     init: true
     build:
@@ -255,6 +269,32 @@ services:
       - "3000"
     environment:
       - SDK_NAME=liquid
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
+  dart-v2-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-v2-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=dart-v2
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
+  flutter-v2-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-v2-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=flutter-v2
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
       - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
@@ -479,6 +519,8 @@ services:
       - liquid-sdk
       - dart-sdk
       - flutter-sdk
+      - dart-v2-sdk
+      - flutter-v2-sdk
       - swift-sdk
       - swift-v1-sdk
       - dotnet-sdk
