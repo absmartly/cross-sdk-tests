@@ -32,7 +32,7 @@
 #   python3-sdk    feat/switchbacks  python3-sdk#18 (on #17 holdouts)
 #   ruby-sdk       feat/switchbacks  ruby-sdk#47 (holdouts ruby-sdk#43 merged)
 #   rust-sdk       feat/switchbacks  rust-sdk#12 (holdouts rust-sdk#11 merged)
-#   swift-sdk      main @ d58e2f17 (swift-sdk#13 merged; 2.0 now on main). The `swift` lane runs the 2.x wrapper.
+#   swift-sdk      main @ b62962d7 (swift-sdk#17 merged; 2.1 holdouts). The `swift` lane runs the 2.x wrapper.
 #   swift-sdk-v1   main @ f64883c    swift-sdk#12 (holdouts, on the 1.5.0 line) MERGED: the SDK_REVISIONS
 #                                    commit is its merge commit on main. The `swift-v1` lane
 #                                    (swift-v1-wrapper, cloned from absmartly/swift-sdk) requires holdouts.
@@ -47,7 +47,7 @@ declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["javascript-sdk"]="2aa9a2df4a3b636375edae8df077bd10fd5a6b32"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
-  ["swift-sdk"]="d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"
+  ["swift-sdk"]="b62962d794f2aa7466c640237d3a3dbd487134bc"
 )
 
 # Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
