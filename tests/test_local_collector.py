@@ -813,6 +813,12 @@ class GateRunTest(unittest.TestCase):
                              ("malformed json", [{"seq": 99, "json": None, "headers": []}])):
             with self.subTest(label):
                 self.assertFalse(self.run_with(extra)["overall_pass"], label)
+        # A rejected record is reported once, as not a JSON object, not also as a unit-less publish.
+        result = self.run_with([{"seq": 99, "json": None, "parseError": "x", "headers": []}])
+        self.assertFalse(result["overall_pass"])
+        self.assertIn("publish #99 is not a JSON object: x", result["sdks"]["javascript"]["errors"])
+        self.assertFalse(any("carries no planned unit" in e for e in result.get("transport_errors", [])),
+                         result.get("transport_errors"))
 
     def test_a_duplicate_unit_fails_the_sdk_that_sent_it(self):
         def dup(out):
