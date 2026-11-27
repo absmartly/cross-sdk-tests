@@ -550,6 +550,14 @@ class GateVerifyTest(unittest.TestCase):
                         if enabled:
                             self.assertTrue(any(diagnostic in e for e in result["errors"]), result["errors"])
 
+    def test_another_sdks_duplicate_units_do_not_fail_this_sdk(self):
+        other = _publishes_for("go", gate.plan("abcd", "go"))
+        other[0]["json"]["units"].append(copy.deepcopy(other[0]["json"]["units"][0]))
+        other[0]["json"]["units"].append({"bad": 1})
+        result = gate.verify("javascript", self.cases, _publishes_for("javascript", self.cases) + other,
+                             "e2e-tests", "production", False)
+        self.assertTrue(result["pass"], result["errors"])
+
     def test_excepted_case_duplicate_units_still_fail_transport(self):
         cases = self.cases[:-1]
         excepted = self.cases[-1:]
@@ -806,6 +814,13 @@ class GateRunTest(unittest.TestCase):
             with self.subTest(label):
                 self.assertFalse(self.run_with(extra)["overall_pass"], label)
 
+    def test_a_duplicate_unit_fails_the_sdk_that_sent_it(self):
+        def dup(out):
+            out[0]["json"]["units"].append(copy.deepcopy(out[0]["json"]["units"][0]))
+        result = self.run_with([], dup)
+        self.assertFalse(result["sdks"]["javascript"]["pass"])
+        self.assertTrue(any("duplicate unit" in e for e in result["sdks"]["javascript"]["errors"]))
+
     def test_a_case_without_its_own_publish_fails_even_with_matching_totals(self):
         # Every exposure and goal still arrives, but multiple_units' session unit and exposure ride on
         # purchase_amounts' publish, so purchase_amounts has no publish carrying only its own units.
@@ -859,6 +874,18 @@ class GateRunTest(unittest.TestCase):
                     result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
                 self.assertFalse(result["overall_pass"])
 
+    def test_an_http_error_from_the_request_log_fails_even_with_a_valid_looking_body(self):
+        cases = gate.plan("r", "javascript")
+        error = gate.requests.HTTPError("503 Server Error: Service Unavailable")
+        response = mock.Mock(json=lambda: {"requests": []}, raise_for_status=mock.Mock(side_effect=error))
+        with mock.patch.object(gate, "drive", return_value=[]), \
+             mock.patch.object(gate, "fetch_publishes", return_value=(_publishes_for("javascript", cases), None)), \
+             mock.patch.object(gate.requests, "delete"), \
+             mock.patch.object(gate.requests, "get", return_value=response):
+            result = gate.run({"javascript": "http://w"}, "http://c", "e2e-tests", "production", "r")
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(any(e.startswith("collector request log unavailable") for e in result["transport_errors"]),
+                        result.get("transport_errors"))
 
 class FetchPublishesTest(unittest.TestCase):
     PLANNED = {("user_id", "u")}
