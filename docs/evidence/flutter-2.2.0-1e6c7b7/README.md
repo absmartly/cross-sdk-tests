@@ -28,7 +28,7 @@ Collector checks are against the received raw HTTP publishes, not wrapper return
 values: exact experiment id/name/variant and unit hashes, exposure deduplication,
 exact goal/property multiset (nested JSON, null, booleans, Unicode), summed
 purchase amounts using Decimal, and transport headers and JSON. No collector
-exceptions apply to either lane. Collector/verifier unit tests: 58/58 pass (direct and discovery); full tests/: 202 unittest pass; orchestrator/tests: 152 pytest + 6 subtests pass.
+exceptions apply to either lane. Collector/verifier unit tests: 59/59 pass (direct and discovery); full tests/: 203 unittest pass; orchestrator/tests: 152 pytest + 6 subtests pass.
 Strict gate additionally checks GET arrivals/agent/app/env/application-version,
 PUT application-version, millisecond event timestamps and all ordinary false exposure flags.
 

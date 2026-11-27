@@ -5,9 +5,11 @@ import http.client
 import itertools
 import json
 import os
+import re
 import sys
 import threading
 import unittest
+from collections import Counter
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -896,12 +898,35 @@ class UnitCacheRegressionTest(unittest.TestCase):
 
 class SdkPinTest(unittest.TestCase):
     def test_flutter_sdk_pin_is_the_exact_release_sha(self):
-        text = open(os.path.join(ROOT, 'sdk-branches.sh')).read()
-        import re
+        with open(os.path.join(ROOT, 'sdk-branches.sh')) as src:
+            text = src.read()
         match = re.search(r'\["flutter-sdk"\]="([^"]+)"', text)
         self.assertIsNotNone(match)
         self.assertRegex(match.group(1), r'^[0-9a-f]{40}$')
         self.assertEqual(match.group(1), '1e6c7b7518c2496384c36a0844e904b10576e569')
+
+
+class UnitParseCacheTest(unittest.TestCase):
+    def test_run_parses_each_publishs_units_once(self):
+        cases = gate.plan('cache-once', 'javascript')
+        records = _publishes_for('javascript', cases)
+        real = gate._entries
+        parsed = Counter()
+
+        def counting(record, field, keys, errors):
+            if field == 'units':
+                parsed[record['seq']] += 1
+            return real(record, field, keys, errors)
+
+        rows = [_record(i, {}) for i in range(len(cases))]
+        with mock.patch.object(gate, '_entries', side_effect=counting), \
+             mock.patch.object(gate, 'drive', return_value=[]), \
+             mock.patch.object(gate, 'fetch_publishes', return_value=(records, None)), \
+             mock.patch.object(gate.requests, 'delete'), \
+             mock.patch.object(gate.requests, 'get', return_value=mock.Mock(json=lambda: {'requests': rows})):
+            result = gate.run({'javascript': 'http://w'}, 'http://c', 'e2e-tests', 'production', 'cache-once')
+        self.assertTrue(result['overall_pass'], result)
+        self.assertEqual(set(parsed.values()), {1}, parsed)
 
 
 if __name__ == "__main__":
