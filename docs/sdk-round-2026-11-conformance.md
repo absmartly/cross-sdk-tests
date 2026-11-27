@@ -272,3 +272,14 @@ wrapper API. They are listed so the matrix is complete.
 
 See the PR description for the exact `verify_sdk.sh` / orchestrator runs and the
 per-SDK pass/fail this round was validated with.
+
+### Absent exposure unit-type compatibility
+
+Owner decision: until semantics are unified in v2.0.0, an exposure whose unit
+**type is absent** may represent that absence as JSON `null` or `""` (Java 1.x's
+released convention). Event validation accepts these two values only when the
+expected exposure unit type is absent. Consistency observations canonicalize only
+that exposure field; raw responses, captured publishes and failure evidence are
+not rewritten. A missing field, nonempty wrong type, actual planned unit-type
+mismatch or missing/blank UID is not covered by this compatibility rule. The
+local collector's plan always uses real unit types and UIDs and remains strict.

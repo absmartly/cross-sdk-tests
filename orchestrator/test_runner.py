@@ -439,7 +439,9 @@ def _project(actual: Any, expected: Any) -> Any:
 
 
 def _exposure_observation(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: _canonical(data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
+    # Owner compatibility decision: absent exposure types may be null or "" until v2 unifies them.
+    return {k: _canonical(None if k == "unit" and data.get(k, MISSING) == "" else data.get(k, MISSING))
+            for k in EXPOSURE_CONSISTENCY_KEYS}
 
 
 def _context_data_observation(data: Dict[str, Any]) -> Any:
@@ -1937,6 +1939,10 @@ class TestOrchestrator:
                             and expected_event.get("type") == "goal"
                             and key == "properties"
                         ):
+                            continue
+                        if (key == "unit" and expected_event.get("type") == "exposure"
+                                and expected_value in (None, "") and actual_value in (None, "")):
+                            # Compare only the absent-type aliases; missing/nonempty values stay strict.
                             continue
                         if key == "units" and expected_event.get("unorderedUnits") is True:
                             # An SDK publishes its units in its own map order.

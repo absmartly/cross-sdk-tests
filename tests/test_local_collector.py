@@ -526,6 +526,16 @@ class GateVerifyTest(unittest.TestCase):
         return gate.verify("javascript", self.cases, _publishes_for("javascript", self.cases, mutate),
                            "e2e-tests", "production", versioned)
 
+    def test_real_planned_unit_types_and_uids_are_not_absent_type_aliases(self):
+        for bad in (None, "", "wrong"):
+            with self.subTest(exposure_unit=bad):
+                result = self.check(lambda out: out[0]["json"]["exposures"][0].update(unit=bad))
+                self.assertFalse(result["pass"])
+        for bad in (None, ""):
+            with self.subTest(uid=bad):
+                result = self.check(lambda out: out[0]["json"]["units"][0].update(uid=bad))
+                self.assertFalse(result["pass"])
+
     def test_intact_publishes_pass_with_received_revenue(self):
         result = self.check()
         self.assertTrue(result["pass"], result["errors"])

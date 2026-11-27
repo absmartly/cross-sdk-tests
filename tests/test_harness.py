@@ -1000,6 +1000,37 @@ class ScenarioLoaderTests(unittest.TestCase):
             )
 
 
+class AbsentExposureUnitTests(unittest.TestCase):
+    def test_only_null_and_empty_absent_exposure_types_are_equivalent(self):
+        orch = make_orchestrator()
+        for expected_unit in (None, ""):
+            expected = {"events": [{"type": "exposure", "data": {"unit": expected_unit}}]}
+            for actual_unit in (None, "", "user_id", "wrong", 0, False, [], {}):
+                with self.subTest(expected=expected_unit, actual=actual_unit):
+                    event = {"type": "exposure", "data": {"unit": actual_unit}}
+                    before = json.dumps(event)
+                    failures = orch.validate_events(0, "treatment", [event], expected)
+                    self.assertEqual(not failures, actual_unit is None or actual_unit == "")
+                    self.assertEqual(json.dumps(event), before)
+            self.assertTrue(orch.validate_events(0, "treatment", [{"type": "exposure", "data": {}}], expected))
+        for actual_unit in (None, "", "wrong"):
+            self.assertTrue(orch.validate_events(0, "treatment",
+                [{"type": "exposure", "data": {"unit": actual_unit}}],
+                {"events": [{"type": "exposure", "data": {"unit": "user_id"}}]}))
+        self.assertFalse(values_match("", None))
+        self.assertTrue(orch.validate_events(0, "track", [{"type": "goal", "data": {"unit": ""}}],
+                                           {"events": [{"type": "goal", "data": {"unit": None}}]}))
+
+    def test_consistency_normalizes_only_absent_exposure_types_without_mutation(self):
+        def obs(data):
+            return test_runner.observation_for_step("treatment", {"events": [{"type": "exposure", "data": data}]}, {})
+        raw = {"unit": ""}
+        self.assertEqual(obs(raw), obs({"unit": None}))
+        self.assertEqual(raw, {"unit": ""})
+        for invalid in ({}, {"unit": "wrong"}, {"unit": "user_id"}, {"unit": False}, {"unit": 0}):
+            self.assertNotEqual(obs(raw), obs(invalid))
+
+
 class ConsistencyTests(unittest.TestCase):
     def run_obs(self, orch, scenario, sdk, step, action, actual, expected):
         orch.record_outcome(scenario, sdk, "pass")
