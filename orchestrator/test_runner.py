@@ -464,6 +464,16 @@ def _exposure_unit_type(
     An experiments array can prove an identified experiment unknown, or a
     known experiment's unitType absent. No context means no inferred alias.
     """
+    # Holdout exposures use the covered experiment's type, not a field on the holdout.
+    # Names disambiguate their independent id namespace from experiment ids.
+    holdouts = context_data.get("holdouts", []) if isinstance(context_data, dict) else []
+    if isinstance(holdouts, list) and any(
+        isinstance(h, dict) and any(
+            item.get("name") not in (None, "") and item.get("name") == h.get("name")
+            for item in (data, expected)
+        ) for h in holdouts
+    ):
+        return expected.get("unit", MISSING)
     experiments = context_data.get("experiments") if isinstance(context_data, dict) else None
     usable = isinstance(experiments, list) and all(isinstance(e, dict) for e in experiments)
     known = [e for e in experiments if _same_exposure(data, e) or _same_exposure(expected, e)] if usable else []

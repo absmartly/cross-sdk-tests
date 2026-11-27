@@ -1000,6 +1000,17 @@ class ScenarioLoaderTests(unittest.TestCase):
             )
 
 
+class HoldoutExposureContextTests(unittest.TestCase):
+    def test_holdout_ids_do_not_inherit_experiment_types_or_absence(self):
+        context = {"experiments": [{"id": 1, "name": "experiment", "unitType": "session_id"}],
+                   "holdouts": [{"id": 1, "name": "holdout"}]}
+        exposure = {"id": 1, "name": "holdout", "unit": "user_id"}
+        actual, expected = test_runner._exposure_comparison(exposure, {"id": 1, "name": "holdout"}, context)
+        self.assertNotIn("unit", expected)
+        self.assertEqual(actual, exposure)
+        self.assertEqual(test_runner._exposure_unit_type(exposure, {"unit": "user_id"}, context), "user_id")
+
+
 class AbsentExposureUnitTests(unittest.TestCase):
     def test_only_null_and_empty_absent_exposure_types_are_equivalent(self):
         orch = make_orchestrator()
