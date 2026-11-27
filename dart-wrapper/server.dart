@@ -86,7 +86,8 @@ class EventCollector implements ContextEventLogger {
       case EventType.goal:
         eventType = 'goal';
         break;
-      case EventType.finalize:
+      case EventType.close:
+        // EventType.finalize is a static alias of close in absmartly_dart 2.2.
         eventType = 'finalize';
         break;
     }

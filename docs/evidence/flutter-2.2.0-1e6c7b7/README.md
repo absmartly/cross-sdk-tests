@@ -1,7 +1,7 @@
 # Exact 2.2.0 release gate
 
 SDK: **1e6c7b7518c2496384c36a0844e904b10576e569**, `absmartly/flutter-sdk#12`.
-Harness: branch `verify/flutter-2.2-exact-1e6c7b7`, based on #48
+Harness: branch `verify/flutter-2.2-exact-0fb16e4` (name keeps the first SDK short SHA; the pin is 1e6c7b7), based on #48
 `fix/dart-wrappers-absmartly-sdk-2.2` at `9ff745693688617518817533a81075f467ba7ad3`.
 Collector verifier imported from consolidated #52 at
 `5a3385f03cc37368ba1e65137f64185277711db6` (not its 3.x wrappers).
@@ -28,7 +28,7 @@ Collector checks are against the received raw HTTP publishes, not wrapper return
 values: exact experiment id/name/variant and unit hashes, exposure deduplication,
 exact goal/property multiset (nested JSON, null, booleans, Unicode), summed
 purchase amounts using Decimal, and transport headers and JSON. No collector
-exceptions apply to either lane. Collector/verifier unit tests: 52/52 pass; full tests/: 193 pass.
+exceptions apply to either lane. Collector/verifier unit tests: 58/58 pass (direct and discovery); full tests/: 202 unittest pass; orchestrator/tests: 152 pytest + 6 subtests pass.
 Strict gate additionally checks GET arrivals/agent/app/env/application-version,
 PUT application-version, millisecond event timestamps and all ordinary false exposure flags.
 

@@ -14,9 +14,10 @@
 # vue2-sdk#17, vue3-sdk#13), which carry the wrapper fixes their lanes need.
 # The JS-family wrappers (react/vue2/vue3/angular) build javascript-sdk from its
 # pin; liquid wraps ruby-sdk. android-sdk has no wrapper.
-# flutter-sdk is pinned to release/2.2.0-prep (flutter-sdk#12, absmartly_sdk
-# 2.2.0) because the dart/flutter wrappers use its getUnitValue(s) and
-# EventType.close; set it back to main once that PR merges.
+# flutter-sdk is pinned to the exact flutter-sdk#12 head (absmartly_sdk 2.2.0),
+# an immutable SHA fetched and verified by checkout-sdk.sh, because the
+# dart/flutter wrappers use its getUnitValue(s) and EventType.close. Repin to
+# the merged commit or the v2.2.0 tag once that PR merges.
 declare -A SDK_BRANCHES=(
   ["angular-sdk"]="main"
   ["cpp-sdk"]="main"

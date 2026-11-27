@@ -192,10 +192,10 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
             errors.append(f"publish #{record.get('seq')} is not a JSON object: {record.get('parseError')}")
             continue
         units, unit_errors = _publish_units(record)
-        errors.extend(unit_errors)
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
+        errors.extend(unit_errors)
         if not any(_covers(units, case) for case in case_units):
             errors.append(f"publish #{record['seq']} carries units from more than one planned case")
         if units - expected_units - excepted_units:

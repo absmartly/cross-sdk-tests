@@ -384,6 +384,9 @@ class GateRunTest(unittest.TestCase):
             result = self.run_with([], mutate)
             self.assertFalse(result["overall_pass"])
             self.assertTrue(any("duplicate unit type" in error for error in result["transport_errors"]))
+            self.assertFalse(result["sdks"]["javascript"]["pass"])
+            self.assertTrue(any("duplicate unit type" in error for error in result["sdks"]["javascript"]["errors"]),
+                            result["sdks"]["javascript"]["errors"])
 
     def test_malformed_unit_entries_fail_with_a_diagnostic(self):
         for label, bad in (("string entry", "user_id"), ("list uid", {"type": "user_id", "uid": []}),
@@ -868,6 +871,37 @@ class UnitCacheRegressionTest(unittest.TestCase):
                 record['_unit_errors'] = errors
             result = gate.verify('javascript', cases, records, 'e2e-tests', 'production')
             self.assertFalse(result['pass'], result)
+            if isinstance(bad, dict) and bad.get('type') == '':
+                self.assertTrue(any('blank type or uid' in e for e in result['errors']), result['errors'])
+
+    def test_blank_unit_fields_report_their_own_diagnostic(self):
+        for bad in ({'type': '', 'uid': 'x'}, {'type': 'user_id', 'uid': ''}):
+            record = _record(0, {'hashed': True, 'units': [bad]})
+            _, errors = gate._publish_units(record)
+            self.assertIn('malformed units entry: blank type or uid', errors)
+
+    def test_one_sdks_unit_errors_are_not_charged_to_another(self):
+        flutter = _publishes_for('flutter', gate.plan('own', 'flutter'))
+        flutter[0]['json']['units'].append(dict(flutter[0]['json']['units'][0]))
+        dart_cases = gate.plan('own', 'dart')
+        dart = _publishes_for('dart', dart_cases)
+        for record in dart + flutter:
+            record['headers'][0] = ['X-Agent', 'absmartly-dart-sdk/2.2.0']
+        dart_result = gate.verify('dart', dart_cases, dart + flutter, 'e2e-tests', 'production')
+        self.assertTrue(dart_result['pass'], dart_result['errors'])
+        flutter_result = gate.verify('flutter', gate.plan('own', 'flutter'), dart + flutter,
+                                     'e2e-tests', 'production')
+        self.assertTrue(any('duplicate unit type' in e for e in flutter_result['errors']), flutter_result['errors'])
+
+
+class SdkPinTest(unittest.TestCase):
+    def test_flutter_sdk_pin_is_the_exact_release_sha(self):
+        text = open(os.path.join(ROOT, 'sdk-branches.sh')).read()
+        import re
+        match = re.search(r'\["flutter-sdk"\]="([^"]+)"', text)
+        self.assertIsNotNone(match)
+        self.assertRegex(match.group(1), r'^[0-9a-f]{40}$')
+        self.assertEqual(match.group(1), '1e6c7b7518c2496384c36a0844e904b10576e569')
 
 
 if __name__ == "__main__":
