@@ -75,13 +75,23 @@ def plan(run_id: str, sdk: str) -> List[Dict[str, Any]]:
 def _publish_units(record: Dict[str, Any]) -> Tuple[set, List[str]]:
     """The publish's (type, uid) units and a diagnostic for each malformed entry; parsed once per record."""
     if "_units" in record:
-        return record["_units"], []
+        return record["_units"], list(record.get("_unit_errors", []))
     body = record.get("json")
     if not isinstance(body, dict):
         return set(), []
     errors: List[str] = []
     entries = _entries(record, "units", ("type", "uid"), errors)
-    return {(entry["type"], entry["uid"]) for entry in entries}, errors
+    units = set()
+    types = set()
+    for entry in entries:
+        unit = (entry["type"], entry["uid"])
+        if not unit[0] or not unit[1]:
+            errors.append("malformed units entry: blank type or uid")
+        if unit[0] in types:
+            errors.append(f"duplicate unit type {unit[0]!r}")
+        types.add(unit[0])
+        units.add(unit)
+    return units, errors
 
 
 def _covers(units: set, case_units: set) -> bool:
@@ -181,7 +191,8 @@ def verify(sdk: str, cases: List[Dict[str, Any]], publishes: List[Dict[str, Any]
         if not isinstance(body, dict):
             errors.append(f"publish #{record.get('seq')} is not a JSON object: {record.get('parseError')}")
             continue
-        units, _ = _publish_units(record)
+        units, unit_errors = _publish_units(record)
+        errors.extend(unit_errors)
         mine = units & expected_units
         if not mine and not units & excepted_units:
             continue  # another SDK's publish
@@ -390,6 +401,7 @@ def run(sdks: Dict[str, str], collector_url: str, application: str, environment:
     for record in publishes:
         units, unit_errors = _publish_units(record)
         record["_units"] = units
+        record["_unit_errors"] = list(unit_errors)
         arrived.append(units)
         if isinstance(record.get("json"), dict) and not units & planned_units:
             unit_errors.append(f"publish #{record.get('seq')} carries no planned unit: {sorted(units, key=str)}")

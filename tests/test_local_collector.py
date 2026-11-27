@@ -374,6 +374,17 @@ class GateRunTest(unittest.TestCase):
         self.assertEqual([e for e in result["sdks"]["javascript"]["errors"] if e.startswith("case ")],
                          ["case purchase_amounts: no publish carrying only this case's units"])
 
+    def test_duplicate_units_and_conflicting_same_type_fail(self):
+        for conflicting in (False, True):
+            def mutate(out):
+                duplicate = dict(out[0]["json"]["units"][0])
+                if conflicting:
+                    duplicate["uid"] = "another-hash"
+                out[0]["json"]["units"].append(duplicate)
+            result = self.run_with([], mutate)
+            self.assertFalse(result["overall_pass"])
+            self.assertTrue(any("duplicate unit type" in error for error in result["transport_errors"]))
+
     def test_malformed_unit_entries_fail_with_a_diagnostic(self):
         for label, bad in (("string entry", "user_id"), ("list uid", {"type": "user_id", "uid": []}),
                            ("missing type", {"uid": "x"})):
@@ -843,6 +854,20 @@ class AgentPolicyRegressionTest(unittest.TestCase):
              mock.patch.object(gate.requests, 'get', return_value=mock.Mock(json=lambda: {'requests': rows})):
             result = gate.run({'javascript': 'http://w'}, 'http://c', 'e2e-tests', 'production', 'policy')
         self.assertTrue(result['overall_pass'], result)
+
+
+class UnitCacheRegressionTest(unittest.TestCase):
+    def test_verify_keeps_malformed_unit_errors_after_run_cache(self):
+        cases = gate.plan('cache', 'javascript')
+        for bad in ('user_id', {'uid': 'x'}, {'type': '', 'uid': 'x'}):
+            records = _publishes_for('javascript', cases)
+            records[0]['json']['units'].append(bad)
+            for record in records:
+                units, errors = gate._publish_units(record)
+                record['_units'] = units
+                record['_unit_errors'] = errors
+            result = gate.verify('javascript', cases, records, 'e2e-tests', 'production')
+            self.assertFalse(result['pass'], result)
 
 
 if __name__ == "__main__":
