@@ -553,9 +553,8 @@ new exposure) when nothing changes.
 `dart-v2` and `flutter-v2` retain 2.2.0 coverage alongside the `dart` and
 `flutter` switchback/3.x lanes. Their wrappers incorporate cross-sdk-tests#48
 (`9ff7456`), including the typed unit-value extensions and Flutter package imports.
-They use the separate `flutter-sdk-v2` checkout pinned to `1e6c7b7` on
-`release/2.2.0-prep` (flutter-sdk#12); replace it with the merge commit when that
-PR merges. The CI conformance matrix has 24 lanes. The compatibility SDK predates
+They use the separate `flutter-sdk-v2` checkout pinned to flutter-sdk#12’s merge commit
+`5390f0b` on `main`. The CI conformance matrix has 24 lanes. The compatibility SDK predates
 holdouts and switchbacks; only its two lanes classify these as unsupported.
 
 Run `./run-tests.sh --sdk dart-v2,flutter-v2` for conformance and

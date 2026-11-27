@@ -1489,7 +1489,7 @@ class StaticRepoChecks(unittest.TestCase):
     # SDK PR merges would silently drop the lane's holdouts/switchback coverage; update this table in
     # the change that re-pins.
     EXPECTED_PINS = {
-        "flutter-sdk-v2": ("release/2.2.0-prep", "1e6c7b7518c2496384c36a0844e904b10576e569"),
+        "flutter-sdk-v2": ("main", "5390f0bb9b6825785c0fc3cf3e783acc6a909dcf"),
         "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
         "dotnet-sdk": ("main", "31fb143461498521d7f583f0689db90443c41066"),
         "elixir-sdk": ("feat/switchbacks", None),
