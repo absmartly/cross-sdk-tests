@@ -5,6 +5,7 @@ import http.client
 import itertools
 import json
 import os
+from pathlib import Path
 import re
 import sys
 import threading
@@ -829,9 +830,9 @@ class ReleaseGateRegressionTest(unittest.TestCase):
                 self.assertFalse(self.run_rows(self.rows(), records)['overall_pass'])
 
     def test_docker_gate_wiring_is_complete(self):
-        compose = open(os.path.join(ROOT, 'docker-compose.yml')).read()
-        overlay = open(os.path.join(ROOT, 'docker-compose.local-collector.yml')).read()
-        dockerfile = open(os.path.join(ROOT, 'orchestrator/Dockerfile')).read()
+        compose = (Path(ROOT) / 'docker-compose.yml').read_text()
+        overlay = (Path(ROOT) / 'docker-compose.local-collector.yml').read_text()
+        dockerfile = (Path(ROOT) / 'orchestrator/Dockerfile').read_text()
         self.assertIn('  local-collector:', compose)
         self.assertIn('local_collector_gate.py', dockerfile)
         self.assertIn('e2e_cases.py', dockerfile)
@@ -840,8 +841,8 @@ class ReleaseGateRegressionTest(unittest.TestCase):
 
     def test_local_and_ci_share_immutable_checkout(self):
         for path in ['setup-sdks.sh', '.github/workflows/cross-sdk.yml']:
-            self.assertIn('checkout-sdk.sh', open(os.path.join(ROOT, path)).read())
-        helper = open(os.path.join(ROOT, 'checkout-sdk.sh')).read()
+            self.assertIn('checkout-sdk.sh', (Path(ROOT) / path).read_text())
+        helper = (Path(ROOT) / 'checkout-sdk.sh').read_text()
         self.assertIn('checkout --detach', helper)
         self.assertIn('rev-parse HEAD', helper)
         self.assertNotIn('clone --branch', helper)
