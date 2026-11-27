@@ -105,7 +105,7 @@ class FakeSDKContext:
             exposure = {"id": exp["id"], "name": name, "unit": "session_id", "variant": variant,
                         "assigned": True, "eligible": in_traffic, "overridden": False, "fullOn": False,
                         "custom": False, "audienceMismatch": False}
-            self.exposures.append({"id": exp["id"], "name": name, "variant": variant})
+            self.exposures.append({"id": exp["id"], "name": name, "unit": "session_id", "variant": variant})
             events.append({"type": "exposure", "data": exposure})
         return (1 if in_traffic else 0), events
 
