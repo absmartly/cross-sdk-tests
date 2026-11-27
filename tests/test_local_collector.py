@@ -447,10 +447,11 @@ class CollectorServerTest(unittest.TestCase):
         fake = handler.__new__(handler)
         fake.rfile = io.BytesIO(b"{}")
         fake.connection = mock.Mock()
-        with mock.patch.object(collector, "_monotonic", side_effect=[0, deadline - 1, deadline - 0.5]):
+        # A per-read timeout other than the default proves the restore reads the setting.
+        with mock.patch.object(collector, "REQUEST_TIMEOUT_S", 7), \
+             mock.patch.object(collector, "_monotonic", side_effect=[0, deadline - 1, deadline - 0.5]):
             self.assertEqual(fake._read_exact(2), b"{}")
-        self.assertEqual(fake.connection.settimeout.call_args_list,
-                         [mock.call(1), mock.call(collector.REQUEST_TIMEOUT_S)])
+        self.assertEqual(fake.connection.settimeout.call_args_list, [mock.call(1), mock.call(7)])
 
     def test_client_reset_does_not_raise_out_of_the_handler(self):
         handler = collector.make_handler(collector.Store())
