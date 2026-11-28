@@ -111,15 +111,16 @@ class CollectorServerTest(unittest.TestCase):
 
     def test_invalid_utf8_publish_returns_400_and_is_not_accepted(self):
         import codecs
-        body = json.dumps({"hashed": True})
+        text = json.dumps({"hashed": True})
         # A UTF-8 BOM, and UTF-16/32 without a BOM, are valid UTF-8 bytes that json.loads(bytes)
         # would still auto-detect and accept; only plain UTF-8 JSON text is a publish.
-        for payload in (b"\xff", body.encode("utf-16"), codecs.BOM_UTF8 + body.encode(),
-                        body.encode("utf-16-le"), body.encode("utf-32-le")):
-            status, body = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
-            self.assertEqual(status, 400)
-            self.assertIn("error", body)
-            self.assertOnlyRejectedStored()
+        for payload in (b"\xff", text.encode("utf-16"), codecs.BOM_UTF8 + text.encode(),
+                        text.encode("utf-16-le"), text.encode("utf-16-be"), text.encode("utf-32-le")):
+            with self.subTest(payload=payload[:6]):
+                status, reply = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
+                self.assertEqual(status, 400)
+                self.assertIn("error", reply)
+                self.assertOnlyRejectedStored()
 
     def test_content_length_must_be_plain_digits(self):
         for value in ("1_0", "+2", " 2", "2 ", "0x2", "2.0", "-0", "\u0662"):
