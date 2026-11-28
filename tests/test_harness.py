@@ -1503,7 +1503,7 @@ class StaticRepoChecks(unittest.TestCase):
         "python3-sdk": ("feat/switchbacks", None),
         "ruby-sdk": ("feat/switchbacks", None),
         "rust-sdk": ("feat/switchbacks", None),
-        "swift-sdk": ("feat/swift-2.2-switchbacks", "ed6679d80909e738fafd8935ed26cefd5f8f8b45"),
+        "swift-sdk": ("feat/swift-2.2-switchbacks", "4282e40cc40c0750d95e38ca12a9ff2be3a90c6d"),
         "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
     }
 
