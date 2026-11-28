@@ -444,7 +444,9 @@ def _same_exposure(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
                and values_match(left[key], right[key]) for key in ("id", "name"))
 
 
-def _expected_exposure(data: Dict[str, Any], exposures: List[Any]) -> Dict[str, Any]:
+def _expected_exposure(data: Dict[str, Any], exposures: Any) -> Dict[str, Any]:
+    if not isinstance(exposures, list):
+        return {}
     matches = [e for e in exposures if isinstance(e, dict) and _same_exposure(data, e)]
     if len(matches) == 1:
         return matches[0]
@@ -455,33 +457,42 @@ def _expected_exposure(data: Dict[str, Any], exposures: List[Any]) -> Dict[str, 
     return {}
 
 
+def _holdout_unit_types(data: Dict[str, Any], expected: Dict[str, Any],
+                        context_data: Optional[Dict[str, Any]]) -> Optional[set]:
+    """The real unit types a named holdout's exposure may carry, or None if not a holdout.
+
+    A holdout exposure takes the unit type of the experiment it covers, never a
+    field on the holdout, and holdout ids are their own namespace, so the holdout
+    is found by name and its covered experiments by holdoutIds."""
+    holdouts = context_data.get("holdouts") if isinstance(context_data, dict) else None
+    experiments = context_data.get("experiments") if isinstance(context_data, dict) else None
+    if not isinstance(holdouts, list):
+        return None
+    names = {item.get("name") for item in (data, expected) if item.get("name") not in (None, "")}
+    matched = [h for h in holdouts if isinstance(h, dict) and h.get("name") in names]
+    if not matched:
+        return None
+    ids = {h.get("id") for h in matched}
+    return {e["unitType"] for e in (experiments if isinstance(experiments, list) else [])
+            if isinstance(e, dict) and e.get("unitType") not in (None, "")
+            and isinstance(e.get("holdoutIds"), list) and ids & set(e["holdoutIds"])}
+
+
 def _exposure_unit_type(
     data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
 ) -> Any:
     """Real context types win; None is proven absence, MISSING is no evidence.
 
-    Neither the SDK's unit nor an expectation omitting unit proves absence.
-    An experiments array can prove an identified experiment unknown, or a
-    known experiment's unitType absent. No context means no inferred alias.
+    Only the scenario's definitions prove absence: an identified experiment the
+    context does not define, or one defined without a unitType. Neither the SDK's
+    unit nor the expectation (omitted or explicitly null/empty) proves it.
     """
-    # Holdout exposures use the covered experiment's type, not a field on the holdout.
-    # Names disambiguate their independent id namespace from experiment ids.
-    holdouts = context_data.get("holdouts", []) if isinstance(context_data, dict) else []
-    if isinstance(holdouts, list) and any(
-        isinstance(h, dict) and any(
-            item.get("name") not in (None, "") and item.get("name") == h.get("name")
-            for item in (data, expected)
-        ) for h in holdouts
-    ):
-        return expected.get("unit", MISSING)
     experiments = context_data.get("experiments") if isinstance(context_data, dict) else None
     usable = isinstance(experiments, list) and all(isinstance(e, dict) for e in experiments)
     known = [e for e in experiments if _same_exposure(data, e) or _same_exposure(expected, e)] if usable else []
     real_types = [e["unitType"] for e in known if e.get("unitType") not in (None, "")]
     if real_types:
         return real_types[0]
-    if "unit" in expected:
-        return None if expected["unit"] in (None, "") else expected["unit"]
     if usable and (known or any(data.get(key) not in (None, "") for key in ("id", "name"))):
         return None
     return MISSING
@@ -491,13 +502,19 @@ def _exposure_comparison(
     data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Validation-only copies; wire records and sameShapeAs baselines stay raw."""
-    unit_type = _exposure_unit_type(data, expected, context_data)
     expected = dict(expected)
+    holdout_types = _holdout_unit_types(data, expected, context_data)
+    if holdout_types is not None:
+        # Never an absent alias. An explicit real unit is checked as written; otherwise
+        # the unit must be the type of an experiment the holdout covers.
+        if expected.get("unit", MISSING) in (None, "", MISSING) and holdout_types:
+            actual_unit = data.get("unit", MISSING)
+            expected["unit"] = actual_unit if actual_unit in holdout_types else sorted(holdout_types)[0]
+        return data, expected
+    unit_type = _exposure_unit_type(data, expected, context_data)
     if unit_type is not MISSING and ("unit" not in expected or expected["unit"] in (None, "")):
         expected["unit"] = unit_type
     if unit_type is None:
-        if expected.get("unit", MISSING) in (None, ""):
-            expected["unit"] = None
         if data.get("unit", MISSING) in (None, ""):
             data = {**data, "unit": None}
     return data, expected
@@ -507,7 +524,8 @@ def _exposure_observation(
     data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     # Owner compatibility decision applies ONLY to genuinely absent types.
-    absent = _exposure_unit_type(data, expected, context_data) is None
+    absent = (_holdout_unit_types(data, expected, context_data) is None
+              and _exposure_unit_type(data, expected, context_data) is None)
     return {k: _canonical(None if k == "unit" and absent and data.get(k, MISSING) == ""
                           else data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
 
@@ -561,7 +579,8 @@ def _publish_observation(
         "hashed": _canonical(data.get("hashed", MISSING)),
         "units": _sorted_list(units),
         "exposures": [
-            _exposure_observation(x, _expected_exposure(x, (expected or {}).get("exposures", [])), context_data)
+            _exposure_observation(x, _expected_exposure(
+                x, expected.get("exposures") if isinstance(expected, dict) else None), context_data)
             if isinstance(x, dict) else {"invalid": _canonical(x)} for x in items("exposures")
         ],
         "goals": [
@@ -615,9 +634,10 @@ def observation_for_step(
     events = actual.get("events", MISSING)
     if isinstance(events, list):
         events_obs = []
-        expected_events = expected.get("events", [])
-        exposures = [e.get("data", {}) for e in expected_events if e.get("type") == "exposure"]
-        publishes = [e.get("data", {}) for e in expected_events if e.get("type") == "publish"]
+        expected_events = expected.get("events") if isinstance(expected, dict) else None
+        expected_events = [e for e in expected_events if isinstance(e, dict)] if isinstance(expected_events, list) else []
+        exposures = [e.get("data") for e in expected_events if e.get("type") == "exposure" and isinstance(e.get("data"), dict)]
+        publishes = [e.get("data") for e in expected_events if e.get("type") == "publish" and isinstance(e.get("data"), dict)]
         for event in events:
             if not isinstance(event, dict):
                 events_obs.append({"invalid": _canonical(event)})
@@ -1422,6 +1442,7 @@ class TestOrchestrator:
 
         context_id = None
         context_data = scenario.get("contextData")
+        context_failed = False
         payload_id = None
         failures: List[Dict[str, Any]] = []
         responses: List[Any] = [None] * len(steps)
@@ -1642,14 +1663,15 @@ class TestOrchestrator:
 
                 # Track scenario definitions, not the SDK's deserialized models.
                 # HTTP failures leave the prior context in place. A refresh on
-                # a failed context (tracked as None) cannot load new definitions.
+                # a failed context cannot load new definitions.
                 if action in ("createContext", "createContextWith"):
-                    context_data = scenario.get("contextData")
+                    context_data, context_failed = scenario.get("contextData"), False
                 elif action == "createContextFailed":
-                    context_data = None
+                    # A context whose load failed defines no experiments.
+                    context_data, context_failed = {"experiments": []}, True
                 elif action == "setData" and "data" in params:
                     context_data = params["data"]
-                elif action == "refresh" and context_data is not None and "newData" in params:
+                elif action == "refresh" and not context_failed and "newData" in params:
                     context_data = params["newData"]
 
                 # Negotiation first: when the context server served this step an
@@ -1986,6 +2008,9 @@ class TestOrchestrator:
             return failures
 
         expected_events = expected["events"]
+        if not isinstance(expected_events, list):
+            fail("events", "a scenario `events` array", expected_events)
+            return failures
         if not isinstance(actual_events, list):
             fail("events", expected_events, actual_events)
             return failures

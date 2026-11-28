@@ -1001,33 +1001,93 @@ class ScenarioLoaderTests(unittest.TestCase):
 
 
 class HoldoutExposureContextTests(unittest.TestCase):
-    def test_holdout_ids_do_not_inherit_experiment_types_or_absence(self):
+    CONTEXT = {"experiments": [{"id": 1, "name": "covered_session", "unitType": "session_id", "holdoutIds": [11]},
+                               {"id": 2, "name": "covered_user", "unitType": "user_id", "holdoutIds": [11]},
+                               {"id": 11, "name": "same_id_experiment", "unitType": "device_id"}],
+               "holdouts": [{"id": 11, "name": "holdout", "unitType": "ignored_holdout_type"}]}
+
+    def check(self, unit, expected, publish=False):
+        exposure = {"id": 11, "name": "holdout", "variant": 0}
+        if unit is not MISSING:
+            exposure["unit"] = unit
+        if publish:
+            actual = [{"type": "publish", "data": {"exposures": [exposure]}}]
+            want = {"events": [{"type": "publish", "data": {"exposures": [expected]}}]}
+        else:
+            actual, want = [{"type": "exposure", "data": exposure}], {"events": [{"type": "exposure", "data": expected}]}
+        before = json.dumps(actual)
+        failures = make_orchestrator().validate_events(0, "publish", actual, want, context_data=self.CONTEXT)
+        self.assertEqual(json.dumps(actual), before)
+        return not failures
+
+    def test_a_holdout_exposure_takes_a_covered_experiments_type(self):
+        partial = {"id": 11, "name": "holdout", "variant": 0}
+        for publish in (False, True):
+            for unit, ok in (("session_id", True), ("user_id", True), (None, False), ("", False),
+                             ("wrong", False), ("device_id", False), ("ignored_holdout_type", False), (MISSING, False)):
+                with self.subTest(publish=publish, unit=unit):
+                    self.assertEqual(self.check(unit, partial, publish), ok)
+
+    def test_an_explicit_holdout_unit_is_checked_and_never_an_absent_alias(self):
+        for publish in (False, True):
+            self.assertTrue(self.check("user_id", {"name": "holdout", "unit": "user_id"}, publish))
+            self.assertFalse(self.check("session_id", {"name": "holdout", "unit": "user_id"}, publish))
+            for unit in (None, ""):
+                self.assertFalse(self.check(unit, {"name": "holdout", "unit": None}, publish))
+
+    def test_a_holdout_exposure_unit_is_never_canonicalized_in_observations(self):
+        # Consistency must keep null and "" apart for a holdout: it has a real covered type.
+        def observe(unit, publish):
+            exposure = {"id": 11, "name": "holdout", "unit": unit}
+            event = {"type": "publish", "data": {"exposures": [exposure]}} if publish else {
+                "type": "exposure", "data": exposure}
+            return test_runner.observation_for_step("treatment", {"events": [event]}, {"events": [{"type": event["type"]}]},
+                                                    context_data=self.CONTEXT)
+        for publish in (False, True):
+            self.assertNotEqual(observe(None, publish), observe("", publish))
+        # Without an experiment sharing the holdout's id, the experiments lookup alone
+        # would call it unknown (absent); the holdout check must still keep it strict.
+        context = {key: value for key, value in self.CONTEXT.items()}
+        context["experiments"] = [e for e in self.CONTEXT["experiments"] if e["id"] != 11]
+        self.assertNotEqual(*(test_runner.observation_for_step(
+            "treatment", {"events": [{"type": "exposure", "data": {"id": 11, "name": "holdout", "unit": unit}}]},
+            {"events": [{"type": "exposure"}]}, context_data=context) for unit in (None, "")))
+
+    def test_a_holdout_is_found_by_name_not_by_a_shared_id(self):
+        # An unrelated holdout reusing experiment 1's id must not make experiment 1's
+        # exposure a holdout exposure; experiment 1 keeps its own real session_id.
         context = {"experiments": [{"id": 1, "name": "experiment", "unitType": "session_id"}],
-                   "holdouts": [{"id": 1, "name": "holdout"}]}
-        exposure = {"id": 1, "name": "holdout", "unit": "user_id"}
-        actual, expected = test_runner._exposure_comparison(exposure, {"id": 1, "name": "holdout"}, context)
-        self.assertNotIn("unit", expected)
-        self.assertEqual(actual, exposure)
-        self.assertEqual(test_runner._exposure_unit_type(exposure, {"unit": "user_id"}, context), "user_id")
+                   "holdouts": [{"id": 1, "name": "unrelated_holdout"}]}
+        actual = [{"type": "exposure", "data": {"id": 1, "name": "experiment", "unit": "user_id"}}]
+        self.assertTrue(make_orchestrator().validate_events(
+            0, "treatment", actual, {"events": [{"type": "exposure", "data": {"id": 1}}]}, context_data=context))
+
+    def test_holdout_ids_do_not_inherit_experiment_types(self):
+        # Experiment 11 shares the holdout's id; the holdout is found by name.
+        _, expected = test_runner._exposure_comparison(
+            {"id": 11, "name": "holdout", "unit": "device_id"}, {"id": 11, "name": "holdout"}, self.CONTEXT)
+        self.assertNotEqual(expected.get("unit"), "device_id")
 
 
 class AbsentExposureUnitTests(unittest.TestCase):
     def test_only_null_and_empty_absent_exposure_types_are_equivalent(self):
         orch = make_orchestrator()
+        absent = {"experiments": []}
         for expected_unit in (None, ""):
-            expected = {"events": [{"type": "exposure", "data": {"unit": expected_unit}}]}
+            expected = {"events": [{"type": "exposure", "data": {"name": "e", "unit": expected_unit}}]}
             for actual_unit in (None, "", "user_id", "wrong", 0, False, [], {}):
                 with self.subTest(expected=expected_unit, actual=actual_unit):
-                    event = {"type": "exposure", "data": {"unit": actual_unit}}
+                    event = {"type": "exposure", "data": {"name": "e", "unit": actual_unit}}
                     before = json.dumps(event)
-                    failures = orch.validate_events(0, "treatment", [event], expected)
+                    failures = orch.validate_events(0, "treatment", [event], expected, context_data=absent)
                     self.assertEqual(not failures, actual_unit is None or actual_unit == "")
                     self.assertEqual(json.dumps(event), before)
-            self.assertTrue(orch.validate_events(0, "treatment", [{"type": "exposure", "data": {}}], expected))
+            self.assertTrue(orch.validate_events(0, "treatment", [{"type": "exposure", "data": {"name": "e"}}],
+                                                 expected, context_data=absent))
         for actual_unit in (None, "", "wrong"):
             self.assertTrue(orch.validate_events(0, "treatment",
-                [{"type": "exposure", "data": {"unit": actual_unit}}],
-                {"events": [{"type": "exposure", "data": {"unit": "user_id"}}]}))
+                [{"type": "exposure", "data": {"name": "e", "unit": actual_unit}}],
+                {"events": [{"type": "exposure", "data": {"name": "e", "unit": "user_id"}}]}, context_data=absent))
         self.assertFalse(values_match("", None))
         self.assertTrue(orch.validate_events(0, "track", [{"type": "goal", "data": {"unit": ""}}],
                                            {"events": [{"type": "goal", "data": {"unit": None}}]}))
@@ -1035,13 +1095,31 @@ class AbsentExposureUnitTests(unittest.TestCase):
     def test_consistency_normalizes_only_absent_exposure_types_without_mutation(self):
         def obs(data):
             return test_runner.observation_for_step(
-                "treatment", {"events": [{"type": "exposure", "data": data}]},
-                {"events": [{"type": "exposure", "data": {"unit": None}}]})
+                "treatment", {"events": [{"type": "exposure", "data": {"name": "e", **data}}]},
+                {"events": [{"type": "exposure", "data": {"name": "e", "unit": None}}]},
+                context_data={"experiments": []})
         raw = {"unit": ""}
         self.assertEqual(obs(raw), obs({"unit": None}))
         self.assertEqual(raw, {"unit": ""})
         for invalid in ({}, {"unit": "wrong"}, {"unit": "user_id"}, {"unit": False}, {"unit": 0}):
             self.assertNotEqual(obs(raw), obs(invalid))
+
+    def test_an_explicitly_absent_expectation_alone_is_not_proof_of_absence(self):
+        for context in (None, {}, {"experiments": None}, {"experiments": [None]}):
+            for publish in (False, True):
+                with self.subTest(context=context, publish=publish):
+                    exposure = {"id": 2, "name": "b", "unit": ""}
+                    expected = {"id": 2, "name": "b", "unit": None}
+                    actual, want = (
+                        ([{"type": "publish", "data": {"exposures": [exposure]}}],
+                         {"events": [{"type": "publish", "data": {"exposures": [expected]}}]}) if publish else
+                        ([{"type": "exposure", "data": exposure}], {"events": [{"type": "exposure", "data": expected}]}))
+                    self.assertTrue(make_orchestrator().validate_events(
+                        0, "treatment", actual, want, context_data=context))
+                    observe = lambda unit: test_runner.observation_for_step(
+                        "treatment", {"events": json.loads(json.dumps(actual).replace('"unit": ""', f'"unit": {json.dumps(unit)}'))},
+                        want, context_data=context)
+                    self.assertNotEqual(observe(""), observe(None))
 
 
     @staticmethod
@@ -1188,18 +1266,19 @@ class AbsentExposureUnitTests(unittest.TestCase):
             "units": [{"type": "session_id", "uid": "hashed-id"}],
             "exposures": [{"id": 1, "unit": ""}, {"id": 2, "unit": "session_id"}]}}]}
         orch = make_orchestrator()
-        self.assertEqual(orch.validate_step(0, "publish", actual, expected), [])
-        canonical = json.loads(test_runner.observation_for_step("publish", actual, expected))
+        context = {"experiments": [{"id": 2, "name": "real", "unitType": "session_id"}]}
+        self.assertEqual(orch.validate_step(0, "publish", actual, expected, context_data=context), [])
+        canonical = json.loads(test_runner.observation_for_step("publish", actual, expected, context_data=context))
         self.assertIsNone(canonical["events"][0]["data"]["exposures"][0]["unit"])
         self.assertEqual(canonical["events"][0]["data"]["exposures"][1]["unit"], "session_id")
         for key, invalid in (("type", None), ("type", ""), ("type", "wrong"),
                              ("uid", None), ("uid", ""), ("uid", "wrong")):
             broken = json.loads(json.dumps(actual))
             broken["events"][0]["data"]["units"][0][key] = invalid
-            self.assertTrue(orch.validate_step(0, "publish", broken, expected), (key, invalid))
+            self.assertTrue(orch.validate_step(0, "publish", broken, expected, context_data=context), (key, invalid))
         broken = json.loads(json.dumps(actual))
         broken["events"][0]["data"]["exposures"][1]["unit"] = ""
-        self.assertTrue(orch.validate_step(0, "publish", broken, expected))
+        self.assertTrue(orch.validate_step(0, "publish", broken, expected, context_data=context))
 
     def test_unordered_observation_matches_exposure_identity_not_position(self):
         expected = {"unorderedEvents": True, "events": [
@@ -1208,27 +1287,44 @@ class AbsentExposureUnitTests(unittest.TestCase):
         def response(unit):
             return {"events": [{"type": "exposure", "data": {"id": 2, "unit": "session_id"}},
                                {"type": "exposure", "data": {"id": 1, "unit": unit}}]}
-        first = test_runner.observation_for_step("treatment", response(None), expected)
-        second = test_runner.observation_for_step("treatment", response(""), expected)
+        context = {"experiments": [{"id": 2, "name": "real", "unitType": "session_id"}]}
+        first = test_runner.observation_for_step("treatment", response(None), expected, context_data=context)
+        second = test_runner.observation_for_step("treatment", response(""), expected, context_data=context)
         self.assertEqual(first, second)
         wrong = response("")
         wrong["events"][0]["data"]["unit"] = None
-        self.assertNotEqual(first, test_runner.observation_for_step("treatment", wrong, expected))
-        self.assertTrue(make_orchestrator().validate_step(0, "treatment", wrong, expected))
+        self.assertNotEqual(first, test_runner.observation_for_step("treatment", wrong, expected, context_data=context))
+        self.assertTrue(make_orchestrator().validate_step(0, "treatment", wrong, expected, context_data=context))
 
     def test_failed_context_refresh_does_not_adopt_new_definitions(self):
-        scenario = {"name": "failed context", "contextData": {"experiments": []}, "steps": [
+        # Scenario 229: a failed context loaded nothing, and refreshing it cannot load the
+        # real definition, so the experiment stays unknown (absent type, both aliases).
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        scenario = {"name": "failed context", "contextData": real, "steps": [
             {"action": "createContextFailed", "params": {"units": {}}, "expect": {"events": []}},
-            {"action": "refresh", "params": {"newData": {"experiments": []}}, "expect": {"events": []}},
+            {"action": "refresh", "params": {"newData": real}, "expect": {"events": []}},
             {"action": "treatment", "expect": {"events": [{"type": "exposure", "data": {"name": "e"}}]}}]}
         observations = []
-        for unit in (None, ""):
+        for unit in (None, "", "session_id"):
             orch, result = self.run_scenario(scenario, [
                 {"result": {"contextId": "c1"}, "events": []}, {"events": []},
                 self.response({"name": "e", "unit": unit})])
-            self.assertTrue(result["passed"], result)
+            self.assertEqual(result["passed"], unit != "session_id", result)
             observations.append(orch.step_observations[scenario["name"]]["alpha"][2])
-        self.assertNotEqual(observations[0], observations[1])
+        self.assertEqual(observations[0], observations[1])
+        self.assertNotEqual(observations[0], observations[2])
+
+    def test_malformed_expectations_do_not_raise(self):
+        actual = {"events": [{"type": "exposure", "data": {"name": "e", "unit": ""}},
+                             {"type": "publish", "data": {"exposures": [{"name": "e", "unit": ""}]}}]}
+        for expected in ({"events": [None]}, {"events": None}, {"events": "x"}, {"events": [{"type": "exposure"}]},
+                         {"events": [{"type": "publish", "data": {"exposures": None}}]},
+                         {"events": [{"type": "publish", "data": None}]}, {"events": [{"type": "exposure", "data": 5}]}):
+            with self.subTest(expected=expected):
+                self.assertIsInstance(test_runner.observation_for_step(
+                    "treatment", actual, expected, context_data={"experiments": []}), str)
+                self.assertIsInstance(make_orchestrator().validate_step(
+                    0, "treatment", actual, expected, context_data={"experiments": []}), list)
 
     def test_http_failed_update_keeps_prior_context(self):
         import requests
