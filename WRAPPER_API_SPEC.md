@@ -1533,7 +1533,10 @@ vue2, vue3 and angular wrappers require it too (javascript-sdk pinned at
 351): a strict-mismatched lower-id candidate is skipped and never exposed, the
 lower id wins even when the payload lists it second, and a winner whose variant
 lacks the key returns the default with no fall-through; each with exactly one
-exposure, for the winner, and none from `peekVariableValue`.
+exposure, for the winner, and none from `peekVariableValue`. The PHP wrapper also
+requires it and derives it from `php-wrapper/SharedVariableKeysSelfTest.php`, which
+checks these cases and a no-winner case, including pending counts. Scenario 343
+still requires `variableKeysMap`, which PHP does not support.
 
 ### Capability: `singleFinalizeEvent`
 

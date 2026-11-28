@@ -18,6 +18,18 @@ if (($argv[2] ?? '') === '--availability') {
     exit(SwitchbackSelfTest::isAvailable() ? 1 : 0);
 }
 
+if (($argv[2] ?? '') === '--legacy-wire-model') {
+    require $autoload;
+    class LegacyWireExperiment extends ABSmartly\SDK\Experiment {
+        public int $switchbackClusterCount = 10;
+    }
+    $source = file_get_contents(__DIR__ . '/SwitchbackSelfTest.php');
+    $source = str_replace('new \\ABSmartly\\SDK\\Experiment($experiment)', 'new LegacyWireExperiment($experiment)', $source, $replaced);
+    if ($replaced !== 1) { throw new RuntimeException('wire model construction must be replaced exactly once'); }
+    eval(substr($source, strlen("<?php\n")));
+    exit(SwitchbackSelfTest::run() ? 1 : 0);
+}
+
 require $autoload;
 require __DIR__ . '/SwitchbackSelfTest.php';
 
@@ -47,6 +59,39 @@ foreach (['assign', 'baseHash', 'fisherYatesPermutation'] as $missing) {
     fclose($pipes[2]);
     check(proc_close($process) === 0, "missing {$missing} must report unavailable: {$output}");
 }
+
+$process = proc_open([PHP_BINARY, __FILE__, $autoload, '--legacy-wire-model'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+$output = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+check(proc_close($process) === 0, "run() must reject the obsolete wire model: {$output}");
+
+// Dynamic additive fields must be checked on a constructed model. A declaration-only check would
+// reject the released-compatible model, while ignoring the model entirely would miss these mutants.
+$wireCheck = new ReflectionMethod(SwitchbackSelfTest::class, 'checkWireModel');
+$payloads = json_decode(SwitchbackSelfTest::probePayload())->experiments;
+$wireChecks = 0;
+foreach ($payloads as $payload) {
+    $model = new ABSmartly\SDK\Experiment($payload);
+    check($wireCheck->invoke(null, $model, $payload), "wire model must preserve {$payload->name}");
+    ++$wireChecks;
+    foreach (['switchbackClusters', 'switchbackClusterValues'] as $field) {
+        if (isset($payload->$field)) {
+            $missing = (object) get_object_vars($model);
+            unset($missing->$field);
+            check(!$wireCheck->invoke(null, $missing, $payload), "missing {$field} must fail");
+            ++$wireChecks;
+            $wrong = (object) get_object_vars($model);
+            $wrong->$field = $field === 'switchbackClusters' ? ['wrong_unit' => 'wrong_path'] : ['wrong_value'];
+            check(!$wireCheck->invoke(null, $wrong, $payload), "wrong {$field} must fail");
+            ++$wireChecks;
+        }
+    }
+}
+$legacy = (object) get_object_vars(new ABSmartly\SDK\Experiment($payloads[0]));
+$legacy->switchbackClusterCount = 10;
+check(!$wireCheck->invoke(null, $legacy, $payloads[0]), 'obsolete switchbackClusterCount must fail');
+++$wireChecks;
 
 // Keep the queued/published exposures correct while changing only the return value.
 class PublishFixtureContext extends ABSmartly\SDK\Context\Context
@@ -87,4 +132,4 @@ foreach (['', 'sb_unit_baseline', 'sb_payload'] as $wrong) {
     $context = new PublishFixtureContext($handler, $wrong);
     check($method->invoke(null, $context, $handler) === ($wrong === ''), "treatment check failed for {$wrong}");
 }
-echo "PHP wrapper: 7 checks passed (live SDK, 3 missing methods, good publish, 2 wrong treatments)\n";
+echo "PHP wrapper: 7 checks passed (live SDK, 3 missing methods, good publish, 2 wrong treatments); {$wireChecks} wire-model checks passed\n";

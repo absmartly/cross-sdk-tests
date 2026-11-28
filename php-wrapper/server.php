@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/vendor/autoload.php';
 require __DIR__ . '/HoldoutSelfTest.php';
 require __DIR__ . '/SwitchbackSelfTest.php';
+require __DIR__ . '/SharedVariableKeysSelfTest.php';
 
 use ABSmartly\SDK\SDK;
 use ABSmartly\SDK\Config;
@@ -310,6 +311,7 @@ $server = new Server(function (ServerRequestInterface $request) use (&$contexts,
             // (HoldoutSelfTest.php), never hard-coded.
             'holdouts' => HoldoutSelfTest::runHoldouts(),
             'holdout_arms' => HoldoutSelfTest::runHoldoutArms(),
+            'sharedVariableKeys' => SharedVariableKeysSelfTest::run(),
             'switchback' => SwitchbackSelfTest::run(),
             // The switchback battery checks that a whole float keys no cluster (SwitchbackSelfTest.php).
             'integralFloatAttributes' => SwitchbackSelfTest::run()

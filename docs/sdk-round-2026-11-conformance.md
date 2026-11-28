@@ -103,11 +103,13 @@ its fixed SDK. The javascript-sdk fix is javascript-sdk#69, merged and pinned in
 and react, vue2, vue3 and angular (which build the same pinned javascript-sdk) pass all 315 scenarios
 they run, including every 340-368 scenario except 359-360, which their `switchback` exception skips.
 Their wrappers report the capability from `sharedVariableKeysSelfTest.js`, so the gate stays
-evidence-based if the pin moves.
+evidence-based if the pin moves. PHP also requires it, using a behavioral probe against the
+shipped 1.2.0 winner-only semantics and the additive 1.3.0 switchbacks branch. Scenario 343
+remains gated for PHP by its separate `variableKeysMap` exception.
 
 | capability | meaning | gated scenarios | gated SDKs (divergence) |
 | --- | --- | --- | --- |
-| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **python**, **ruby**, **liquid**, **php**, **go**, **swift**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, java-v1, kotlin, dart, flutter, dotnet (dotnet-sdk#17, merged) and, at the javascript-sdk#69 merge commit 95fe105, javascript, react, vue2, vue3 and angular. |
+| `sharedVariableKeys` | shared variable keys resolve like java-sdk `Context.getVariableAssignment`: lowest id first, only the selected experiment exposed (plus the applicable holdouts of the candidates visited), no fall-through past a winner whose variant lacks the key (scenarios 340-368, `generate_shared_variable_key_scenarios.py`) | 340-368 | **python**, **ruby**, **liquid**, **go**, **swift**, **swift-v1**, **cpp** (expose every visited candidate and fall through past a winner lacking the key), **rust** and **elixir** (also visit candidates in payload order), **scala** (the last candidate wins). Owner-decided: java-sdk is the contract, so exposing every visited candidate and falling through are bugs in these SDKs; each exception is removed when its fixed SDK is pinned. Required for java, java-v1, kotlin, dart, dart-v2, flutter, flutter-v2, dotnet, php and, at the javascript-sdk#69 merge commit 95fe105, javascript, react, vue2, vue3 and angular. |
 
 Three more reviewed exceptions replace wrapper code that used to hide an SDK
 divergence (`WRAPPER_API_SPEC.md`, "What a wrapper must not do"):

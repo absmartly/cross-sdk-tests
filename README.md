@@ -240,13 +240,16 @@ across languages.
   and replayed in CI against a Python model and 19 wrong models
   (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
   the per-mutant kill counts locally).
-  java, java-v1, kotlin, dart, flutter and dotnet require the capability (dotnet from
+  java, java-v1, kotlin, dart, dart-v2, flutter, flutter-v2 and dotnet require the capability (dotnet from
   dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
   merged; the lane is pinned to the dotnet-sdk#16 merge commit 31fb143 on `main`), and so do
   javascript, react, vue2, vue3 and angular, which build javascript-sdk
   [#69](https://github.com/absmartly/javascript-sdk/pull/69) (merged) pinned at its merge commit 95fe105
   and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
-  Every other SDK lists a reviewed exception naming its divergence.
+  PHP also requires it, measured by `php-wrapper/SharedVariableKeysSelfTest.php` against the shipped PHP 1.2.0
+  winner-only behavior and the additive 1.3.0 switchbacks branch. Its image build runs mutation regressions for
+  both peek and consuming-read values, exposures, and pending counts. Scenario 343 still skips PHP because
+  it also requires `variableKeysMap`. Every other SDK lists a reviewed exception naming its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
