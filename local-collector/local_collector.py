@@ -311,7 +311,10 @@ def make_handler(store):
                 record["rawBody"] = decoded.decode("utf-8", errors="replace")
                 return self._reject(record, str(exc))
             try:
-                record["json"] = json.loads(decoded, parse_constant=_reject_constant, parse_float=_finite_float)
+                # Parse the strictly decoded text, not the bytes: json.loads(bytes) would auto-detect
+                # UTF-16/32 and strip a UTF-8 BOM, accepting a body that is not plain UTF-8 JSON.
+                record["json"] = json.loads(record["rawBody"], parse_constant=_reject_constant,
+                                            parse_float=_finite_float)
                 depth_error = json_depth_error(record["json"])
                 if depth_error:
                     raise ValueError(depth_error)

@@ -110,7 +110,12 @@ class CollectorServerTest(unittest.TestCase):
         self.assertEqual(self.request("PUT", "/events", b"{}", {})[0], 404)
 
     def test_invalid_utf8_publish_returns_400_and_is_not_accepted(self):
-        for payload in (b"\xff", json.dumps({"hashed": True}).encode("utf-16")):
+        import codecs
+        body = json.dumps({"hashed": True})
+        # A UTF-8 BOM, and UTF-16/32 without a BOM, are valid UTF-8 bytes that json.loads(bytes)
+        # would still auto-detect and accept; only plain UTF-8 JSON text is a publish.
+        for payload in (b"\xff", body.encode("utf-16"), codecs.BOM_UTF8 + body.encode(),
+                        body.encode("utf-16-le"), body.encode("utf-32-le")):
             status, body = self.request("PUT", "/context", payload, {"Content-Length": str(len(payload))})
             self.assertEqual(status, 400)
             self.assertIn("error", body)
@@ -444,6 +449,19 @@ class CollectorServerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "deadline"):
                 fake._read_exact(2)
         fake.connection.settimeout.assert_called_with(collector.REQUEST_TIMEOUT_S)
+
+    def test_no_read_starts_once_the_deadline_has_passed(self):
+        # The budget is checked before every read, so an expired deadline never waits on the socket.
+        handler = collector.make_handler(collector.Store())
+        fake = handler.__new__(handler)
+        import io
+        fake.rfile = mock.Mock(wraps=io.BytesIO(b"{}"))
+        fake.connection = mock.Mock()
+        deadline = collector.REQUEST_DEADLINE_S
+        with mock.patch.object(collector, "_monotonic", side_effect=[0, deadline, deadline]):
+            with self.assertRaisesRegex(ValueError, "deadline"):
+                fake._read_exact(2)
+        fake.rfile.read1.assert_not_called()
 
     def test_the_socket_timeout_is_restored_after_a_bounded_read(self):
         # A read near the deadline shortens the socket timeout; the next request must not inherit it.
