@@ -50,7 +50,7 @@ declare -A SDK_REVISIONS=(
   ["cpp-sdk"]="52125e0c02b817f92818038fd052497c30866f1a"
   ["javascript-sdk"]="2aa9a2df4a3b636375edae8df077bd10fd5a6b32"
   ["swift-sdk-v1"]="f64883ceb755aaf94443465f0d4d2da6555d8a7a"
-  ["swift-sdk"]="973274a3e4e28c5e4bd16fb1ba8f78baf9e82ba8"
+  ["swift-sdk"]="ed6679d80909e738fafd8935ed26cefd5f8f8b45"
 )
 
 # Checkout directories that are not repository names: the directory a wrapper's Dockerfile COPYs, mapped to the
