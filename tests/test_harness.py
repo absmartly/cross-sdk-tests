@@ -1314,10 +1314,48 @@ class AbsentExposureUnitTests(unittest.TestCase):
         self.assertEqual(observations[0], observations[1])
         self.assertNotEqual(observations[0], observations[2])
 
+    def test_observations_use_the_matched_expected_exposure(self):
+        # The SDK reports only id 5, which the context does not define, so on its own
+        # the exposure looks unknown (absent type). Its matched expectation names the
+        # typed experiment, so observations must keep "" and null apart.
+        context = {"experiments": [{"name": "typed", "unitType": "session_id"}]}
+        for publish in (False, True):
+            def observe(unit):
+                exposure = {"id": 5, "unit": unit}
+                if publish:
+                    actual = {"events": [{"type": "publish", "data": {"exposures": [exposure]}}]}
+                    want = {"events": [{"type": "publish", "data": {"exposures": [{"id": 5, "name": "typed"}]}}]}
+                else:
+                    actual = {"events": [{"type": "exposure", "data": exposure}]}
+                    want = {"events": [{"type": "exposure", "data": {"id": 5, "name": "typed"}}]}
+                return test_runner.observation_for_step("treatment", actual, want, context_data=context)
+            with self.subTest(publish=publish):
+                self.assertNotEqual(observe(""), observe(None))
+
+    def test_an_unidentified_expectation_is_used_only_when_it_is_the_only_one(self):
+        self.assertEqual(test_runner._expected_exposure({"unit": ""}, [{"variant": 0}]), {"variant": 0})
+        self.assertEqual(test_runner._expected_exposure({"unit": ""}, [{"variant": 0}, {"variant": 1}]), {})
+
+    def test_creating_a_context_again_restores_its_definitions(self):
+        # After a failed context (no definitions) a new createContextWith loads the
+        # scenario's real session_id again, so "" is no longer an absent alias.
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        scenario = {"name": "recreate", "contextData": real, "steps": [
+            {"action": "createContextFailed", "params": {"units": {}}, "expect": {"events": []}},
+            {"action": "createContextWith", "params": {"units": {"session_id": "u"}}, "expect": {"events": []}},
+            {"action": "treatment", "expect": {"events": [{"type": "exposure", "data": {"name": "e"}}]}}]}
+        for unit, passed in (("session_id", True), ("", False), (None, False)):
+            with self.subTest(unit=unit):
+                _, result = self.run_scenario(scenario, [
+                    {"result": {"contextId": "c1"}, "events": []}, {"result": {"contextId": "c2"}, "events": []},
+                    self.response({"name": "e", "unit": unit})])
+                self.assertEqual(result["passed"], passed, result)
+
     def test_malformed_expectations_do_not_raise(self):
         actual = {"events": [{"type": "exposure", "data": {"name": "e", "unit": ""}},
                              {"type": "publish", "data": {"exposures": [{"name": "e", "unit": ""}]}}]}
-        for expected in ({"events": [None]}, {"events": None}, {"events": "x"}, {"events": [{"type": "exposure"}]},
+        for expected in ({"events": [None]}, {"events": [1, None]}, {"events": None}, {"events": "x"},
+                         {"events": [{"type": "exposure"}]},
                          {"events": [{"type": "publish", "data": {"exposures": None}}]},
                          {"events": [{"type": "publish", "data": None}]}, {"events": [{"type": "exposure", "data": 5}]}):
             with self.subTest(expected=expected):

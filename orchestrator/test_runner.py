@@ -2029,6 +2029,9 @@ class TestOrchestrator:
             return failures
 
         def check_event(i: int, actual_event: Any, expected_event: Any, fail: Callable[[str, Any, Any], None]) -> None:
+            if not isinstance(expected_event, dict):
+                fail(f"events[{i}]", "a scenario event object", expected_event)
+                return
             if not isinstance(actual_event, dict):
                 fail(f"events[{i}]", expected_event, actual_event)
                 return
