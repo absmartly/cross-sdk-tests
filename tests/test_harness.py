@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -44,6 +45,18 @@ def make_orchestrator(sdks=None, policy=None, **kwargs):
 
 def quiet():
     return contextlib.redirect_stdout(io.StringIO())
+
+
+class PublishObservationTests(unittest.TestCase):
+    def test_null_and_omitted_attribute_values_compare_equal(self):
+        with_null = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": None, "setAt": 1}]}
+        omitted = {"hashed": True, "units": [], "attributes": [{"name": "v", "setAt": 2}]}
+        self.assertEqual(test_runner._publish_observation(with_null), test_runner._publish_observation(omitted))
+        for value in (0, "", "<missing>", "null", False):
+            other = {"hashed": True, "units": [], "attributes": [{"name": "v", "value": value, "setAt": 2}]}
+            self.assertNotEqual(
+                test_runner._publish_observation(with_null), test_runner._publish_observation(other), value
+            )
 
 
 class ValuesMatchTests(unittest.TestCase):
@@ -222,6 +235,122 @@ class ValidateStepTests(unittest.TestCase):
         self.assertEqual(self.publish_units([a, a], [a, b]), ["events[0].data.units (unordered)"])
         self.assertEqual(self.publish_units([a, b, b], [a, b]), ["events[0].data.units (unordered)"])
         self.assertEqual(self.publish_units("x", [a, b]), ["events[0].data.units (unordered)"])
+
+    def exposures(self, actual_ids, expected_ids, unordered=True):
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in actual_ids]}
+        expected = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in expected_ids]}
+        if unordered:
+            expected["unorderedEvents"] = True
+        return self.fields(self.orch.validate_step(0, "variableValue", actual, expected))
+
+    def test_unordered_events_accept_any_order(self):
+        self.assertEqual(self.exposures([2, 1, 3], [1, 2, 3]), [])
+        self.assertEqual(self.exposures([2, 1], [1, 2], unordered=False),
+                         ["events[0].data.id", "events[1].data.id"])
+        explicit_false = {"result": None, "unorderedEvents": False,
+                          "events": [{"type": "exposure", "data": {"id": i}} for i in (1, 2)]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": i}} for i in (2, 1)]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, explicit_false)),
+                         ["events[0].data.id", "events[1].data.id"])
+
+    def test_unordered_events_still_check_values_and_count(self):
+        self.assertEqual(self.exposures([1, 4], [1, 2]), ["events[1].data.id"])
+        self.assertEqual(self.exposures([1, 1], [1, 2]), ["events[1].data.id"])
+        self.assertEqual(self.exposures([1], [1, 2]), ["events.length"])
+        # One actual event matches at most one expected event.
+        self.assertEqual(self.exposures([1, 2], [1, 1]), ["events[1].data.id"])
+
+    def test_unordered_events_backtrack_to_a_full_match(self):
+        # Expected data is a subset: {id: 1} also matches the event {id: 1, variant: 2} needs, so the
+        # first pairing has to be undone for both to match.
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 1, "variant": 2}},
+                                             {"type": "exposure", "data": {"id": 1, "variant": 3}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}},
+                               {"type": "exposure", "data": {"id": 1, "variant": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_matching_checks_each_pair_once_when_a_specific_event_is_missing(self):
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(11)] + [
+            {"type": "exposure", "data": {"id": 99}}]
+        calls = []
+
+        def matches(candidate, event, index):
+            calls.append((id(candidate), index))
+            # A call-count bound, not a wall-clock timeout, so a super-polynomial search fails deterministically.
+            self.assertLessEqual(len(calls), len(actual) * len(expected))
+            return values_match(candidate, event)
+
+        ordered = test_runner.events_in_expected_order(actual, expected, matches)
+        self.assertIs(ordered, actual, "a failed matching keeps wire order for diagnostics")
+        self.assertEqual(len(calls), 144)
+        self.assertEqual(len(set(calls)), 144)
+        failures = self.orch.validate_step(0, "variableValue", {"result": None, "events": actual},
+                                           {"result": None, "unorderedEvents": True, "events": expected})
+        self.assertEqual(self.fields(failures), ["events[11].data.id"])
+
+    def test_unordered_matching_detects_a_shared_candidate_shortage(self):
+        # Every expectation has a compatible event, but the last two need the same event.
+        actual = [{"type": "exposure", "data": {"id": i}} for i in range(12)]
+        expected = [{"type": "exposure"} for _ in range(10)] + [
+            {"type": "exposure", "data": {"id": 0}} for _ in range(2)]
+        calls = 0
+
+        def matches(candidate, event, index):
+            nonlocal calls
+            calls += 1
+            self.assertLessEqual(calls, 144)
+            return values_match(candidate, event)
+
+        self.assertIs(test_runner.events_in_expected_order(actual, expected, matches), actual)
+        self.assertEqual(calls, 144)
+
+    def test_unordered_events_pair_by_type(self):
+        actual = {"result": None, "events": [{"type": "goal", "data": {"id": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "goal", "data": {"id": 1}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_by_the_positional_rules(self):
+        # Java omits a goal's null properties; the pairing must allow it like the positional check.
+        actual = {"result": None, "events": [{"type": "goal", "data": {"name": "b"}},
+                                             {"type": "goal", "data": {"name": "a"}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "goal", "data": {"name": "a", "properties": None}},
+                               {"type": "goal", "data": {"name": "b", "properties": None}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(0, "variableValue", actual, expected)), [])
+
+    def test_unordered_events_pair_sameshapeas_by_expected_position(self):
+        # sameShapeAs takes the baseline event at the expected event's position, so the pairing must too.
+        baseline = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}},
+                                               {"type": "exposure", "data": {"id": 2, "variant": 1}}]}
+        actual = {"result": None, "events": [{"type": "exposure", "data": {"id": 2, "variant": 1}},
+                                             {"type": "exposure", "data": {"id": 1}}]}
+        expected = {"result": None, "unorderedEvents": True,
+                    "events": [{"type": "exposure", "sameShapeAs": 0, "data": {"id": 1}},
+                               {"type": "exposure", "sameShapeAs": 0, "data": {"id": 2}}]}
+        self.assertEqual(self.fields(self.orch.validate_step(1, "variableValue", actual, expected, [baseline])), [])
+
+    def test_unordered_events_observation_ignores_order(self):
+        expected = {"unorderedEvents": True}
+        a = {"result": None, "events": [{"type": "exposure", "data": {"id": 1}}, {"type": "exposure", "data": {"id": 2}}]}
+        b = {"result": None, "events": list(reversed(a["events"]))}
+        self.assertEqual(test_runner.observation_for_step("variableValue", a, expected),
+                         test_runner.observation_for_step("variableValue", b, expected))
+        self.assertNotEqual(test_runner.observation_for_step("variableValue", a, {}),
+                            test_runner.observation_for_step("variableValue", b, {}))
+
+    def test_publish_observation_treats_an_absent_attribute_value_as_null(self):
+        def publish(attribute):
+            event = {"type": "publish", "data": {"hashed": True, "units": [], "attributes": [attribute]}}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [event]}, {})
+
+        self.assertEqual(publish({"name": "v_null", "value": None, "setAt": 1}),
+                         publish({"name": "v_null", "setAt": 2}))
+        self.assertNotEqual(publish({"name": "v_null", "value": None}), publish({"name": "v_null", "value": ""}))
+        self.assertNotEqual(publish({"name": "v_null"}), publish({"value": None}))
 
     def test_event_data_key_absent_vs_null(self):
         actual = {"result": 1, "events": [{"type": "exposure", "data": {"id": 1}}]}
@@ -435,6 +564,15 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         self.assertEqual(test_runner.validate_capability_policy(policy), [])
 
+    def test_misuse_descriptions_keep_post_finalize_setters_separate(self):
+        descriptions = test_runner.load_capability_policy()["capabilities"]
+        misuse = descriptions["throwsOnMisuse"]
+        self.assertIn("setUnit with a blank or already-set uid", misuse)
+        self.assertIn("a mutation (track/treatment) after finalize", misuse)
+        self.assertIn("a read before the context is ready", misuse)
+        self.assertNotIn("attribute/setUnit", misuse)
+        self.assertIn("setAttribute/setUnit called after finalize", descriptions["rejectsSettersAfterFinalize"])
+
     def test_checked_in_policy_covers_every_compose_sdk(self):
         policy = test_runner.load_capability_policy()
         with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
@@ -454,7 +592,11 @@ class CapabilityPolicyTests(unittest.TestCase):
         holders = sorted(
             sdk for sdk, entry in policy["sdks"].items() if {"holdouts", "holdout_arms"} & set(entry["required"])
         )
-        self.assertEqual(holders, ["angular", "java", "javascript", "react", "vue2", "vue3"])
+        for sdk in holders:
+            with self.subTest(sdk=sdk):
+                self.assertLessEqual({"holdouts", "holdout_arms"}, set(policy["sdks"][sdk]["required"]))
+        # php: php-wrapper/HoldoutSelfTest.php gates both flags on the built php-sdk's behaviour.
+        self.assertEqual(holders, ["angular", "cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "java-v1", "javascript", "php", "python", "react", "ruby", "swift-v1", "vue2", "vue3"])
         ready_error_exceptions = sorted(
             sdk for sdk, entry in policy["sdks"].items() if "readyError" in entry["unsupported"]
         )
@@ -498,6 +640,18 @@ class CapabilityPolicyTests(unittest.TestCase):
         policy = test_runner.load_capability_policy()
         required = {"assignmentRules", "semverOperators", "switchback"}
         self.assertEqual(required & set(policy["sdks"]["java"]["required"]), required)
+
+    def test_switchback_required_only_where_evidenced(self):
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "switchback" in entry["required"])
+        self.assertEqual(holders, ["cpp", "dart", "dotnet", "elixir", "flutter", "go", "java", "javascript", "php", "python", "ruby", "rust"])
+
+    def test_shared_variable_keys_required_only_where_evidenced(self):
+        # The JS family requires it only at the javascript-sdk pin whose lanes were measured passing 340-368.
+        policy = test_runner.load_capability_policy()
+        holders = sorted(sdk for sdk, entry in policy["sdks"].items() if "sharedVariableKeys" in entry["required"])
+        self.assertEqual(holders, ["angular", "dart", "dart-v2", "dotnet", "flutter", "flutter-v2", "java", "java-v1", "javascript", "kotlin",
+                                   "php", "react", "vue2", "vue3"])
 
     def test_invalid_policies_rejected(self):
         self.assertTrue(test_runner.validate_capability_policy([]))
@@ -846,6 +1000,443 @@ class ScenarioLoaderTests(unittest.TestCase):
             )
 
 
+class HoldoutExposureContextTests(unittest.TestCase):
+    CONTEXT = {"experiments": [{"id": 1, "name": "covered_session", "unitType": "session_id", "holdoutIds": [11]},
+                               {"id": 2, "name": "covered_user", "unitType": "user_id", "holdoutIds": [11]},
+                               {"id": 11, "name": "same_id_experiment", "unitType": "device_id"}],
+               "holdouts": [{"id": 11, "name": "holdout", "unitType": "ignored_holdout_type"}]}
+
+    def check(self, unit, expected, publish=False):
+        exposure = {"id": 11, "name": "holdout", "variant": 0}
+        if unit is not MISSING:
+            exposure["unit"] = unit
+        if publish:
+            actual = [{"type": "publish", "data": {"exposures": [exposure]}}]
+            want = {"events": [{"type": "publish", "data": {"exposures": [expected]}}]}
+        else:
+            actual, want = [{"type": "exposure", "data": exposure}], {"events": [{"type": "exposure", "data": expected}]}
+        before = json.dumps(actual)
+        failures = make_orchestrator().validate_events(0, "publish", actual, want, context_data=self.CONTEXT)
+        self.assertEqual(json.dumps(actual), before)
+        return not failures
+
+    def test_a_holdout_exposure_takes_a_covered_experiments_type(self):
+        partial = {"id": 11, "name": "holdout", "variant": 0}
+        for publish in (False, True):
+            for unit, ok in (("session_id", True), ("user_id", True), (None, False), ("", False),
+                             ("wrong", False), ("device_id", False), ("ignored_holdout_type", False), (MISSING, False)):
+                with self.subTest(publish=publish, unit=unit):
+                    self.assertEqual(self.check(unit, partial, publish), ok)
+
+    def test_an_explicit_holdout_unit_is_checked_and_never_an_absent_alias(self):
+        for publish in (False, True):
+            self.assertTrue(self.check("user_id", {"name": "holdout", "unit": "user_id"}, publish))
+            self.assertFalse(self.check("session_id", {"name": "holdout", "unit": "user_id"}, publish))
+            for unit in (None, ""):
+                self.assertFalse(self.check(unit, {"name": "holdout", "unit": None}, publish))
+
+    def test_a_holdout_exposure_unit_is_never_canonicalized_in_observations(self):
+        # Consistency must keep null and "" apart for a holdout: it has a real covered type.
+        def observe(unit, publish):
+            exposure = {"id": 11, "name": "holdout", "unit": unit}
+            event = {"type": "publish", "data": {"exposures": [exposure]}} if publish else {
+                "type": "exposure", "data": exposure}
+            return test_runner.observation_for_step("treatment", {"events": [event]}, {"events": [{"type": event["type"]}]},
+                                                    context_data=self.CONTEXT)
+        for publish in (False, True):
+            self.assertNotEqual(observe(None, publish), observe("", publish))
+        # Without an experiment sharing the holdout's id, the experiments lookup alone
+        # would call it unknown (absent); the holdout check must still keep it strict.
+        context = {key: value for key, value in self.CONTEXT.items()}
+        context["experiments"] = [e for e in self.CONTEXT["experiments"] if e["id"] != 11]
+        self.assertNotEqual(*(test_runner.observation_for_step(
+            "treatment", {"events": [{"type": "exposure", "data": {"id": 11, "name": "holdout", "unit": unit}}]},
+            {"events": [{"type": "exposure"}]}, context_data=context) for unit in (None, "")))
+
+    def test_a_holdout_is_found_by_name_not_by_a_shared_id(self):
+        # An unrelated holdout reusing experiment 1's id must not make experiment 1's
+        # exposure a holdout exposure; experiment 1 keeps its own real session_id.
+        context = {"experiments": [{"id": 1, "name": "experiment", "unitType": "session_id"}],
+                   "holdouts": [{"id": 1, "name": "unrelated_holdout"}]}
+        actual = [{"type": "exposure", "data": {"id": 1, "name": "experiment", "unit": "user_id"}}]
+        self.assertTrue(make_orchestrator().validate_events(
+            0, "treatment", actual, {"events": [{"type": "exposure", "data": {"id": 1}}]}, context_data=context))
+
+    def test_holdout_ids_do_not_inherit_experiment_types(self):
+        # Experiment 11 shares the holdout's id; the holdout is found by name.
+        _, expected = test_runner._exposure_comparison(
+            {"id": 11, "name": "holdout", "unit": "device_id"}, {"id": 11, "name": "holdout"}, self.CONTEXT)
+        self.assertNotEqual(expected.get("unit"), "device_id")
+
+
+class AbsentExposureUnitTests(unittest.TestCase):
+    def test_only_null_and_empty_absent_exposure_types_are_equivalent(self):
+        orch = make_orchestrator()
+        absent = {"experiments": []}
+        for expected_unit in (None, ""):
+            expected = {"events": [{"type": "exposure", "data": {"name": "e", "unit": expected_unit}}]}
+            for actual_unit in (None, "", "user_id", "wrong", 0, False, [], {}):
+                with self.subTest(expected=expected_unit, actual=actual_unit):
+                    event = {"type": "exposure", "data": {"name": "e", "unit": actual_unit}}
+                    before = json.dumps(event)
+                    failures = orch.validate_events(0, "treatment", [event], expected, context_data=absent)
+                    self.assertEqual(not failures, actual_unit is None or actual_unit == "")
+                    self.assertEqual(json.dumps(event), before)
+            self.assertTrue(orch.validate_events(0, "treatment", [{"type": "exposure", "data": {"name": "e"}}],
+                                                 expected, context_data=absent))
+        for actual_unit in (None, "", "wrong"):
+            self.assertTrue(orch.validate_events(0, "treatment",
+                [{"type": "exposure", "data": {"name": "e", "unit": actual_unit}}],
+                {"events": [{"type": "exposure", "data": {"name": "e", "unit": "user_id"}}]}, context_data=absent))
+        self.assertFalse(values_match("", None))
+        self.assertTrue(orch.validate_events(0, "track", [{"type": "goal", "data": {"unit": ""}}],
+                                           {"events": [{"type": "goal", "data": {"unit": None}}]}))
+
+    def test_consistency_normalizes_only_absent_exposure_types_without_mutation(self):
+        def obs(data):
+            return test_runner.observation_for_step(
+                "treatment", {"events": [{"type": "exposure", "data": {"name": "e", **data}}]},
+                {"events": [{"type": "exposure", "data": {"name": "e", "unit": None}}]},
+                context_data={"experiments": []})
+        raw = {"unit": ""}
+        self.assertEqual(obs(raw), obs({"unit": None}))
+        self.assertEqual(raw, {"unit": ""})
+        for invalid in ({}, {"unit": "wrong"}, {"unit": "user_id"}, {"unit": False}, {"unit": 0}):
+            self.assertNotEqual(obs(raw), obs(invalid))
+
+    def test_an_explicitly_absent_expectation_alone_is_not_proof_of_absence(self):
+        for context in (None, {}, {"experiments": None}, {"experiments": [None]}):
+            for publish in (False, True):
+                with self.subTest(context=context, publish=publish):
+                    exposure = {"id": 2, "name": "b", "unit": ""}
+                    expected = {"id": 2, "name": "b", "unit": None}
+                    actual, want = (
+                        ([{"type": "publish", "data": {"exposures": [exposure]}}],
+                         {"events": [{"type": "publish", "data": {"exposures": [expected]}}]}) if publish else
+                        ([{"type": "exposure", "data": exposure}], {"events": [{"type": "exposure", "data": expected}]}))
+                    self.assertTrue(make_orchestrator().validate_events(
+                        0, "treatment", actual, want, context_data=context))
+                    observe = lambda unit: test_runner.observation_for_step(
+                        "treatment", {"events": json.loads(json.dumps(actual).replace('"unit": ""', f'"unit": {json.dumps(unit)}'))},
+                        want, context_data=context)
+                    self.assertNotEqual(observe(""), observe(None))
+
+
+    @staticmethod
+    def scenario(number):
+        with open(SCENARIOS_PATH) as src:
+            return next(s for s in json.load(src) if s["name"].startswith(f"{number} -"))
+
+    @staticmethod
+    def response(exposure, publish=False):
+        event = {"type": "publish", "data": {"exposures": [exposure]}} if publish else {
+            "type": "exposure", "data": exposure}
+        return {"result": None if publish else 1, "events": [event]}
+
+    def test_scenario_138_real_type_is_not_an_absent_alias_event_or_publish(self):
+        scenario = self.scenario(138)
+        step = scenario["steps"][1]
+        base = dict(step["expect"]["events"][0]["data"])
+        for publish in (False, True):
+            expected = {"events": [{"type": "publish"}]} if publish else step["expect"]
+            action = "publish" if publish else step["action"]
+            observations = []
+            for unit in ("session_id", None, "", "wrong", MISSING):
+                with self.subTest(publish=publish, unit=unit):
+                    exposure = dict(base)
+                    if unit is not MISSING:
+                        exposure["unit"] = unit
+                    actual = self.response(exposure, publish)
+                    if not publish:
+                        actual["result"] = "large"
+                    before = json.dumps(actual)
+                    failures = make_orchestrator().validate_step(
+                        1, action, actual, expected, context_data=scenario["contextData"])
+                    self.assertEqual(not failures, unit == "session_id", failures)
+                    observations.append(test_runner.observation_for_step(
+                        action, actual, expected, context_data=scenario["contextData"]))
+                    self.assertEqual(json.dumps(actual), before)
+            self.assertEqual(len(set(observations)), 5)
+
+    def test_scenario_166_unknown_experiment_aliases_event_and_nested_publish(self):
+        scenario = self.scenario(166)
+        exposure = scenario["steps"][1]["expect"]["events"][0]["data"]
+        for publish in (False, True):
+            expected = {"events": [{"type": "publish", "data": {"exposures": [exposure]}}]} if publish else {
+                "events": [{"type": "exposure", "data": exposure}]}
+            observations = []
+            for unit in (None, "", "wrong", MISSING):
+                actual_exposure = dict(exposure)
+                if unit is not MISSING:
+                    actual_exposure["unit"] = unit
+                actual = self.response(actual_exposure, publish)
+                before = json.dumps(actual)
+                failures = make_orchestrator().validate_step(
+                    1, "publish" if publish else "treatment", actual, expected,
+                    context_data=scenario["contextData"])
+                self.assertEqual(not failures, unit is None or unit == "", failures)
+                observations.append(test_runner.observation_for_step(
+                    "publish" if publish else "treatment", actual, expected,
+                    context_data=scenario["contextData"]))
+                self.assertEqual(json.dumps(actual), before)
+            self.assertEqual(observations[0], observations[1])
+            self.assertNotEqual(observations[0], observations[2])
+            self.assertNotEqual(observations[0], observations[3])
+
+    def test_context_evidence_and_explicit_absence_only(self):
+        expected = {"events": [{"type": "exposure", "data": {"name": "e"}}]}
+        for context in (None, {}, {"experiments": None}, {"experiments": []},
+                        {"experiments": [{"id": 1, "name": "e"}]},
+                        {"experiments": [{"id": 1, "name": "e", "unitType": None}]},
+                        {"experiments": [{"id": 1, "name": "e", "unitType": ""}]},
+                        {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}):
+            absent = isinstance(context, dict) and isinstance(context.get("experiments"), list) and not any(
+                e.get("unitType") == "session_id" for e in context["experiments"])
+            obs = [test_runner.observation_for_step("treatment", self.response({"id": 1, "name": "e", "unit": unit}),
+                                                   expected, context_data=context) for unit in (None, "")]
+            self.assertEqual(obs[0] == obs[1], absent, context)
+        # Match by either id or name; a known real type overrides even an
+        # explicitly absent expectation, not merely an omitted one.
+        context = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        for identity in ({"id": 1}, {"name": "e"}, {"id": 1, "name": "unknown"}):
+            for unit in (None, ""):
+                expected = {"events": [{"type": "exposure", "data": {**identity, "unit": None}}]}
+                self.assertTrue(make_orchestrator().validate_step(
+                    0, "treatment", self.response({**identity, "unit": unit}), expected, context_data=context))
+
+    def test_unordered_and_same_shape_use_raw_baselines_and_context(self):
+        context = {"experiments": [{"id": 1, "name": "real", "unitType": "session_id"}]}
+        real = {"id": 1, "name": "real", "unit": "session_id"}
+        unknown = {"id": 0, "name": "unknown", "unit": None}
+        baseline = {"events": [{"type": "exposure", "data": real}, {"type": "exposure", "data": unknown}]}
+        expected = {"unorderedEvents": True, "events": [
+            {"type": "exposure", "sameShapeAs": 0, "data": {"id": 1}},
+            {"type": "exposure", "sameShapeAs": 0, "data": {"name": "unknown"}}]}
+        actual = {"events": [{"type": "exposure", "data": dict(unknown, unit="")}, baseline["events"][0]]}
+        before = json.dumps([baseline, actual])
+        references = []
+        orch = make_orchestrator()
+        self.assertEqual(orch.validate_step(1, "treatment", actual, expected, [baseline],
+                                           context_data=context, reference_events=references), [])
+        self.assertEqual(references[0]["data"], real)
+        self.assertEqual(references[1]["data"]["unit"], "")
+        self.assertEqual(json.dumps([baseline, actual]), before)
+        actual["events"][1] = {"type": "exposure", "data": dict(real, unit="")}
+        self.assertTrue(orch.validate_step(1, "treatment", actual, expected, [baseline], context_data=context))
+
+    def run_scenario(self, scenario, bodies, status=200):
+        import requests
+        orch = make_orchestrator(sdks={"alpha": "http://alpha"})
+        replies = []
+        for body in bodies:
+            response = requests.Response()
+            response.status_code = status
+            response._content = json.dumps(body).encode()
+            replies.append(response)
+        with mock.patch.object(test_runner.requests, "post", side_effect=replies), \
+                mock.patch.object(test_runner.requests, "put", return_value=mock.Mock()), \
+                mock.patch.object(test_runner.requests, "delete"):
+            outcome = orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+        return orch, outcome
+
+    def test_runner_propagates_refresh_and_set_data_context(self):
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        for action in ("refresh", "setData"):
+            for initial, updated, alias in ((real, {"experiments": []}, True),
+                                            ({"experiments": []}, real, False)):
+                with self.subTest(action=action, alias=alias):
+                    update_event = {"type": "refresh"}
+                    scenario = {"name": "context update", "contextData": initial, "steps": [
+                        {"action": action, "params": {"newData" if action == "refresh" else "data": updated},
+                         "expect": {"result": None, "events": [update_event]}},
+                        {"action": "treatment", "expect": {"events": [{"type": "exposure", "data": {"name": "e"}}]}}]}
+                    observations = []
+                    for unit in (None, ""):
+                        orch, result = self.run_scenario(scenario, [
+                            {"result": None, "events": [update_event]}, self.response({"id": 1, "name": "e", "unit": unit})])
+                        self.assertEqual(result["passed"], alias, result)
+                        observations.append(orch.step_observations[scenario["name"]]["alpha"][1])
+                    self.assertEqual(observations[0] == observations[1], alias)
+
+    def test_explicit_absent_nested_publish_is_scoped_and_units_stay_strict(self):
+        expected = {"events": [{"type": "publish", "unorderedUnits": True, "data": {
+            "units": [{"type": "session_id", "uid": "hashed-id"}],
+            "exposures": [{"id": 1, "unit": None}, {"id": 2, "unit": "session_id"}]}}]}
+        actual = {"events": [{"type": "publish", "data": {
+            "units": [{"type": "session_id", "uid": "hashed-id"}],
+            "exposures": [{"id": 1, "unit": ""}, {"id": 2, "unit": "session_id"}]}}]}
+        orch = make_orchestrator()
+        context = {"experiments": [{"id": 2, "name": "real", "unitType": "session_id"}]}
+        self.assertEqual(orch.validate_step(0, "publish", actual, expected, context_data=context), [])
+        canonical = json.loads(test_runner.observation_for_step("publish", actual, expected, context_data=context))
+        self.assertIsNone(canonical["events"][0]["data"]["exposures"][0]["unit"])
+        self.assertEqual(canonical["events"][0]["data"]["exposures"][1]["unit"], "session_id")
+        for key, invalid in (("type", None), ("type", ""), ("type", "wrong"),
+                             ("uid", None), ("uid", ""), ("uid", "wrong")):
+            broken = json.loads(json.dumps(actual))
+            broken["events"][0]["data"]["units"][0][key] = invalid
+            self.assertTrue(orch.validate_step(0, "publish", broken, expected, context_data=context), (key, invalid))
+        broken = json.loads(json.dumps(actual))
+        broken["events"][0]["data"]["exposures"][1]["unit"] = ""
+        self.assertTrue(orch.validate_step(0, "publish", broken, expected, context_data=context))
+
+    def test_unordered_observation_matches_exposure_identity_not_position(self):
+        expected = {"unorderedEvents": True, "events": [
+            {"type": "exposure", "data": {"id": 1, "unit": None}},
+            {"type": "exposure", "data": {"id": 2, "unit": "session_id"}}]}
+        def response(unit):
+            return {"events": [{"type": "exposure", "data": {"id": 2, "unit": "session_id"}},
+                               {"type": "exposure", "data": {"id": 1, "unit": unit}}]}
+        context = {"experiments": [{"id": 2, "name": "real", "unitType": "session_id"}]}
+        first = test_runner.observation_for_step("treatment", response(None), expected, context_data=context)
+        second = test_runner.observation_for_step("treatment", response(""), expected, context_data=context)
+        self.assertEqual(first, second)
+        wrong = response("")
+        wrong["events"][0]["data"]["unit"] = None
+        self.assertNotEqual(first, test_runner.observation_for_step("treatment", wrong, expected, context_data=context))
+        self.assertTrue(make_orchestrator().validate_step(0, "treatment", wrong, expected, context_data=context))
+
+    def test_failed_context_refresh_does_not_adopt_new_definitions(self):
+        # Scenario 229: a failed context loaded nothing, and refreshing it cannot load the
+        # real definition, so the experiment stays unknown (absent type, both aliases).
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        scenario = {"name": "failed context", "contextData": real, "steps": [
+            {"action": "createContextFailed", "params": {"units": {}}, "expect": {"events": []}},
+            {"action": "refresh", "params": {"newData": real}, "expect": {"events": []}},
+            {"action": "treatment", "expect": {"events": [{"type": "exposure", "data": {"name": "e"}}]}}]}
+        observations = []
+        for unit in (None, "", "session_id"):
+            orch, result = self.run_scenario(scenario, [
+                {"result": {"contextId": "c1"}, "events": []}, {"events": []},
+                self.response({"name": "e", "unit": unit})])
+            self.assertEqual(result["passed"], unit != "session_id", result)
+            observations.append(orch.step_observations[scenario["name"]]["alpha"][2])
+        self.assertEqual(observations[0], observations[1])
+        self.assertNotEqual(observations[0], observations[2])
+
+    def test_observations_use_the_matched_expected_exposure(self):
+        # The SDK reports only id 5, which the context does not define, so on its own
+        # the exposure looks unknown (absent type). Its matched expectation names the
+        # typed experiment, so observations must keep "" and null apart.
+        context = {"experiments": [{"name": "typed", "unitType": "session_id"}]}
+        for publish in (False, True):
+            def observe(unit):
+                exposure = {"id": 5, "unit": unit}
+                if publish:
+                    actual = {"events": [{"type": "publish", "data": {"exposures": [exposure]}}]}
+                    want = {"events": [{"type": "publish", "data": {"exposures": [{"id": 5, "name": "typed"}]}}]}
+                else:
+                    actual = {"events": [{"type": "exposure", "data": exposure}]}
+                    want = {"events": [{"type": "exposure", "data": {"id": 5, "name": "typed"}}]}
+                return test_runner.observation_for_step("treatment", actual, want, context_data=context)
+            with self.subTest(publish=publish):
+                self.assertNotEqual(observe(""), observe(None))
+
+    def test_an_unidentified_expectation_is_used_only_when_it_is_the_only_one(self):
+        self.assertEqual(test_runner._expected_exposure({"unit": ""}, [{"variant": 0}]), {"variant": 0})
+        self.assertEqual(test_runner._expected_exposure({"unit": ""}, [{"variant": 0}, {"variant": 1}]), {})
+
+    def test_creating_a_context_again_restores_its_definitions(self):
+        # After a failed context (no definitions) a new createContextWith loads the
+        # scenario's real session_id again, so "" is no longer an absent alias.
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        scenario = {"name": "recreate", "contextData": real, "steps": [
+            {"action": "createContextFailed", "params": {"units": {}}, "expect": {"events": []}},
+            {"action": "createContextWith", "params": {"units": {"session_id": "u"}}, "expect": {"events": []}},
+            {"action": "treatment", "expect": {"events": [{"type": "exposure", "data": {"name": "e"}}]}}]}
+        for unit, passed in (("session_id", True), ("", False), (None, False)):
+            with self.subTest(unit=unit):
+                _, result = self.run_scenario(scenario, [
+                    {"result": {"contextId": "c1"}, "events": []}, {"result": {"contextId": "c2"}, "events": []},
+                    self.response({"name": "e", "unit": unit})])
+                self.assertEqual(result["passed"], passed, result)
+
+    def test_malformed_expectations_do_not_raise(self):
+        actual = {"events": [{"type": "exposure", "data": {"name": "e", "unit": ""}},
+                             {"type": "publish", "data": {"exposures": [{"name": "e", "unit": ""}]}}]}
+        for expected in ({"events": [None]}, {"events": [1, None]}, {"events": None}, {"events": "x"},
+                         {"events": [{"type": "exposure"}]},
+                         {"events": [{"type": "publish", "data": {"exposures": None}}]},
+                         {"events": [{"type": "publish", "data": None}]}, {"events": [{"type": "exposure", "data": 5}]}):
+            with self.subTest(expected=expected):
+                self.assertIsInstance(test_runner.observation_for_step(
+                    "treatment", actual, expected, context_data={"experiments": []}), str)
+                self.assertIsInstance(make_orchestrator().validate_step(
+                    0, "treatment", actual, expected, context_data={"experiments": []}), list)
+
+    def test_http_failed_update_keeps_prior_context(self):
+        import requests
+        real = {"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}
+        for action in ("refresh", "setData"):
+            for initial, updated, alias in ((real, {"experiments": []}, False),
+                                            ({"experiments": []}, real, True)):
+                scenario = {"name": "failed update", "contextData": initial, "steps": [
+                    {"action": action, "params": {"newData" if action == "refresh" else "data": updated},
+                     "expect": {"error": "Update failed", "events": []}},
+                    {"action": "treatment", "expect": {"events": [{"type": "exposure"}]}}]}
+                orch = make_orchestrator(sdks={"alpha": "http://alpha"})
+                failed, success = requests.Response(), requests.Response()
+                failed.status_code, success.status_code = 500, 200
+                failed._content = json.dumps({"error": "Update failed", "events": []}).encode()
+                success._content = json.dumps(self.response({"id": 1, "name": "e", "unit": ""})).encode()
+                with mock.patch.object(test_runner.requests, "post", side_effect=[failed, success]):
+                    outcome = orch.run_and_validate_sdk("alpha", "http://alpha", scenario)
+                self.assertEqual(outcome["passed"], alias, (action, outcome))
+                observed = json.loads(orch.step_observations[scenario["name"]]["alpha"][1][1])
+                self.assertEqual(observed["events"][0]["data"]["unit"], None if alias else "")
+
+    def test_runner_error_observations_use_context_and_validate_aliases(self):
+        for context, alias in (({"experiments": []}, True),
+                               ({"experiments": [{"id": 1, "name": "e", "unitType": "session_id"}]}, False)):
+            for publish in (False, True):
+                observations = []
+                for unit in (None, ""):
+                    actual = self.response({"id": 1, "name": "e", "unit": unit}, publish)
+                    actual = {"error": "Publish failed", "events": actual["events"]}
+                    scenario = {"name": "error", "contextData": context, "steps": [
+                        {"action": "publish", "expect": {"error": "Publish failed", "events": [
+                            {"type": "publish" if publish else "exposure"}]}}]}
+                    orch, outcome = self.run_scenario(scenario, [actual], status=500)
+                    self.assertEqual(outcome["passed"], alias, outcome)
+                    observations.append(orch.step_observations["error"]["alpha"][0])
+                self.assertEqual(observations[0] == observations[1], alias)
+
+    def test_saved_reports_compare_new_contextual_observations(self):
+        cases = ((166, (None, ""), 0), (138, (None, ""), 1),
+                 (138, ("session_id", "session_id"), 0), (138, ("session_id", "wrong"), 1))
+        for number, units, expected_code, publish in (
+            (*case, publish) for case in cases for publish in (False, True)
+        ):
+            with self.subTest(number=number, units=units, publish=publish), tempfile.TemporaryDirectory() as tmp:
+                paths = []
+                for sdk, unit in zip(("alpha", "beta"), units):
+                    scenario = self.scenario(number)
+                    step = scenario["steps"][1]
+                    exposure = dict(step["expect"]["events"][0]["data"], unit=unit)
+                    ready = {"result": {**scenario["steps"][0]["expect"]["result"], "contextId": "c1"},
+                             "events": scenario["steps"][0]["expect"]["events"]}
+                    actual = {"result": step["expect"]["result"], "events": [{"type": "exposure", "data": exposure}]}
+                    if publish:
+                        scenario["steps"][1] = {"action": "publish", "expect": {"result": None, "events": [{"type": "publish"}]}}
+                        actual = self.response(exposure, publish=True)
+                    before = json.dumps([scenario, ready, actual])
+                    orch, outcome = self.run_scenario(scenario, [ready, actual])
+                    # Fresh observations come from the real runner, not hand-built
+                    # legacy JSON strings. A saved report is already normalized.
+                    orch.sdks = {sdk: "http://lane"}
+                    observations = orch.step_observations[scenario["name"]].pop("alpha")
+                    orch.step_observations[scenario["name"]][sdk] = observations
+                    orch.record_outcome(scenario["name"], sdk, "pass" if outcome["passed"] else "fail")
+                    orch.results = [{"name": scenario["name"], "sdks": {sdk: outcome}}]
+                    path = os.path.join(tmp, f"{sdk}.json")
+                    with quiet():
+                        orch.generate_report(path)
+                    paths.append(path)
+                    self.assertEqual(json.dumps([scenario, ready, actual]), before)
+                with quiet():
+                    self.assertEqual(test_runner.compare_reports(paths), expected_code)
+
+
 class ConsistencyTests(unittest.TestCase):
     def run_obs(self, orch, scenario, sdk, step, action, actual, expected):
         orch.record_outcome(scenario, sdk, "pass")
@@ -882,9 +1473,37 @@ class ConsistencyTests(unittest.TestCase):
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, units=[{"type": "u", "uid": "H"}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, goals=[{"name": "g", "properties": None}]), "publish"))
         self.assertNotEqual(obs("publish", base_pub, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": 1}]), "publish"))
+        # A null attribute value equals an omitted one (Jackson NON_NULL drops it); other values still differ.
+        null_attr = dict(base_pub, attributes=[{"name": "x", "value": None}])
+        self.assertEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_attr, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        # A null attribute value and an omitted one are the same (scenario 411: PHP/JS keep null, Java omits it); a
+        # null and a present value are not.
+        self.assertEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None, "setAt": 1}]), "publish"),
+                         obs("publish", dict(base_pub, attributes=[{"name": "v", "setAt": 2}]), "publish"))
+        self.assertNotEqual(obs("publish", dict(base_pub, attributes=[{"name": "v", "value": None}]), "publish"),
+                            obs("publish", dict(base_pub, attributes=[{"name": "v", "value": 0}]), "publish"))
+        # A null attribute value published explicitly or omitted is the same record; other values differ.
+        null_explicit = dict(base_pub, attributes=[{"name": "x", "value": None, "setAt": 1}])
+        null_omitted = dict(base_pub, attributes=[{"name": "x", "setAt": 2}])
+        self.assertEqual(obs("publish", null_explicit, "publish"), obs("publish", null_omitted, "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "x", "value": ""}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", dict(base_pub, attributes=[{"name": "y"}]), "publish"))
+        self.assertNotEqual(obs("publish", null_omitted, "publish"), obs("publish", base_pub, "publish"))
         ready = {"experiments": [{"id": 1, "name": "e"}]}
         self.assertNotEqual(obs("refresh", ready, "refresh"), obs("refresh", {"experiments": []}, "refresh"))
         self.assertNotEqual(obs("createContext", ready, "ready"), obs("createContext", {"experiments": [{"id": 2, "name": "e"}]}, "ready"))
+
+    def test_publish_attribute_null_value_matches_an_omitted_value(self):
+        # Java's Attribute is @JsonInclude(NON_NULL), so it omits a null value
+        # that JS and Dart send; the two are the same observation. A real
+        # value still differs from null.
+        def obs(attribute):
+            data = {"hashed": True, "units": [], "attributes": [attribute]}
+            return test_runner.observation_for_step("publish", {"result": None, "events": [{"type": "publish", "data": data}]}, {})
+
+        self.assertEqual(obs({"name": "x", "value": None}), obs({"name": "x"}))
+        self.assertNotEqual(obs({"name": "x", "value": None}), obs({"name": "x", "value": 0}))
 
     def test_error_response_events_observed(self):
         orch = make_orchestrator(sdks={"a": "", "b": "", "c": ""})
@@ -959,6 +1578,56 @@ class ConsistencyTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         compare.assert_called_once_with(["a.json", "b.json"], "out.json", ["javascript", "python", "go"])
 
+    def test_hyphenated_lanes_map_to_an_agent_language(self):
+        """A lane named <lang>-<suffix> (e.g. swift-v1) sends X-Agent absmartly-<lang>-sdk/..., so the
+        X-Agent scenarios need SDK_AGENT_LANGUAGE to map it, or they fail with `{lang}` = the lane."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            matrix = json.loads(re.search(r"matrix='(.*?)'", src.read(), re.DOTALL).group(1))
+        for lane in matrix["include"]:
+            if "-" in lane["sdk"]:
+                with self.subTest(lane=lane["sdk"]):
+                    self.assertEqual(test_runner.SDK_AGENT_LANGUAGE[lane["sdk"]],
+                                     ("dart" if lane["sdk"] == "flutter-v2" else lane["sdk"].split("-", 1)[0]))
+
+    def test_lane_checkouts_resolve_through_sdk_repo_sources(self):
+        """Checkout dirs that are not repo names (java-sdk-v1, swift-sdk-v1) are cloned through
+        SDK_REPO_SOURCES in both CI and setup-sdks.sh; and every lane repo has a pin."""
+        with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
+            workflow = src.read()
+        with open(os.path.join(REPO_ROOT, "setup-sdks.sh")) as src:
+            setup = src.read()
+        with open(os.path.join(REPO_ROOT, "sdk-checkout.sh")) as src:
+            self.assertIn('source_repo="${SDK_REPO_SOURCES[$repo]:-$repo}"', src.read())
+        self.assertEqual(workflow.count('checkout_sdk "$repo"'), 2)
+        self.assertEqual(setup.count('https://github.com/absmartly/${SDK_REPO_SOURCES[$1]:-$1}.git'), 1)
+        self.assertEqual(setup.count('url=$(sdk_url "$repo")'), 2)
+        matrix = json.loads(re.search(r"matrix='(.*?)'", workflow, re.DOTALL).group(1))
+        pins = self.sdk_pins("SDK_BRANCHES")
+        for lane in matrix["include"]:
+            for repo in lane["repos"].split():
+                with self.subTest(repo=repo):
+                    self.assertIn(repo, pins)
+        self.assertEqual(self.sdk_pins("SDK_REPO_SOURCES"),
+                         {"java-sdk-v1": "java-sdk", "swift-sdk-v1": "swift-sdk", "flutter-sdk-v2": "flutter-sdk"})
+
+    @staticmethod
+    def sdk_pins(name):
+        """An associative array as sdk-branches.sh defines it (sourced by bash)."""
+        script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+        out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+        return dict(line.split("=", 1) for line in out.splitlines() if line)
+
+    def test_swift_v1_lane_is_pinned_to_an_immutable_1x_ref(self):
+        """swift-sdk main becomes 2.0 when swift-sdk#13 merges, so the 1.x lane must never track main:
+        it is pinned to a full commit SHA (SDK_REVISIONS), a v1.* tag, or a release/1.* branch."""
+        revision = self.sdk_pins("SDK_REVISIONS").get("swift-sdk-v1")
+        branch = self.sdk_pins("SDK_BRANCHES").get("swift-sdk-v1")
+        self.assertIsNotNone(branch, "swift-sdk-v1 has no pin, so CI would fall back to main")
+        if revision is not None:
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+        else:
+            self.assertRegex(branch, r"^(?:v1\.[0-9.]+|release/1\.[0-9x.]*)$")
+
     def test_workflow_compares_every_lane(self):
         with open(os.path.join(REPO_ROOT, ".github", "workflows", "cross-sdk.yml")) as src:
             text = src.read()
@@ -969,8 +1638,8 @@ class ConsistencyTests(unittest.TestCase):
         self.assertIn('--expected-sdks "$EXPECTED_SDKS"', text)
         self.assertIn("needs: [harness, cross-sdk]", text)
         matrix = json.loads(re.search(r"matrix='(.*?)'", text, re.DOTALL).group(1))
-        self.assertEqual(len(matrix["include"]), 20)
-        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 20)
+        self.assertEqual(len(matrix["include"]), 24)
+        self.assertEqual(len({lane["sdk"] for lane in matrix["include"]}), 24)
 
     def test_data_results_compared_whole(self):
         a = test_runner.observation_for_step("getUnits", {"result": {"u": 1}, "events": []}, {"result": {"u": 1}})
@@ -1126,6 +1795,222 @@ class StaticRepoChecks(unittest.TestCase):
         with open(SCENARIOS_PATH) as src:
             return len(json.load(src))
 
+    # Scenarios 400 and 403 check the wrapper-wide error envelope, so every error response the handler
+    # builds must carry `events`.
+    SWITCHBACK_HANDLERS = {
+        "javascript-wrapper/server.js": ("function switchbackCall(", "\n}\n", "error:"),
+        "python-wrapper/server.py": ("def _switchback_call(", "\n\n\n", "'error'"),
+        "go-wrapper/switchback.go": ("func writeSwitchbackError(", "\n}\n", '"error"'),
+        "php-wrapper/server.php": ("$path === '/switchback/assign'", "\n    }\n", "'error'"),
+        "dotnet-wrapper/Program.cs": ("async Task<IResult> SwitchbackCall(", "\n}\n", "error ="),
+        "rust-wrapper/src/main.rs": ("fn switchback_response(", "\n}\n", '"error"'),
+        "ruby-wrapper/server.rb": ("halt 501, { error: 'linked SDK has no switchback assigner'", "\n", "error:"),
+        "dart-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        "flutter-wrapper/server.dart": ("Future<shelf.Response> switchbackCall(", "\n  }\n", "'error'"),
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp send_error(", "\n  end\n", "error:"),
+        "cpp-wrapper/server.cpp": ("static json make_error_response(", "\n}\n", '"error"'),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private static Map<String, Object> errorBody(", "\n    }\n", '"error"'),
+    }
+    HELPER_EVENTS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": r"%\{error: message, events: events\}",
+        "cpp-wrapper/server.cpp": r'json\{\{"error", error\}, \{"events", ',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": r'body\.put\("events", events\);',
+    }
+    SWITCHBACK_ERROR_HELPERS = {
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": ("defp switchback_call(", "send_error(conn"),
+        "cpp-wrapper/server.cpp": ("const auto switchback_endpoint = ", "make_error_response("),
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+        "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java": (
+            "private ResponseEntity<?> switchbackCall(", ".body(errorBody("),
+    }
+
+    def test_switchback_handlers_build_errors_through_their_helper(self):
+        for path, (start, helper) in self.SWITCHBACK_ERROR_HELPERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                body = text[text.index(start):][:2500]
+                self.assertIn(helper, body)
+
+    def test_switchback_error_responses_carry_events(self):
+        for path, (start, end, marker) in self.SWITCHBACK_HANDLERS.items():
+            with self.subTest(path=path):
+                with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                    text = src.read()
+                self.assertIn(start, text)
+                body = text[text.index(start):]
+                body = body[:body.index(end) + len(end)]
+                errors = [line for line in body.splitlines() if marker in line]
+                self.assertTrue(errors, "no error response found")
+                if path in self.SWITCHBACK_ERROR_HELPERS:
+                    self.assertRegex(body, self.HELPER_EVENTS[path])
+                    continue
+                for line in errors:
+                    self.assertIn("events", line)
+
+    INTEGRAL_FLOAT_SOURCES = {
+        "ruby-wrapper/server.rb": "integralFloatAttributes: SwitchbackSelfTest.switchback?",
+        "python-wrapper/server.py": "'integralFloatAttributes': switchback_self_test.run()",
+        "php-wrapper/server.php": "'integralFloatAttributes' => SwitchbackSelfTest::run()",
+        "go-wrapper/server.go": '"integralFloatAttributes": switchbackSupported()',
+        "rust-wrapper/src/main.rs": '"integralFloatAttributes": tokio::task::block_in_place(state.switchback_probe)',
+        "cpp-wrapper/server.cpp": '{"integralFloatAttributes", switchback_self_test::switchback()}',
+        "elixir-wrapper/lib/elixir_wrapper/router.ex": "integralFloatAttributes: ElixirWrapper.SwitchbackSelfTest.switchback?()",
+        "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java":
+            'response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());',
+        "dart-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
+        "flutter-wrapper/server.dart": "'integralFloatAttributes': integralFloat,",
+        "dotnet-wrapper/Program.cs": "integralFloatAttributes = SwitchbackSelfTest.RunIntegralFloat(),",
+    }
+    INTEGRAL_FLOAT_PROBES = {
+        "ruby-wrapper/switchback_self_test.rb": "expect_served(context, log, 'float value', 'sb_float_value', 0)",
+        "python-wrapper/switchback_self_test.py": "'sb_whole_float', 0",
+        "php-wrapper/SwitchbackSelfTest.php": "'sb_integral_float', 0",
+        "go-wrapper/switchback.go": '"sb_float_value"',
+        "rust-wrapper/src/switchback_self_test.rs": '"sb_float_number", 0',
+        "cpp-wrapper/switchback_self_test.h": '"sb_float_value", 0',
+        "elixir-wrapper/lib/elixir_wrapper/switchback_self_test.ex": '"sb_float_value", 0',
+        "java-wrapper/src/main/java/com/absmartly/wrapper/SwitchbackSelfTest.java": '"integral float", "sb_float", 0',
+        "dart-wrapper/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
+        "flutter-wrapper/lib/switchback_self_test.dart": "expectServed('integral float', 'sb_integral_float', 0)",
+        "dotnet-wrapper/SwitchbackSelfTest.cs": '"integral float", "sb_integral_float", 0',
+    }
+    # The cached capability must gate the integral-float probe on the real switchback
+    # battery, not on a stub that always passes.
+    INTEGRAL_FLOAT_WIRING = {
+        "dotnet-wrapper/SwitchbackSelfTest.cs": "IntegralFloatResult = new(() => RunIntegralFloatAfter(Run));",
+        "dart-wrapper/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
+        "flutter-wrapper/lib/switchback_self_test.dart": "_integralFloat ??= runIntegralFloatAfter(runSwitchback);",
+    }
+
+    def test_integral_float_attributes_comes_from_the_switchback_self_test(self):
+        policy = test_runner.load_capability_policy()
+        requiring = {sdk for sdk, e in policy["sdks"].items() if "integralFloatAttributes" in e["required"]}
+        paths = {path.split("-wrapper/")[0] for path in self.INTEGRAL_FLOAT_SOURCES}
+        self.assertEqual(requiring - {"java-v1"}, paths)
+        for table in (self.INTEGRAL_FLOAT_SOURCES, self.INTEGRAL_FLOAT_PROBES, self.INTEGRAL_FLOAT_WIRING):
+            for path, needle in table.items():
+                with self.subTest(path=path):
+                    with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as src:
+                        self.assertIn(needle, src.read())
+
+    def test_java_wrapper_publishes_over_http_only_with_publish_to_endpoint(self):
+        """An endpoint that serves the context (the context server, 270-274) need not accept a publish, so
+        java-sdk 2.0's wrapper sends the SDK's own PUT only when a scenario sets publishToEndpoint."""
+        path = os.path.join(REPO_ROOT, "java-wrapper", "src", "main", "java", "com", "absmartly", "wrapper",
+                            "WrapperController.java")
+        with open(path, encoding="utf-8") as src:
+            text = src.read()
+        construction = re.search(r"new WrapperTransport\(fetchOverHttp, ([^,]+),", text)
+        self.assertIsNotNone(construction)
+        self.assertEqual(construction.group(1).strip(), "publishToEndpoint")
+
+    def test_php_shared_variable_keys_uses_a_probe_and_both_wrapper_tests_gate_the_build(self):
+        with open(os.path.join(REPO_ROOT, "php-wrapper", "server.php"), encoding="utf-8") as src:
+            server = src.read()
+        self.assertIn("require __DIR__ . '/SharedVariableKeysSelfTest.php';", server)
+        self.assertIn("'sharedVariableKeys' => SharedVariableKeysSelfTest::run()", server)
+        with open(os.path.join(REPO_ROOT, "php-wrapper", "Dockerfile"), encoding="utf-8") as src:
+            dockerfile = src.read()
+        copy = "COPY cross-sdk-tests/php-wrapper /app"
+        self.assertIn(copy, dockerfile)
+        for name in ("switchback_self_test_test.php", "shared_variable_keys_self_test_test.php"):
+            with self.subTest(test=name):
+                gate = f"RUN php {name} /app/vendor/autoload.php"
+                self.assertIn(gate, dockerfile.splitlines())
+                self.assertLess(dockerfile.index(copy), dockerfile.index(gate))
+
+    def test_python_dockerfile_copies_every_local_module_the_server_imports(self):
+        wrapper = os.path.join(REPO_ROOT, "python-wrapper")
+        local = {name[:-3] for name in os.listdir(wrapper) if name.endswith(".py") and not name.startswith("test_")}
+        with open(os.path.join(wrapper, "server.py"), encoding="utf-8") as src:
+            imported = set(re.findall(r"^(?:import|from) (\w+)", src.read(), re.M)) & local
+        with open(os.path.join(wrapper, "Dockerfile"), encoding="utf-8") as src:
+            dockerfile = src.read()
+        self.assertTrue(imported)
+        for module in sorted(imported):
+            with self.subTest(module=module):
+                self.assertIn(f"cross-sdk-tests/python-wrapper/{module}.py", dockerfile)
+
+    # What each lane must build this round (sdk-branches.sh). A pin that moves back to `main` before its
+    # SDK PR merges would silently drop the lane's holdouts/switchback coverage; update this table in
+    # the change that re-pins.
+    EXPECTED_PINS = {
+        "flutter-sdk-v2": ("main", "5390f0bb9b6825785c0fc3cf3e783acc6a909dcf"),
+        "cpp-sdk": ("feat/switchbacks", "52125e0c02b817f92818038fd052497c30866f1a"),
+        "dotnet-sdk": ("main", "31fb143461498521d7f583f0689db90443c41066"),
+        "elixir-sdk": ("feat/switchbacks", None),
+        "flutter-sdk": ("feat/switchbacks", None),
+        "go-sdk": ("feat/switchbacks", None),
+        "java-sdk": ("next/major", None),
+        "java-sdk-v1": ("v1.9.0", None),
+        "javascript-sdk": ("main", "95fe105b3a1855b2bba37171c2d4cdd212ab8c4f"),
+        "php-sdk": ("feat/switchbacks", None),
+        "python3-sdk": ("feat/switchbacks", None),
+        "ruby-sdk": ("feat/switchbacks", None),
+        "rust-sdk": ("feat/switchbacks", None),
+        "swift-sdk": ("main", "d58e2f17eb2e1e920b2067ae0db6f7b7ae0d71fd"),
+        "swift-sdk-v1": ("main", "f64883ceb755aaf94443465f0d4d2da6555d8a7a"),
+    }
+
+    def test_flutter_v2_collector_and_unit_registration(self):
+        import yaml
+        with open(os.path.join(REPO_ROOT, ".github/workflows/cross-sdk.yml")) as src:
+            workflow = yaml.safe_load(src)
+        collector_sdks = workflow["jobs"]["local-collector-gate"]["strategy"]["matrix"]["sdk"]
+        with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
+            services = yaml.safe_load(src)["services"]
+        with open(os.path.join(REPO_ROOT, "docker-compose.local-collector.yml")) as src:
+            overrides = yaml.safe_load(src)["services"]
+        for lane in ("dart-v2", "flutter-v2"):
+            with self.subTest(lane=lane):
+                self.assertIn(lane, collector_sdks)
+                self.assertIn(lane + "-sdk", services["orchestrator"]["depends_on"])
+                self.assertIn("ABSMARTLY_E2E_ENDPOINT=http://local-collector:8090/v1",
+                              overrides[lane + "-sdk"]["environment"])
+                self.assertEqual(results_aggregator.parse_unit_test_output(
+                    lane, "00:08 +17: All tests passed!"), (17, 0, 17))
+
+    def test_flutter_v2_compatibility_lanes_remain_separate(self):
+        policy = test_runner.load_capability_policy()
+        for lane in ("dart", "flutter"):
+            with self.subTest(lane=lane):
+                self.assertIn("switchback", policy["sdks"][lane]["required"])
+                compat = policy["sdks"][lane + "-v2"]
+                for capability in ("holdouts", "holdout_arms", "switchback"):
+                    self.assertIn(capability, compat["unsupported"])
+                self.assertIn("sharedVariableKeys", compat["required"])
+                with open(os.path.join(REPO_ROOT, "docker-compose.yml")) as src:
+                    self.assertIn(lane + "-v2-unit:", src.read())
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "pubspec.yaml")) as src:
+                    manifest = src.read()
+                self.assertIn("../../flutter-sdk-v2/packages/", manifest)
+                self.assertNotIn("../../flutter-sdk/packages/", manifest)
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "server.dart")) as src:
+                    wrapper = src.read()
+                for method in ("setUnitValues", "getUnitValue", "getUnitValues"):
+                    self.assertIn(method, wrapper)
+                with open(os.path.join(REPO_ROOT, lane + "-v2-wrapper", "Dockerfile")) as src:
+                    self.assertIn("COPY flutter-sdk-v2/", src.read())
+
+    def test_round_pins_match_the_expected_table(self):
+        def pins(name):
+            script = f'source sdk-branches.sh; for k in "${{!{name}[@]}}"; do printf "%s=%s\\n" "$k" "${{{name}[$k]}}"; done'
+            out = subprocess.run(["bash", "-c", script], cwd=REPO_ROOT, capture_output=True, text=True,
+                                 check=True).stdout
+            return dict(line.split("=", 1) for line in out.splitlines() if line)
+        branches, revisions = pins("SDK_BRANCHES"), pins("SDK_REVISIONS")
+        for repo, (branch, revision) in self.EXPECTED_PINS.items():
+            with self.subTest(repo=repo):
+                self.assertEqual(branches.get(repo), branch)
+                self.assertEqual(revisions.get(repo), revision)
+        self.assertEqual(set(revisions), {r for r, (_, rev) in self.EXPECTED_PINS.items() if rev})
+
     def test_readme_scenario_count(self):
         with open(os.path.join(REPO_ROOT, "README.md")) as src:
             counts = {int(n) for n in re.findall(r"\*\*(\d+) scenarios\*\*", src.read())}
@@ -1137,15 +2022,18 @@ class StaticRepoChecks(unittest.TestCase):
         self.assertEqual(counts, {self.scenario_count()})
 
     WRAPPER_CAPABILITY_FILES = {
+        "dart-v2": "dart-v2-wrapper/server.dart",
+        "flutter-v2": "flutter-v2-wrapper/server.dart",
         "javascript": "javascript-wrapper/server.js", "react": "react-wrapper/server.js",
         "vue2": "vue2-wrapper/server.js", "vue3": "vue3-wrapper/server.js",
         "angular": "angular-wrapper/server.js", "python": "python-wrapper/server.py",
         "ruby": "ruby-wrapper/server.rb", "liquid": "liquid-wrapper/server.rb",
         "php": "php-wrapper/server.php", "go": "go-wrapper/server.go", "rust": "rust-wrapper/src/main.rs",
         "java": "java-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
+        "java-v1": "java-v1-wrapper/src/main/java/com/absmartly/wrapper/WrapperController.java",
         "kotlin": "kotlin-wrapper/src/main/kotlin/com/absmartly/wrapper/Application.kt",
         "scala": "scala-wrapper/src/main/scala/com/absmartly/wrapper/Server.scala",
-        "swift": "swift-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
+        "swift": "swift-wrapper/Sources/App/routes.swift", "swift-v1": "swift-v1-wrapper/Sources/App/routes.swift", "dart": "dart-wrapper/server.dart",
         "flutter": "flutter-wrapper/server.dart", "dotnet": "dotnet-wrapper/Program.cs",
         "cpp": "cpp-wrapper/server.cpp", "elixir": "elixir-wrapper/lib/elixir_wrapper/router.ex",
     }
@@ -1153,7 +2041,7 @@ class StaticRepoChecks(unittest.TestCase):
     def test_every_wrapper_names_its_required_capabilities(self):
         """Cheap static check before the Docker lanes: each wrapper's /capabilities source names every
         capability the policy requires of it, so adding a required capability to the policy without
-        the wrappers fails here rather than in all 20 lanes. `measuredCapabilities` are exempt: the
+        the wrappers fails here rather than in all lanes. `measuredCapabilities` are exempt: the
         orchestrator measures them and drops any value a wrapper reports."""
         policy = test_runner.load_capability_policy()
         measured = set(policy.get("measuredCapabilities") or [])
@@ -1202,12 +2090,25 @@ class StaticRepoChecks(unittest.TestCase):
                 requires = set(s.get("requires", []))
                 if requires & gated_elsewhere:
                     continue
+                finalized = False
+                setter_after_finalize = False
                 for st in s["steps"]:
+                    if st["action"].startswith("createContext"):
+                        finalized = False  # later steps go to the new context
+                    finalized = finalized or st["action"] == "finalize"
                     expect = st["expect"]
                     messages = [expect[k] for k in error_keys if k in expect]
                     flat = " ".join(m if isinstance(m, str) else " ".join(m) for m in messages).lower()
                     if misuse.search(flat):
-                        self.assertIn("throwsOnMisuse", requires, s["name"])
+                        if finalized and st["action"] in ("attribute", "setUnit"):
+                            # A setter after finalize has its own, narrower gate.
+                            setter_after_finalize = True
+                            self.assertIn("rejectsSettersAfterFinalize", requires, s["name"])
+                        else:
+                            self.assertIn("throwsOnMisuse", requires, s["name"])
+                if "rejectsSettersAfterFinalize" in requires:
+                    # The narrow gate skips a whole scenario, so it must only gate one that tests such a setter.
+                    self.assertTrue(setter_after_finalize, s["name"])
 
     def test_scenario_names_are_numbered_and_unique(self):
         with open(SCENARIOS_PATH) as src:
@@ -1474,7 +2375,7 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
     def test_parity_generator_rejects_a_scenario_in_its_range(self):
         import generate_parity_round_scenarios as parity
         existing = self.load()
-        intruder = dict(existing[0], name="345 - Somebody Else - Appended Into The Parity Range")
+        intruder = dict(existing[0], name="335 - Somebody Else - Appended Into The Parity Range")
         with self.assertRaises(SystemExit):
             parity.assemble(existing + [intruder], self.rebuilt(existing, self.PARITY))
 
@@ -1485,6 +2386,16 @@ class ScenarioGeneratorsCoexistTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             parity.assemble(existing, lambda: [s for s in existing if any(m in s["name"] for m in self.PARITY)]
                             + [grown])
+
+    def test_holdout_conformance_generator_rejects_a_scenario_in_its_range(self):
+        import generate_holdout_conformance_scenarios as holdout_conformance
+        markers = (scenario_groups.HOLDOUT_CONFORMANCE,)
+        existing = self.load()
+        updated, _ = holdout_conformance.assemble(existing, self.rebuilt(existing, markers))
+        self.assertEqual(updated, existing)
+        intruder = dict(existing[0], name="505 - Somebody Else - Numbered Inside The Holdout Conformance Range")
+        with self.assertRaises(SystemExit):
+            holdout_conformance.assemble(existing + [intruder], self.rebuilt(existing, markers))
 
     def test_parity_generator_keeps_the_switchback_group_after_it(self):
         import generate_parity_round_scenarios as parity

@@ -8,14 +8,22 @@ across languages.
 
 ## What's here
 
-- **20 SDK wrappers** — one HTTP service per SDK, each in a `<sdk>-wrapper/`
+- **24 SDK wrappers** — one HTTP service per SDK lane, each in a `<sdk>-wrapper/`
   directory:
 
   `javascript`, `react`, `angular`, `vue2`, `vue3`, `python`,
-  `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `kotlin`, `scala`, `swift`,
-  `dart`, `flutter`, `dotnet`, `cpp`, `elixir`.
+  `ruby`, `liquid`, `php`, `go`, `rust`, `java`, `java-v1`, `kotlin`, `scala`, `swift`,
+  `swift-v1`, `dart`, `flutter`, `dart-v2`, `flutter-v2`, `dotnet`, `cpp`, `elixir`.
 
-- **310 scenarios** in `test_scenarios_complete.json`. Each scenario is a
+  `swift` wraps swift-sdk 2.x (`feat/swift-2.0` until it merges, then `main`); `swift-v1` wraps
+  the 1.x maintenance line (pinned to a 1.x commit, swift-sdk#12's holdouts head, until
+  `release/1.x` exists, built from a `swift-sdk-v1/` checkout) for its 12-month support window.
+
+  `java` runs java-sdk 2.x and `java-v1` runs the 1.x maintenance line (the
+  `java-sdk-v1` pin in `sdk-branches.sh`), so both majors keep passing the
+  contract while 1.x is supported.
+
+- **347 scenarios** in `test_scenarios_complete.json`. Each scenario is a
   `contextData` payload plus a list of `steps` (an action and its expected
   result/events). Scenarios with no executable steps are skipped by the
   orchestrator.
@@ -32,9 +40,10 @@ across languages.
   `requires` name the policy does not declare all fail closed. A wrapper that
   starts advertising an excepted capability also fails the run until the
   policy moves it to `required`. Scenarios 203-208 require the `holdouts`
-  capability. Only javascript is currently required to support it (its wrapper
-  reports it from a behavioral self-test, so a failing self-test fails the
-  javascript lane). The other SDKs list it as a reviewed exception. Scenario
+  capability. The SDKs that must support it are listed under `required` in
+  `orchestrator/expected-capabilities.json`; their wrappers report it from a
+  behavioral self-test, so a failing self-test fails the lane. The other SDKs
+  list it as a reviewed exception. Scenario
   209 (holdout wire-format inertness) is deliberately
   ungated: it must pass on every SDK, holdout-aware or not. Scenarios 214-220
   require the `holdout_arms` capability and are skipped by SDKs that have not
@@ -53,7 +62,7 @@ across languages.
   `refresh()` on a context whose load failed is a successful no-op (no fetch,
   no event, still failed).
 
-  Scenarios 400-420 and 422-425 (Switchback) require the `switchback`
+  Scenarios 400-420 and 422-426 (Switchback) require the `switchback`
   capability and scenario 421 (switchback wire-format inertness) is ungated, so
   it runs on every SDK. They test the
   R33 cluster-defined switchback contract: an experiment names, in an ordered
@@ -62,8 +71,13 @@ across languages.
   with a value serves the raw value as the cluster key of
   `assignSwitchback(key, floorDiv(now - switchbackStartAt, switchbackPeriodMs),
   seed, arms)`. The Collector serves it (absmartly/abs#5801) and java-sdk
-  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`); java is the only
-  capable SDK, and every other SDK lists `switchback` as a reviewed exception.
+  implements it (absmartly/java-sdk#15, `SWITCHBACK.md`). The SDKs required to
+  support it are listed under `required` in `orchestrator/expected-capabilities.json`;
+  each of their wrappers (java aside) reports it from a behavioral self-test, and
+  every other SDK lists `switchback` as a reviewed exception. Scenario 426 (an
+  attribute of `3.0` gives no value) also requires `integralFloatAttributes`:
+  JavaScript parses `3.0` as `3`, so the JavaScript lanes list it as a reviewed
+  exception (owner decision 2026-11-17).
   The group owns 400+ (`SWITCHBACK_FIRST_NUMBER` in `scenario_groups.py`), after
   the feature-parity range.
 
@@ -75,7 +89,7 @@ across languages.
   | agreeing units serve | 408 |
   | disagreeing units: control, no exposure | 409 |
   | a unit without a value is skipped | 410 |
-  | strings and whole numbers (decimal text) only; floats, booleans, objects, arrays, `""`, null give no value | 411 |
+  | strings and whole numbers (decimal text) only; fractions, booleans, objects, arrays, `""`, null give no value | 411 |
   | every `attribute-path-cases.json` case; `.` in any segment, misplaced indices, unterminated quotes are malformed | 412 |
   | `switchbackClusterValues`: in, out, null, `[]` | 413 |
   | pre-anchor, unaligned anchor, no anchor, zero period, one arm: silent control | 414 |
@@ -90,6 +104,7 @@ across languages.
   | `peek`, `peekVariableValue`, `variableValue` resolve the cluster draw; only exposing calls expose | 423 |
   | a switchback with a covering holdout and an assign rule: the rule wins (`ruleOverride=true`), the holdout is never consulted and records no exposure | 424 |
   | three sources declared in non-alphabetical JSON order: the declared order serves, not a sorted or unordered map | 425 |
+  | an integral float (`3.0`) gives no value (also `integralFloatAttributes`) | 426 |
 
   Grids keep "now" inside one known period until 2069, so no clock control is
   needed. The group is generated by `generate_switchback_scenarios.py` from
@@ -105,8 +120,45 @@ across languages.
   scenarios. Run `python3 generate_switchback_scenarios.py --rules` to print
   this map and the mutant results.
 
-  The java lane pins `java-sdk` to `main` in `sdk-branches.sh`, which carries
-  switchback (java-sdk#15) and the feature-parity round (java-sdk#22).
+  The java lane pins `java-sdk` to `next/major` (java-sdk 2.0) in
+  `sdk-branches.sh`, which carries switchback (java-sdk#15) and the
+  feature-parity round (java-sdk#22). The java-v1 lane pins the 1.x line to
+  `v1.9.0`, which predates switchback, so it lists switchback as unsupported
+  until `release/1.x` is cut from main.
+  The go lane pins `go-sdk` to its switchback branch (`feat/switchbacks`) until
+  it merges. The go wrapper decodes attribute values with `UseNumber`, so a
+  JSON integer reaches the SDK as an integer and `3.0` as a float (scenario
+  411), and advertises `switchback` from a behavioural self-test
+  (`go-wrapper/switchback.go`) that fails closed on a sorted cluster map.
+
+  Scenarios 501-507 (Holdout Conformance, H2-H8) add the holdout cases every
+  SDK holdout port must agree on, beyond 203-227 and 305. They require
+  `holdouts`. Their expectations are
+  recorded from the javascript-sdk reference by
+  `generate_holdout_conformance_scenarios.py`, and
+  `orchestrator/tests/test_holdout_conformance_scenarios.py` replays them with
+  an independent model and checks that each wrong implementation below fails
+  its scenario.
+
+  | Rule | Scenario | Mutant it catches |
+  | --- | --- | --- |
+  | a holdout with an empty or missing `split` is ignored | 501 | splitless holdout applies |
+  | a same-iteration seed or split edit neither re-randomizes nor re-exposes | 502 | arm redrawn (for an experiment first evaluated after the edit too), or covered experiments re-resolved, on a seedHi or split edit |
+  | `peek` queues no holdout exposure | 503 | peek fires holdouts |
+  | unknown fields in a holdout entry, and experiment-only fields (traffic, audience, full-on), are ignored | 504 | full-on applied to a holdout |
+  | one holdout over two unit types: two exposures, one arm per unit type | 505 | arm cached per holdout id |
+  | a strict audience mismatch on a covered, not-held-out experiment still fires the holdout | 506 | mismatch skips holdouts |
+  | shared variable key: a suppressed first candidate loses to an assigned one, and both holdouts fire | 507 | suppressed wins; only the winner fires |
+
+  507's `variableValue` queues three exposures whose order differs between the
+  reference SDKs (javascript-sdk queues each candidate's own exposure before its
+  holdouts, java-sdk every visited candidate's holdouts first); the order is not
+  part of the contract, so that step sets `unorderedEvents: true` and the
+  harness matches its events one-to-one in any order.
+
+  The plan's H1 (a repeated `holdoutIds` entry) is not a contract case: the
+  backend never sends a holdout id twice, so no scenario pins it and 500 is
+  left unused.
 
   Scenarios 230-253 pin the
   2026-11 SDK round's reference-aligned behaviours (see
@@ -170,6 +222,34 @@ across languages.
   advertised on create and refresh, br served and decoded). How they are
   measured and gated, and what each SDK sends and decodes (with a Brotli survey):
   [docs/context-fetch-compression.md](docs/context-fetch-compression.md).
+  Scenarios 340-368 (Shared Variable Key, `requires: sharedVariableKeys`) pin
+  how `variableValue` and `peekVariableValue` pick an experiment when several
+  define the same key, as java-sdk's `Context.getVariableAssignment`: candidates
+  in ascending experiment id (not payload order); the first assigned, overridden
+  or rule-won candidate wins even if its variant lacks the key (the default is
+  returned, later candidates are not tried); otherwise the first
+  holdout-suppressed candidate serves control; otherwise the default, with no
+  exposure. A candidate that is not assigned (strict audience mismatch, no unit,
+  a custom assignment on a strict mismatch, a switchback with no linked unit)
+  never leaks its control value; a traffic-excluded or non-strict mismatched
+  unit is assigned and does win. The group also covers overrides to control,
+  full-on, holdouts (also `holdouts`), switchbacks (also `switchback`), reads
+  agreeing with `treatment`/`variableKeys`, re-evaluation after `setAttribute`,
+  a refresh removing the winner and a JSON `null` value. Expectations are
+  recorded from the java-sdk wrapper by `generate_shared_variable_key_scenarios.py`
+  and replayed in CI against a Python model and 19 wrong models
+  (`orchestrator/tests/test_shared_variable_key_scenarios.py`; `--replay` prints
+  the per-mutant kill counts locally).
+  java, java-v1, kotlin, dart, dart-v2, flutter, flutter-v2 and dotnet require the capability (dotnet from
+  dotnet-sdk 1.4.1, [dotnet-sdk#17](https://github.com/absmartly/dotnet-sdk/pull/17),
+  merged; the lane is pinned to the dotnet-sdk#16 merge commit 31fb143 on `main`), and so do
+  javascript, react, vue2, vue3 and angular, which build javascript-sdk
+  [#69](https://github.com/absmartly/javascript-sdk/pull/69) (merged) pinned at its merge commit 95fe105
+  and report it from a behavioral self-test (`sharedVariableKeysSelfTest.js`).
+  PHP also requires it, measured by `php-wrapper/SharedVariableKeysSelfTest.php` against the shipped PHP 1.2.0
+  winner-only behavior and the additive 1.3.0 switchbacks branch. Its image build runs mutation regressions for
+  both peek and consuming-read values, exposures, and pending counts. Scenario 343 still skips PHP because
+  it also requires `variableKeysMap`. Every other SDK lists a reviewed exception naming its divergence.
 
 - **An orchestrator** (`orchestrator/test_runner.py`) that talks to each wrapper
   over HTTP and validates responses against the expected results baked into the
@@ -182,7 +262,8 @@ across languages.
   and `pip install -r orchestrator/requirements-test.txt`, which adds the
   test-only `brotli` pin); CI runs them in `harness-unit-tests` next to `tests/`.
   The java wrapper's switchback endpoint tests run inside the wrapper's
-  `builder` image stage with `gradle test`.
+  `builder` image stage with `gradle test`; the rust wrapper's self-test unit
+  tests run with `cargo test` in `rust-wrapper/`.
 
 - **A live-backend e2e runner** (`orchestrator/e2e_runner.py`) that drives the
   wrappers against a real ABsmartly environment and verifies data arrives.
@@ -287,7 +368,45 @@ pip install -r orchestrator/requirements-test.txt
 python3 -m unittest discover -s tests -v
 ```
 
-## E2E mode (live collector)
+## E2E release gate: local collector (blocking)
+
+The blocking SDK e2e gate runs each wrapper's real SDK client and default
+publisher against `local-collector/local_collector.py`, a stdlib HTTP collector, so it
+needs no credentials and is deterministic:
+
+```bash
+./run-local-collector-tests.sh --sdk swift            # one SDK
+./run-local-collector-tests.sh --sdk swift,javascript  # several
+```
+
+The collector serves a fixed `GET {endpoint}/context` (every unit gets variant 1)
+and stores every `PUT {endpoint}/context` publish verbatim (raw body, parsed JSON,
+all headers). `orchestrator/local_collector_gate.py` then checks per SDK, from the
+raw publishes:
+
+- exactly one exposure per planned unit and experiment, with the experiment
+  id/name, variant 1, assigned/eligible, hashed units (UTF-8 MD5, base64url);
+- the exact multiset of goals and their properties: nested objects, booleans,
+  numbers by value (integer, 10.5, 0.1, negative, zero, large), Unicode and
+  null; a missing, extra, duplicated or mutated event fails;
+- revenue as the sum of the received `purchase` `amount` properties, never a
+  goal count times a price;
+- `X-Agent` (versioned unless `xAgentHeader` is a reviewed exception),
+  `X-Application` and `X-Environment` on every publish.
+
+This verifies what the SDK emits and transports, not the analysis backend. A
+release requires this gate to pass. The report is written to
+`test-results/local-collector.json`.
+
+PR CI runs this gate automatically for javascript, python, java and java-v1 (the
+`local-collector-gate` job). Every other wrapper is configured for it in
+`docker-compose.local-collector.yml`; run it locally with `--sdk <name>` before
+releasing that SDK, as no separate automated release check covers those lanes yet.
+
+## E2E smoke: test-1 (optional, non-blocking)
+
+The test-1 run below is optional smoke coverage of the real ABsmartly pipeline.
+Report its result separately; it does not block a release.
 
 The e2e suite creates a real experiment on a test ABsmartly environment, has
 each SDK send real exposures and goals, polls the metrics API, and verifies the
@@ -318,10 +437,34 @@ Wrappers enter this path when a `POST /context` request sets `mode: "e2e"`; they
 read credentials from their environment, not the request body. See the E2E Mode
 section of [WRAPPER_API_SPEC.md](WRAPPER_API_SPEC.md).
 
+Each SDK is verified on its own segment of the metric results (the `sdk_name`
+attribute, sent as a `{"filter": {"and": [{"eq": ...}]}}` audience expression):
+exposures are the sum of the variants' `unit_count` and goals the sum of their
+`count`. Revenue is measured, not computed from goals: the runner keeps a
+`goal_property` metric `e2e_purchase_revenue` on the `purchase` goal (value
+source property `amount`) and queries it with `--metric <id>` (per SDK and
+unfiltered) without attaching it to the experiment. Actual revenue is the sum
+of the variants' `count`, compared with the planned amount (planned goals x 10).
+An SDK whose exposures, goals or revenue the backend can't measure is a failure
+(`unverified: <reason>` / `unverified: revenue <reason>`), not a skip: the run
+prints `PASS All metrics verified` and exits 0 only when every non-skipped SDK
+row was measured and passed. An existing `e2e_purchase_revenue` is read with `abs metrics get <id> --raw` and
+refused unless it is a goal_property metric on the `amount` property (and,
+when the payload names the goal, on `purchase`); one left inactive by a failed
+run (looked up by name with `--include-drafts --archived`; more than
+one metric with that name fails the run) is unarchived if needed and
+reviewed and activated again, resuming after any review step that run already
+completed (per the metric's `review.status`). Readiness polling stops waiting on an SDK whose count is already
+past the over-publish bound, since it can no longer pass. An SDK named with `--sdk` must be verified: if it
+is skipped (its wrapper returns 501 for e2e mode) or unknown, the run fails.
+Only SDKs that were not requested (the default "all") may be skipped, and the
+report lists them; a run where every SDK is skipped fails. `--dry-run` prints `DRY-RUN` and measures nothing. The design is in
+[docs/specs/2026-03-20-e2e-testing-design.md](docs/specs/2026-03-20-e2e-testing-design.md).
+
 ## Continuous integration
 
-`.github/workflows/cross-sdk.yml` runs the full 310-scenario suite for all 20
-SDKs on every pull request (and on demand), one independent matrix job per SDK.
+`.github/workflows/cross-sdk.yml` runs the full 347-scenario suite for all 22
+SDK lanes on every pull request (and on demand), one independent matrix job per SDK.
 Each job checks out this repo alongside the SDK source repo(s) its wrapper builds
 from, builds just that wrapper plus the orchestrator, and drives the suite over
 the compose network. The live-backend e2e suite is intentionally excluded from
@@ -329,7 +472,7 @@ CI — it needs secrets and the `abs` CLI and mutates real experiments.
 
 Each lane uploads its report, which records every scenario outcome and what
 the SDK returned at each step. A separate `cross-sdk-consistency` job then
-downloads the reports from all 20 lanes and compares the SDKs with each other
+downloads the reports from all 24 lanes and compares the SDKs with each other
 (`test_runner.py --compare-reports`), because a lane runs only one SDK and has
 nothing to compare against. That job runs even when some lanes fail. It fails
 if a report is missing or unreadable, if fewer than two SDKs or zero
@@ -345,9 +488,14 @@ cross-sdk-tests/
 ├── README.md                     # this file
 ├── WRAPPER_API_SPEC.md           # the HTTP API every wrapper implements
 ├── WRAPPER_REPOS.md              # notes on standalone wrapper/SDK repos
-├── test_scenarios_complete.json  # 310 scenarios
+├── test_scenarios_complete.json  # 347 scenarios
+├── generate_shared_variable_key_scenarios.py  # records the Shared Variable
+│                                 #   Key group (340-368) from java-sdk;
+│                                 #   --replay checks it without Docker
 ├── generate_switchback_scenarios.py  # regenerates the Switchback group
-│                                 #   (400-425) in place; --check verifies
+│                                 #   (400-426) in place; --check verifies
+├── generate_holdout_conformance_scenarios.py  # regenerates the Holdout
+│                                 #   Conformance group (501-507); --check
 ├── fixtures/switchback/          # platform golden vectors (verbatim copy)
 ├── generate_scenarios.py         # STALE, non-canonical generator; output
 │                                 #   test_scenarios_generated.json must be
@@ -367,7 +515,7 @@ cross-sdk-tests/
 │   ├── test_runner.py            # cross-SDK orchestrator
 │   ├── e2e_runner.py             # live-backend e2e orchestrator
 │   └── results_aggregator.py     # merges per-SDK reports into report.json
-├── <sdk>-wrapper/                # one HTTP wrapper per SDK (20 total)
+├── <sdk>-wrapper/                # one HTTP wrapper per SDK lane (21 total)
 ├── docs/                         # historical design docs (see banners)
 └── test-results/                 # report.json output (generated)
 ```
@@ -402,3 +550,16 @@ Each SDK must return the exact result values and emit the expected event types
 and data. Cache-invalidation scenarios are a particular focus: the cache must be
 cleared (producing a new exposure) when an experiment changes, and retained (no
 new exposure) when nothing changes.
+
+### Flutter 2.2.0 compatibility lanes
+
+`dart-v2` and `flutter-v2` retain 2.2.0 coverage alongside the `dart` and
+`flutter` switchback/3.x lanes. Their wrappers incorporate cross-sdk-tests#48
+(`9ff7456`), including the typed unit-value extensions and Flutter package imports.
+They use the separate `flutter-sdk-v2` checkout pinned to flutter-sdk#12’s merge commit
+`5390f0b` on `main`. The CI conformance matrix has 24 lanes. The compatibility SDK predates
+holdouts and switchbacks; only its two lanes classify these as unsupported.
+
+Run `./run-tests.sh --sdk dart-v2,flutter-v2` for conformance and
+`./run-local-collector-tests.sh --sdk dart-v2,flutter-v2` for real SDK transport
+and event emission. The two compatibility lanes are also blocking collector CI jobs.

@@ -14,6 +14,8 @@ from sdk.context_config import ContextConfig
 from sdk.context_event_logger import ContextEventLogger
 from sdk.context_publisher import ContextPublisher
 from sdk.json.context_data import ContextData
+from sdk.json.publish_event import PublishEvent
+from sdk.default_context_event_serializer import DefaultContextEventSerializer
 from sdk.default_http_client import DefaultHTTPClient
 from sdk.default_http_client_config import DefaultHTTPClientConfig
 from sdk.context_data_provider import ContextDataProvider
@@ -23,7 +25,13 @@ from sdk import utils as sdk_utils
 import jsons
 import threading
 
+import holdout_self_test
+import switchback_self_test
+
 app = Flask(__name__)
+# Serve payloads with their keys in the order received: Flask sorts keys by
+# default, which would reorder switchbackClusters, whose order is semantic.
+app.json.sort_keys = False
 
 class DeferredContextDataProvider(ContextDataProvider):
     """Delays the SDK's own context-data fetch by throttle_ms.
@@ -60,6 +68,34 @@ class DeferredContextDataProvider(ContextDataProvider):
         threading.Thread(target=fetch, daemon=True).start()
         return future
 
+class GatedContextDataProvider(ContextDataProvider):
+    """Keep SDK data pending until pre-ready tracking is complete."""
+
+    def __init__(self, delegate):
+        self.delegate = delegate
+        self.future = Future()
+        self.released = False
+
+    def get_context_data(self):
+        if self.released:
+            return self.delegate.get_context_data()
+        return self.future
+
+    def release(self):
+        self.released = True
+
+        def relay(done):
+            try:
+                self.future.set_result(done.result())
+            except Exception as error:
+                self.future.set_exception(error)
+
+        try:
+            self.delegate.get_context_data().add_done_callback(relay)
+        except Exception as error:
+            self.future.set_exception(error)
+
+
 class FailingContextDataProvider(ContextDataProvider):
     def get_context_data(self):
         future = Future()
@@ -90,6 +126,10 @@ class EventCollector(ContextEventLogger):
             return len(self.events)
 
     def _serialize(self, data):
+        if isinstance(data, PublishEvent):
+            # Report a publish as the SDK sends it: its serializer strips
+            # nulls, so a null attribute value is not on the wire.
+            return json.loads(DefaultContextEventSerializer().serialize(data))
         try:
             return jsons.dump(data)
         except Exception:
@@ -163,6 +203,7 @@ def capabilities():
         'trackRejectsNonObjectProperties': False,
         'refreshNoOpOnFailedContext': False,
         'throwsOnMisuse': True,
+        'rejectsSettersAfterFinalize': True,
         'singleFinalizeEvent': False,
         'semverNumericOperands': True,
         'clientNoEnvironment': True,
@@ -170,7 +211,12 @@ def capabilities():
         'clientAcceptsBlankApplication': True,
         'assignmentRules': True,
         'semverOperators': True,
-        'xAgentHeader': True
+        'xAgentHeader': True,
+        'holdouts': holdout_self_test.run_holdouts(),
+        'holdout_arms': holdout_self_test.run_holdout_arms(),
+        'switchback': switchback_self_test.run(),
+        # The switchback battery checks that a whole float keys no cluster (switchback_self_test.py).
+        'integralFloatAttributes': switchback_self_test.run()
     })
 
 @app.route('/context_payload/<payload_id>', methods=['PUT'])
@@ -217,11 +263,38 @@ def mock_api_publish(payload_id):
 def captured_payload_requests(payload_id):
     return jsonify({'requests': captured_requests.get(payload_id, [])})
 
+def validate_pre_ready_goals(body):
+    # Validate the complete batch before any context creation or track call.
+    if not isinstance(body, dict):
+        return 'Request body must be an object'
+    if 'preReadyGoals' not in body:
+        return None
+    if body.get('mode') != 'e2e':
+        return 'preReadyGoals is only supported in e2e mode'
+    if not isinstance(body['preReadyGoals'], list):
+        return 'preReadyGoals must be a list'
+    for goal in body['preReadyGoals']:
+        if not isinstance(goal, dict) or \
+                not isinstance(goal.get('goalName'), str) or \
+                not goal['goalName'].strip() or \
+                set(goal) - {'goalName', 'properties'}:
+            return 'Each preReadyGoals entry must contain a non-empty goalName and optional properties'
+        if 'properties' in goal and not isinstance(goal['properties'], dict):
+            return 'preReadyGoals properties must be an object'
+    return None
+
+
 @app.route('/context', methods=['POST'])
 def create_context():
     req_data = request.json
+    validation_error = validate_pre_ready_goals(req_data)
+    if validation_error:
+        return jsonify({'error': validation_error, 'events': []}), 400
 
     if req_data.get('mode') == 'e2e':
+        for key in ('units', 'attributes', 'options'):
+            if key in req_data and not isinstance(req_data[key], dict):
+                return jsonify({'error': f'{key} must be an object', 'events': []}), 400
         e2e_endpoint = os.environ.get('ABSMARTLY_E2E_ENDPOINT')
         e2e_api_key = os.environ.get('ABSMARTLY_E2E_API_KEY')
         e2e_application = os.environ.get('ABSMARTLY_E2E_APPLICATION')
@@ -245,15 +318,30 @@ def create_context():
         sdk_config = ABSmartlyConfig()
         sdk_config.client = client
         sdk_config.context_event_logger = event_collector
-
+        gated_provider = None
+        if 'preReadyGoals' in req_data:
+            gated_provider = GatedContextDataProvider(DefaultContextDataProvider(client))
+            sdk_config.context_data_provider = gated_provider
+        # Leave the publisher unset: ABSmartly installs its real SDK publisher.
         sdk = ABSmartly(sdk_config)
 
         context_config = ContextConfig()
-        context_config.units = dict(req_data['units'])
+        context_config.units = dict(req_data.get('units', {}))
         context_config.publish_delay = -1
         context_config.refresh_interval = 0
 
         context = sdk.create_context(context_config)
+        pre_ready_tracked = False
+        if gated_provider is not None:
+            pre_ready_tracked = context.is_ready() is False
+            if not pre_ready_tracked:
+                return jsonify({'error': 'Expected a not-ready context before tracking', 'events': []}), 500
+            for goal in req_data['preReadyGoals']:
+                # Measure the real SDK immediately before each call, while the gate is closed.
+                if context.is_ready() is not False:
+                    return jsonify({'error': 'Context became ready before tracking', 'events': []}), 500
+                context.track(goal['goalName'], goal.get('properties'))
+            gated_provider.release()
         context.wait_until_ready()
 
         for name, value in (req_data.get('attributes') or {}).items():
@@ -270,7 +358,8 @@ def create_context():
                 'contextId': context_id,
                 'ready': context.is_ready(),
                 'failed': context.is_failed(),
-                'finalized': context.is_closed()
+                'finalized': context.is_closed(),
+                **({'preReadyTracked': True} if pre_ready_tracked else {})
             },
             'events': event_collector.since(0)
         })
@@ -908,6 +997,58 @@ def diagnostic():
         return jsonify({'result': result, 'events': []})
     except Exception as e:
         return jsonify({'error': str(e), 'events': []}), 500
+
+def _switchback_long(body, name):
+    # 64-bit values arrive as decimal strings and are parsed exactly.
+    value = body.get(name)
+    if not isinstance(value, str) or \
+            re.fullmatch(r'[-+]?[0-9]+', value) is None:
+        raise ValueError(f'{name} must be a decimal string')
+    number = int(value)
+    if not -(1 << 63) <= number < (1 << 63):
+        raise ValueError(f'{name} is out of the signed 64-bit range')
+    return number
+
+
+def _switchback_call(compute):
+    # Answers whenever the assigner exists, independent of the self-test
+    # verdict, so a regressed assigner reports its actual outputs.
+    if switchback_self_test.assigner() is None:
+        return jsonify({'error': 'python3-sdk has no switchback assigner', 'events': []}), 501
+    try:
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            raise ValueError('request body must be a JSON object')
+        cluster_unit = body.get('clusterUnit')
+        if not isinstance(cluster_unit, str):
+            raise ValueError('clusterUnit must be a string')
+        arm_count = body.get('armCount')
+        if isinstance(arm_count, bool) or not isinstance(arm_count, int) or \
+                arm_count < 2:
+            raise ValueError(f'armCount must be an integer of at least 2, '
+                             f'got {arm_count!r}')
+        result = compute(body, cluster_unit, arm_count)
+    except ValueError as e:
+        return jsonify({'error': str(e), 'events': []}), 400
+    return jsonify({'result': result, 'events': []})
+
+
+# clusterUnit is the raw R33 cluster key, passed to the SDK unchanged (never
+# hashed). See WRAPPER_API_SPEC.md, capability `switchback`.
+@app.route('/switchback/assign', methods=['POST'])
+def switchback_assign():
+    return _switchback_call(lambda body, unit, arms: switchback_self_test.assign(
+        unit, _switchback_long(body, 'periodIndex'),
+        _switchback_long(body, 'seed'), arms))
+
+
+@app.route('/switchback/permutation', methods=['POST'])
+def switchback_permutation():
+    return _switchback_call(
+        lambda body, unit, arms: switchback_self_test.permutation(
+            unit, _switchback_long(body, 'cycleIndex'),
+            _switchback_long(body, 'seed'), arms))
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=False)

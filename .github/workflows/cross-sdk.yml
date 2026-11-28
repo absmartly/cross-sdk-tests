@@ -1,6 +1,6 @@
 # Cross-SDK conformance tests.
 #
-# Runs the 310-scenario cross-SDK suite for every SDK wrapper, one independent
+# Runs the 347-scenario cross-SDK suite for every SDK wrapper, one independent
 # matrix job per SDK, on every PR (and on demand). Each job checks out this repo
 # plus the SDK source repo(s) the wrapper builds from (all absmartly/* repos are
 # public, so the default GITHUB_TOKEN suffices), builds just that wrapper +
@@ -39,15 +39,19 @@ jobs:
             {"sdk":"ruby","repos":"ruby-sdk"},
             {"sdk":"php","repos":"php-sdk"},
             {"sdk":"java","repos":"java-sdk"},
+            {"sdk":"java-v1","repos":"java-sdk-v1"},
             {"sdk":"kotlin","repos":"kotlin-sdk"},
             {"sdk":"scala","repos":"scala-sdk"},
             {"sdk":"go","repos":"go-sdk"},
             {"sdk":"rust","repos":"rust-sdk"},
             {"sdk":"swift","repos":"swift-sdk"},
+            {"sdk":"swift-v1","repos":"swift-sdk-v1"},
             {"sdk":"dotnet","repos":"dotnet-sdk"},
             {"sdk":"cpp","repos":"cpp-sdk"},
             {"sdk":"elixir","repos":"elixir-sdk"},
             {"sdk":"dart","repos":"flutter-sdk"},
+            {"sdk":"dart-v2","repos":"flutter-sdk-v2"},
+            {"sdk":"flutter-v2","repos":"flutter-sdk-v2"},
             {"sdk":"flutter","repos":"flutter-sdk"},
             {"sdk":"liquid","repos":"liquid-sdk ruby-sdk"},
             {"sdk":"react","repos":"react-sdk javascript-sdk"},
@@ -70,10 +74,10 @@ jobs:
         run: pip install -r orchestrator/requirements-test.txt
 
       - name: Byte-compile harness
-        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
+        run: python -m py_compile orchestrator/test_runner.py orchestrator/results_aggregator.py orchestrator/e2e_runner.py orchestrator/local_collector_gate.py local-collector/local_collector.py context-server/server.py context-server/negotiation.py generate_context_compression_scenarios.py
 
       - name: Shell syntax
-        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh; do bash -n "$f"; done
+        run: for f in run-tests.sh run-all-tests.sh run-e2e-tests.sh run-local-collector-tests.sh; do bash -n "$f"; done
 
       - name: Harness unit tests (no Docker)
         run: python -m unittest discover -s tests -v
@@ -88,6 +92,26 @@ jobs:
 
       - name: Context-fetch compression scenarios match their generator
         run: python generate_context_compression_scenarios.py --check
+
+      # The Holdout Conformance group is recorded from the javascript-sdk reference, built from
+      # the commit the SDK-round generator pins (PINNED_COMMIT), next to this repo as SDK_PATH.
+      - name: Read the javascript-sdk reference pin
+        id: js-pin
+        run: echo "commit=$(python -c 'import generate_sdk_round_2026_11_scenarios as g; print(g.PINNED_COMMIT)')" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the javascript-sdk reference
+        uses: actions/checkout@v4
+        with:
+          repository: absmartly/javascript-sdk
+          ref: ${{ steps.js-pin.outputs.commit }}
+          path: reference/javascript-sdk
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Holdout Conformance scenarios match the javascript-sdk reference
+        run: SDK_PATH="$PWD/reference/javascript-sdk" python generate_holdout_conformance_scenarios.py --check
 
   cross-sdk:
     name: ${{ matrix.sdk }}
@@ -111,13 +135,14 @@ jobs:
           # cross-sdk-tests/sdk-branches.sh (also used by local runs via
           # setup-sdks.sh) so CI builds the same branches that pass locally
           # instead of SDK main, which has API drift vs the wrappers.
-          # Repos not listed fall back to main.
+          # Repos not listed fall back to main. SDK_REPO_SOURCES maps a checkout
+          # directory to a different repo (java-sdk-v1 and swift-sdk-v1 clone absmartly/java-sdk
+          # and absmartly/swift-sdk).
           source cross-sdk-tests/sdk-branches.sh
+          source cross-sdk-tests/sdk-checkout.sh
           for repo in ${{ matrix.repos }}; do
-            branch="${SDK_BRANCHES[$repo]:-main}"
-            echo "::group::Cloning absmartly/$repo ($branch)"
-            git clone --depth 1 --branch "$branch" \
-              "https://github.com/absmartly/$repo.git" "$repo"
+            echo "::group::Checking out $repo"
+            checkout_sdk "$repo" "$repo"
             echo "::endgroup::"
           done
 
@@ -143,6 +168,30 @@ jobs:
             -e "SDK_SERVICES=${{ matrix.sdk }}" \
             orchestrator python3 test_runner.py
           test -s test-results/report.json || { echo "::error::orchestrator wrote no report.json"; exit 1; }
+
+      # Live HTTP regressions for the dotnet wrapper's input and report boundaries, against the
+      # wrapper the suite just ran (orchestrator/tests/test_dotnet_wrapper_http.py).
+      - name: Dotnet wrapper HTTP regressions
+        if: matrix.sdk == 'dotnet'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          docker compose run --rm --no-deps \
+            -v "$PWD/orchestrator/tests:/app/tests:ro" \
+            -e "DOTNET_WRAPPER_URL=http://dotnet-sdk:3000" \
+            orchestrator sh -c "pip install --quiet pytest && python -m pytest -q tests/test_dotnet_wrapper_http.py"
+
+      - name: C++ wrapper payload HTTP regressions
+        if: matrix.sdk == 'cpp'
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk
+        run: |
+          set -euo pipefail
+          port="$(docker compose port cpp-sdk 3000 | sed 's/.*://')"
+          CPP_WRAPPER_URL="http://127.0.0.1:${port}" python3 cpp-wrapper/test_payload_http.py -v
 
       - name: Upload results
         if: always()
@@ -206,3 +255,46 @@ jobs:
           name: cross-sdk-consistency
           path: consistency-report.json
           if-no-files-found: warn
+
+  # Blocking local collector release gate. test-1 is intentionally not part of CI;
+  # run-e2e-tests.sh remains optional smoke coverage for a real ABsmartly environment.
+  local-collector-gate:
+    name: local-collector-gate (${{ matrix.sdk }})
+    needs: harness
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [javascript, python, java, java-v1, dart-v2, flutter-v2]
+    steps:
+      - name: Checkout cross-sdk-tests
+        uses: actions/checkout@v4
+        with:
+          path: cross-sdk-tests
+
+      - name: Checkout SDK source repos
+        working-directory: cross-sdk-tests
+        run: |
+          source sdk-branches.sh
+          source sdk-checkout.sh
+          repos=$(echo '${{ needs.harness.outputs.matrix }}' | jq -r --arg sdk "${{ matrix.sdk }}" \
+            '.include[] | select(.sdk == $sdk) | .repos')
+          [ -n "$repos" ] || { echo "no checkout mapping for ${{ matrix.sdk }}" >&2; exit 1; }
+          # The compose build context is `..` relative to cross-sdk-tests,
+          # so SDKs must be siblings of cross-sdk-tests, not nested inside it.
+          export SDK_CLONE_PREFIX="https://x-access-token:${{ github.token }}@"
+          for repo in $repos; do checkout_sdk "$repo" "../$repo"; done
+
+      - name: Build and run blocking local collector gate
+        working-directory: cross-sdk-tests
+        env:
+          COMPOSE_PROJECT_NAME: csdk-local-gate
+        run: ./run-local-collector-tests.sh --sdk "${{ matrix.sdk }}"
+
+      - name: Upload local collector report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-collector-${{ matrix.sdk }}
+          path: cross-sdk-tests/test-results/local-collector.json
+          if-no-files-found: error

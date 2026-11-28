@@ -1,8 +1,11 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.*;
-import com.absmartly.sdk.ABSmartly;
-import com.absmartly.sdk.ABSmartlyConfig;
+import com.absmartly.sdk.ABsmartlyClient;
+import com.absmartly.sdk.Context;
+import com.absmartly.sdk.ContextData;
+import com.absmartly.sdk.ContextOptions;
+import com.absmartly.sdk.ContextState;
+import com.absmartly.sdk.WrapperNoEnvironment;
 import com.absmartly.sdk.internal.Buffers;
 import com.absmartly.sdk.internal.hashing.Hashing;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,7 +21,8 @@ import java.util.function.Supplier;
 @RestController
 public class WrapperController {
     private final Map<String, ContextWrapper> contexts = new ConcurrentHashMap<>();
-    private final Map<String, com.absmartly.sdk.json.ContextData> payloadStore = new ConcurrentHashMap<>();
+    // Stored as JSON text, exactly as the scenario sent it (key order included), and served back verbatim.
+    private final Map<String, String> payloadStore = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, List<Map<String, Object>>> capturedRequests = new ConcurrentHashMap<>();
 
@@ -30,13 +34,19 @@ public class WrapperController {
     }
 
     private final SwitchbackFunctions switchback;
+    private final java.util.function.Function<String, String> environment;
 
     public WrapperController() {
         this(SwitchbackFunctions.LINKED);
     }
 
     WrapperController(SwitchbackFunctions switchback) {
+        this(switchback, System::getenv);
+    }
+
+    WrapperController(SwitchbackFunctions switchback, java.util.function.Function<String, String> environment) {
         this.switchback = switchback;
+        this.environment = environment;
     }
 
     private String translateEndpoint(String endpoint) {
@@ -81,12 +91,27 @@ public class WrapperController {
         return body;
     }
 
+    // The java-sdk commit this wrapper was built from (written by the Dockerfile), so a recording
+    // can prove which reference produced it.
+    private static final String SDK_COMMIT = readSdkCommit();
+
+    private static String readSdkCommit() {
+        try (java.io.InputStream in = WrapperController.class.getResourceAsStream("/sdk-commit.txt")) {
+            if (in == null) return null;
+            String commit = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            return commit.isEmpty() ? null : commit;
+        } catch (java.io.IOException e) {
+            return null;
+        }
+    }
+
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "healthy");
         response.put("sdk", "java");
         response.put("version", "1.0.0");
+        response.put("sdkCommit", SDK_COMMIT);
         return response;
     }
 
@@ -107,14 +132,17 @@ public class WrapperController {
         response.put("trackRejectsNonObjectProperties", true);
         response.put("refreshNoOpOnFailedContext", true);
         response.put("throwsOnMisuse", true);
+        response.put("rejectsSettersAfterFinalize", true);
         response.put("singleFinalizeEvent", true);
         response.put("semverNumericOperands", true);
+        response.put("sharedVariableKeys", true);
         response.put("clientNoEnvironment", true);
         response.put("clientRejectsBlankApplication", true);
         response.put("clientAcceptsBlankApplication", false);
         response.put("holdouts", HoldoutSelfTest.run());
         response.put("holdout_arms", HoldoutArmsSelfTest.run());
         response.put("switchback", SwitchbackSelfTest.run());
+        response.put("integralFloatAttributes", SwitchbackSelfTest.runIntegralFloat());
         response.put("assignmentRules", AssignmentRulesSelfTest.runAssignmentRules());
         response.put("semverOperators", AssignmentRulesSelfTest.runSemverOperators());
         response.put("xAgentHeader", true);
@@ -183,7 +211,7 @@ public class WrapperController {
     private ResponseEntity<?> switchbackCall(Supplier<Object> call) {
         if (!switchback.isAvailable()) {
             return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
-                .body(Collections.singletonMap("error", "linked SDK has no switchback assigner"));
+                .body(errorBody("linked SDK has no switchback assigner", Collections.emptyList()));
         }
         try {
             Map<String, Object> response = new HashMap<>();
@@ -192,7 +220,7 @@ public class WrapperController {
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Collections.singletonMap("error", String.valueOf(e.getMessage())));
+                .body(errorBody(String.valueOf(e.getMessage()), Collections.emptyList()));
         }
     }
 
@@ -209,10 +237,13 @@ public class WrapperController {
 
     // The 400-on-armCount<2 contract is the wrapper's, so it must not depend on how the linked
     // assigner reacts (a regressed one could return a value or throw something unexpected).
+    static final int MAX_SWITCHBACK_ARMS = 1000;
+
     private static int armCountParam(Map<String, Object> request) {
         int armCount = intParam(request, "armCount");
-        if (armCount < 2) {
-            throw new IllegalArgumentException("armCount must be at least 2, got " + armCount);
+        // WRAPPER_API_SPEC.md: the same bound in every wrapper, so no request builds a huge permutation.
+        if (armCount < 2 || armCount > MAX_SWITCHBACK_ARMS) {
+            throw new IllegalArgumentException("armCount must be between 2 and " + MAX_SWITCHBACK_ARMS + ", got " + armCount);
         }
         return armCount;
     }
@@ -227,12 +258,11 @@ public class WrapperController {
     @PutMapping("/context_payload/{payloadId}")
     public ResponseEntity<?> storePayload(@PathVariable String payloadId, @RequestBody Map<String, Object> request) {
         try {
-            com.absmartly.sdk.json.ContextData contextData = objectMapper.convertValue(
-                request.get("data"),
-                com.absmartly.sdk.json.ContextData.class
-            );
-
-            payloadStore.put(payloadId, contextData);
+            Object data = request.get("data");
+            // Validate with the SDK's own decoder, as the 1.x wrapper did by converting to its model.
+            String json = objectMapper.writeValueAsString(data != null ? data : Collections.emptyMap());
+            ContextData.fromJson(json);
+            payloadStore.put(payloadId, json);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -257,12 +287,9 @@ public class WrapperController {
             }
         }
 
-        com.absmartly.sdk.json.ContextData data = payloadStore.getOrDefault(
-            payloadId,
-            new com.absmartly.sdk.json.ContextData()
-        );
+        String data = payloadStore.getOrDefault(payloadId, WrapperTransport.EMPTY_CONTEXT);
 
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok().contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(data);
     }
 
     @GetMapping("/context_payload/{payloadId}/context")
@@ -271,12 +298,12 @@ public class WrapperController {
         // A never-stored payload id is a missing collector payload: answer 404
         // so the SDK's own fetch fails the context, instead of serving an
         // empty-but-valid payload that would make it silently ready.
-        com.absmartly.sdk.json.ContextData data = payloadStore.get(payloadId);
+        String data = payloadStore.get(payloadId);
         if (data == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(Collections.singletonMap("error", "Payload not found"));
         }
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok().contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(data);
     }
 
     // Mock collector - with publishToEndpoint the SDK publishes PUT {endpoint}/context here.
@@ -304,10 +331,10 @@ public class WrapperController {
         try {
             String mode = (String) request.get("mode");
             if ("e2e".equals(mode)) {
-                String e2eEndpoint = System.getenv("ABSMARTLY_E2E_ENDPOINT");
-                String e2eApiKey = System.getenv("ABSMARTLY_E2E_API_KEY");
-                String e2eApplication = System.getenv("ABSMARTLY_E2E_APPLICATION");
-                String e2eEnvironment = System.getenv("ABSMARTLY_E2E_ENVIRONMENT");
+                String e2eEndpoint = environment.apply("ABSMARTLY_E2E_ENDPOINT");
+                String e2eApiKey = environment.apply("ABSMARTLY_E2E_API_KEY");
+                String e2eApplication = environment.apply("ABSMARTLY_E2E_APPLICATION");
+                String e2eEnvironment = environment.apply("ABSMARTLY_E2E_ENVIRONMENT");
                 if (e2eEndpoint == null || e2eApiKey == null || e2eApplication == null || e2eEnvironment == null) {
                     return ResponseEntity.status(501).body(Collections.singletonMap("error", "e2e mode not configured"));
                 }
@@ -319,56 +346,60 @@ public class WrapperController {
 
                 EventCollector e2eCollector = new EventCollector();
                 createCollector = e2eCollector;
-                ContextConfig e2eContextConfig = ContextConfig.create();
                 // Never auto-publish or auto-refresh in e2e mode; the test drives
                 // publishing explicitly (SDK default publishDelay is 100ms).
-                e2eContextConfig.setPublishDelay(-1);
-                e2eContextConfig.setRefreshInterval(0);
+                ContextOptions.Builder e2eOptions = ContextOptions.builder()
+                    .publishDelay(java.time.Duration.ofMillis(-1))
+                    .eventListener(e2eCollector);
                 if (e2eUnits != null) {
-                    e2eContextConfig.setUnits(e2eUnits);
+                    e2eOptions.units(e2eUnits);
                 }
 
-                ClientConfig e2eClientConfig = ClientConfig.create()
-                    .setEndpoint(e2eEndpoint)
-                    .setAPIKey(e2eApiKey)
-                    .setApplication(e2eApplication)
-                    .setEnvironment(e2eEnvironment);
-                Client e2eClient = Client.create(e2eClientConfig);
-                ABSmartlyConfig e2eSdkConfig = ABSmartlyConfig.create()
-                    .setClient(e2eClient)
-                    .setContextEventLogger(e2eCollector);
-                ABSmartly e2eSdk = ABSmartly.create(e2eSdkConfig);
-                Context e2eContext = e2eSdk.createContext(e2eContextConfig);
+                ABsmartlyClient e2eClient = ABsmartlyClient.builder()
+                    .endpoint(java.net.URI.create(e2eEndpoint))
+                    .apiKey(e2eApiKey)
+                    .application(e2eApplication)
+                    .environment(e2eEnvironment)
+                    .build();
+                // Until the registry holds the wrapper, this method owns the client: any failure creating or
+                // loading the context closes it before the original propagates.
+                Context e2eContext;
+                ContextWrapper e2eWrapper;
+                String e2eContextId;
+                try {
+                    e2eContext = e2eClient.newContext(e2eOptions.build());
 
-                if (e2eAttrs != null) {
-                    for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
-                        e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                    if (e2eAttrs != null) {
+                        for (Map.Entry<String, Object> entry : e2eAttrs.entrySet()) {
+                            e2eContext.setAttribute(entry.getKey(), entry.getValue());
+                        }
                     }
+
+                    awaitLoad(e2eContext);
+
+                    e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                    e2eWrapper = new ContextWrapper(e2eContext, e2eCollector, null, e2eClient, false);
+                } catch (Exception e) {
+                    try {
+                        e2eClient.close();
+                    } catch (Exception cleanup) {
+                        e.addSuppressed(cleanup);
+                    }
+                    throw e;
                 }
-
-                e2eContext.waitUntilReady();
-
-                String e2eContextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-                contexts.put(e2eContextId, new ContextWrapper(e2eContext, e2eCollector, null, null));
-
-                Map<String, Object> e2eResult = new HashMap<>();
-                e2eResult.put("contextId", e2eContextId);
-                e2eResult.put("ready", e2eContext.isReady());
-                e2eResult.put("failed", e2eContext.isFailed());
-                e2eResult.put("finalized", e2eContext.isClosed());
+                contexts.put(e2eContextId, e2eWrapper);
 
                 Map<String, Object> e2eResponse = new HashMap<>();
-                e2eResponse.put("result", e2eResult);
+                e2eResponse.put("result", status(e2eContext, e2eContextId));
                 e2eResponse.put("events", e2eCollector.getEvents());
                 return ResponseEntity.ok(e2eResponse);
             }
 
-            com.absmartly.sdk.json.ContextData contextData = null;
-            if (request.containsKey("data")) {
-                contextData = objectMapper.convertValue(
-                    request.get("data"),
-                    com.absmartly.sdk.json.ContextData.class
-                );
+            // An explicit "data": null is treated as absent (the context is fetched from the endpoint), as in 1.x.
+            Object inlineData = request.get("data");
+            String contextJson = null;
+            if (inlineData != null) {
+                contextJson = objectMapper.writeValueAsString(inlineData);
             }
 
             String endpoint = (String) request.get("endpoint");
@@ -385,9 +416,7 @@ public class WrapperController {
             // keep every pre-2026-11 scenario unchanged. An explicitly supplied
             // application is forwarded as-is so the SDK validates it; only an omitted
             // one falls back to test-app. A blank/absent environment means
-            // "no environment configured": a null
-            // environment leaves it out of the SDK's evaluation map (buildAttributesMap
-            // calls putIfNotEmpty).
+            // "no environment configured" (see WrapperNoEnvironment).
             @SuppressWarnings("unchecked")
             Map<String, Object> clientConfigRequest = (Map<String, Object>) request.get("client");
             String clientApplication = "test-app";
@@ -408,139 +437,108 @@ public class WrapperController {
             EventCollector eventCollector = new EventCollector();
             createCollector = eventCollector;
 
-            ContextConfig contextConfig = ContextConfig.create();
-
-            if (units != null) {
-                contextConfig.setUnits(units);
-            }
-
             Integer publishDelay = (Integer) options.getOrDefault("publishDelay", -1);
             Integer refreshPeriod = (Integer) options.getOrDefault("refreshPeriod", 0);
 
-            contextConfig.setPublishDelay(publishDelay);
-            contextConfig.setRefreshInterval(refreshPeriod);
+            ContextOptions.Builder contextOptions = ContextOptions.builder()
+                .publishDelay(java.time.Duration.ofMillis(publishDelay))
+                .refreshInterval(java.time.Duration.ofMillis(refreshPeriod))
+                .eventListener(eventCollector);
+            if (units != null) {
+                contextOptions.units(units);
+            }
 
-            Context context;
-            ABSmartly sdk;
-            DummyContextDataProvider contextDataProvider = null;
+            // publishToEndpoint: publish through the SDK's own client to {endpoint}/context.
+            boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
+            boolean failLoad = contextJson == null && endpoint == null && Boolean.TRUE.equals(request.get("failLoad"));
+            Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
+            boolean fetchOverHttp = contextJson == null && endpoint != null;
+            // Publishes stay in memory unless publishToEndpoint asks for the SDK's own PUT, as in the 1.x
+            // wrapper: an endpoint that serves the context (the context server) need not accept a publish.
+            WrapperTransport transport = new WrapperTransport(fetchOverHttp, publishToEndpoint,
+                failLoad, fetchOverHttp ? payloadThrottle : 0);
+            String clientEndpoint = endpoint != null ? translateEndpoint(endpoint) : "http://localhost";
 
-            // Build a client carrying the requested system names once, so every
-            // creation path (inline-data, delayed and immediate endpoint) seeds
-            // the evaluating context with the same application/environment. The
-            // SDK reads these from the config Client independently of the data
-            // provider, so a custom/deferred provider must not drop them.
-            ClientConfig namedClientConfig = ClientConfig.create()
-                .setEndpoint(endpoint != null ? translateEndpoint(endpoint) : "http://localhost")
-                .setAPIKey("test-api-key")
-                .setApplication(clientApplication)
-                .setEnvironment(clientEnvironment != null ? clientEnvironment : "placeholder");
-            // When no environment is configured, use a client that reports it as
-            // absent so Context leaves `environment` out of the evaluation map
-            // (Client.create would reject a null/empty environment outright).
-            Client namedClient;
+            ABsmartlyClient client;
             try {
-                namedClient = clientEnvironment != null
-                    ? Client.create(namedClientConfig)
-                    : new com.absmartly.sdk.NoEnvironmentClient(
-                        namedClientConfig,
-                        com.absmartly.sdk.DefaultHTTPClient.create(com.absmartly.sdk.DefaultHTTPClientConfig.create()));
+                client = ABsmartlyClient.builder()
+                    .endpoint(java.net.URI.create(clientEndpoint))
+                    .apiKey("test-api-key")
+                    .application(clientApplication)
+                    .environment(clientEnvironment != null ? clientEnvironment : "placeholder")
+                    .transport(transport)
+                    .build();
             } catch (IllegalArgumentException e) {
+                transport.close();
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(errorBody(e.getMessage(), Collections.emptyList()));
             }
-
-            // publishToEndpoint: publish through the SDK's own DefaultContextEventHandler
-            // (its real HTTP client) to {endpoint}/context.
-            boolean publishToEndpoint = Boolean.TRUE.equals(request.get("publishToEndpoint")) && endpoint != null;
-            CustomPublisher publisher = new CustomPublisher(eventCollector,
-                publishToEndpoint ? new DefaultContextEventHandler(namedClient) : null);
-
-            if (contextData != null) {
-                // Sync: createContextWith - use dummy data provider, but keep the
-                // configured client so the inline-data context still evaluates
-                // audiences against the requested application/environment.
-                contextDataProvider = new DummyContextDataProvider();
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(contextDataProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContextWith(contextConfig, contextData);
-            } else if (endpoint != null) {
-                // createContext with endpoint: a real SDK Client fetches and
-                // deserializes the payload from <endpoint>/context.
-                Integer payloadThrottle = (Integer) options.getOrDefault("payloadThrottle", 0);
-
-                Client client = namedClient;
-
-                if (payloadThrottle > 0) {
-                    // Delay the SDK's own fetch; the context stays not-ready until it lands.
-                    // Keep .setClient(client) so the delayed context still evaluates
-                    // against the configured names: the SDK reads them from the
-                    // config client, not from the custom data provider.
-                    DeferredContextDataProvider deferredProvider = new DeferredContextDataProvider(
-                        new DefaultContextDataProvider(client), payloadThrottle);
-                    ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                        .setClient(client)
-                        .setContextDataProvider(deferredProvider)
-                        .setContextEventHandler(publisher)
-                        .setContextEventLogger(eventCollector);
-                    sdk = ABSmartly.create(sdkConfig);
-                    context = sdk.createContext(contextConfig);
-                } else {
-                    ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                        .setClient(client)
-                        .setContextEventHandler(publisher)
-                        .setContextEventLogger(eventCollector);
-                    sdk = ABSmartly.create(sdkConfig);
-                    context = sdk.createContext(contextConfig);
-                    context.waitUntilReady();
-                    eventCollector.awaitEvent(0, 2000, "ready", "error");
+            // The client does not close a transport it was given, so the wrapper closes both together.
+            AutoCloseable owner = () -> {
+                try {
+                    client.close();
+                } finally {
+                    transport.close();
                 }
-            } else if (Boolean.TRUE.equals(request.get("failLoad"))) {
-                ContextDataProvider failingProvider = new ContextDataProvider() {
-                    @Override
-                    public java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> getContextData() {
-                        java.util.concurrent.CompletableFuture<com.absmartly.sdk.json.ContextData> f = new java.util.concurrent.CompletableFuture<>();
-                        f.completeExceptionally(new RuntimeException("Context load failed"));
-                        return f;
-                    }
-                };
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(failingProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContext(contextConfig);
-                context.waitUntilReady();
-                eventCollector.awaitEvent(0, 2000, "ready", "error");
-            } else {
-                DummyContextDataProvider dataProvider = new DummyContextDataProvider();
-                ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-                    .setClient(namedClient)
-                    .setContextDataProvider(dataProvider)
-                    .setContextEventHandler(publisher)
-                    .setContextEventLogger(eventCollector);
-                sdk = ABSmartly.create(sdkConfig);
-                context = sdk.createContext(contextConfig);
-            }
+            };
 
-            String contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
-            ContextWrapper wrapper = new ContextWrapper(context, eventCollector, contextDataProvider, publisher);
-            wrapper.setClient(namedClient);
+            // Until the registry holds the wrapper, this method owns client, transport and scheduler: any failure
+            // building the context (decoding, options, creation, awaits) closes them before the original propagates.
+            Context context;
+            ContextWrapper wrapper;
+            String contextId;
+            try {
+                // No environment configured: the SDK's own client and context, with the environment reported absent.
+                java.util.concurrent.ScheduledExecutorService noEnvScheduler = null;
+                if (clientEnvironment == null) {
+                    noEnvScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+                    java.util.concurrent.ScheduledExecutorService scheduler = noEnvScheduler;
+                    AutoCloseable inner = owner;
+                    owner = () -> {
+                        try {
+                            inner.close();
+                        } finally {
+                            scheduler.shutdownNow();
+                        }
+                    };
+                }
+
+                if (contextJson != null) {
+                    // Sync: inline data, ready at once; refresh(newData) then serves from memory.
+                    ContextData data = ContextData.fromJson(contextJson);
+                    context = (noEnvScheduler != null)
+                        ? WrapperNoEnvironment.context(clientEndpoint, clientApplication, transport, noEnvScheduler,
+                            contextOptions.build(), data)
+                        : client.context(contextOptions.build(), data);
+                    eventCollector.awaitEvent(0, 2000, "ready", "error");
+                } else {
+                    // The SDK's own client fetches and decodes the payload from <endpoint>/context (or fails it, with
+                    // failLoad); a throttled fetch leaves the context loading.
+                    context = (noEnvScheduler != null)
+                        ? WrapperNoEnvironment.newContext(clientEndpoint, clientApplication, transport, noEnvScheduler,
+                            contextOptions.build())
+                        : client.newContext(contextOptions.build());
+                    if (!(fetchOverHttp && payloadThrottle > 0)) {
+                        awaitLoad(context);
+                        eventCollector.awaitEvent(0, 2000, "ready", "error");
+                    }
+                }
+
+                contextId = "ctx-" + System.currentTimeMillis() + "-" + Math.random();
+                wrapper = new ContextWrapper(context, eventCollector, transport, owner, contextJson != null);
+            } catch (Exception e) {
+                try {
+                    owner.close();
+                } catch (Exception cleanup) {
+                    e.addSuppressed(cleanup);
+                }
+                throw e;
+            }
             contexts.put(contextId, wrapper);
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("contextId", contextId);
-            result.put("ready", context.isReady());
-            result.put("failed", context.isFailed());
-            result.put("finalized", context.isClosed());
-
             Map<String, Object> response = new HashMap<>();
-            response.put("result", result);
-            // Return exactly what the SDK emitted through its ContextEventLogger
+            response.put("result", status(context, contextId));
+            // Return exactly what the SDK emitted through its event listener
             // during creation. Never filter, dedupe or synthesize ready/error
             // events: the conformance suite attributes these to the SDK.
             List<Map<String, Object>> createEvents = eventCollector.getEvents();
@@ -552,6 +550,29 @@ public class WrapperController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(errorBody(errorMessage(e), createCollector != null ? createCollector.getEvents() : Collections.emptyList()));
         }
+    }
+
+    // Waits until the load finished, successfully or not; a failed load leaves the context FAILED, not thrown.
+    private static void awaitLoad(Context context) {
+        context.readyAsync().handle((ready, error) -> null).join();
+    }
+
+    // The wire status of a context. ready mirrors 1.x isReady(): true once the load finished, failed or not.
+    private static Map<String, Object> status(Context context, String contextId) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("contextId", contextId);
+        result.put("ready", isReady(context));
+        result.put("failed", isFailed(context));
+        result.put("finalized", context.state() == ContextState.CLOSED);
+        return result;
+    }
+
+    static boolean isReady(Context context) {
+        return context.state() != ContextState.LOADING;
+    }
+
+    static boolean isFailed(Context context) {
+        return context.failure() != null;
     }
 
     @PostMapping("/context/{contextId}/setUnit")
@@ -603,7 +624,7 @@ public class WrapperController {
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String unitType = (String) request.get("unitType");
-            Object result = data.getContext().getUnitValue(unitType);
+            Object result = data.getContext().unitValue(unitType);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -663,7 +684,7 @@ public class WrapperController {
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String name = (String) request.get("name");
-            Object result = data.getContext().getAttribute(name);
+            Object result = data.getContext().attribute(name);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -692,7 +713,7 @@ public class WrapperController {
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
             String experimentName = (String) request.get("experimentName");
-            int variant = data.getContext().getTreatment(experimentName);
+            int variant = data.getContext().treatment(experimentName);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -753,7 +774,7 @@ public class WrapperController {
             String key = (String) request.get("key");
             Object defaultValue = request.get("defaultValue");
 
-            Object result = data.getContext().getVariableValue(key, defaultValue);
+            Object result = data.getContext().variableValue(key, defaultValue);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -917,7 +938,7 @@ public class WrapperController {
             String experimentName = (String) request.get("experimentName");
             String fieldName = (String) request.get("fieldName");
 
-            Object result = data.getContext().getCustomFieldValue(experimentName, fieldName);
+            Object result = data.getContext().customFieldValue(experimentName, fieldName);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -942,7 +963,7 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Map<String, List<String>> keys = data.getContext().getVariableKeys();
+            Map<String, List<String>> keys = data.getContext().variableKeys();
             List<String> result = new ArrayList<>(keys.keySet());
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
@@ -971,8 +992,7 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            String[] keys = data.getContext().getCustomFieldKeys();
-            List<String> result = Arrays.asList(keys);
+            List<String> result = data.getContext().customFieldKeys();
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -1003,7 +1023,7 @@ public class WrapperController {
             String experimentName = (String) request.get("experimentName");
             String fieldName = (String) request.get("fieldName");
 
-            Object valueType = data.getContext().getCustomFieldValueType(experimentName, fieldName);
+            Object valueType = data.getContext().customFieldType(experimentName, fieldName);
 
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
 
@@ -1089,7 +1109,7 @@ public class WrapperController {
         }
 
         int eventsBefore = data.getEventCollector().getEvents().size();
-        int pendingCount = data.getContext().getPendingCount();
+        int pendingCount = data.getContext().pendingEventCount();
 
         Map<String, Object> response = new HashMap<>();
         response.put("result", pendingCount);
@@ -1107,7 +1127,7 @@ public class WrapperController {
         }
 
         int eventsBefore = data.getEventCollector().getEvents().size();
-        Object result = data.getContext().isClosed();
+        Object result = data.getContext().state() == ContextState.CLOSED;
         Map<String, Object> response = new HashMap<>();
         response.put("result", result);
         response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
@@ -1124,7 +1144,7 @@ public class WrapperController {
         }
 
         int eventsBefore = data.getEventCollector().getEvents().size();
-        Object result = data.getContext().isReady();
+        Object result = isReady(data.getContext());
         Map<String, Object> response = new HashMap<>();
         response.put("result", result);
         response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
@@ -1141,7 +1161,7 @@ public class WrapperController {
         }
 
         int eventsBefore = data.getEventCollector().getEvents().size();
-        Object result = data.getContext().isFailed();
+        Object result = isFailed(data.getContext());
         Map<String, Object> response = new HashMap<>();
         response.put("result", result);
         response.put("events", data.getEventCollector().getNewEvents(eventsBefore));
@@ -1159,7 +1179,7 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            List<String> experiments = Arrays.asList(data.getContext().getExperiments());
+            List<String> experiments = data.getContext().experiments();
 
             Map<String, Object> response = new HashMap<>();
             response.put("result", experiments);
@@ -1181,7 +1201,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Map<String, Object> result = data.getContext().getUnitValues();
+            Map<String, Object> result = data.getContext().unitValues();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
@@ -1202,7 +1222,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Map<String, Object> result = data.getContext().getAttributes();
+            Map<String, Object> result = data.getContext().attributes();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", result);
@@ -1223,7 +1243,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Throwable error = data.getContext().readyError();
+            Throwable error = data.getContext().failure();
             Map<String, Object> result = error != null
                 ? Map.of("isError", true, "message", error.getMessage() != null ? error.getMessage() : error.toString())
                 : null;
@@ -1246,7 +1266,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            Map<String, List<String>> keys = data.getContext().getVariableKeys();
+            Map<String, List<String>> keys = data.getContext().variableKeys();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", keys);
@@ -1267,7 +1287,7 @@ public class WrapperController {
         }
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            List<String> keys = Arrays.asList(data.getContext().getCustomFieldKeys());
+            List<String> keys = data.getContext().customFieldKeys();
             List<Map<String, Object>> newEvents = data.getEventCollector().getNewEvents(eventsBefore);
             Map<String, Object> response = new HashMap<>();
             response.put("result", keys);
@@ -1332,15 +1352,11 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            if (request.containsKey("newData") && data.getDataProvider() != null) {
-                com.absmartly.sdk.json.ContextData newContextData = objectMapper.convertValue(
-                    request.get("newData"),
-                    com.absmartly.sdk.json.ContextData.class
-                );
-                data.getDataProvider().setNextData(newContextData);
+            if (request.containsKey("newData") && data.acceptsNewData()) {
+                data.getTransport().queuePayload(objectMapper.writeValueAsString(request.get("newData")));
             }
 
-            boolean wasFailed = data.getContext().isFailed();
+            boolean wasFailed = isFailed(data.getContext());
             data.getContext().refresh();
             if (!wasFailed) {
                 data.getEventCollector().awaitEvent(eventsBefore, 2000, "refresh", "error");
@@ -1370,7 +1386,7 @@ public class WrapperController {
 
         int eventsBefore = data.getEventCollector().getEvents().size();
         try {
-            boolean wasClosed = data.getContext().isClosed();
+            boolean wasClosed = data.getContext().state() == ContextState.CLOSED;
             data.getContext().close();
             if (!wasClosed) {
                 data.getEventCollector().awaitEvent(eventsBefore, 2000, "finalize", "error");
@@ -1394,7 +1410,7 @@ public class WrapperController {
     public ResponseEntity<?> deleteContext(@PathVariable String contextId) {
         ContextWrapper removed = contexts.remove(contextId);
         if (removed != null) {
-            // Release the per-context Client's HTTP client (an Apache async reactor).
+            // Release the per-context client (its scheduler and HTTP transport).
             removed.closeClient();
         }
 

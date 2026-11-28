@@ -18,9 +18,14 @@ RUN dotnet restore ./dotnet-sdk/tests/ABSmartly.Sdk.Tests/ABSmartly.Sdk.Tests.cs
     dotnet build ./dotnet-sdk/tests/ABSmartly.Sdk.Tests/ --no-restore
 CMD ["dotnet", "test", "./dotnet-sdk/tests/ABSmartly.Sdk.Tests/", "--no-build"]
 
+# Wrapper probe regressions (tests/ProbeTests, net9.0 like the wrapper and this SDK image). The runtime
+# stage copies the published output from here, so a failing probe test fails the image build.
+FROM build AS wrapper-tests
+RUN dotnet run --project ./cross-sdk-tests/dotnet-wrapper/tests/ProbeTests.csproj
+
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
-COPY --from=build /app/out .
+COPY --from=wrapper-tests /app/out .
 
 ENV ASPNETCORE_URLS=http://+:3000
 EXPOSE 3000

@@ -101,14 +101,23 @@ After all SDKs finish publishing, the orchestrator polls the ABsmartly API.
 
 ### Metrics API
 
-The orchestrator fetches experiment results via `abs experiments get {id} --format json --profile e2e` which returns exposure and goal data. For per-SDK segmentation, it queries the API with the `sdk_name` attribute filter.
+The orchestrator fetches results with `abs experiments metrics results {id} -o json`. For per-SDK segmentation it adds an audience-expression filter on the `sdk_name` attribute (built with `json.dumps`):
 
-The exact API endpoint and query parameters for attribute-segmented metrics will be determined during implementation by inspecting the CLI's `experiments get` output and the ABsmartly REST API documentation.
+```bash
+abs experiments metrics results {id} -o json \
+  --filter '{"filter": {"and": [{"eq": [{"var": {"path": "sdk_name"}}, {"value": "java"}]}]}}'
+```
+
+Each variant in the result carries `unit_count` (exposed units) and `count` (the metric numerator, i.e. converting units for the `goal_unique_count` e2e metric); see `absmartly/cli` `src/api-client/metric-results.ts`. Exposures are `sum(unit_count)` and goals are `sum(count)` over variants. The CLI's human table shows `samples` as the treatment variant's `unit_count` only, so it is not the exposure total.
+
+Revenue is measured by the backend, never computed from goal counts. The runner finds or creates the metric `e2e_purchase_revenue` (`abs metrics create --type goal_property --goal purchase --value-source-property amount`, then review request/approve and activate) and queries it with `abs experiments metrics results {id} --metric <revenue id>`, both unfiltered and with the per-SDK `--filter`. It is not attached to the experiment: `--metric` returns the result for an unattached metric (verified live on test-1, where java, php and dotnet each measured exposures 100/100, goals 50/50 and revenue 500/500). The result is selected by `metric_id`; actual revenue is `sum(count)` over its variants (the summed `amount` property). The expected value is the planned amount sent (planned goals x 10).
+
+An SDK whose segmented result is missing (query rejected, unparsable, empty) or untrustworthy (every SDK equals the aggregate, or the per-SDK sum exceeds it) fails with an `unverified: <reason>` note. An existing `e2e_purchase_revenue` is read with `abs metrics get <id> --raw` (without `--raw` the CLI prints a summary with no `value_source_property`) and refused unless it is goal_property on the `amount` property (and, when the payload names the goal, on `purchase`); one left inactive by a failed run is found by looking up `--search e2e_purchase_revenue` with `--include-drafts --archived` (both are hidden by default; more than one metric with that name fails the run), unarchived with `metrics archive <id> --unarchive` if archived, and reviewed and activated again, skipping the review steps its `review.status` shows were already done (`lifecycle_status` `activated` counts as active). Readiness polling stops waiting on an SDK whose count is already past the over-publish bound, since counts only grow and it can no longer pass. An SDK whose revenue cannot be measured (query rejected, unparsable, metric missing from the output, missing or non-numeric counts, no revenue metric id), or whose per-SDK revenue trips the same two filter-trust checks, fails with an `unverified: revenue <reason>` note. The unsegmented aggregate (participants, goals, revenue) is reported for information only and never passes an SDK. `PASS All metrics verified` prints, and the runner exits 0, only when every non-skipped SDK row's exposures, goals and revenue were measured and passed (an all-skipped run fails; an SDK requested with `--sdk` that is skipped or unknown fails the run, and the report lists the unrequested SDKs that were skipped); a dry run prints `DRY-RUN` instead.
 
 ### Per-SDK verification (segmented by `sdk_name` attribute):
 - **Exposures**: 100 total per SDK (~50/50 split across variants, determined by hashing)
 - **Goal conversions**: 50 per SDK (units 0..49 tracked `purchase`)
-- **Revenue**: 500 per SDK (50 goals x $10)
+- **Revenue**: 500 per SDK (measured `amount` sum of the revenue metric; planned 50 goals x $10)
 
 ### Aggregate verification (across all tested SDKs):
 - **Total exposures**: N x 100 (where N = number of SDKs that ran)

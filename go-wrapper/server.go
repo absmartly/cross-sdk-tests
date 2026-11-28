@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	gocontext "context"
 	"encoding/json"
 	"errors"
@@ -117,6 +118,11 @@ func (d *deferredContextDataProvider) GetContextData() *future.Future {
 	return d.dataFuture
 }
 
+// GetContextPayload makes the SDK take the future's full payload, holdouts and switchback fields included.
+func (d *deferredContextDataProvider) GetContextPayload() *future.Future {
+	return d.dataFuture
+}
+
 // CustomPublisher is the per-context ContextPublisher handed to the real SDK.
 // When armed via /publishFail it fails the next SDK-invoked Publish exactly
 // once; what happens to pending events after that failure is decided entirely
@@ -152,7 +158,7 @@ type ContextData struct {
 var (
 	contexts     = make(map[string]*ContextData)
 	contextsMu   sync.RWMutex
-	payloadStore = make(map[string]jsonmodels.ContextData)
+	payloadStore = make(map[string]jsonmodels.ContextPayload)
 	payloadMu    sync.RWMutex
 )
 
@@ -169,21 +175,21 @@ type ClientConfigRequest struct {
 }
 
 type CreateContextRequest struct {
-	Data       jsonmodels.ContextData `json:"data"`
-	Endpoint   string                 `json:"endpoint"`
-	Units      map[string]interface{} `json:"units"`
-	Options    map[string]interface{} `json:"options"`
-	FailLoad   bool                   `json:"failLoad"`
-	Mode       string                 `json:"mode"`
-	Attributes map[string]interface{} `json:"attributes"`
-	Client     *ClientConfigRequest   `json:"client"`
+	Data       jsonmodels.ContextPayload  `json:"data"`
+	Endpoint   string                     `json:"endpoint"`
+	Units      map[string]interface{}     `json:"units"`
+	Options    map[string]interface{}     `json:"options"`
+	FailLoad   bool                       `json:"failLoad"`
+	Mode       string                     `json:"mode"`
+	Attributes map[string]json.RawMessage `json:"attributes"`
+	Client     *ClientConfigRequest       `json:"client"`
 	// PublishToEndpoint makes publish() go through the SDK's own default
 	// publisher to PUT {endpoint}/context (X-Agent scenarios).
 	PublishToEndpoint bool `json:"publishToEndpoint"`
 }
 
 type StorePayloadRequest struct {
-	Data jsonmodels.ContextData `json:"data"`
+	Data jsonmodels.ContextPayload `json:"data"`
 }
 
 type StorePayloadResponse struct {
@@ -258,6 +264,7 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"trackRejectsNonObjectProperties": true,
 		"refreshNoOpOnFailedContext":      true,
 		"throwsOnMisuse":                  true,
+		"rejectsSettersAfterFinalize":     true,
 		"singleFinalizeEvent":             true,
 		"semverNumericOperands":           true,
 		"clientNoEnvironment":             true,
@@ -266,6 +273,11 @@ func capabilitiesHandler(w http.ResponseWriter, r *http.Request) {
 		"assignmentRules":                 true,
 		"semverOperators":                 true,
 		"xAgentHeader":                    true,
+		"holdouts":                        holdoutsSupported(),
+		"holdout_arms":                    holdoutArmsSupported(),
+		"switchback":                      switchbackSupported(),
+		// The switchback battery checks that a float attribute keys no cluster (switchback.go).
+		"integralFloatAttributes": switchbackSupported(),
 	})
 }
 
@@ -332,6 +344,17 @@ func storePayloadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+// storedPayload is the payload stored under id, or an empty one (experiments: []) if none was stored.
+func storedPayload(id string) jsonmodels.ContextPayload {
+	payloadMu.RLock()
+	data, exists := payloadStore[id]
+	payloadMu.RUnlock()
+	if !exists {
+		data = jsonmodels.ContextPayload{Experiments: []jsonmodels.ExperimentData{}}
+	}
+	return data
+}
+
 func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
@@ -342,13 +365,7 @@ func getPayloadHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(throttleStr, "%d", &throttle)
 	}
 
-	payloadMu.RLock()
-	data, exists := payloadStore[payloadID]
-	payloadMu.RUnlock()
-
-	if !exists {
-		data = jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}
-	}
+	data := storedPayload(payloadID)
 
 	if throttle > 0 {
 		time.Sleep(time.Duration(throttle) * time.Millisecond)
@@ -405,13 +422,7 @@ func mockApiContextHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	payloadID := vars["payloadId"]
 
-	payloadMu.RLock()
-	data, exists := payloadStore[payloadID]
-	payloadMu.RUnlock()
-
-	if !exists {
-		data = jsonmodels.ContextData{Experiments: []jsonmodels.Experiment{}}
-	}
+	data := storedPayload(payloadID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
@@ -455,6 +466,17 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		writeSDKError(w, http.StatusBadRequest, fmt.Errorf("Invalid 'application' in client argument"), nil)
 		return
 	}
+	// Decode every attribute before creating the context, so an invalid one
+	// (a number beyond float64) is rejected without leaving a context behind.
+	attributes := make(map[string]interface{}, len(req.Attributes))
+	for name, raw := range req.Attributes {
+		value, err := attributeValue(raw)
+		if err != nil {
+			writeSDKError(w, http.StatusBadRequest, err, nil)
+			return
+		}
+		attributes[name] = value
+	}
 	eventCollector := &EventCollector{events: []Event{}}
 	customPublisher := &CustomPublisher{eventCollector: eventCollector}
 
@@ -468,7 +490,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var absmartly *sdk.ABSmartly
-	var data *jsonmodels.ContextData
+	var data *jsonmodels.ContextPayload
 	throttled := false
 	switch {
 	case req.Mode == "e2e":
@@ -490,9 +512,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
 		a := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:             client,
-			ContextPublisher_:   customPublisher,
-			ContextEventLogger_: eventCollector,
+			Client_:              client,
+			ContextEventHandler_: customPublisher,
+			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
 	case req.Endpoint != "":
@@ -514,7 +536,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				defer resp.Body.Close()
-				var data jsonmodels.ContextData
+				var data jsonmodels.ContextPayload
 				if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 					done(nil, err)
 					return
@@ -536,7 +558,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			a := sdk.Create(sdk.ABSmartlyConfig{
 				Client_:              client,
 				ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
-				ContextPublisher_:    customPublisher,
+				ContextEventHandler_: customPublisher,
 				ContextEventLogger_:  eventCollector,
 			})
 			absmartly = &a
@@ -552,9 +574,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 				customPublisher.inner = sdk.CreateDefaultContextEventHandler(client)
 			}
 			a := sdk.Create(sdk.ABSmartlyConfig{
-				Client_:             client,
-				ContextPublisher_:   customPublisher,
-				ContextEventLogger_: eventCollector,
+				Client_:              client,
+				ContextEventHandler_: customPublisher,
+				ContextEventLogger_:  eventCollector,
 			})
 			absmartly = &a
 		}
@@ -570,7 +592,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 		a := sdk.Create(sdk.ABSmartlyConfig{
 			Client_:              client,
 			ContextDataProvider_: &deferredContextDataProvider{dataFuture: dataFuture},
-			ContextPublisher_:    customPublisher,
+			ContextEventHandler_: customPublisher,
 			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
@@ -587,9 +609,9 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			Environment_: environment,
 		})
 		a := sdk.Create(sdk.ABSmartlyConfig{
-			Client_:             client,
-			ContextPublisher_:   customPublisher,
-			ContextEventLogger_: eventCollector,
+			Client_:              client,
+			ContextEventHandler_: customPublisher,
+			ContextEventLogger_:  eventCollector,
 		})
 		absmartly = &a
 		data = &req.Data
@@ -597,7 +619,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 
 	var context *sdk.Context
 	if data != nil {
-		context = absmartly.CreateContextWith(contextConfig, *data)
+		context = absmartly.CreateContextWithPayload(contextConfig, *data)
 	} else {
 		context = absmartly.CreateContext(contextConfig)
 	}
@@ -608,7 +630,7 @@ func createContextHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for name, value := range req.Attributes {
+	for name, value := range attributes {
 		if err := context.SetAttribute(name, value); err != nil {
 			writeSDKError(w, http.StatusBadRequest, err, eventCollector.SliceFrom(0))
 			return
@@ -715,13 +737,64 @@ func getUnit(cd *ContextData, decode func(interface{}) error) (interface{}, erro
 
 func setAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
 	var req struct {
-		Name  string      `json:"name"`
-		Value interface{} `json:"value"`
+		Name  string          `json:"name"`
+		Value json.RawMessage `json:"value"`
 	}
 	if err := decode(&req); err != nil {
 		return nil, err
 	}
-	return nil, cd.context.SetAttribute(req.Name, req.Value)
+	value, err := attributeValue(req.Value)
+	if err != nil {
+		return nil, err
+	}
+	return nil, cd.context.SetAttribute(req.Name, value)
+}
+
+// attributeValue decodes a JSON attribute value with UseNumber: every number
+// reaches the SDK as a json.Number holding the digits that were sent. The
+// SDK reads a json.Number as the number it denotes in audiences and semver
+// (as the JS SDK holds JSON numbers), and as a switchback cluster key only
+// when written as an integer, so 3 keys a cluster and 3.0 does not.
+// encoding/json's default would make both float64. A number beyond float64
+// is rejected: the attribute could not be compared or returned as JSON.
+func attributeValue(raw json.RawMessage) (interface{}, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value interface{}
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	if err := checkNumbers(value); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+// checkNumbers rejects a json.Number beyond float64 range anywhere in a
+// decoded value.
+func checkNumbers(value interface{}) error {
+	switch v := value.(type) {
+	case json.Number:
+		if _, err := v.Float64(); err != nil {
+			return fmt.Errorf("number %s out of range", v.String())
+		}
+	case map[string]interface{}:
+		for _, item := range v {
+			if err := checkNumbers(item); err != nil {
+				return err
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			if err := checkNumbers(item); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func getAttribute(cd *ContextData, decode func(interface{}) error) (interface{}, error) {
@@ -929,11 +1002,25 @@ func deleteContextHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	router := newRouter()
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+
+	log.Printf("Go SDK wrapper listening on port %s", port)
+	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), router))
+}
+
+func newRouter() *mux.Router {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/health", healthHandler).Methods("GET")
 	router.HandleFunc("/capabilities", capabilitiesHandler).Methods("GET")
 	router.HandleFunc("/diagnostic", diagnosticHandler).Methods("POST")
+	router.HandleFunc("/switchback/assign", switchbackAssignHandler).Methods("POST")
+	router.HandleFunc("/switchback/permutation", switchbackPermutationHandler).Methods("POST")
 	router.HandleFunc("/context_payload/{payloadId}", storePayloadHandler).Methods("PUT")
 	router.HandleFunc("/context_payload/{payloadId}", getPayloadHandler).Methods("GET")
 	router.HandleFunc("/context_payload/{payloadId}/context", mockApiContextHandler).Methods("GET")
@@ -972,12 +1059,5 @@ func main() {
 	router.HandleFunc("/context/{contextId}/refresh", contextRoute(refresh)).Methods("POST")
 	router.HandleFunc("/context/{contextId}/finalize", contextRoute(finalize)).Methods("POST")
 	router.HandleFunc("/context/{contextId}", deleteContextHandler).Methods("DELETE")
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3000"
-	}
-
-	log.Printf("Go SDK wrapper listening on port %s", port)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%s", port), router))
+	return router
 }

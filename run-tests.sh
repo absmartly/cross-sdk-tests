@@ -217,7 +217,7 @@ if [ "$SKIP_BUILD" = false ]; then
 
   # Build heavy SDKs first (JVM/native — need lots of memory) in small batches,
   # then build the rest. This prevents OOM during parallel builds.
-  HEAVY_SDKS="scala-sdk scala-unit java-sdk java-unit kotlin-sdk kotlin-unit swift-sdk swift-unit cpp-sdk cpp-unit dotnet-sdk dotnet-unit elixir-sdk elixir-unit rust-sdk rust-unit"
+  HEAVY_SDKS="scala-sdk scala-unit java-sdk java-unit java-v1-sdk java-v1-unit kotlin-sdk kotlin-unit swift-sdk swift-unit cpp-sdk cpp-unit dotnet-sdk dotnet-unit elixir-sdk elixir-unit rust-sdk rust-unit"
   LIGHT_SDKS=""
   ALL_SERVICES=$(docker compose config --services 2>/dev/null)
 

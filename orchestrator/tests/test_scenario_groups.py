@@ -9,6 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import generate_holdout_conformance_scenarios as holdout_conformance
 import generate_parity_round_scenarios as parity
 import generate_sdk_round_2026_11_scenarios as sdk_round
 import generate_switchback_scenarios as switchback
@@ -46,14 +47,19 @@ def recorded_oracle(monkeypatch):
     monkeypatch.setattr(parity, "run_reference", lambda specs: [
         copy.deepcopy(parity_responses[spec["title"]]) for spec in specs
     ])
+    holdout_responses = recorded_responses((holdout_conformance.MARKER,))
+    monkeypatch.setattr(holdout_conformance, "run_reference", lambda specs: [
+        copy.deepcopy(holdout_responses[spec["title"]]) for spec in specs
+    ])
 
 
-GENERATORS = {"sdk-round": sdk_round, "parity": parity, "switchback": switchback}
+GENERATORS = {"sdk-round": sdk_round, "parity": parity, "switchback": switchback,
+              "holdout-conformance": holdout_conformance}
 
 
-@pytest.mark.parametrize("order", [("sdk-round", "parity", "switchback"),
-                                   ("switchback", "parity", "sdk-round"),
-                                   ("parity", "switchback", "sdk-round")],
+@pytest.mark.parametrize("order", [("sdk-round", "parity", "switchback", "holdout-conformance"),
+                                   ("holdout-conformance", "switchback", "parity", "sdk-round"),
+                                   ("parity", "holdout-conformance", "switchback", "sdk-round")],
                          ids=lambda order: "-then-".join(order))
 def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, monkeypatch):
     raw = Path(sdk_round.CANONICAL).read_bytes()
@@ -75,6 +81,22 @@ def test_generators_compose_byte_identically(order, recorded_oracle, tmp_path, m
         assert path.read_bytes() == raw, name
     for name in order:
         run(GENERATORS[name], check=True)
+
+
+@pytest.mark.parametrize("stale", ["result", "dropped-step", "dropped-scenario"])
+def test_holdout_conformance_check_fails_on_stale_file(stale, recorded_oracle, tmp_path, monkeypatch):
+    canonical = json.loads(Path(sdk_round.CANONICAL).read_text(encoding="utf-8"))
+    group = [s for s in canonical if holdout_conformance.MARKER in s["name"]]
+    if stale == "result":
+        group[0]["steps"][-1]["expect"]["result"] += 1  # the closing pending count
+    elif stale == "dropped-step":
+        del group[0]["steps"][-1]
+    else:
+        canonical.remove(group[-1])
+    path = tmp_path / "scenarios.json"
+    path.write_text(json.dumps(canonical, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [holdout_conformance.__file__, "--file", str(path), "--check"])
+    assert holdout_conformance.main() == 1
 
 
 def scenario(number, marker="Retained", title="case"):

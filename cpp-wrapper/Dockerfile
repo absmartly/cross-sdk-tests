@@ -20,6 +20,11 @@ RUN mkdir -p /app/build-tests && cd /app/build-tests && \
 WORKDIR /app/build-tests
 CMD ["sh", "-c", "./tests/absmartly_tests --reporter JUnit 2>&1"]
 
+# The wrapper build registers test_probes.cpp with ctest (BUILD_TESTING). The runtime stage copies the
+# binary from here, so a failing probe regression fails the image build.
+FROM build AS wrapper-tests
+RUN cd /app/build && ctest --output-on-failure
+
 FROM ubuntu:22.04
 
 RUN apt-get update && \
@@ -28,7 +33,7 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY --from=build /app/build/cpp-wrapper .
+COPY --from=wrapper-tests /app/build/cpp-wrapper .
 
 EXPOSE 3000
 

@@ -28,6 +28,13 @@ services:
       dockerfile: cross-sdk-tests/java-wrapper/Dockerfile
       target: tester
 
+  java-v1-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-v1-wrapper/Dockerfile
+      target: tester
+
   php-unit:
     init: true
     build:
@@ -40,6 +47,20 @@ services:
     build:
       context: ..
       dockerfile: cross-sdk-tests/go-wrapper/Dockerfile
+      target: tester
+
+  dart-v2-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-v2-wrapper/Dockerfile
+      target: tester
+
+  flutter-v2-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-v2-wrapper/Dockerfile
       target: tester
 
   dart-unit:
@@ -61,6 +82,13 @@ services:
     build:
       context: ..
       dockerfile: cross-sdk-tests/swift-wrapper/Dockerfile
+      target: tester
+
+  swift-v1-unit:
+    init: true
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-v1-wrapper/Dockerfile
       target: tester
 
   rust-unit:
@@ -193,6 +221,20 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
+
+  java-v1-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/java-v1-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=java-v1
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
   php-sdk:
     build:
       context: ..
@@ -232,6 +274,32 @@ services:
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
       - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
 
+  dart-v2-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/dart-v2-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=dart-v2
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
+  flutter-v2-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/flutter-v2-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=flutter-v2
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
   dart-sdk:
     build:
       context: ..
@@ -266,6 +334,21 @@ services:
       - "3000"
     environment:
       - SDK_NAME=swift
+      - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
+      - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
+      - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
+      - ABSMARTLY_E2E_ENVIRONMENT=${ABSMARTLY_E2E_ENVIRONMENT:-production}
+
+  # swift-sdk 1.x (pinned in sdk-branches.sh: an exact 1.x commit until release/1.x exists) during its 12-month maintenance window; built from the
+  # swift-sdk-v1 checkout. swift-sdk above is 2.x.
+  swift-v1-sdk:
+    build:
+      context: ..
+      dockerfile: cross-sdk-tests/swift-v1-wrapper/Dockerfile
+    ports:
+      - "3000"
+    environment:
+      - SDK_NAME=swift-v1
       - ABSMARTLY_E2E_ENDPOINT=${ABSMARTLY_E2E_ENDPOINT:-}
       - ABSMARTLY_E2E_API_KEY=${ABSMARTLY_E2E_API_KEY:-}
       - ABSMARTLY_E2E_APPLICATION=${ABSMARTLY_E2E_APPLICATION:-e2e-tests}
@@ -411,6 +494,15 @@ services:
     ports:
       - "8080"
 
+  # Blocking SDK event-emission gate (local-collector/local_collector.py); see
+  # docker-compose.local-collector.yml and run-local-collector-tests.sh.
+  local-collector:
+    build:
+      context: .
+      dockerfile: local-collector/Dockerfile
+    ports:
+      - "8090"
+
   orchestrator:
     build:
       context: .
@@ -421,12 +513,16 @@ services:
       - python-sdk
       - ruby-sdk
       - java-sdk
+      - java-v1-sdk
       - php-sdk
       - go-sdk
       - liquid-sdk
       - dart-sdk
       - flutter-sdk
+      - dart-v2-sdk
+      - flutter-v2-sdk
       - swift-sdk
+      - swift-v1-sdk
       - dotnet-sdk
       - react-sdk
       - vue2-sdk

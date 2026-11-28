@@ -5,3 +5,6 @@
 # (context-server/server.py) in process and decode its br bodies. Same pin as
 # context-server/requirements.txt; test_runner.py itself never imports it.
 brotli==1.2.0
+
+# Parse workflow/Compose wiring in the compatibility lane registration regression.
+PyYAML==6.0.3

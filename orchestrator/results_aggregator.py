@@ -72,11 +72,7 @@ UNIT_TEST_PARSERS = {
     },
     "swift": {
         "framework": "swift test",
-        "patterns": [
-            (r"Test Case '.*?' passed", lambda m: (1, 0, None)),
-            (r"Test Case '.*?' failed", lambda m: (0, 1, None)),
-        ],
-        "aggregate": True,
+        "custom_parser": "swift_test",
     },
     "rust": {
         "framework": "cargo test",
@@ -176,6 +172,11 @@ UNIT_TEST_PARSERS = {
     },
 }
 
+UNIT_TEST_PARSERS["java-v1"] = UNIT_TEST_PARSERS["java"]
+UNIT_TEST_PARSERS["swift-v1"] = UNIT_TEST_PARSERS["swift"]
+UNIT_TEST_PARSERS["dart-v2"] = UNIT_TEST_PARSERS["dart"]
+UNIT_TEST_PARSERS["flutter-v2"] = UNIT_TEST_PARSERS["flutter"]
+
 
 def parse_catch2_junit(output):
     output = strip_ansi(output)
@@ -222,6 +223,56 @@ def parse_gradle_junit(output):
     if passed or failed or skipped:
         return passed, failed, passed + failed + skipped
 
+    return None, None, None
+
+
+def parse_swift_test(output):
+    """Parse `swift test` output: XCTest and swift-testing, combined.
+
+    XCTest prints one "Test Case '...' passed/failed" line per test. swift-testing
+    (Swift 6) prints its own lines, one run per test target, ending in a summary:
+      ✔ Test run with 566 tests in 37 suites passed after 8.167 seconds.
+      ✘ Test run with 566 tests in 37 suites failed after 9.244 seconds with 33 issues.
+    and one result line per test (parameterised tests count once):
+      ✔ Test evaluate() passed after 0.001 seconds.
+      ✘ Test retries(count:) with 4 test cases failed after 6.1 seconds with 2 issues.
+    The two formats never share a line, so the counts add up without double
+    counting. The leading symbol is matched loosely (macOS uses SF Symbols).
+    """
+    output = strip_ansi(output)
+    xc_passed = len(re.findall(r"Test Case '.*?' passed", output, re.MULTILINE))
+    xc_failed = len(re.findall(r"Test Case '.*?' failed", output, re.MULTILINE))
+
+    test_line = r"^\S+ Test (?!run with )(?!.* recorded an issue).*? {status} after [\d.]+ seconds"
+    st_passed = st_failed = st_skipped = 0
+    summary = r"^\S+ Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after"
+    # Each target owns its summary and result lines. Completed summaries must not
+    # hide trailing results from a target whose output was truncated.
+    for target in re.split(r"^\S+ Test run started\.\s*$", output, flags=re.MULTILINE):
+        cursor = 0
+        runs = list(re.finditer(summary, target, re.MULTILINE))
+        for run in runs + [None]:
+            section = target[cursor:run.start()] if run else target[cursor:]
+            failed = len(re.findall(test_line.format(status="failed"), section, re.MULTILINE))
+            skipped = len(re.findall(
+                r'^\S+ Test (?!run with ).*? skipped(?:\.|: ".*")?\s*$', section, re.MULTILINE))
+            skipped += len(re.findall(
+                r"^\S+ Test (?!run with ).*? was cancelled after [\d.]+ seconds", section, re.MULTILINE))
+            if run:
+                total = int(run.group(1))
+                failed = min(total, max(failed, int(run.group(2) == "failed")))
+                skipped = min(skipped, total - failed)
+                passed = total - failed - skipped
+                cursor = run.end()
+            else:
+                passed = len(re.findall(test_line.format(status="passed"), section, re.MULTILINE))
+            st_passed += passed
+            st_failed += failed
+            st_skipped += skipped
+
+    passed, failed = xc_passed + st_passed, xc_failed + st_failed
+    if passed or failed or st_skipped:
+        return passed, failed, passed + failed + st_skipped
     return None, None, None
 
 
@@ -288,6 +339,9 @@ def parse_unit_test_output(sdk, output):
 
     if parser.get("custom_parser") == "gradle_junit":
         return parse_gradle_junit(output)
+
+    if parser.get("custom_parser") == "swift_test":
+        return parse_swift_test(output)
 
     if parser.get("aggregate"):
         passed = 0

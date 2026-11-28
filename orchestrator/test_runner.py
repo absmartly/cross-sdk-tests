@@ -7,7 +7,7 @@ import sys
 import time
 import uuid
 from collections import Counter
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 import requests
@@ -55,6 +55,7 @@ _CONTEXT_SERVER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspa
 if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "negotiation.py")):
     sys.path.insert(0, _CONTEXT_SERVER_DIR)
 import negotiation  # noqa: E402
+from e2e_cases import AGENT_LANGUAGE  # noqa: E402
 
 
 # Checked-in capability policy: which `requires:` capabilities each SDK must
@@ -362,6 +363,37 @@ def units_match_unordered(actual: Any, expected: Any) -> bool:
     return assign(0, frozenset())
 
 
+def events_in_expected_order(
+    actual: List[Any], expected: List[Any], matches: Callable[[Any, Any, int], bool]
+) -> List[Any]:
+    """`actual` reordered so each event `matches` the expected one at its position (passed as the
+    third argument), one-to-one, or unchanged if no ordering does, so the positional check reports
+    the mismatch."""
+
+    # Cache compatibility once: retrying every permutation is factorial when a late expectation
+    # cannot be satisfied. Augmenting paths find a complete bipartite matching in polynomial time,
+    # including when a broad expectation initially takes a more specific expectation's only match.
+    compatible = [[j for j, candidate in enumerate(actual) if matches(candidate, event, i)]
+                  for i, event in enumerate(expected)]
+    owners: Dict[int, int] = {}
+
+    def assign(i: int, seen: set) -> bool:
+        for j in compatible[i]:
+            if j in seen:
+                continue
+            seen.add(j)
+            if j not in owners or assign(owners[j], seen):
+                owners[j] = i
+                return True
+        return False
+
+    for i in range(len(expected)):
+        if not assign(i, set()):
+            return actual  # Preserve wire order for positional diagnostics on a mismatch.
+    order = sorted(owners, key=owners.get)
+    return [actual[j] for j in order]
+
+
 def result_matches(action: str, actual: Any, expected: Any, ordered: bool = False) -> bool:
     exact = action not in PARTIAL_RESULT_ACTIONS
     if not ordered and action in UNORDERED_RESULT_ACTIONS:
@@ -406,8 +438,96 @@ def _project(actual: Any, expected: Any) -> Any:
     return actual
 
 
-def _exposure_observation(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: _canonical(data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
+def _same_exposure(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    """Match stable identity, never the unit value being checked."""
+    return any(left.get(key) not in (None, "") and key in right
+               and values_match(left[key], right[key]) for key in ("id", "name"))
+
+
+def _expected_exposure(data: Dict[str, Any], exposures: Any) -> Dict[str, Any]:
+    if not isinstance(exposures, list):
+        return {}
+    matches = [e for e in exposures if isinstance(e, dict) and _same_exposure(data, e)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(exposures) == 1 and isinstance(exposures[0], dict) and not any(
+        key in exposures[0] for key in ("id", "name")
+    ):
+        return exposures[0]
+    return {}
+
+
+def _holdout_unit_types(data: Dict[str, Any], expected: Dict[str, Any],
+                        context_data: Optional[Dict[str, Any]]) -> Optional[set]:
+    """The real unit types a named holdout's exposure may carry, or None if not a holdout.
+
+    A holdout exposure takes the unit type of the experiment it covers, never a
+    field on the holdout, and holdout ids are their own namespace, so the holdout
+    is found by name and its covered experiments by holdoutIds."""
+    holdouts = context_data.get("holdouts") if isinstance(context_data, dict) else None
+    experiments = context_data.get("experiments") if isinstance(context_data, dict) else None
+    if not isinstance(holdouts, list):
+        return None
+    names = {item.get("name") for item in (data, expected) if item.get("name") not in (None, "")}
+    matched = [h for h in holdouts if isinstance(h, dict) and h.get("name") in names]
+    if not matched:
+        return None
+    ids = {h.get("id") for h in matched}
+    return {e["unitType"] for e in (experiments if isinstance(experiments, list) else [])
+            if isinstance(e, dict) and e.get("unitType") not in (None, "")
+            and isinstance(e.get("holdoutIds"), list) and ids & set(e["holdoutIds"])}
+
+
+def _exposure_unit_type(
+    data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
+) -> Any:
+    """Real context types win; None is proven absence, MISSING is no evidence.
+
+    Only the scenario's definitions prove absence: an identified experiment the
+    context does not define, or one defined without a unitType. Neither the SDK's
+    unit nor the expectation (omitted or explicitly null/empty) proves it.
+    """
+    experiments = context_data.get("experiments") if isinstance(context_data, dict) else None
+    usable = isinstance(experiments, list) and all(isinstance(e, dict) for e in experiments)
+    known = [e for e in experiments if _same_exposure(data, e) or _same_exposure(expected, e)] if usable else []
+    real_types = [e["unitType"] for e in known if e.get("unitType") not in (None, "")]
+    if real_types:
+        return real_types[0]
+    if usable and (known or any(data.get(key) not in (None, "") for key in ("id", "name"))):
+        return None
+    return MISSING
+
+
+def _exposure_comparison(
+    data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Validation-only copies; wire records and sameShapeAs baselines stay raw."""
+    expected = dict(expected)
+    holdout_types = _holdout_unit_types(data, expected, context_data)
+    if holdout_types is not None:
+        # Never an absent alias. An explicit real unit is checked as written; otherwise
+        # the unit must be the type of an experiment the holdout covers.
+        if expected.get("unit", MISSING) in (None, "", MISSING) and holdout_types:
+            actual_unit = data.get("unit", MISSING)
+            expected["unit"] = actual_unit if actual_unit in holdout_types else sorted(holdout_types)[0]
+        return data, expected
+    unit_type = _exposure_unit_type(data, expected, context_data)
+    if unit_type is not MISSING and ("unit" not in expected or expected["unit"] in (None, "")):
+        expected["unit"] = unit_type
+    if unit_type is None:
+        if data.get("unit", MISSING) in (None, ""):
+            data = {**data, "unit": None}
+    return data, expected
+
+
+def _exposure_observation(
+    data: Dict[str, Any], expected: Dict[str, Any], context_data: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    # Owner compatibility decision applies ONLY to genuinely absent types.
+    absent = (_holdout_unit_types(data, expected, context_data) is None
+              and _exposure_unit_type(data, expected, context_data) is None)
+    return {k: _canonical(None if k == "unit" and absent and data.get(k, MISSING) == ""
+                          else data.get(k, MISSING)) for k in EXPOSURE_CONSISTENCY_KEYS}
 
 
 def _context_data_observation(data: Dict[str, Any]) -> Any:
@@ -429,13 +549,18 @@ def _context_data_observation(data: Dict[str, Any]) -> Any:
     }
 
 
-def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
+def _publish_observation(
+    data: Dict[str, Any], expected: Optional[Dict[str, Any]] = None,
+    context_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """publish payload minus what is volatile or SDK-identifying.
 
     Left out: publishedAt/exposedAt/achievedAt/setAt (clock), sdkVersion, and
     the system attributes (sdk_name, sdk_version, application, environment,
     app_version) whose values name the SDK. An omitted goals/exposures/
-    attributes array is the same as an empty one (JS omits empty arrays).
+    attributes array is the same as an empty one (JS omits empty arrays), and
+    an attribute without a value is the same as one with a null value (Java's
+    serializer omits null fields; the collector reads both as null).
     """
 
     def items(key: str) -> List[Any]:
@@ -453,15 +578,21 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "hashed": _canonical(data.get("hashed", MISSING)),
         "units": _sorted_list(units),
-        "exposures": [_exposure_observation(x) if isinstance(x, dict) else {"invalid": _canonical(x)} for x in items("exposures")],
+        "exposures": [
+            _exposure_observation(x, _expected_exposure(
+                x, expected.get("exposures") if isinstance(expected, dict) else None), context_data)
+            if isinstance(x, dict) else {"invalid": _canonical(x)} for x in items("exposures")
+        ],
         "goals": [
             {"name": _canonical(g.get("name", MISSING)), "properties": _canonical(g.get("properties"))}
             if isinstance(g, dict)
             else {"invalid": _canonical(g)}
             for g in items("goals")
         ],
+        # A null attribute value and an omitted one are the same to the Collector: Jackson's NON_NULL
+        # (java) drops the key, JSON.stringify (javascript) and ruby send null.
         "attributes": [
-            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value", MISSING))}
+            {"name": _canonical(a.get("name", MISSING)), "value": _canonical(a.get("value"))}
             if isinstance(a, dict)
             else {"invalid": _canonical(a)}
             for a in items("attributes")
@@ -470,7 +601,10 @@ def _publish_observation(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ordered: bool = False) -> str:
+def observation_for_step(
+    action: str, actual: Any, expected: Dict[str, Any], ordered: bool = False, *,
+    context_data: Optional[Dict[str, Any]] = None,
+) -> str:
     """Normalized, comparable view of what an SDK returned for one step.
 
     Volatile fields are left out by construction: partial (status) results are
@@ -500,6 +634,10 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
     events = actual.get("events", MISSING)
     if isinstance(events, list):
         events_obs = []
+        expected_events = expected.get("events") if isinstance(expected, dict) else None
+        expected_events = [e for e in expected_events if isinstance(e, dict)] if isinstance(expected_events, list) else []
+        exposures = [e.get("data") for e in expected_events if e.get("type") == "exposure" and isinstance(e.get("data"), dict)]
+        publishes = [e.get("data") for e in expected_events if e.get("type") == "publish" and isinstance(e.get("data"), dict)]
         for event in events:
             if not isinstance(event, dict):
                 events_obs.append({"invalid": _canonical(event)})
@@ -507,29 +645,22 @@ def observation_for_step(action: str, actual: Any, expected: Dict[str, Any], ord
             entry: Dict[str, Any] = {"type": _canonical(event.get("type", MISSING))}
             data = event.get("data")
             if entry["type"] == "exposure" and isinstance(data, dict):
-                entry["data"] = _exposure_observation(data)
+                entry["data"] = _exposure_observation(data, _expected_exposure(data, exposures), context_data)
             elif entry["type"] == "goal" and isinstance(data, dict):
                 entry["data"] = {"name": _canonical(data.get("name", MISSING))}
             elif entry["type"] in ("ready", "refresh") and isinstance(data, dict):
                 entry["data"] = _context_data_observation(data)
             elif entry["type"] == "publish" and isinstance(data, dict):
-                entry["data"] = _publish_observation(data)
+                publish_expected = publishes[0] if len(publishes) == 1 else {}
+                entry["data"] = _publish_observation(data, publish_expected, context_data)
             events_obs.append(entry)
+        if expected.get("unorderedEvents") is True:
+            events_obs.sort(key=lambda e: json.dumps(e, sort_keys=True))
 
     return json.dumps({"result": result, "events": events_obs}, sort_keys=True)
 
 
-# The SDK language each lane's requests name (the <lang> of an X-Agent such as absmartly-<lang>-sdk/1.0.0)
-# where it is not the lane name: flutter uses the dart_sdk client, liquid wraps ruby-sdk, and the
-# framework wrappers wrap javascript-sdk.
-SDK_AGENT_LANGUAGE = {
-    "flutter": "dart",
-    "liquid": "ruby",
-    "react": "javascript",
-    "vue2": "javascript",
-    "vue3": "javascript",
-    "angular": "javascript",
-}
+SDK_AGENT_LANGUAGE = AGENT_LANGUAGE
 
 
 def _as_list(value: Any) -> List[Any]:
@@ -1310,6 +1441,8 @@ class TestOrchestrator:
             }
 
         context_id = None
+        context_data = scenario.get("contextData")
+        context_failed = False
         payload_id = None
         failures: List[Dict[str, Any]] = []
         responses: List[Any] = [None] * len(steps)
@@ -1528,6 +1661,19 @@ class TestOrchestrator:
                     response.raise_for_status()
                     data = response.json()
 
+                # Track scenario definitions, not the SDK's deserialized models.
+                # HTTP failures leave the prior context in place. A refresh on
+                # a failed context cannot load new definitions.
+                if action in ("createContext", "createContextWith"):
+                    context_data, context_failed = scenario.get("contextData"), False
+                elif action == "createContextFailed":
+                    # A context whose load failed defines no experiments.
+                    context_data, context_failed = {"experiments": []}, True
+                elif action == "setData" and "data" in params:
+                    context_data = params["data"]
+                elif action == "refresh" and not context_failed and "newData" in params:
+                    context_data = params["newData"]
+
                 # Negotiation first: when the context server served this step an
                 # encoding the negotiation would not choose, the response (e.g.
                 # 200 with failed: true) is not judged as the SDK's. A recorder
@@ -1538,16 +1684,31 @@ class TestOrchestrator:
                     wire_failures = step_fetch_failures(step_index, action)
                 except HarnessError as harness_exc:
                     if not harness_exc.served_fault:
-                        failures.extend(self.validate_step(step_index, action, data, expected, responses))
+                        failures.extend(self.validate_step(
+                            step_index, action, data, expected, responses, context_data=context_data
+                        ))
                     raise
-                step_failures = self.validate_step(step_index, action, data, expected, responses)
+                # Unordered steps record their events in expected order, so references
+                # (sameShapeAs) use the same positions as validation.
+                reference_events: Optional[List[Any]] = (
+                    [] if expected.get("unorderedEvents") is True else None
+                )
+                step_failures = self.validate_step(
+                    step_index, action, data, expected, responses,
+                    reference_events=reference_events, context_data=context_data
+                )
                 if step_failures:
                     failures.extend(step_failures)
+                # Keep the raw response untouched for observations and diagnostics.
                 responses[step_index] = data
+                if (reference_events is not None and isinstance(data, dict)
+                        and isinstance(data.get("events"), list)):
+                    responses[step_index] = {**data, "events": reference_events}
                 failures.extend(wire_failures)
                 observations[step_index] = (
                     action,
-                    observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False)),
+                    observation_for_step(action, data, expected, ordered=expected.get("orderedResult", False),
+                                         context_data=context_data),
                 )
 
             except HarnessError as exc:
@@ -1596,7 +1757,8 @@ class TestOrchestrator:
                     observations[step_index] = (
                         action,
                         observation_for_step(
-                            action, {"result": "<error>", "events": error_body.get("events", MISSING)}, expected
+                            action, {"result": "<error>", "events": error_body.get("events", MISSING)}, expected,
+                            context_data=context_data
                         ),
                     )
                     failures.extend(
@@ -1606,6 +1768,7 @@ class TestOrchestrator:
                             error_body.get("events", MISSING),
                             expected,
                             context="events on error response: ",
+                            context_data=context_data,
                         )
                     )
                 else:
@@ -1618,6 +1781,16 @@ class TestOrchestrator:
                             "actual": "error response body is not a JSON object",
                         }
                     )
+
+                if expected.get("errorEnvelope") is True:
+                    raw_error = error_body.get("error") if isinstance(error_body, dict) else None
+                    if not isinstance(raw_error, str) or not raw_error.strip():
+                        failures.append({"step": step_index, "action": action, "field": "errorEnvelope.error",
+                                         "expected": "a non-blank error string in the raw JSON body",
+                                         "actual": describe(raw_error)})
+                    if isinstance(error_body, dict) and error_body.get("result") is not None:
+                        failures.append({"step": step_index, "action": action, "field": "errorEnvelope.result",
+                                         "expected": "no success result", "actual": describe(error_body["result"])})
 
                 if "status" in expected:
                     actual_status = exc.response.status_code if exc.response is not None else None
@@ -1717,6 +1890,9 @@ class TestOrchestrator:
         actual: Any,
         expected: Dict[str, Any],
         prior_responses: Optional[List[Any]] = None,
+        *,
+        reference_events: Optional[List[Any]] = None,
+        context_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         failures: List[Dict[str, Any]] = []
 
@@ -1780,7 +1956,10 @@ class TestOrchestrator:
 
         actual_events = actual.get("events", MISSING)
         failures.extend(
-            self.validate_events(step_index, action, actual_events, expected, prior_responses=prior_responses)
+            self.validate_events(
+                step_index, action, actual_events, expected, prior_responses=prior_responses,
+                reference_events=reference_events, context_data=context_data,
+            )
         )
         return failures
 
@@ -1792,10 +1971,15 @@ class TestOrchestrator:
         expected: Dict[str, Any],
         context: str = "",
         prior_responses: Optional[List[Any]] = None,
+        *,
+        reference_events: Optional[List[Any]] = None,
+        context_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Check a response's events window against the step's `events`."""
         failures: List[Dict[str, Any]] = []
         prior_responses = prior_responses or []
+        if reference_events is not None and isinstance(actual_events, list):
+            reference_events.extend(actual_events)
 
         def fail(field: str, expected_value: Any, actual_value: Any) -> None:
             failures.append(
@@ -1824,6 +2008,9 @@ class TestOrchestrator:
             return failures
 
         expected_events = expected["events"]
+        if not isinstance(expected_events, list):
+            fail("events", "a scenario `events` array", expected_events)
+            return failures
         if not isinstance(actual_events, list):
             fail("events", expected_events, actual_events)
             return failures
@@ -1841,10 +2028,13 @@ class TestOrchestrator:
             )
             return failures
 
-        for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
+        def check_event(i: int, actual_event: Any, expected_event: Any, fail: Callable[[str, Any, Any], None]) -> None:
+            if not isinstance(expected_event, dict):
+                fail(f"events[{i}]", "a scenario event object", expected_event)
+                return
             if not isinstance(actual_event, dict):
                 fail(f"events[{i}]", expected_event, actual_event)
-                continue
+                return
 
             actual_type = actual_event.get("type", MISSING)
             if not values_match(actual_type, expected_event.get("type")):
@@ -1863,9 +2053,16 @@ class TestOrchestrator:
                         mismatch[2],
                     )
 
-            if "data" in expected_event:
-                actual_data = actual_event.get("data", MISSING)
-                expected_data = expected_event["data"]
+            actual_data = actual_event.get("data", MISSING)
+            expected_data = expected_event.get("data", {})
+            if actual_type == "exposure" and isinstance(actual_data, dict) and isinstance(expected_data, dict):
+                actual_data, expected_data = _exposure_comparison(actual_data, expected_data, context_data)
+            if actual_type == "publish" and isinstance(actual_data, dict) and isinstance(expected_data, dict):
+                # Even a partial publish expectation must not hide a real type
+                # lost by the SDK. Keep the nested array and all UID checks raw.
+                if "exposures" not in expected_data and isinstance(actual_data.get("exposures"), list):
+                    expected_data = {**expected_data, "exposures": [{} for _ in actual_data["exposures"]]}
+            if "data" in expected_event or expected_data:
                 if isinstance(expected_data, dict) and isinstance(actual_data, dict):
                     for key, expected_value in expected_data.items():
                         actual_value = actual_data.get(key, MISSING)
@@ -1885,10 +2082,38 @@ class TestOrchestrator:
                             if not units_match_unordered(actual_value, expected_value):
                                 fail(f"events[{i}].data.units (unordered)", expected_value, actual_value)
                             continue
+                        if (key == "exposures" and actual_type == "publish"
+                                and isinstance(actual_value, list) and isinstance(expected_value, list)):
+                            if len(actual_value) != len(expected_value):
+                                fail(f"events[{i}].data.exposures.length", len(expected_value), len(actual_value))
+                            for j, (a, e) in enumerate(zip(actual_value, expected_value)):
+                                if isinstance(a, dict) and isinstance(e, dict):
+                                    a, e = _exposure_comparison(a, e, context_data)
+                                if not values_match(a, e):
+                                    fail(f"events[{i}].data.exposures[{j}]", e, actual_value[j])
+                            continue
                         if not values_match(actual_value, expected_value):
-                            fail(f"events[{i}].data.{key}", expected_value, actual_value)
+                            raw_value = actual_event.get("data", {}).get(key, MISSING)
+                            fail(f"events[{i}].data.{key}", expected_value, raw_value)
                 elif not values_match(actual_data, expected_data):
                     fail(f"events[{i}].data", expected_data, actual_data)
+
+        if expected.get("unorderedEvents") is True:
+            # Only the set of events is pinned (e.g. exposures one call queues together, whose order
+            # differs between SDKs and is not part of the contract): pair them one-to-one in any
+            # order by the same per-event check, then check each pair below as usual.
+            def pairs(actual_event: Any, expected_event: Any, i: int) -> bool:
+                mismatches: List[str] = []
+                check_event(i, actual_event, expected_event, lambda *args: mismatches.append(args[0]))
+                return not mismatches
+
+            actual_events = events_in_expected_order(actual_events, expected_events, pairs)
+
+        if reference_events is not None:
+            reference_events[:] = actual_events
+
+        for i, (actual_event, expected_event) in enumerate(zip(actual_events, expected_events)):
+            check_event(i, actual_event, expected_event, fail)
 
         return failures
 

@@ -176,16 +176,21 @@ def test_place_group_rejects_a_split_group():
                                     generator.build_group, first_number=270)
 
 
-# sha256 of test_scenarios_complete.json at ae86279 (#20): main's 305 scenarios plus 270-272. The
-# file with the br scenarios (273 up to, not including, 300) removed must render to exactly those
-# bytes: the only change the br follow-up may make is that insertion after 272.
-BEFORE_BR_SHA256 = "80dcd7b66b8a0a53d82a1ec66e8beef18566bf5faba5f7469154ad1d49e1d8a0"
-BEFORE_BR_COUNT = 308
+# sha256 of test_scenarios_complete.json with the br scenarios (273 up to, not including, 300) and the
+# generator-owned groups below removed: the br scenarios may only be inserted after 272, so the rest
+# must render to exactly these bytes. Update it only when a non-br scenario legitimately changes.
+BEFORE_BR_SHA256 = "6c9a6f5215ea16b421599f19d1720453356f36f69625db43cbe418341379468b"
+BEFORE_BR_COUNT = 282
+# Left out of the snapshot: the Switchback group, rewritten by generate_switchback_scenarios.py and
+# verified by its own --check, and the Shared Variable Key and Holdout Conformance groups, which own
+# their numbering and are checked by their own tests.
+LATER_GROUP_MARKERS = (scenario_groups.SHARED_VARIABLE_KEY, scenario_groups.SWITCHBACK,
+                       scenario_groups.HOLDOUT_CONFORMANCE)
 
 
 def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_after_272():
     import hashlib
-    scenarios = canonical()
+    scenarios = [s for s in canonical() if not any(m in s["name"] for m in LATER_GROUP_MARKERS)]
     numbers = [scenario_groups.number(s) for s in scenarios]
     inserted = [i for i, n in enumerate(numbers) if 273 <= n < 300]
     # Contiguous from 273, right after 272 and before 300, all in the Context Fetch group.
@@ -200,10 +205,48 @@ def test_main_and_270_272_are_byte_identical_and_br_is_a_contiguous_insertion_af
     assert hashlib.sha256(rendered).hexdigest() == BEFORE_BR_SHA256
     with open(generator.CANONICAL, "rb") as src:
         text = src.read()
-    # Byte-level too: the file is the old bytes with one block inserted.
-    head = rendered[:rendered.index(b'\n  {\n    "name": "300 - ')]
-    tail = rendered[len(head):]
-    assert text.startswith(head) and text.endswith(tail)
+    # Byte-level too: the file is the old bytes with one block inserted (and any later groups
+    # appended after the old tail).
+    assert_retained_bytes(text, rendered, canonical())
+
+
+def assert_retained_bytes(text, rendered, scenarios):
+    """Compare the actual file's retained bytes, not a re-rendering that erases whitespace drift."""
+    head_end = rendered.index(b'\n  {\n    "name": "300 - ')
+    tail_start = text.index(b'\n  {\n    "name": "300 - ')
+    later = [s for s in scenarios if any(m in s["name"] for m in LATER_GROUP_MARKERS)]
+    tail_end = len(text)
+    if later:
+        first_later = b'\n  {\n    "name": ' + json.dumps(later[0]["name"]).encode("utf-8")
+        tail_end = text.index(first_later)
+    raw_tail = text[tail_start:tail_end]
+    if later:
+        assert raw_tail.endswith(b",")
+        raw_tail = raw_tail[:-1] + b"\n]\n"
+    assert text.startswith(rendered[:head_end])
+    assert raw_tail == rendered[head_end:]
+
+
+@pytest.mark.parametrize("mutation", ["head-indent", "tail-indent", "tail-value"])
+def test_retained_byte_guard_rejects_raw_file_drift(mutation):
+    with open(generator.CANONICAL, "rb") as src:
+        text = src.read()
+    scenarios = canonical()
+    kept = [s for s in scenarios if not any(m in s["name"] for m in LATER_GROUP_MARKERS)
+            and not 273 <= scenario_groups.number(s) < 300]
+    rendered = generator.render(kept).encode("utf-8")
+    if mutation == "head-indent":
+        changed = text.replace(b'    "name": "01 - ', b'     "name": "01 - ', 1)
+    else:
+        start = text.index(b'\n  {\n    "name": "300 - ')
+        old, new = ((b'    "description":', b'     "description":') if mutation == "tail-indent"
+                    else (b'    "description": "', b'    "description": "changed '))
+        changed = text[:start] + text[start:].replace(old, new, 1)
+    assert changed != text
+    if mutation != "tail-value":
+        assert json.loads(changed) == scenarios
+    with pytest.raises(AssertionError):
+        assert_retained_bytes(changed, rendered, scenarios)
 
 
 # -- policy ------------------------------------------------------------------
@@ -214,22 +257,22 @@ def test_required_where_observed_or_read_from_code():
     policy = test_runner.load_capability_policy()
     assert policy["measuredCapabilities"] == [CAP, "contextFetchBrotli"]
     required = sorted(sdk for sdk, e in policy["sdks"].items() if CAP in e["required"])
-    assert required == ["angular", "dart", "flutter", "javascript", "liquid", "python", "react", "ruby",
-                        "scala", "swift", "vue2", "vue3"]
+    assert required == ["angular", "dart", "dart-v2", "flutter", "flutter-v2", "javascript", "liquid", "python", "react", "ruby",
+                        "scala", "swift", "swift-v1", "vue2", "vue3"]
     excepted = {sdk: e["unsupported"][CAP] for sdk, e in policy["sdks"].items() if CAP in e["unsupported"]}
-    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "kotlin", "php", "rust"]
+    assert sorted(excepted) == ["cpp", "dotnet", "elixir", "go", "java", "java-v1", "kotlin", "php", "rust"]
     assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 
 
 def test_brotli_required_where_observed_or_read_from_code():
-    """contextFetchBrotli: only swift is required; the other 19 are reviewed exceptions with provenance."""
+    """contextFetchBrotli: only swift and swift-v1 are required; the other 20 are reviewed exceptions with provenance."""
     policy = test_runner.load_capability_policy()
     br = "contextFetchBrotli"
     required = sorted(sdk for sdk, e in policy["sdks"].items() if br in e["required"])
-    assert required == ["swift"]
+    assert required == ["swift", "swift-v1"]
     excepted = {sdk: e["unsupported"][br] for sdk, e in policy["sdks"].items() if br in e["unsupported"]}
-    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift"})
-    assert len(excepted) == 19
+    assert sorted(excepted) == sorted(set(policy["sdks"]) - {"swift", "swift-v1"})
+    assert len(excepted) == 22
     assert all(reason.startswith(("observed:", "from code")) for reason in excepted.values())
 
 

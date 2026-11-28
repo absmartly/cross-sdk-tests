@@ -4,6 +4,8 @@ const Client = require('@absmartly/javascript-sdk/lib/client').default;
 const sdkUtils = require('@absmartly/javascript-sdk/lib/utils');
 const holdoutSelfTest = require('./holdoutSelfTest');
 const assignmentRulesSelfTest = require('./assignmentRulesSelfTest');
+const switchbackSelfTest = require('./switchbackSelfTest');
+const sharedVariableKeysSelfTest = require('./sharedVariableKeysSelfTest');
 
 // Default client config for a test context. A scenario can override the
 // application/environment names through the optional `client` field on
@@ -173,11 +175,13 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/capabilities', async (req, res) => {
-  const [holdouts, holdoutArms, assignmentRules, semverOperators] = await Promise.all([
+  const [holdouts, holdoutArms, assignmentRules, semverOperators, switchback, sharedVariableKeys] = await Promise.all([
     holdoutSelfTest.runHoldouts(),
     holdoutSelfTest.runHoldoutArms(),
     assignmentRulesSelfTest.runAssignmentRules(),
     assignmentRulesSelfTest.runSemverOperators(),
+    switchbackSelfTest.runSwitchback(),
+    sharedVariableKeysSelfTest.runSharedVariableKeys(),
   ]);
 
   res.json({diagnosticsUtf8: true,
@@ -195,6 +199,7 @@ app.get('/capabilities', async (req, res) => {
     trackRejectsNonObjectProperties: true,
     refreshNoOpOnFailedContext: true,
     throwsOnMisuse: true,
+    rejectsSettersAfterFinalize: true,
     singleFinalizeEvent: true,
     semverNumericOperands: true,
     clientNoEnvironment: true,
@@ -205,7 +210,11 @@ app.get('/capabilities', async (req, res) => {
     holdouts,
     holdout_arms: holdoutArms,
     assignmentRules,
-    semverOperators
+    semverOperators,
+    switchback,
+    sharedVariableKeys,
+    // JavaScript parses 3.0 as 3, so a cluster attribute of 3.0 keys "3" (owner decision 2026-11-17).
+    integralFloatAttributes: false
   });
 });
 
@@ -248,9 +257,39 @@ app.get('/context_payload/:payloadId/requests', (req, res) => {
   res.json({ requests: capturedRequests[req.params.payloadId] || [] });
 });
 
+// Validate the entire batch before creating a context or tracking any goals.
+function validatePreReadyGoals(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return 'Request body must be an object';
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, 'preReadyGoals')) return null;
+  if (body.mode !== 'e2e') return 'preReadyGoals is only supported in e2e mode';
+  if (!Array.isArray(body.preReadyGoals)) return 'preReadyGoals must be a list';
+  for (const goal of body.preReadyGoals) {
+    if (!goal || typeof goal !== 'object' || Array.isArray(goal) ||
+        typeof goal.goalName !== 'string' || !goal.goalName.trim() ||
+        Object.keys(goal).some(key => key !== 'goalName' && key !== 'properties')) {
+      return 'Each preReadyGoals entry must contain a non-empty goalName and optional properties';
+    }
+    if (Object.prototype.hasOwnProperty.call(goal, 'properties') &&
+        (!goal.properties || typeof goal.properties !== 'object' || Array.isArray(goal.properties))) {
+      return 'preReadyGoals properties must be an object';
+    }
+  }
+  return null;
+}
+
 app.post('/context', async (req, res) => {
   try {
+    const validationError = validatePreReadyGoals(req.body);
+    if (validationError) return res.status(400).json({ error: validationError, events: [] });
     if (req.body.mode === "e2e") {
+      for (const key of ['units', 'attributes', 'options']) {
+        if (Object.prototype.hasOwnProperty.call(req.body, key) &&
+            (!req.body[key] || typeof req.body[key] !== 'object' || Array.isArray(req.body[key]))) {
+          return res.status(400).json({ error: `${key} must be an object`, events: [] });
+        }
+      }
       const e2eEndpoint = process.env.ABSMARTLY_E2E_ENDPOINT;
       const e2eApiKey = process.env.ABSMARTLY_E2E_API_KEY;
       const e2eApp = process.env.ABSMARTLY_E2E_APPLICATION || "e2e-tests";
@@ -277,7 +316,38 @@ app.post('/context', async (req, res) => {
 
       const contextConfig = { units: req.body.units || {} };
       const e2eOptions = { ...(req.body.options || {}), publishDelay: -1, refreshPeriod: 0 };
-      const context = e2eSdk.createContext(contextConfig, e2eOptions);
+      let context;
+      let preReadyTracked = false;
+      if (Object.prototype.hasOwnProperty.call(req.body, 'preReadyGoals')) {
+        // Use the SDK's normal createContext/provider/client path, but hold the
+        // provider's real client request until all tracks have been made.
+        let releaseFetch;
+        const deferredData = new Promise((resolve, reject) => { releaseFetch = { resolve, reject }; });
+        let released = false;
+        const gatedProvider = {
+          getContextData(sdk, requestOptions) {
+            if (released) return sdk.getClient().getContext(requestOptions);
+            gatedProvider.request = () => {
+              released = true;
+              return sdk.getClient().getContext(requestOptions).then(releaseFetch.resolve, releaseFetch.reject);
+            };
+            return deferredData;
+          }
+        };
+        e2eSdk.setContextDataProvider(gatedProvider);
+        context = e2eSdk.createContext(contextConfig, e2eOptions);
+        preReadyTracked = context.isReady() === false;
+        if (!preReadyTracked) throw new Error('Expected a not-ready context before tracking');
+        for (const goal of req.body.preReadyGoals) {
+          // Measure the SDK itself immediately before every track; never spoof readiness.
+          if (context.isReady() !== false) throw new Error('Context became ready before tracking');
+          context.track(goal.goalName, goal.properties);
+        }
+        // Release the provider's real Client.getContext request only after tracking.
+        gatedProvider.request();
+      } else {
+        context = e2eSdk.createContext(contextConfig, e2eOptions);
+      }
       await context.ready();
 
       if (req.body.attributes) {
@@ -289,7 +359,10 @@ app.post('/context', async (req, res) => {
       contexts.set(contextId, { context, eventCollector, customPublisher });
 
       return res.json({
-        result: { contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized() },
+        result: {
+          contextId, ready: context.isReady(), failed: context.isFailed(), finalized: context.isFinalized(),
+          ...(preReadyTracked ? { preReadyTracked: true } : {})
+        },
         events: eventCollector.events
       });
     }
@@ -856,6 +929,43 @@ app.post('/diagnostic', (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// The switchback pure functions (WRAPPER_API_SPEC.md, capability `switchback`). The 64-bit fields are
+// decimal strings, passed to the SDK unparsed so they are never read through a double. They answer
+// whenever the SDK has the functions, independent of the self-test verdict.
+function switchbackCall(res, exportName, call) {
+  const functions = switchbackSelfTest.loadFunctions();
+  if (functions == null || typeof functions[exportName] !== 'function') {
+    return res.status(501).json({ error: `linked SDK has no switchback ${exportName}`, events: [] });
+  }
+  try {
+    return res.json({ result: call(functions[exportName]), events: [] });
+  } catch (error) {
+    return res.status(400).json({ error: error.message, events: [] });
+  }
+}
+
+const MAX_SWITCHBACK_ARMS = 1000;
+
+function switchbackParams(body, indexName) {
+  const request = body || {};
+  for (const name of ['clusterUnit', indexName, 'seed']) {
+    if (typeof request[name] !== 'string') throw new Error(`${name} must be a string`);
+  }
+  // WRAPPER_API_SPEC.md: the same bound in every wrapper, so no request builds a huge permutation. A
+  // JSON 3.0 parses as 3 here, as the spec allows.
+  if (!Number.isInteger(request.armCount) || request.armCount < 2 || request.armCount > MAX_SWITCHBACK_ARMS) {
+    throw new Error(`armCount must be an integer between 2 and ${MAX_SWITCHBACK_ARMS}`);
+  }
+  return [request.clusterUnit, request[indexName], request.seed, request.armCount];
+}
+
+app.post('/switchback/assign', (req, res) =>
+  switchbackCall(res, 'assignSwitchback', (assign) => assign(...switchbackParams(req.body, 'periodIndex'))));
+
+app.post('/switchback/permutation', (req, res) =>
+  switchbackCall(res, 'switchbackPermutation', (permutation) =>
+    permutation(...switchbackParams(req.body, 'cycleIndex'))));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {

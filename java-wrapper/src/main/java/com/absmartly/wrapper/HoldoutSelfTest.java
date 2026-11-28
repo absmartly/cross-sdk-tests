@@ -1,12 +1,13 @@
 package com.absmartly.wrapper;
 
-import com.absmartly.sdk.ABSmartly;
-import com.absmartly.sdk.ABSmartlyConfig;
-import com.absmartly.sdk.ContextConfig;
-import com.absmartly.sdk.ContextEventLogger;
-import com.absmartly.sdk.json.ContextData;
-import com.absmartly.sdk.json.Experiment;
-import com.absmartly.sdk.json.Exposure;
+import com.absmartly.sdk.ABsmartlyClient;
+import com.absmartly.sdk.ContextState;
+import com.absmartly.sdk.Exposure;
+import com.absmartly.sdk.event.ContextEvent;
+import com.absmartly.sdk.event.EventListener;
+import com.absmartly.sdk.event.ExposureEvent;
+import com.absmartly.sdk.internal.json.ContextPayload;
+import com.absmartly.sdk.internal.json.Experiment;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
@@ -79,10 +80,10 @@ final class HoldoutSelfTest {
 
     private static boolean runBattery() throws Exception {
         Field holdoutIdsField = findField(Experiment.class, "holdoutIds");
-        Field holdoutsField = findField(ContextData.class, "holdouts");
+        Field holdoutsField = findField(ContextPayload.class, "holdouts");
         if (holdoutIdsField == null || holdoutsField == null) {
             System.out.println("[holdouts probe] behavioral self-test FAILED: linked core-api has no "
-                + "holdout wire model (Experiment.holdoutIds / ContextData.holdouts absent) - cannot "
+                + "holdout wire model (Experiment.holdoutIds / ContextPayload.holdouts absent) - cannot "
                 + "even construct the fixture, so holdout semantics cannot be present either");
             return false;
         }
@@ -144,7 +145,7 @@ final class HoldoutSelfTest {
             return false;
         }
 
-        ContextData contextData = new ContextData();
+        ContextPayload contextData = new ContextPayload();
         contextData.experiments = new Experiment[] {
             expA, expB, expC, expDCovered, expDSibling, expE, expF, expG
         };
@@ -160,32 +161,25 @@ final class HoldoutSelfTest {
         holdoutsField.set(contextData, holdoutsArray);
 
         List<ProbeExposure> exposures = new CopyOnWriteArrayList<>();
-        ContextEventLogger logger = (context, type, data) -> {
-            if (type == ContextEventLogger.EventType.Exposure && data instanceof Exposure) {
-                Exposure exposure = (Exposure) data;
-                exposures.add(new ProbeExposure(exposure.id, exposure.name, exposure.variant));
+        EventListener listener = event -> {
+            if (event.type() == ContextEvent.Type.EXPOSURE) {
+                Exposure exposure = ((ExposureEvent) event).exposure();
+                exposures.add(new ProbeExposure(exposure.id(), exposure.name(), exposure.variant()));
             }
         };
 
         // LATE_UNIT_TYPE is deliberately absent here - see check G below.
-        ContextConfig contextConfig = ContextConfig.create()
-            .setUnit(HELD_OUT_UNIT_TYPE, HELD_OUT_UID)
-            .setUnit(NOT_HELD_OUT_UNIT_TYPE, NOT_HELD_OUT_UID)
-            .setPublishDelay(-1)
-            .setRefreshInterval(0);
+        java.util.Map<String, Object> units = new java.util.LinkedHashMap<>();
+        units.put(HELD_OUT_UNIT_TYPE, HELD_OUT_UID);
+        units.put(NOT_HELD_OUT_UNIT_TYPE, NOT_HELD_OUT_UID);
 
-        ABSmartlyConfig sdkConfig = ABSmartlyConfig.create()
-            .setContextDataProvider(new DummyContextDataProvider())
-            .setContextEventHandler((context, event) -> java.util.concurrent.CompletableFuture.completedFuture(null))
-            .setContextEventLogger(logger);
+        ABsmartlyClient client = SdkSupport.inMemoryClient();
+        com.absmartly.sdk.Context context = SdkSupport.context(client, contextData, units, listener);
 
-        ABSmartly sdk = ABSmartly.create(sdkConfig);
-        com.absmartly.sdk.Context context = sdk.createContextWith(contextConfig, contextData);
-        context.waitUntilReady();
-
-        if (!context.isReady() || context.isFailed()) {
+        if (context.state() != ContextState.READY) {
             System.out.println("[holdouts probe] behavioral self-test FAILED: context not ready ("
-                + "failed=" + context.isFailed() + ")");
+                + "state=" + context.state() + ")");
+            client.close();
             return false;
         }
 
@@ -208,6 +202,7 @@ final class HoldoutSelfTest {
             if (!checkLateUnitPublishesHoldoutExposure(prefix, context, exposures)) return false;
         } finally {
             context.close();
+            client.close();
         }
 
         System.out.println("[holdouts probe] behavioral self-test PASSED: all 7 checks mirroring "
@@ -234,7 +229,7 @@ final class HoldoutSelfTest {
      * Check G - mirrors scenario 221: peek resolves the full-on covered experiment before its
      * unit type is installed (full-on experiments never read the uid, so this succeeds and must
      * not itself expose anything); setUnit then installs it; a second resolution - via
-     * getTreatment, which does expose - must publish BOTH the experiment's own exposure and the
+     * treatment, which does expose - must publish BOTH the experiment's own exposure and the
      * holdout's own exposure exactly once each. This is what distinguishes the capability from a
      * probe that only exercises checks A-F: an SDK that resolves a covered full-on experiment
      * correctly before its unit exists, but pins that decision so the holdout's own exposure is

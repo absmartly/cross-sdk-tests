@@ -9,6 +9,8 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:absmartly_dart/absmartly_dart.dart';
 import 'package:absmartly_dart/src/internal/buffers.dart';
 import 'package:absmartly_dart/src/internal/hashing/hashing.dart';
+import 'holdout_self_test.dart' as holdout_self_test;
+import 'switchback_self_test.dart' as switchback_self_test;
 
 String translateEndpoint(String endpoint) {
   final uri = Uri.parse(endpoint);
@@ -63,7 +65,7 @@ class EventCollector implements ContextEventLogger {
 
   @override
   void handleEvent(Context context, EventType type, dynamic data) {
-    String eventType;
+    String eventType = 'finalize';
     switch (type) {
       case EventType.error:
         eventType = 'error';
@@ -278,9 +280,17 @@ void main() async {
     );
   });
 
-  router.get('/capabilities', (shelf.Request request) {
+  router.get('/capabilities', (shelf.Request request) async {
+    final holdouts = await holdout_self_test.runHoldouts();
+    final holdoutArms = await holdout_self_test.runHoldoutArms();
+    final switchback = await switchback_self_test.runSwitchback();
+    final integralFloat = await switchback_self_test.runIntegralFloat();
     return shelf.Response.ok(
       jsonEncode({
+        'holdouts': holdouts,
+        'holdout_arms': holdoutArms,
+        'switchback': switchback,
+        'integralFloatAttributes': integralFloat,
         'diagnostics': true,
         'diagnosticsUtf8': true,
         'attrsSeq': false,
@@ -295,8 +305,10 @@ void main() async {
         'trackRejectsNonObjectProperties': true,
         'refreshNoOpOnFailedContext': true,
         'throwsOnMisuse': true,
+        'rejectsSettersAfterFinalize': true,
         'singleFinalizeEvent': true,
         'semverNumericOperands': true,
+        'sharedVariableKeys': true,
         'assignmentRules': true,
         'semverOperators': true,
         'xAgentHeader': true,
@@ -305,6 +317,56 @@ void main() async {
       }),
       headers: {'Content-Type': 'application/json'},
     );
+  });
+
+  // clusterUnit is the assigner input (the raw R33 cluster key) and is not
+  // hashed; 64-bit values arrive as decimal strings. See WRAPPER_API_SPEC.md,
+  // capability `switchback`.
+  String decimal(Map<String, dynamic> body, String name) {
+    final value = body[name];
+    if (value is! String) {
+      throw ArgumentError('$name must be a decimal string');
+    }
+    return value;
+  }
+
+  Future<shelf.Response> switchbackCall(
+      shelf.Request request, String indexName,
+      Object Function(String clusterUnit, String index, String seed, int armCount) call) async {
+    try {
+      final body = jsonDecode(await request.readAsString());
+      if (body is! Map<String, dynamic>) {
+        throw ArgumentError('request body must be an object');
+      }
+      if (body['clusterUnit'] is! String) {
+        throw ArgumentError('clusterUnit must be a string');
+      }
+      final armCount = body['armCount'];
+      if (armCount is! int || armCount < 2) {
+        throw ArgumentError('armCount must be an integer of at least 2, got $armCount');
+      }
+      final result = call(body['clusterUnit'] as String, decimal(body, indexName), decimal(body, 'seed'), armCount);
+      return shelf.Response.ok(
+        jsonEncode({'result': result, 'events': []}),
+        headers: {'Content-Type': 'application/json'},
+      );
+    } on ArgumentError catch (e) {
+      return shelf.Response(400,
+          body: jsonEncode({'error': e.message.toString(), 'events': []}),
+          headers: {'Content-Type': 'application/json'});
+    } on FormatException catch (e) {
+      return shelf.Response(400,
+          body: jsonEncode({'error': e.message, 'events': []}),
+          headers: {'Content-Type': 'application/json'});
+    }
+  }
+
+  router.post('/switchback/assign', (shelf.Request request) {
+    return switchbackCall(request, 'periodIndex', switchback_self_test.switchbackAssign);
+  });
+
+  router.post('/switchback/permutation', (shelf.Request request) {
+    return switchbackCall(request, 'cycleIndex', switchback_self_test.switchbackPermutation);
   });
 
   router.post('/diagnostic', (shelf.Request request) async {

@@ -1,3 +1,4 @@
+use axum::extract::rejection::JsonRejection;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, Method, StatusCode},
@@ -17,6 +18,16 @@ use absmartly::{
     utils, Client, Context, ContextData, ContextOptions, ContextPublisher, PublishParams,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
+
+mod switchback_self_test;
+
+/// The `switchback` capability: a behavioural self-test, run once on first use.
+static SWITCHBACK_SELF_TEST: OnceLock<bool> = OnceLock::new();
+
+fn switchback_capability() -> bool {
+    *SWITCHBACK_SELF_TEST.get_or_init(switchback_self_test::run)
+}
 
 /// Fails the next publish once when armed by /publishFail. Otherwise, in e2e
 /// mode it sends through the SDK's own `ABsmartly::publish` (same request and
@@ -197,6 +208,8 @@ struct AppState {
     contexts: RwLock<HashMap<String, Arc<ContextData_>>>,
     payloads: RwLock<HashMap<String, ContextData>>,
     captured_requests: Mutex<HashMap<String, Vec<Value>>>,
+    // Per-app probe injection keeps HTTP tests independent of the process OnceLock.
+    switchback_probe: fn() -> bool,
 }
 
 impl AppState {
@@ -205,6 +218,7 @@ impl AppState {
             contexts: RwLock::new(HashMap::new()),
             payloads: RwLock::new(HashMap::new()),
             captured_requests: Mutex::new(HashMap::new()),
+            switchback_probe: switchback_capability,
         }
     }
 }
@@ -342,7 +356,7 @@ async fn health_handler() -> impl IntoResponse {
     }))
 }
 
-async fn capabilities_handler() -> impl IntoResponse {
+async fn capabilities_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({"diagnostics": true,
         "diagnosticsUtf8": true,
         "attrsSeq": false,
@@ -357,13 +371,74 @@ async fn capabilities_handler() -> impl IntoResponse {
         "trackRejectsNonObjectProperties": true,
         "refreshNoOpOnFailedContext": true,
         "throwsOnMisuse": true,
+        "rejectsSettersAfterFinalize": true,
         "singleFinalizeEvent": true,
         "semverNumericOperands": true,
         "assignmentRules": true,
         "semverOperators": true,
         "xAgentHeader": true,
         "clientRejectsBlankApplication": true,
-        "clientAcceptsBlankApplication": false
+        "clientAcceptsBlankApplication": false,
+        "switchback": tokio::task::block_in_place(state.switchback_probe),
+        // The switchback battery checks that a 3.0 attribute keys no cluster (switchback_self_test.rs).
+        "integralFloatAttributes": tokio::task::block_in_place(state.switchback_probe)
+    }))
+}
+
+/// A signed 64-bit request field, sent as a decimal string and parsed exactly.
+fn i64_param(req: &Value, name: &str) -> Result<i64, String> {
+    req.get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{} must be a decimal string", name))?
+        .parse::<i64>()
+        .map_err(|_| format!("{} must be a signed 64-bit decimal string", name))
+}
+
+fn switchback_params(req: &Value, index: &str) -> Result<(String, i64, i64, usize), String> {
+    let cluster_unit = req
+        .get("clusterUnit")
+        .and_then(Value::as_str)
+        .ok_or("clusterUnit must be a string")?
+        .to_string();
+    let arm_count = req
+        .get("armCount")
+        .and_then(Value::as_u64)
+        .filter(|n| (2..=i32::MAX as u64).contains(n))
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or("armCount must be an integer from 2 to 2147483647")?;
+    Ok((cluster_unit, i64_param(req, index)?, i64_param(req, "seed")?, arm_count))
+}
+
+fn switchback_response(result: Result<Value, String>) -> axum::response::Response {
+    match result {
+        Ok(result) => Json(json!({"result": result, "events": []})).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e, "events": []}))).into_response(),
+    }
+}
+
+/// POST /switchback/assign: the SDK's assigner over the unchanged cluster unit.
+async fn switchback_assign_handler(body: Result<Json<Value>, JsonRejection>) -> axum::response::Response {
+    let req = match body {
+        Ok(Json(req)) => req,
+        Err(e) => return switchback_response(Err(format!("invalid JSON body: {}", e.body_text()))),
+    };
+    switchback_response(switchback_params(&req, "periodIndex").and_then(|(unit, period, seed, arms)| {
+        absmartly::switchback::assign_switchback(&unit, period, seed, arms)
+            .map(|v| json!(v))
+            .ok_or_else(|| "armCount must be at least 2".to_string())
+    }))
+}
+
+/// POST /switchback/permutation: the SDK's cycle permutation.
+async fn switchback_permutation_handler(body: Result<Json<Value>, JsonRejection>) -> axum::response::Response {
+    let req = match body {
+        Ok(Json(req)) => req,
+        Err(e) => return switchback_response(Err(format!("invalid JSON body: {}", e.body_text()))),
+    };
+    switchback_response(switchback_params(&req, "cycleIndex").and_then(|(unit, cycle, seed, arms)| {
+        absmartly::switchback::fisher_yates_permutation(arms, absmartly::switchback::base_hash(&unit, cycle, seed))
+            .map(|p| json!(p))
+            .ok_or_else(|| "armCount must be at least 2".to_string())
     }))
 }
 
@@ -1031,16 +1106,13 @@ async fn delete_context_handler(
     Json(json!({ "result": "deleted" }))
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt::init();
-
-    let state = Arc::new(AppState::new());
-
-    let app = Router::new()
+fn app(state: Arc<AppState>) -> Router {
+    Router::new()
         .route("/health", get(health_handler))
         .route("/capabilities", get(capabilities_handler))
         .route("/diagnostic", post(diagnostic_handler))
+        .route("/switchback/assign", post(switchback_assign_handler))
+        .route("/switchback/permutation", post(switchback_permutation_handler))
         .route("/context_payload/{payloadId}", put(store_payload_handler).get(get_payload_handler))
         .route("/context_payload/{payloadId}/context", get(mock_api_context_handler).put(mock_api_publish_handler))
         .route("/context_payload/{payloadId}/requests", get(captured_requests_handler))
@@ -1078,8 +1150,14 @@ async fn main() {
         .route("/context/{contextId}/finalize", post(finalize_handler))
         .route("/context/{contextId}", delete(delete_context_handler))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state)
+}
 
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt::init();
+
+    let app = app(Arc::new(AppState::new()));
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
@@ -1088,4 +1166,103 @@ async fn main() {
     tracing::info!("Rust SDK wrapper listening on port {}", port);
 
     axum::serve(listener, app).await.unwrap();
+}
+
+#[cfg(test)]
+mod switchback_endpoint_tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 16).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn post(route: &str, body: &[u8], content_type: Option<&str>) -> Request<Body> {
+        let mut builder = Request::builder().method("POST").uri(route);
+        if let Some(content_type) = content_type {
+            builder = builder.header("content-type", content_type);
+        }
+        builder.body(Body::from(body.to_vec())).unwrap()
+    }
+
+    #[test]
+    fn production_state_runs_the_real_self_test() {
+        assert!(std::ptr::fn_addr_eq(AppState::new().switchback_probe, switchback_capability as fn() -> bool));
+        assert!(switchback_capability());
+        assert_eq!(SWITCHBACK_SELF_TEST.get(), Some(&true));
+    }
+
+    // A failed probe turns the capability off over HTTP; the endpoints still
+    // answer with the SDK's real values.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn capability_http_fails_closed_without_masking_the_assigner() {
+        let failing: fn() -> bool = || false;
+        for (probe, expected) in [(failing, false), (switchback_capability as fn() -> bool, true)] {
+            let mut state = AppState::new();
+            state.switchback_probe = probe;
+            let app = app(Arc::new(state));
+            let request = Request::builder().uri("/capabilities").body(Body::empty()).unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response_json(response).await["switchback"], json!(expected));
+
+            for (unit, period, arms, variant) in [("market_1", "0", 2, 0), ("123456789", "0", 2, 1), ("market_1", "10", 3, 2)] {
+                let body = json!({"clusterUnit": unit, "periodIndex": period, "seed": "0", "armCount": arms}).to_string();
+                let response = app
+                    .clone()
+                    .oneshot(post("/switchback/assign", body.as_bytes(), Some("application/json")))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response_json(response).await, json!({"result": variant, "events": []}));
+            }
+        }
+    }
+
+    // Both endpoints answer a body they cannot decode with the JSON error
+    // envelope: truncated JSON, a non-object, and no JSON content type.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn undecodable_bodies_get_the_error_envelope_on_both_endpoints() {
+        let app = app(Arc::new(AppState::new()));
+        let valid = br#"{"clusterUnit":"m","periodIndex":"0","cycleIndex":"0","seed":"0","armCount":2}"#;
+        for route in ["/switchback/assign", "/switchback/permutation"] {
+            for (body, content_type) in [
+                (&br#"{"clusterUnit": "#[..], Some("application/json")),
+                (&b"[1, 2]"[..], Some("application/json")),
+                (&valid[..], None),
+                (&valid[..], Some("text/plain")),
+            ] {
+                let response = app.clone().oneshot(post(route, body, content_type)).await.unwrap();
+                assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{} {:?}", route, content_type);
+                let json = response_json(response).await;
+                assert!(json["error"].is_string(), "{} {:?}: {}", route, content_type, json);
+                assert_eq!(json["events"], json!([]), "{} {:?}: {}", route, content_type, json);
+            }
+        }
+    }
+
+    // Values above 2^53 must parse exactly, never through a double.
+    #[test]
+    fn sixty_four_bit_fields_parse_exactly() {
+        for text in ["9007199254740993", "-9007199254740993", "9223372036854775807", "-9223372036854775808"] {
+            let req = json!({ "periodIndex": text });
+            assert_eq!(i64_param(&req, "periodIndex"), Ok(text.parse::<i64>().unwrap()), "{}", text);
+        }
+        for bad in [json!("1.0"), json!("9223372036854775808"), json!(5), json!(" 1"), json!("")] {
+            assert!(i64_param(&json!({ "periodIndex": bad }), "periodIndex").is_err(), "{}", bad);
+        }
+    }
+
+    #[test]
+    fn arm_count_is_bounded() {
+        let req = |arms: Value| json!({"clusterUnit": "m", "cycleIndex": "0", "seed": "0", "armCount": arms});
+        assert!(switchback_params(&req(json!(2)), "cycleIndex").is_ok());
+        assert!(switchback_params(&req(json!(2147483647u64)), "cycleIndex").is_ok());
+        for bad in [json!(1), json!(0), json!(-2), json!(2147483648u64), json!(2.5), json!("3")] {
+            assert!(switchback_params(&req(bad.clone()), "cycleIndex").is_err(), "{}", bad);
+        }
+    }
 }
